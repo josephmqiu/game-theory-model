@@ -1,1 +1,4 @@
 .superpowers/
+node_modules/
+coverage/
+*.tsbuildinfo

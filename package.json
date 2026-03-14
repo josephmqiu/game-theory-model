@@ -1,0 +1,15 @@
+{
+  "name": "game-theory-model",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.2.4",
+    "zod": "^3.24.2"
+  }
+}
