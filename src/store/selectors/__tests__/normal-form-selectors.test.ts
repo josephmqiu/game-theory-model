@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { useNormalFormViewModel, findCell } from '../normal-form-selectors'
+import { selectNormalFormViewModel, findCell } from '../normal-form-selectors'
 import { emptyCanonicalStore } from '../../../types/canonical'
 import type { CanonicalStore } from '../../../types/canonical'
 import type { EstimateValue } from '../../../types/estimates'
@@ -82,10 +82,10 @@ function makeTestStore(): CanonicalStore {
   return store
 }
 
-describe('useNormalFormViewModel', () => {
+describe('selectNormalFormViewModel', () => {
   it('returns empty view model when formalization id is null', () => {
     const store = makeTestStore()
-    const result = useNormalFormViewModel(store, null)
+    const result = selectNormalFormViewModel(store, null)
 
     expect(result.players).toEqual([])
     expect(result.cells).toEqual([])
@@ -94,7 +94,7 @@ describe('useNormalFormViewModel', () => {
 
   it('returns empty view model when formalization is not found', () => {
     const store = makeTestStore()
-    const result = useNormalFormViewModel(store, 'nonexistent')
+    const result = selectNormalFormViewModel(store, 'nonexistent')
 
     expect(result.players).toEqual([])
     expect(result.formalization).toBeNull()
@@ -113,13 +113,13 @@ describe('useNormalFormViewModel', () => {
       information_sets: [],
     }
 
-    const result = useNormalFormViewModel(store, 'ef1')
+    const result = selectNormalFormViewModel(store, 'ef1')
     expect(result.formalization).toBeNull()
   })
 
   it('builds matrix data from normal-form formalization', () => {
     const store = makeTestStore()
-    const result = useNormalFormViewModel(store, 'nf1')
+    const result = selectNormalFormViewModel(store, 'nf1')
 
     expect(result.players).toEqual(['p1', 'p2'])
     expect(result.rowStrategies).toEqual(['Cooperate', 'Defect'])
@@ -131,7 +131,7 @@ describe('useNormalFormViewModel', () => {
 
   it('maps cell payoffs correctly', () => {
     const store = makeTestStore()
-    const result = useNormalFormViewModel(store, 'nf1')
+    const result = selectNormalFormViewModel(store, 'nf1')
 
     const ccCell = result.cells.find(
       (c) => c.rowStrategy === 'Cooperate' && c.colStrategy === 'Cooperate',
@@ -152,7 +152,7 @@ describe('useNormalFormViewModel', () => {
 describe('findCell', () => {
   it('finds cell by strategy profile', () => {
     const store = makeTestStore()
-    const vm = useNormalFormViewModel(store, 'nf1')
+    const vm = selectNormalFormViewModel(store, 'nf1')
     const cell = findCell(vm, 'Defect', 'Cooperate')
 
     expect(cell).toBeDefined()
@@ -162,7 +162,7 @@ describe('findCell', () => {
 
   it('returns undefined for missing strategy profile', () => {
     const store = makeTestStore()
-    const vm = useNormalFormViewModel(store, 'nf1')
+    const vm = selectNormalFormViewModel(store, 'nf1')
     const cell = findCell(vm, 'Unknown', 'Cooperate')
 
     expect(cell).toBeUndefined()

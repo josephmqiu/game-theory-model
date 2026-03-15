@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { Filter, ArrowUpDown, Plus } from 'lucide-react'
 import { useAppStore } from '../../store'
 import { Badge } from '../design-system'
-import { useWorkflowColumns } from '../../store/selectors/board-selectors'
+import { selectWorkflowColumns } from '../../store/selectors/board-selectors'
 import type { WorkflowColumn } from '../../store/selectors/board-selectors'
 import type { StrategicGame } from '../../types/canonical'
 import { CreateGameWizard } from '../editors/wizards'
@@ -110,7 +110,7 @@ export function WorkflowBoard(): ReactNode {
 
   const [showCreateGame, setShowCreateGame] = useState(false)
 
-  const columns = useWorkflowColumns(canonical)
+  const columns = selectWorkflowColumns(canonical)
 
   const formalizationCounts: Record<string, number> = {}
   for (const game of Object.values(canonical.games)) {

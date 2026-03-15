@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 
 import { useAppStore } from '../../../store'
 import {
-  useNormalFormViewModel,
+  selectNormalFormViewModel,
   findCell,
   type NormalFormCell,
 } from '../../../store/selectors/normal-form-selectors'
@@ -22,7 +22,7 @@ export function MatrixView(): ReactNode {
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null)
 
   const viewModel = useMemo(
-    () => useNormalFormViewModel(canonical, activeFormalizationId),
+    () => selectNormalFormViewModel(canonical, activeFormalizationId),
     [canonical, activeFormalizationId],
   )
 

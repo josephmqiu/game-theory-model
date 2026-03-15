@@ -25,7 +25,7 @@ const EMPTY_VIEW_MODEL: NormalFormViewModel = {
   formalization: null,
 }
 
-export function useNormalFormViewModel(
+export function selectNormalFormViewModel(
   canonical: CanonicalStore,
   formalizationId: string | null,
 ): NormalFormViewModel {

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { User, Target, AlertTriangle, Link2 } from 'lucide-react'
 
 import { useAppStore } from '../../../store'
-import { usePlayerLens } from '../../../store/selectors/player-lens-selectors'
+import { selectPlayerLens } from '../../../store/selectors/player-lens-selectors'
 import type { PressurePoint, CrossGameExposure } from '../../../store/selectors/player-lens-selectors'
 import { Badge, StaleBadge, Card } from '../../design-system'
 import type { StrategicGame } from '../../../types/canonical'
@@ -153,7 +153,7 @@ export function PlayerLensView(): ReactNode {
   }, [inspectedRefs])
 
   const lensData = useMemo(
-    () => usePlayerLens(canonical, activePlayerId),
+    () => selectPlayerLens(canonical, activePlayerId),
     [canonical, activePlayerId],
   )
 

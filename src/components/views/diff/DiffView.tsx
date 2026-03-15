@@ -4,7 +4,7 @@ import { GitCommit } from 'lucide-react'
 
 import { useAppStore } from '../../../store'
 import {
-  useDiffEntries,
+  selectDiffEntries,
   type DiffEntry,
   type DiffChangeType,
 } from '../../../store/selectors/diff-selectors'
@@ -87,7 +87,7 @@ export function DiffView(): ReactNode {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
 
-  const allEntries = useMemo(() => useDiffEntries(eventLog), [eventLog])
+  const allEntries = useMemo(() => selectDiffEntries(eventLog), [eventLog])
 
   const filteredEntries = useMemo(() => {
     let result = allEntries

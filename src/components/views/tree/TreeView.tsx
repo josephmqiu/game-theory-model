@@ -11,7 +11,7 @@ import {
 import '@xyflow/react/dist/style.css'
 
 import { useAppStore } from '../../../store'
-import { useExtensiveFormViewModel } from '../../../store/selectors/extensive-form-selectors'
+import { selectExtensiveFormViewModel } from '../../../store/selectors/extensive-form-selectors'
 import { coordinationBus } from '../../../coordination'
 import { DecisionNode } from '../graph/nodes/DecisionNode'
 import { ChanceNode } from '../graph/nodes/ChanceNode'
@@ -42,7 +42,7 @@ export function TreeView(): ReactNode {
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null)
 
   const viewModel = useMemo(
-    () => useExtensiveFormViewModel(canonical, activeFormalizationId),
+    () => selectExtensiveFormViewModel(canonical, activeFormalizationId),
     [canonical, activeFormalizationId],
   )
 

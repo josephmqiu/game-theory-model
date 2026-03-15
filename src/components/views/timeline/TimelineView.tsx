@@ -4,7 +4,7 @@ import { Clock, Database, GitBranch } from 'lucide-react'
 
 import { useAppStore } from '../../../store'
 import {
-  useTimelineEntries,
+  selectTimelineEntries,
   type TimelineEntry,
   type TimelineEntryKind,
 } from '../../../store/selectors/timeline-selectors'
@@ -121,7 +121,7 @@ export function TimelineView(): ReactNode {
   const eventLog = useAppStore((s) => s.eventLog)
 
   const entries = useMemo(
-    () => useTimelineEntries(canonical, eventLog),
+    () => selectTimelineEntries(canonical, eventLog),
     [canonical, eventLog],
   )
 

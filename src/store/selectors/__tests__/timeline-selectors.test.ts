@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { useTimelineEntries } from '../timeline-selectors'
+import { selectTimelineEntries } from '../timeline-selectors'
 import { emptyCanonicalStore } from '../../../types/canonical'
 import { createEventLog, type EventLog, type ModelEvent } from '../../../engine/events'
 
@@ -26,12 +26,12 @@ function makeEventLog(events: ModelEvent[]): EventLog {
   }
 }
 
-describe('useTimelineEntries', () => {
+describe('selectTimelineEntries', () => {
   it('returns empty array for empty event log', () => {
     const canonical = emptyCanonicalStore()
     const eventLog = createEventLog('test')
 
-    const result = useTimelineEntries(canonical, eventLog)
+    const result = selectTimelineEntries(canonical, eventLog)
 
     expect(result).toEqual([])
   })
@@ -41,7 +41,7 @@ describe('useTimelineEntries', () => {
     const event = makeEvent()
     const eventLog = makeEventLog([event])
 
-    const result = useTimelineEntries(canonical, eventLog)
+    const result = selectTimelineEntries(canonical, eventLog)
 
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({
@@ -69,7 +69,7 @@ describe('useTimelineEntries', () => {
     })
     const eventLog = makeEventLog([event])
 
-    const result = useTimelineEntries(canonical, eventLog)
+    const result = selectTimelineEntries(canonical, eventLog)
 
     expect(result).toHaveLength(1)
     expect(result[0]!.kind).toBe('evidence_update')
@@ -85,7 +85,7 @@ describe('useTimelineEntries', () => {
     })
     const eventLog = makeEventLog([event])
 
-    const result = useTimelineEntries(canonical, eventLog)
+    const result = selectTimelineEntries(canonical, eventLog)
 
     expect(result).toHaveLength(1)
     expect(result[0]!.kind).toBe('evidence_update')
@@ -99,7 +99,7 @@ describe('useTimelineEntries', () => {
       cursor: 2,
     }
 
-    const result = useTimelineEntries(canonical, eventLog)
+    const result = selectTimelineEntries(canonical, eventLog)
 
     expect(result).toHaveLength(2)
   })

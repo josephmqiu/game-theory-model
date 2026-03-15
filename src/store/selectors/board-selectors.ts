@@ -53,7 +53,7 @@ function categorizeGame(game: StrategicGame, formalizations: CanonicalStore['for
   return 'modeling'
 }
 
-export function useWorkflowColumns(canonical: CanonicalStore): WorkflowColumns {
+export function selectWorkflowColumns(canonical: CanonicalStore): WorkflowColumns {
   const columns: WorkflowColumns = {
     draft: [],
     modeling: [],

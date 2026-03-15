@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { Plus } from 'lucide-react'
 import { useAppStore } from '../../store'
 import { Badge } from '../design-system'
-import { usePlayersRegistry } from '../../store/selectors/player-selectors'
+import { selectPlayersRegistry } from '../../store/selectors/player-selectors'
 import type { Player } from '../../types/canonical'
 import { CreatePlayerWizard } from '../editors/wizards'
 
@@ -55,7 +55,7 @@ export function PlayersRegistry(): ReactNode {
 
   const [showCreatePlayer, setShowCreatePlayer] = useState(false)
 
-  const entries = usePlayersRegistry(canonical)
+  const entries = selectPlayersRegistry(canonical)
 
   function handlePlayerClick(playerId: string) {
     setInspectedRefs([{ type: 'player', id: playerId }])

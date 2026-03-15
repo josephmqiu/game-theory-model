@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { useDiffEntries } from '../diff-selectors'
+import { selectDiffEntries } from '../diff-selectors'
 import { createEventLog, type EventLog, type ModelEvent } from '../../../engine/events'
 
 function makeEvent(overrides: Partial<ModelEvent> = {}): ModelEvent {
@@ -39,10 +39,10 @@ function makeEventLog(events: ModelEvent[]): EventLog {
   }
 }
 
-describe('useDiffEntries', () => {
+describe('selectDiffEntries', () => {
   it('returns empty array for empty event log', () => {
     const eventLog = createEventLog('test')
-    const result = useDiffEntries(eventLog)
+    const result = selectDiffEntries(eventLog)
     expect(result).toEqual([])
   })
 
@@ -50,7 +50,7 @@ describe('useDiffEntries', () => {
     const event = makeEvent()
     const eventLog = makeEventLog([event])
 
-    const result = useDiffEntries(eventLog)
+    const result = selectDiffEntries(eventLog)
 
     expect(result).toHaveLength(1)
     expect(result[0]!.change_type).toBe('created')
@@ -71,7 +71,7 @@ describe('useDiffEntries', () => {
     })
     const eventLog = makeEventLog([event])
 
-    const result = useDiffEntries(eventLog)
+    const result = selectDiffEntries(eventLog)
 
     expect(result).toHaveLength(1)
     expect(result[0]!.change_type).toBe('updated')
@@ -89,7 +89,7 @@ describe('useDiffEntries', () => {
     })
     const eventLog = makeEventLog([event])
 
-    const result = useDiffEntries(eventLog)
+    const result = selectDiffEntries(eventLog)
 
     expect(result).toHaveLength(1)
     expect(result[0]!.change_type).toBe('deleted')
@@ -102,7 +102,7 @@ describe('useDiffEntries', () => {
     })
     const eventLog = makeEventLog([event])
 
-    const result = useDiffEntries(eventLog)
+    const result = selectDiffEntries(eventLog)
 
     expect(result).toHaveLength(1)
     expect(result[0]!.change_type).toBe('marked_stale')
@@ -115,7 +115,7 @@ describe('useDiffEntries', () => {
       cursor: 1,
     }
 
-    const result = useDiffEntries(eventLog)
+    const result = selectDiffEntries(eventLog)
 
     expect(result).toHaveLength(1)
   })

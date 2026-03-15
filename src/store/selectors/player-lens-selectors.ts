@@ -90,7 +90,7 @@ function collectStaleEntitiesInGames(
   return points
 }
 
-export function usePlayerLens(
+export function selectPlayerLens(
   canonical: CanonicalStore,
   playerId: string | null,
 ): PlayerLensData | null {

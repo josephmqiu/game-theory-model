@@ -133,7 +133,7 @@ function eventToDiffEntries(event: ModelEvent): DiffEntry[] {
   }))
 }
 
-export function useDiffEntries(eventLog: EventLog): DiffEntry[] {
+export function selectDiffEntries(eventLog: EventLog): DiffEntry[] {
   const activeEvents = eventLog.events.slice(0, eventLog.cursor)
   return activeEvents.flatMap(eventToDiffEntries)
 }

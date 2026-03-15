@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 
 import {
-  useEvidenceLadder,
-  useDerivationChain,
+  selectEvidenceLadder,
+  selectDerivationChain,
   LADDER_ORDER,
 } from '../evidence-notebook-selectors'
 import { emptyCanonicalStore } from '../../../types/canonical'
@@ -111,10 +111,10 @@ function makeTestStore(): CanonicalStore {
   return store
 }
 
-describe('useEvidenceLadder', () => {
+describe('selectEvidenceLadder', () => {
   it('returns empty ladder when gameId is null', () => {
     const store = makeTestStore()
-    const result = useEvidenceLadder(store, null)
+    const result = selectEvidenceLadder(store, null)
 
     for (const type of LADDER_ORDER) {
       expect(result[type]).toEqual([])
@@ -123,7 +123,7 @@ describe('useEvidenceLadder', () => {
 
   it('returns empty ladder when game is not found', () => {
     const store = makeTestStore()
-    const result = useEvidenceLadder(store, 'nonexistent')
+    const result = selectEvidenceLadder(store, 'nonexistent')
 
     for (const type of LADDER_ORDER) {
       expect(result[type]).toEqual([])
@@ -132,7 +132,7 @@ describe('useEvidenceLadder', () => {
 
   it('groups evidence entities in ladder order', () => {
     const store = makeTestStore()
-    const result = useEvidenceLadder(store, 'g1')
+    const result = selectEvidenceLadder(store, 'g1')
 
     expect(result.source).toHaveLength(1)
     expect(result.source[0]!.title).toBe('Example Source')
@@ -149,7 +149,7 @@ describe('useEvidenceLadder', () => {
 
   it('includes confidence for claims, inferences, and assumptions', () => {
     const store = makeTestStore()
-    const result = useEvidenceLadder(store, 'g1')
+    const result = selectEvidenceLadder(store, 'g1')
 
     expect(result.claim[0]!.confidence).toBe(0.8)
     expect(result.inference[0]!.confidence).toBe(0.7)
@@ -170,7 +170,7 @@ describe('useEvidenceLadder', () => {
       ],
     }
 
-    const result = useEvidenceLadder(store, 'g1')
+    const result = selectEvidenceLadder(store, 'g1')
 
     const staleClaim = result.claim.find((c) => c.id === 'c1')
     expect(staleClaim!.isStale).toBe(true)
@@ -195,16 +195,16 @@ describe('useEvidenceLadder', () => {
       captured_at: '2026-01-01T00:00:00Z',
     }
 
-    const result = useEvidenceLadder(store, 'g1')
+    const result = selectEvidenceLadder(store, 'g1')
     const s2 = result.source.find((s) => s.id === 's2')
     expect(s2!.title).toBe('https://fallback.com')
   })
 })
 
-describe('useDerivationChain', () => {
+describe('selectDerivationChain', () => {
   it('returns empty chain when entityId is null', () => {
     const store = makeTestStore()
-    const result = useDerivationChain(store, null)
+    const result = selectDerivationChain(store, null)
 
     expect(result.upstream).toEqual([])
     expect(result.downstream).toEqual([])
@@ -212,7 +212,7 @@ describe('useDerivationChain', () => {
 
   it('finds upstream derivation links', () => {
     const store = makeTestStore()
-    const result = useDerivationChain(store, 'c1')
+    const result = selectDerivationChain(store, 'c1')
 
     expect(result.upstream).toHaveLength(1)
     expect(result.upstream[0]!.entityId).toBe('obs1')
@@ -221,7 +221,7 @@ describe('useDerivationChain', () => {
 
   it('finds downstream derivation links', () => {
     const store = makeTestStore()
-    const result = useDerivationChain(store, 'c2')
+    const result = selectDerivationChain(store, 'c2')
 
     expect(result.downstream).toHaveLength(1)
     expect(result.downstream[0]!.entityId).toBe('inf1')
@@ -230,7 +230,7 @@ describe('useDerivationChain', () => {
 
   it('returns empty when entity has no derivations', () => {
     const store = makeTestStore()
-    const result = useDerivationChain(store, 'a1')
+    const result = selectDerivationChain(store, 'a1')
 
     expect(result.upstream).toEqual([])
     expect(result.downstream).toEqual([])

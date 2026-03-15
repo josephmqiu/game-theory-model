@@ -143,7 +143,7 @@ function extractEntityRef(
   return { type: parsed.entityType, id }
 }
 
-export function useTimelineEntries(
+export function selectTimelineEntries(
   canonical: CanonicalStore,
   eventLog: EventLog,
 ): TimelineEntry[] {

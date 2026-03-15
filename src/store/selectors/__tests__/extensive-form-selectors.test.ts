@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { useExtensiveFormViewModel } from '../extensive-form-selectors'
+import { selectExtensiveFormViewModel } from '../extensive-form-selectors'
 import { emptyCanonicalStore } from '../../../types/canonical'
 import type { CanonicalStore } from '../../../types/canonical'
 
@@ -154,10 +154,10 @@ function makeTestStore(): CanonicalStore {
   return store
 }
 
-describe('useExtensiveFormViewModel', () => {
+describe('selectExtensiveFormViewModel', () => {
   it('returns empty view model when formalization id is null', () => {
     const store = makeTestStore()
-    const result = useExtensiveFormViewModel(store, null)
+    const result = selectExtensiveFormViewModel(store, null)
 
     expect(result.nodes).toEqual([])
     expect(result.edges).toEqual([])
@@ -167,7 +167,7 @@ describe('useExtensiveFormViewModel', () => {
 
   it('returns empty view model when formalization is not found', () => {
     const store = makeTestStore()
-    const result = useExtensiveFormViewModel(store, 'nonexistent')
+    const result = selectExtensiveFormViewModel(store, 'nonexistent')
 
     expect(result.nodes).toEqual([])
     expect(result.formalization).toBeNull()
@@ -186,13 +186,13 @@ describe('useExtensiveFormViewModel', () => {
       payoff_cells: [],
     }
 
-    const result = useExtensiveFormViewModel(store, 'nf1')
+    const result = selectExtensiveFormViewModel(store, 'nf1')
     expect(result.formalization).toBeNull()
   })
 
   it('builds tree view model from extensive-form formalization', () => {
     const store = makeTestStore()
-    const result = useExtensiveFormViewModel(store, 'ef1')
+    const result = selectExtensiveFormViewModel(store, 'ef1')
 
     // Should include only nodes from ef1 (5 nodes), not n_other
     expect(result.nodes).toHaveLength(5)
@@ -204,7 +204,7 @@ describe('useExtensiveFormViewModel', () => {
 
   it('assigns tree layout positions from root', () => {
     const store = makeTestStore()
-    const result = useExtensiveFormViewModel(store, 'ef1')
+    const result = selectExtensiveFormViewModel(store, 'ef1')
 
     const rootNode = result.nodes.find((n) => n.id === 'n1')
     expect(rootNode).toBeDefined()
@@ -217,7 +217,7 @@ describe('useExtensiveFormViewModel', () => {
 
   it('maps information sets', () => {
     const store = makeTestStore()
-    const result = useExtensiveFormViewModel(store, 'ef1')
+    const result = selectExtensiveFormViewModel(store, 'ef1')
 
     expect(result.informationSets).toHaveLength(1)
     expect(result.informationSets[0]!.id).toBe('is1')
@@ -227,7 +227,7 @@ describe('useExtensiveFormViewModel', () => {
 
   it('excludes nodes from other formalizations', () => {
     const store = makeTestStore()
-    const result = useExtensiveFormViewModel(store, 'ef1')
+    const result = selectExtensiveFormViewModel(store, 'ef1')
 
     const otherNode = result.nodes.find((n) => n.id === 'n_other')
     expect(otherNode).toBeUndefined()
@@ -235,7 +235,7 @@ describe('useExtensiveFormViewModel', () => {
 
   it('assigns player colors and names', () => {
     const store = makeTestStore()
-    const result = useExtensiveFormViewModel(store, 'ef1')
+    const result = selectExtensiveFormViewModel(store, 'ef1')
 
     const aliceNode = result.nodes.find((n) => n.data.playerId === 'p1')
     expect(aliceNode).toBeDefined()
@@ -250,7 +250,7 @@ describe('useExtensiveFormViewModel', () => {
 
   it('maps terminal node payoffs', () => {
     const store = makeTestStore()
-    const result = useExtensiveFormViewModel(store, 'ef1')
+    const result = selectExtensiveFormViewModel(store, 'ef1')
 
     const terminalNode = result.nodes.find((n) => n.id === 'n4')
     expect(terminalNode).toBeDefined()

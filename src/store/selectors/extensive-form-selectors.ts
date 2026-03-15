@@ -75,7 +75,7 @@ const EMPTY_VIEW_MODEL: ExtensiveFormViewModel = {
   formalization: null,
 }
 
-export function useExtensiveFormViewModel(
+export function selectExtensiveFormViewModel(
   canonical: CanonicalStore,
   formalizationId: string | null,
 ): ExtensiveFormViewModel {

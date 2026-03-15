@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { usePlayerLens } from '../player-lens-selectors'
+import { selectPlayerLens } from '../player-lens-selectors'
 import { emptyCanonicalStore } from '../../../types/canonical'
 import type { CanonicalStore } from '../../../types/canonical'
 
@@ -100,22 +100,22 @@ function makeTestStore(): CanonicalStore {
   return store
 }
 
-describe('usePlayerLens', () => {
+describe('selectPlayerLens', () => {
   it('returns null when playerId is null', () => {
     const store = makeTestStore()
-    const result = usePlayerLens(store, null)
+    const result = selectPlayerLens(store, null)
     expect(result).toBeNull()
   })
 
   it('returns null when player does not exist', () => {
     const store = makeTestStore()
-    const result = usePlayerLens(store, 'nonexistent')
+    const result = selectPlayerLens(store, 'nonexistent')
     expect(result).toBeNull()
   })
 
   it('returns correct player lens data', () => {
     const store = makeTestStore()
-    const result = usePlayerLens(store, 'p1')
+    const result = selectPlayerLens(store, 'p1')
 
     expect(result).not.toBeNull()
     expect(result!.playerId).toBe('p1')
@@ -127,7 +127,7 @@ describe('usePlayerLens', () => {
 
   it('detects stale assumptions as pressure points', () => {
     const store = makeTestStore()
-    const result = usePlayerLens(store, 'p1')
+    const result = selectPlayerLens(store, 'p1')
 
     expect(result!.pressurePoints.length).toBeGreaterThan(0)
     const staleAssumption = result!.pressurePoints.find(
@@ -152,7 +152,7 @@ describe('usePlayerLens', () => {
       source_claims: [],
     }
 
-    const result = usePlayerLens(store, 'p1')
+    const result = selectPlayerLens(store, 'p1')
 
     expect(result!.crossGameExposure).toHaveLength(1)
     expect(result!.crossGameExposure[0]!.sourceGameName).toBe('Deterrence Game')

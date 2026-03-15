@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { Plus, Database } from 'lucide-react'
 import { useAppStore } from '../../store'
 import { Badge, ConfidenceBadge, StaleBadge, ViewTab } from '../design-system'
-import { useEvidenceLibrary } from '../../store/selectors/evidence-selectors'
+import { selectEvidenceLibrary } from '../../store/selectors/evidence-selectors'
 import type { EvidenceTab, EvidenceEntry } from '../../store/selectors/evidence-selectors'
 import { CreateEvidenceWizard } from '../editors/wizards'
 
@@ -47,7 +47,7 @@ export function EvidenceLibrary(): ReactNode {
   const [searchQuery, setSearchQuery] = useState('')
   const [showCreateSource, setShowCreateSource] = useState(false)
 
-  const allEntries = useEvidenceLibrary(canonical, activeTab)
+  const allEntries = selectEvidenceLibrary(canonical, activeTab)
 
   const filteredEntries = searchQuery.trim()
     ? allEntries.filter((entry) =>

@@ -15,7 +15,7 @@ function hasStaleMarkers(markers: readonly StaleMarker[] | undefined): boolean {
   return markers !== undefined && markers.length > 0
 }
 
-export function useEvidenceLibrary(
+export function selectEvidenceLibrary(
   canonical: CanonicalStore,
   tab: EvidenceTab = 'all',
 ): EvidenceEntry[] {

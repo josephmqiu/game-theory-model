@@ -6,7 +6,7 @@ export interface PlayerRegistryEntry {
   gameCount: number
 }
 
-export function usePlayersRegistry(canonical: CanonicalStore): PlayerRegistryEntry[] {
+export function selectPlayersRegistry(canonical: CanonicalStore): PlayerRegistryEntry[] {
   const entries: PlayerRegistryEntry[] = []
 
   for (const player of Object.values(canonical.players)) {

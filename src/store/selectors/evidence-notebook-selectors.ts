@@ -102,7 +102,7 @@ function isLinkedToGame(
   return false
 }
 
-export function useEvidenceLadder(
+export function selectEvidenceLadder(
   canonical: CanonicalStore,
   gameId: string | null,
 ): EvidenceLadder {
@@ -207,7 +207,7 @@ export function useEvidenceLadder(
   }
 }
 
-export function useDerivationChain(
+export function selectDerivationChain(
   canonical: CanonicalStore,
   entityId: string | null,
 ): DerivationChainResult {
