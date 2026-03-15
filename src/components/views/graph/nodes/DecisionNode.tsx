@@ -14,6 +14,7 @@ export function DecisionNode({ data, selected }: NodeProps<GraphNode>): ReactNod
       className={`
         bg-bg-card border rounded px-4 py-3 min-w-[140px]
         ${selected ? 'ring-2 ring-accent' : ''}
+        ${data.highlighted ? 'ring-2 ring-yellow-400' : ''}
       `}
       style={{ borderLeft: `4px solid ${borderColor}` }}
     >

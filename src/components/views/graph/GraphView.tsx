@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   ReactFlow,
@@ -12,7 +12,8 @@ import '@xyflow/react/dist/style.css'
 
 import { useAppStore } from '../../../store'
 import { buildGraphViewModel } from '../../../store/selectors/graph-selectors'
-import { coordinationBus } from '../../../coordination'
+import { coordinationBus, useCoordinationHandler } from '../../../coordination'
+import type { CoordinationEvent } from '../../../coordination'
 import { DecisionNode } from './nodes/DecisionNode'
 import { ChanceNode } from './nodes/ChanceNode'
 import { TerminalNode } from './nodes/TerminalNode'
@@ -35,9 +36,27 @@ export function GraphView(): ReactNode {
   const activeGameId = useAppStore((s) => s.viewState.activeGameId)
   const setInspectedRefs = useAppStore((s) => s.setInspectedRefs)
 
+  const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set())
+
   const { nodes, edges, formalization } = useMemo(
     () => buildGraphViewModel(canonical, activeFormalizationId),
     [canonical, activeFormalizationId],
+  )
+
+  const nodesWithHighlight = useMemo(
+    () =>
+      nodes.map((node) =>
+        highlightedIds.size > 0
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                highlighted: highlightedIds.has(node.id),
+              },
+            }
+          : node,
+      ),
+    [nodes, highlightedIds],
   )
 
   const onSelectionChange: OnSelectionChangeFunc = useCallback(
@@ -58,6 +77,18 @@ export function GraphView(): ReactNode {
     },
     [setInspectedRefs],
   )
+
+  const handleHighlightDependents = useCallback((event: CoordinationEvent) => {
+    if (event.kind !== 'highlight_dependents') return
+    setHighlightedIds(new Set(event.dependent_refs.map((r) => r.id)))
+  }, [])
+
+  const handleHighlightClear = useCallback((_event: CoordinationEvent) => {
+    setHighlightedIds(new Set())
+  }, [])
+
+  useCoordinationHandler('highlight_dependents', handleHighlightDependents)
+  useCoordinationHandler('highlight_clear', handleHighlightClear)
 
   if (!formalization) {
     const activeGame = activeGameId ? canonical.games[activeGameId] : null
@@ -80,7 +111,7 @@ export function GraphView(): ReactNode {
   return (
     <div className="flex-1 h-full" data-testid="graph-canvas">
       <ReactFlow
-        nodes={nodes}
+        nodes={nodesWithHighlight}
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}

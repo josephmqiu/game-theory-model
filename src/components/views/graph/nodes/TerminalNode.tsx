@@ -14,6 +14,7 @@ export function TerminalNode({ data, selected }: NodeProps<GraphNode>): ReactNod
       className={`
         bg-bg-card border border-border rounded-xl px-4 py-3 min-w-[140px]
         ${selected ? 'ring-2 ring-accent' : ''}
+        ${data.highlighted ? 'ring-2 ring-yellow-400' : ''}
       `}
     >
       <Handle type="target" position={Position.Top} className="!bg-border" />

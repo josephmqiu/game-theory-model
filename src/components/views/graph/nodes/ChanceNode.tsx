@@ -17,6 +17,7 @@ export function ChanceNode({ data, selected }: NodeProps<GraphNode>): ReactNode 
         className={`
           absolute bg-bg-card border border-border
           ${selected ? 'ring-2 ring-accent' : ''}
+          ${data.highlighted ? 'ring-2 ring-yellow-400' : ''}
         `}
         style={{
           width: 70,

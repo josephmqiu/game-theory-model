@@ -12,6 +12,7 @@ export interface GraphNodeData {
   terminalPayoffs: GameNode['terminal_payoffs']
   staleMarkers: GameNode['stale_markers']
   formalizationId: string
+  highlighted?: boolean
   [key: string]: unknown
 }
 

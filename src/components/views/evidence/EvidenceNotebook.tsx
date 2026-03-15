@@ -67,8 +67,22 @@ export function EvidenceNotebook(): ReactNode {
         correlation_id: crypto.randomUUID(),
         ref: refs[0]!,
       })
+
+      // Emit highlight_dependents so the graph can visually highlight
+      // any game nodes that reference this evidence item
+      const dependentNodeRefs = Object.values(canonical.nodes)
+        .filter((node) => node.stale_markers?.some((m) => m.caused_by.id === entry.id))
+        .map((node) => ({ type: 'game_node' as const, id: node.id }))
+
+      coordinationBus.emit({
+        kind: 'highlight_dependents',
+        source_view: 'evidence_notebook',
+        correlation_id: crypto.randomUUID(),
+        root_ref: refs[0]!,
+        dependent_refs: dependentNodeRefs,
+      })
     },
-    [setInspectedRefs],
+    [setInspectedRefs, canonical.nodes],
   )
 
   const handleContradictionClick = useCallback(
@@ -83,8 +97,21 @@ export function EvidenceNotebook(): ReactNode {
         correlation_id: crypto.randomUUID(),
         ref: refs[0]!,
       })
+
+      // Emit highlight_dependents for any graph nodes that reference this contradiction
+      const dependentNodeRefs = Object.values(canonical.nodes)
+        .filter((node) => node.stale_markers?.some((m) => m.caused_by.id === contradictionId))
+        .map((node) => ({ type: 'game_node' as const, id: node.id }))
+
+      coordinationBus.emit({
+        kind: 'highlight_dependents',
+        source_view: 'evidence_notebook',
+        correlation_id: crypto.randomUUID(),
+        root_ref: refs[0]!,
+        dependent_refs: dependentNodeRefs,
+      })
     },
-    [setInspectedRefs],
+    [setInspectedRefs, canonical.nodes],
   )
 
   // Cross-view sync: scroll to entity on focus_entity events

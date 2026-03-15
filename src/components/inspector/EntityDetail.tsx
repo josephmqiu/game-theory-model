@@ -2,6 +2,36 @@ import type { ReactNode } from 'react'
 
 import type { EntityRef, CanonicalStore, EntityType } from '../../types/canonical'
 import { Badge, ConfidenceBadge, StaleBadge, Card, EstimateValueDisplay } from '../design-system'
+import { coordinationBus } from '../../coordination'
+
+function emitFocusEntity(ref: EntityRef): void {
+  coordinationBus.emit({
+    kind: 'focus_entity',
+    // Inspector lives next to the graph view; use 'graph' as source so that
+    // the EvidenceNotebook's handler (which ignores 'evidence_notebook' source)
+    // correctly picks up focus events from the inspector.
+    source_view: 'graph',
+    correlation_id: crypto.randomUUID(),
+    ref,
+  })
+}
+
+interface EvidenceLinkButtonProps {
+  entityRef: EntityRef
+  label: string
+}
+
+function EvidenceLinkButton({ entityRef, label }: EvidenceLinkButtonProps): ReactNode {
+  return (
+    <button
+      className="text-xs text-accent hover:underline font-mono truncate max-w-full text-left"
+      onClick={() => emitFocusEntity(entityRef)}
+      data-testid={`evidence-link-${entityRef.id}`}
+    >
+      {label}
+    </button>
+  )
+}
 
 interface EntityDetailProps {
   entityRef: EntityRef
@@ -184,7 +214,25 @@ function EvidenceDetail({ id, entityType, canonical }: { id: string; entityType:
         <Card title="Claim">
           <div className="text-sm text-text-primary mb-2">{claim.statement}</div>
           <DetailRow label="Confidence"><ConfidenceBadge value={claim.confidence} /></DetailRow>
-          <DetailRow label="Based on">{claim.based_on.length} observation(s)</DetailRow>
+          {claim.based_on.length > 0 && (
+            <div className="py-1.5 border-b border-border">
+              <span className="text-[11px] font-mono text-text-muted uppercase tracking-wide block mb-1">
+                Based on
+              </span>
+              <div className="flex flex-col gap-0.5">
+                {claim.based_on.map((obsId) => {
+                  const obs = canonical.observations[obsId]
+                  return (
+                    <EvidenceLinkButton
+                      key={obsId}
+                      entityRef={{ type: 'observation', id: obsId }}
+                      label={obs ? obs.text.slice(0, 60) : obsId}
+                    />
+                  )
+                })}
+              </div>
+            </div>
+          )}
           <StaleSection staleMarkers={claim.stale_markers} />
         </Card>
       )
@@ -209,7 +257,32 @@ function EvidenceDetail({ id, entityType, canonical }: { id: string; entityType:
         <Card title="Inference">
           <div className="text-sm text-text-primary mb-2">{inference.statement}</div>
           <DetailRow label="Confidence"><ConfidenceBadge value={inference.confidence} /></DetailRow>
-          <DetailRow label="Derived from">{inference.derived_from.length} item(s)</DetailRow>
+          {inference.derived_from.length > 0 && (
+            <div className="py-1.5 border-b border-border">
+              <span className="text-[11px] font-mono text-text-muted uppercase tracking-wide block mb-1">
+                Derived from
+              </span>
+              <div className="flex flex-col gap-0.5">
+                {inference.derived_from.map((sourceId) => {
+                  const obs = canonical.observations[sourceId]
+                  const claim = canonical.claims[sourceId]
+                  const label = obs
+                    ? obs.text.slice(0, 60)
+                    : claim
+                      ? claim.statement.slice(0, 60)
+                      : sourceId
+                  const type: EntityType = obs ? 'observation' : claim ? 'claim' : 'inference'
+                  return (
+                    <EvidenceLinkButton
+                      key={sourceId}
+                      entityRef={{ type, id: sourceId }}
+                      label={label}
+                    />
+                  )
+                })}
+              </div>
+            </div>
+          )}
           <StaleSection staleMarkers={inference.stale_markers} />
         </Card>
       )
