@@ -60,7 +60,7 @@ class MemoryEventPersistenceAdapter implements EventPersistenceAdapter {
   ): PersistedEvent[] {
     let events = [...(this.events.get(analysisId) ?? [])]
     if (opts?.since) {
-      events = events.filter((event) => event.timestamp > opts.since!)
+      events = events.filter((event) => event.timestamp >= opts.since!)
     }
     if (opts?.source) {
       events = events.filter((event) => event.source === opts.source)
