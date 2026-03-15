@@ -31,8 +31,16 @@ export function GameEdge({
         id={id}
         path={edgePath}
         markerEnd={markerEnd}
-        className={selected ? 'stroke-accent' : 'stroke-border'}
-        style={{ strokeWidth: 2 }}
+        className={
+          data?.highlighted
+            ? 'stroke-green-400'
+            : selected
+              ? 'stroke-accent'
+              : data?.dimmed
+                ? 'stroke-text-dim'
+                : 'stroke-border'
+        }
+        style={{ strokeWidth: data?.highlighted ? 3 : 2, opacity: data?.dimmed ? 0.4 : 1 }}
       />
       {data?.label && (
         <EdgeLabelRenderer>

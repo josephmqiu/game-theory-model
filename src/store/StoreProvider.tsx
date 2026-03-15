@@ -5,6 +5,7 @@ import { useStore } from 'zustand'
 import { createAppStore } from './app-store'
 import type { AppStore } from './app-store'
 import { usePlatform } from '../platform'
+import { DerivedStoreProvider } from './DerivedStoreProvider'
 
 type AppStoreApi = ReturnType<typeof createAppStore>
 
@@ -16,7 +17,11 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactNode 
   if (!storeRef.current) {
     storeRef.current = createAppStore({ fileService })
   }
-  return <StoreCtx.Provider value={storeRef.current}>{children}</StoreCtx.Provider>
+  return (
+    <StoreCtx.Provider value={storeRef.current}>
+      <DerivedStoreProvider>{children}</DerivedStoreProvider>
+    </StoreCtx.Provider>
+  )
 }
 
 export function useAppStore<T>(selector: (state: AppStore) => T): T {

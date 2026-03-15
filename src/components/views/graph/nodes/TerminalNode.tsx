@@ -23,6 +23,9 @@ export function TerminalNode({ data, selected }: NodeProps<GraphNode>): ReactNod
         <div className="text-sm font-medium text-text-primary flex-1">{data.label}</div>
         {hasStale && <StaleBadge />}
       </div>
+      {data.subgameSummary && (
+        <div className="text-[10px] font-mono text-text-muted">{data.subgameSummary}</div>
+      )}
 
       {payoffs && Object.keys(payoffs).length > 0 && (
         <div className="flex flex-col gap-1 mt-2">

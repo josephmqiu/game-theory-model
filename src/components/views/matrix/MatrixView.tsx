@@ -12,6 +12,19 @@ import type { EstimateValue } from '../../../types/estimates'
 import { EmptyStateNewGame } from '../../shell/EmptyStateNewGame'
 import { Button } from '../../design-system'
 import { CreateFormalizationWizard } from '../../editors/wizards'
+import { ReadinessPanel } from '../../panels/ReadinessPanel'
+import { SensitivityPanel } from '../../uncertainty/SensitivityPanel'
+import {
+  useReadinessReport,
+  useRunSolver,
+  useSensitivityAnalysis,
+  useSolverResults,
+} from '../../../store'
+import type {
+  DominanceResult,
+  ExpectedUtilityResult,
+  NashResult,
+} from '../../../types/solver-results'
 
 function createEmptyEstimate(): EstimateValue {
   return {
@@ -28,6 +41,12 @@ export function MatrixView(): ReactNode {
   const activeFormalizationId = useAppStore((s) => s.viewState.activeFormalizationId)
   const activeGameId = useAppStore((s) => s.viewState.activeGameId)
   const dispatch = useAppStore((s) => s.dispatch)
+  const readinessReport = useReadinessReport(activeFormalizationId)
+  const solverResults = useSolverResults(activeFormalizationId)
+  const runSolver = useRunSolver()
+  const nashSensitivity = useSensitivityAnalysis(activeFormalizationId, 'nash')
+  const dominanceSensitivity = useSensitivityAnalysis(activeFormalizationId, 'dominance')
+  const expectedUtilitySensitivity = useSensitivityAnalysis(activeFormalizationId, 'expected_utility')
 
   const [selectedCellKey, setSelectedCellKey] = useState<{ rowStrategy: string; colStrategy: string } | null>(null)
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null)
@@ -44,6 +63,33 @@ export function MatrixView(): ReactNode {
     ? `${viewModel.formalization.kind.replace('_', ' ')}`
     : ''
   const title = gameName && formName ? `${gameName} — ${formName}` : gameName || formName
+  const nashResult = (solverResults.nash ?? null) as NashResult | null
+  const dominanceResult = (solverResults.dominance ?? null) as DominanceResult | null
+  const expectedUtilityResult = (solverResults.expected_utility ?? null) as ExpectedUtilityResult | null
+  const activeSensitivity = nashSensitivity ?? dominanceSensitivity ?? expectedUtilitySensitivity
+
+  const equilibriumCells = new Set(
+    (nashResult?.equilibria ?? [])
+      .filter((equilibrium) => equilibrium.type === 'pure')
+      .map((equilibrium) => {
+        const rowEntry = Object.values(equilibrium.strategies)[0]
+        const colEntry = Object.values(equilibrium.strategies)[1]
+        const rowStrategy = rowEntry ? Object.keys(rowEntry.distribution)[0] : ''
+        const colStrategy = colEntry ? Object.keys(colEntry.distribution)[0] : ''
+        return `${rowStrategy}__${colStrategy}`
+      }),
+  )
+
+  const dominatedRowStrategies = new Set(
+    (dominanceResult?.eliminated_strategies ?? [])
+      .filter((entry) => viewModel.players[0] === entry.player_id)
+      .map((entry) => entry.strategy),
+  )
+  const dominatedColStrategies = new Set(
+    (dominanceResult?.eliminated_strategies ?? [])
+      .filter((entry) => viewModel.players[1] === entry.player_id)
+      .map((entry) => entry.strategy),
+  )
 
   const handleCellSelect = useCallback((rowStrategy: string, colStrategy: string) => {
     setSelectedCellKey({ rowStrategy, colStrategy })
@@ -151,6 +197,21 @@ export function MatrixView(): ReactNode {
           </h1>
         )}
 
+        <div className="mb-4 space-y-4">
+          <ReadinessPanel report={readinessReport} />
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => activeFormalizationId && runSolver(activeFormalizationId, 'nash')}>
+              Run Nash
+            </Button>
+            <Button variant="secondary" onClick={() => activeFormalizationId && runSolver(activeFormalizationId, 'dominance')}>
+              Run Dominance
+            </Button>
+            <Button variant="secondary" onClick={() => activeFormalizationId && runSolver(activeFormalizationId, 'expected_utility')}>
+              Run Expected Utility
+            </Button>
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="border-collapse w-full">
             <thead>
@@ -161,7 +222,9 @@ export function MatrixView(): ReactNode {
                 {viewModel.colStrategies.map((strategy) => (
                   <th
                     key={strategy}
-                    className="border border-border p-2 bg-bg-surface text-xs font-mono font-bold text-text-primary"
+                    className={`border border-border p-2 bg-bg-surface text-xs font-mono font-bold text-text-primary ${
+                      dominatedColStrategies.has(strategy) ? 'opacity-50 line-through' : ''
+                    }`}
                   >
                     {strategy}
                   </th>
@@ -171,7 +234,9 @@ export function MatrixView(): ReactNode {
             <tbody>
               {viewModel.rowStrategies.map((rowStrategy) => (
                 <tr key={rowStrategy}>
-                  <th className="border border-border p-2 bg-bg-surface text-xs font-mono font-bold text-text-primary text-left">
+                  <th className={`border border-border p-2 bg-bg-surface text-xs font-mono font-bold text-text-primary text-left ${
+                    dominatedRowStrategies.has(rowStrategy) ? 'opacity-50 line-through' : ''
+                  }`}>
                     {rowStrategy}
                   </th>
                   {viewModel.colStrategies.map((colStrategy) => {
@@ -189,6 +254,10 @@ export function MatrixView(): ReactNode {
                         cell={cell}
                         playerIds={viewModel.players}
                         isSelected={isSelected}
+                        isEquilibrium={equilibriumCells.has(`${rowStrategy}__${colStrategy}`)}
+                        isDominated={
+                          dominatedRowStrategies.has(rowStrategy) || dominatedColStrategies.has(colStrategy)
+                        }
                         onSelect={handleCellSelect}
                       />
                     )
@@ -262,6 +331,41 @@ export function MatrixView(): ReactNode {
             />
           </div>
         )}
+
+        <div className="mt-6 space-y-4">
+          {nashResult && (
+            <div className="rounded border border-border bg-bg-card p-4">
+              <div className="text-xs font-mono uppercase tracking-wide text-text-muted">Nash Result</div>
+              <div className="mt-2 text-sm text-text-primary">
+                {nashResult.equilibria.length} equilibrium{nashResult.equilibria.length === 1 ? '' : 's'}
+              </div>
+              {nashResult.warnings.length > 0 && (
+                <div className="mt-2 text-xs text-text-muted">{nashResult.warnings.join(' ')}</div>
+              )}
+            </div>
+          )}
+          {dominanceResult && (
+            <div className="rounded border border-border bg-bg-card p-4">
+              <div className="text-xs font-mono uppercase tracking-wide text-text-muted">Dominance Result</div>
+              <div className="mt-2 text-sm text-text-primary">
+                Eliminated {dominanceResult.eliminated_strategies.length} strategie{dominanceResult.eliminated_strategies.length === 1 ? 's' : 's'}
+              </div>
+            </div>
+          )}
+          {expectedUtilityResult && (
+            <div className="rounded border border-border bg-bg-card p-4">
+              <div className="text-xs font-mono uppercase tracking-wide text-text-muted">Expected Utility</div>
+              <div className="mt-2 space-y-1 text-xs text-text-muted">
+                {Object.values(expectedUtilityResult.player_utilities).map((utility) => (
+                  <div key={utility.player_id}>
+                    {utility.player_id}: best response {utility.best_response}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <SensitivityPanel analysis={activeSensitivity} />
+        </div>
       </div>
     </div>
   )

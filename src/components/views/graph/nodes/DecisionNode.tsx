@@ -31,6 +31,9 @@ export function DecisionNode({ data, selected }: NodeProps<GraphNode>): ReactNod
             </div>
           )}
           <div className="text-sm font-medium text-text-primary">{data.label}</div>
+          {data.subgameSummary && (
+            <div className="mt-1 text-[10px] font-mono text-text-muted">{data.subgameSummary}</div>
+          )}
         </div>
         {hasStale && <StaleBadge />}
       </div>

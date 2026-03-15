@@ -29,6 +29,9 @@ export function ChanceNode({ data, selected }: NodeProps<GraphNode>): ReactNode 
       {/* Counter-rotated content */}
       <div className="relative z-10 flex flex-col items-center gap-1">
         <div className="text-sm font-medium text-text-primary text-center">{data.label}</div>
+        {data.subgameSummary && (
+          <div className="max-w-[90px] text-center text-[10px] font-mono text-text-muted">{data.subgameSummary}</div>
+        )}
         {hasStale && <StaleBadge />}
       </div>
 

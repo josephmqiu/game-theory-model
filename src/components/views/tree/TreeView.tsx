@@ -24,6 +24,15 @@ import type { EstimateValue } from '../../../types/estimates'
 import { EmptyStateNewGame } from '../../shell/EmptyStateNewGame'
 import { Button } from '../../design-system'
 import { CreateEdgeWizard, CreateNodeWizard } from '../../editors/wizards'
+import { ReadinessPanel } from '../../panels/ReadinessPanel'
+import { SensitivityPanel } from '../../uncertainty/SensitivityPanel'
+import {
+  useReadinessReport,
+  useRunSolver,
+  useSensitivityAnalysis,
+  useSolverResults,
+} from '../../../store'
+import type { BackwardInductionResult } from '../../../types/solver-results'
 
 function createEmptyEstimate(): EstimateValue {
   return {
@@ -52,6 +61,10 @@ export function TreeView(): ReactNode {
   const setInspectedRefs = useAppStore((s) => s.setInspectedRefs)
   const dispatch = useAppStore((s) => s.dispatch)
   const coordination = useCoordinationChannel('tree')
+  const readinessReport = useReadinessReport(activeFormalizationId)
+  const runSolver = useRunSolver()
+  const solverResults = useSolverResults(activeFormalizationId)
+  const sensitivity = useSensitivityAnalysis(activeFormalizationId, 'backward_induction')
 
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null)
@@ -63,6 +76,38 @@ export function TreeView(): ReactNode {
     () => selectExtensiveFormViewModel(canonical, activeFormalizationId),
     [canonical, activeFormalizationId],
   )
+  const backwardResult = (solverResults.backward_induction ?? null) as BackwardInductionResult | null
+  const highlightedEdgeIds = new Set(backwardResult?.solution_path ?? [])
+  const highlightedNodeIds = new Set<string>()
+  if (backwardResult) {
+    highlightedNodeIds.add(viewModel.rootNodeId ?? '')
+    for (const edge of viewModel.edges) {
+      if (highlightedEdgeIds.has(edge.id)) {
+        highlightedNodeIds.add(edge.source)
+        highlightedNodeIds.add(edge.target)
+      }
+    }
+  }
+  const nodesWithSolution = viewModel.nodes.map((node) => ({
+    ...node,
+    data: {
+      ...node.data,
+      highlighted: highlightedNodeIds.has(node.id),
+      subgameSummary: backwardResult?.subgame_values[node.id]
+        ? Object.entries(backwardResult.subgame_values[node.id]!.player_payoffs)
+            .map(([playerId, payoff]) => `${playerId}:${payoff.toFixed(1)}`)
+            .join(' ')
+        : node.data.subgameSummary,
+    },
+  }))
+  const edgesWithSolution = viewModel.edges.map((edge) => ({
+    ...edge,
+    data: {
+      ...edge.data,
+      highlighted: highlightedEdgeIds.has(edge.id),
+      dimmed: backwardResult ? !highlightedEdgeIds.has(edge.id) : false,
+    },
+  }))
 
   const onSelectionChange: OnSelectionChangeFunc = useCallback(
     ({ nodes: selectedNodes }) => {
@@ -163,6 +208,14 @@ export function TreeView(): ReactNode {
 
   return (
     <div className="flex-1 h-full flex flex-col" data-testid="tree-view">
+      <div className="px-6 pt-6 space-y-4">
+        <ReadinessPanel report={readinessReport} />
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => activeFormalizationId && runSolver(activeFormalizationId, 'backward_induction')}>
+            Run Backward Induction
+          </Button>
+        </div>
+      </div>
       <div className="flex-1 relative">
         <div className="absolute right-6 top-6 z-10 flex gap-2">
           <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setShowCreateNode(true)}>
@@ -173,8 +226,8 @@ export function TreeView(): ReactNode {
           </Button>
         </div>
         <ReactFlow
-          nodes={viewModel.nodes}
-          edges={viewModel.edges}
+          nodes={nodesWithSolution}
+          edges={edgesWithSolution}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           onSelectionChange={onSelectionChange}
@@ -254,6 +307,20 @@ export function TreeView(): ReactNode {
           </div>
         </div>
       )}
+      <div className="px-6 pb-6 space-y-4">
+        {backwardResult && (
+          <div className="rounded border border-border bg-bg-card p-4">
+            <div className="text-xs font-mono uppercase tracking-wide text-text-muted">Backward Induction</div>
+            <div className="mt-2 text-xs text-text-muted">
+              Solution path: {backwardResult.solution_path.join(' -> ') || 'No path'}
+            </div>
+            {backwardResult.warnings.length > 0 && (
+              <div className="mt-2 text-xs text-text-muted">{backwardResult.warnings.join(' ')}</div>
+            )}
+          </div>
+        )}
+        <SensitivityPanel analysis={sensitivity} />
+      </div>
       <CreateNodeWizard open={showCreateNode} onClose={() => setShowCreateNode(false)} />
       <CreateEdgeWizard open={showCreateEdge} onClose={() => setShowCreateEdge(false)} />
     </div>

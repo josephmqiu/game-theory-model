@@ -9,6 +9,8 @@ interface PayoffCellProps {
   cell: NormalFormCell | undefined
   playerIds: readonly string[]
   isSelected: boolean
+  isEquilibrium?: boolean
+  isDominated?: boolean
   onSelect: (rowStrategy: string, colStrategy: string) => void
 }
 
@@ -18,6 +20,8 @@ export function PayoffCell({
   cell,
   playerIds,
   isSelected,
+  isEquilibrium,
+  isDominated,
   onSelect,
 }: PayoffCellProps): ReactNode {
   if (!cell) {
@@ -25,7 +29,7 @@ export function PayoffCell({
       <td
         className={`border border-border p-2 text-center text-text-muted text-xs cursor-pointer transition-colors hover:bg-bg-surface ${
           isSelected ? 'ring-2 ring-amber-500 ring-inset' : ''
-        }`}
+        } ${isDominated ? 'opacity-50 line-through' : ''} ${isEquilibrium ? 'bg-green-500/10' : ''}`}
         onClick={() => onSelect(rowStrategy, colStrategy)}
       >
         Add payoff
@@ -37,7 +41,7 @@ export function PayoffCell({
     <td
       className={`border border-border p-2 cursor-pointer transition-colors hover:bg-bg-surface ${
         isSelected ? 'ring-2 ring-amber-500 ring-inset' : ''
-      }`}
+      } ${isDominated ? 'opacity-50 line-through' : ''} ${isEquilibrium ? 'bg-green-500/10 border-green-500/50' : ''}`}
       onClick={() => onSelect(rowStrategy, colStrategy)}
       data-testid={`payoff-cell-${cell.rowStrategy}-${cell.colStrategy}`}
     >

@@ -18,12 +18,15 @@ export interface GraphNodeData {
   staleMarkers: GameNode['stale_markers']
   formalizationId: string
   highlighted?: boolean
+  subgameSummary?: string
   [key: string]: unknown
 }
 
 export interface GraphEdgeData {
   label: string
   staleMarkers: GameEdge['stale_markers']
+  highlighted?: boolean
+  dimmed?: boolean
   [key: string]: unknown
 }
 

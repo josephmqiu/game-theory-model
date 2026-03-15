@@ -16,6 +16,7 @@ import {
 import { buildInverseIndex, type InverseIndex } from '../engine/inverse-index'
 import { loadAnalysisJson } from '../utils/file-io'
 import { BrowserFileService } from '../platform/browser-file-service'
+import { invalidateDerivedForCommand, resetDerivedState } from './derived'
 
 export type ViewType =
   | 'welcome'
@@ -183,6 +184,7 @@ export function createAppStore(
       const result = engineDispatch(state.canonical, state.eventLog, command, opts)
 
       if (result.status === 'committed') {
+        invalidateDerivedForCommand(command, state.canonical, result.store)
         set({
           canonical: result.store,
           eventLog: result.event_log,
@@ -209,6 +211,7 @@ export function createAppStore(
         return false
       }
 
+      invalidateDerivedForCommand(null, state.canonical, result.store)
       set({
         canonical: result.store,
         eventLog: result.eventLog,
@@ -231,6 +234,7 @@ export function createAppStore(
         return false
       }
 
+      invalidateDerivedForCommand(null, state.canonical, result.store)
       set({
         canonical: result.store,
         eventLog: result.eventLog,
@@ -342,6 +346,7 @@ export function createAppStore(
     },
 
     loadFromResult: (result) => {
+      resetDerivedState()
       set({
         canonical: result.store,
         eventLog: result.event_log,
@@ -390,6 +395,7 @@ export function createAppStore(
     },
 
     newAnalysis: () => {
+      resetDerivedState()
       set({
         ...createInitialState(),
       })
