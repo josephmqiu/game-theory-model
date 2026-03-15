@@ -59,4 +59,5 @@ export type BayesianGameModel = import('zod').infer<typeof import('./schemas').b
 export type CoalitionModel = import('zod').infer<typeof import('./schemas').coalitionModelSchema>
 export type BargainingFormalization = import('zod').infer<typeof import('./schemas').bargainingFormalizationSchema>
 export type EvolutionaryFormalization = import('zod').infer<typeof import('./schemas').evolutionaryFormalizationSchema>
+export type SignalingFormalization = import('zod').infer<typeof import('./schemas').signalingFormalizationSchema>
 export type Formalization = import('zod').infer<typeof import('./schemas').formalizationSchema>

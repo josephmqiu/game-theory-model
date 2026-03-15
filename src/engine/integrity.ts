@@ -134,10 +134,60 @@ export const REFERENCE_SCHEMA: Record<EntityType, RefDeclaration[]> = {
     { field: 'key_assumptions', target: 'assumption', cardinality: 'many', required: false, on_delete: 'mark_stale' },
     { field: 'key_latent_factors', target: 'latent_factor', cardinality: 'many', required: false, on_delete: 'remove_ref' },
     { field: 'invalidators', target: ['claim', 'inference', 'assumption'], cardinality: 'many', required: false, on_delete: 'remove_ref' },
+    { field: 'central_thesis_ref', target: 'central_thesis', cardinality: 'one', required: false, on_delete: 'remove_ref' },
+    { field: 'model_basis', target: ['game', 'formalization'], cardinality: 'many', required: false, on_delete: 'remove_ref' },
+    { field: 'cross_game_interactions', target: 'cross_game_link', cardinality: 'many', required: false, on_delete: 'remove_ref' },
   ],
   playbook: [
     { field: 'formalization_id', target: 'formalization', cardinality: 'one', required: true, on_delete: 'cascade_delete' },
     { field: 'derived_from_scenario', target: 'scenario', cardinality: 'one', required: false, on_delete: 'remove_ref' },
+  ],
+  escalation_ladder: [
+    { field: 'game_id', target: 'game', cardinality: 'one', required: true, on_delete: 'cascade_delete' },
+    { field: 'escalation_dominance', target: 'player', cardinality: 'one', required: false, on_delete: 'remove_ref' },
+    { field: 'rungs.*.player_attribution', target: 'player', cardinality: 'one', required: false, on_delete: 'remove_ref' },
+    { field: 'rungs.*.evidence_refs', target: ['source', 'observation', 'claim', 'inference'], cardinality: 'many', required: false, on_delete: 'remove_ref' },
+  ],
+  trust_assessment: [
+    { field: 'assessor_player_id', target: 'player', cardinality: 'one', required: true, on_delete: 'cascade_delete' },
+    { field: 'target_player_id', target: 'player', cardinality: 'one', required: true, on_delete: 'cascade_delete' },
+    { field: 'evidence_refs', target: ['source', 'observation', 'claim', 'inference'], cardinality: 'many', required: false, on_delete: 'remove_ref' },
+    { field: 'driving_patterns', target: 'repeated_game_pattern', cardinality: 'many', required: false, on_delete: 'remove_ref' },
+  ],
+  eliminated_outcome: [
+    { field: 'evidence_refs', target: ['source', 'observation', 'claim', 'inference'], cardinality: 'many', required: false, on_delete: 'remove_ref' },
+    { field: 'related_scenarios', target: 'scenario', cardinality: 'many', required: false, on_delete: 'remove_ref' },
+  ],
+  signal_classification: [
+    { field: 'player_id', target: 'player', cardinality: 'one', required: true, on_delete: 'cascade_delete' },
+    { field: 'evidence_refs', target: ['source', 'observation', 'claim', 'inference'], cardinality: 'many', required: false, on_delete: 'remove_ref' },
+    { field: 'game_refs', target: 'game', cardinality: 'many', required: false, on_delete: 'remove_ref' },
+  ],
+  repeated_game_pattern: [
+    { field: 'game_id', target: 'game', cardinality: 'one', required: true, on_delete: 'cascade_delete' },
+    { field: 'instances.*.evidence_refs', target: ['source', 'observation', 'claim', 'inference'], cardinality: 'many', required: false, on_delete: 'remove_ref' },
+  ],
+  revalidation_event: [
+    { field: 'entity_refs', target: ['game', 'formalization', 'player', 'assumption', 'scenario', 'claim', 'inference'], cardinality: 'many', required: false, on_delete: 'remove_ref' },
+  ],
+  dynamic_inconsistency_risk: [
+    { field: 'player_id', target: 'player', cardinality: 'one', required: true, on_delete: 'cascade_delete' },
+    { field: 'evidence_refs', target: ['source', 'observation', 'claim', 'inference'], cardinality: 'many', required: false, on_delete: 'remove_ref' },
+    { field: 'affected_games', target: 'game', cardinality: 'many', required: false, on_delete: 'remove_ref' },
+  ],
+  cross_game_constraint_table: [
+    { field: 'games', target: 'game', cardinality: 'many', required: false, on_delete: 'remove_ref' },
+    { field: 'trapped_players', target: 'player', cardinality: 'many', required: false, on_delete: 'remove_ref' },
+    { field: 'cells.*.game_ref', target: 'game', cardinality: 'one', required: true, on_delete: 'remove_ref' },
+  ],
+  central_thesis: [
+    { field: 'evidence_refs', target: ['source', 'observation', 'claim', 'inference'], cardinality: 'many', required: false, on_delete: 'remove_ref' },
+    { field: 'assumption_refs', target: 'assumption', cardinality: 'many', required: false, on_delete: 'remove_ref' },
+    { field: 'scenario_refs', target: 'scenario', cardinality: 'many', required: false, on_delete: 'remove_ref' },
+  ],
+  tail_risk: [
+    { field: 'related_scenarios', target: 'scenario', cardinality: 'many', required: false, on_delete: 'remove_ref' },
+    { field: 'evidence_refs', target: ['source', 'observation', 'claim', 'inference'], cardinality: 'many', required: false, on_delete: 'remove_ref' },
   ],
 }
 

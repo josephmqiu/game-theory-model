@@ -16,6 +16,16 @@ import type {
   Scenario,
   Playbook,
   Formalization,
+  EscalationLadder,
+  TrustAssessment,
+  EliminatedOutcome,
+  SignalClassification,
+  RepeatedGamePattern,
+  RevalidationEvent,
+  DynamicInconsistencyRisk,
+  CrossGameConstraintTable,
+  CentralThesis,
+  TailRisk,
 } from '../types'
 import type { EstimateValue } from '../types/estimates'
 import { entityTypes } from '../types/canonical'
@@ -41,6 +51,16 @@ export interface EntityTypeMap {
   cross_game_link: CrossGameLink
   scenario: Scenario
   playbook: Playbook
+  escalation_ladder: EscalationLadder
+  trust_assessment: TrustAssessment
+  eliminated_outcome: EliminatedOutcome
+  signal_classification: SignalClassification
+  repeated_game_pattern: RepeatedGamePattern
+  revalidation_event: RevalidationEvent
+  dynamic_inconsistency_risk: DynamicInconsistencyRisk
+  cross_game_constraint_table: CrossGameConstraintTable
+  central_thesis: CentralThesis
+  tail_risk: TailRisk
 }
 
 export type EntityFor<T extends EntityType> = EntityTypeMap[T]
@@ -104,6 +124,16 @@ export type StructuralCommand =
       kind: 'remove_player_from_game'
       payload: { game_id: string; player_id: string }
     })
+  | (BaseCommand & {
+      kind: 'trigger_revalidation'
+      payload: {
+        trigger_condition: string
+        source_phase: number
+        target_phases: number[]
+        entity_refs: import('../types').EntityRef[]
+        description: string
+      }
+    })
 
 export type DomainCommand =
   | (BaseCommand & {
@@ -154,6 +184,6 @@ export function isCrudCommand(command: Command): command is CrudCommand {
   return /^add_|^update_|^delete_/.test(command.kind)
 }
 
-export function isDeleteCommand(command: Command): command is DeleteEntityCommand<EntityType> {
+export function isDeleteCommand(command: Command): command is Extract<CrudCommand, { kind: `delete_${EntityType}` }> {
   return command.kind.startsWith('delete_')
 }

@@ -1,4 +1,4 @@
-import type { ZodType } from 'zod'
+import { z, type ZodType } from 'zod'
 
 import { analysisFileSchema } from '../types/schemas'
 import type { AnalysisFile, CurrentAnalysisFile } from '../types/file'
@@ -54,22 +54,113 @@ export type MigrationResult =
       recovery_available: true
     }
 
+/**
+ * The v1 schema accepts any object with schema_version: 1 plus the original 16
+ * entity arrays. It uses passthrough() so that files round-trip without losing
+ * unknown keys during the validation step that runs before migration.
+ */
+const v1AnalysisFileSchema = z
+  .object({ schema_version: z.literal(1) })
+  .passthrough() as unknown as ZodType<CurrentAnalysisFile>
+
 function normalizeV1AnalysisFile(data: CurrentAnalysisFile): CurrentAnalysisFile {
   return data
+}
+
+function normalizeV2AnalysisFile(data: CurrentAnalysisFile): CurrentAnalysisFile {
+  return data
+}
+
+const ASSUMPTION_TYPE_MAP: Record<string, string> = {
+  payoff: 'capability',
+  timing: 'institutional',
+  belief: 'information',
+  simplification: 'rationality',
+}
+
+const ABSTRACTION_LEVEL_MAP: Record<string, string> = {
+  coarse: 'minimal',
+  medium: 'moderate',
+}
+
+const NEW_ENTITY_ARRAYS = [
+  'escalation_ladders',
+  'trust_assessments',
+  'eliminated_outcomes',
+  'signal_classifications',
+  'repeated_game_patterns',
+  'revalidation_events',
+  'dynamic_inconsistency_risks',
+  'cross_game_constraint_tables',
+  'central_theses',
+  'tail_risks',
+] as const
+
+const v1ToV2Migration: MigrationTransform = {
+  from: 1,
+  to: 2,
+  description: 'Add 10 new entity types, map legacy assumption types and abstraction levels.',
+  lossy: false,
+  transform(data: unknown): { result: unknown; discarded?: Record<string, unknown> } {
+    const file = data as Record<string, unknown>
+
+    const result: Record<string, unknown> = { ...file, schema_version: 2 }
+
+    for (const key of NEW_ENTITY_ARRAYS) {
+      if (!(key in result)) {
+        result[key] = []
+      }
+    }
+
+    const assumptions = result['assumptions']
+    if (Array.isArray(assumptions)) {
+      result['assumptions'] = assumptions.map(
+        (assumption: Record<string, unknown>) => {
+          const mapped = ASSUMPTION_TYPE_MAP[assumption['type'] as string]
+          if (mapped) {
+            return { ...assumption, type: mapped }
+          }
+          return assumption
+        },
+      )
+    }
+
+    const formalizations = result['formalizations']
+    if (Array.isArray(formalizations)) {
+      result['formalizations'] = formalizations.map(
+        (formalization: Record<string, unknown>) => {
+          const mapped = ABSTRACTION_LEVEL_MAP[formalization['abstraction_level'] as string]
+          if (mapped) {
+            return { ...formalization, abstraction_level: mapped }
+          }
+          return formalization
+        },
+      )
+    }
+
+    return { result }
+  },
 }
 
 const defaultSchemaRegistry: SchemaVersion[] = [
   {
     format: 1,
-    schema: analysisFileSchema,
+    schema: v1AnalysisFileSchema,
     normalize: normalizeV1AnalysisFile,
     released_at: '2026-03-14',
     breaking: false,
   },
+  {
+    format: 2,
+    schema: analysisFileSchema as unknown as ZodType<CurrentAnalysisFile>,
+    normalize: normalizeV2AnalysisFile,
+    released_at: '2026-03-15',
+    breaking: true,
+  },
 ]
 
 const schemaRegistry: SchemaVersion[] = [...defaultSchemaRegistry]
-const migrations: MigrationTransform[] = []
+const migrations: MigrationTransform[] = [v1ToV2Migration]
 
 export function resetSchemaRegistryForTests(
   schemas: ReadonlyArray<SchemaVersion> = defaultSchemaRegistry,

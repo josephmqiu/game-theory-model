@@ -15,6 +15,16 @@ export const entityTypes = [
   'cross_game_link',
   'scenario',
   'playbook',
+  'escalation_ladder',
+  'trust_assessment',
+  'eliminated_outcome',
+  'signal_classification',
+  'repeated_game_pattern',
+  'revalidation_event',
+  'dynamic_inconsistency_risk',
+  'cross_game_constraint_table',
+  'central_thesis',
+  'tail_risk',
 ] as const
 
 export const semanticGameLabels = [
@@ -124,6 +134,16 @@ export type CanonicalStore = {
   cross_game_links: Record<string, import('./evidence').CrossGameLink>
   scenarios: Record<string, import('./evidence').Scenario>
   playbooks: Record<string, import('./evidence').Playbook>
+  escalation_ladders: Record<string, import('./evidence').EscalationLadder>
+  trust_assessments: Record<string, import('./evidence').TrustAssessment>
+  eliminated_outcomes: Record<string, import('./evidence').EliminatedOutcome>
+  signal_classifications: Record<string, import('./evidence').SignalClassification>
+  repeated_game_patterns: Record<string, import('./evidence').RepeatedGamePattern>
+  revalidation_events: Record<string, import('./evidence').RevalidationEvent>
+  dynamic_inconsistency_risks: Record<string, import('./evidence').DynamicInconsistencyRisk>
+  cross_game_constraint_tables: Record<string, import('./evidence').CrossGameConstraintTable>
+  central_theses: Record<string, import('./evidence').CentralThesis>
+  tail_risks: Record<string, import('./evidence').TailRisk>
 }
 
 export const STORE_KEY = {
@@ -143,6 +163,16 @@ export const STORE_KEY = {
   cross_game_link: 'cross_game_links',
   scenario: 'scenarios',
   playbook: 'playbooks',
+  escalation_ladder: 'escalation_ladders',
+  trust_assessment: 'trust_assessments',
+  eliminated_outcome: 'eliminated_outcomes',
+  signal_classification: 'signal_classifications',
+  repeated_game_pattern: 'repeated_game_patterns',
+  revalidation_event: 'revalidation_events',
+  dynamic_inconsistency_risk: 'dynamic_inconsistency_risks',
+  cross_game_constraint_table: 'cross_game_constraint_tables',
+  central_thesis: 'central_theses',
+  tail_risk: 'tail_risks',
 } as const satisfies Record<EntityType, keyof CanonicalStore>
 
 export function refKey(ref: EntityRef): string {
@@ -171,5 +201,15 @@ export function emptyCanonicalStore(): CanonicalStore {
     cross_game_links: {},
     scenarios: {},
     playbooks: {},
+    escalation_ladders: {},
+    trust_assessments: {},
+    eliminated_outcomes: {},
+    signal_classifications: {},
+    repeated_game_patterns: {},
+    revalidation_events: {},
+    dynamic_inconsistency_risks: {},
+    cross_game_constraint_tables: {},
+    central_theses: {},
+    tail_risks: {},
   }
 }

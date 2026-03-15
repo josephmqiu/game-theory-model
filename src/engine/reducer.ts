@@ -242,6 +242,26 @@ export function reduceStore(store: CanonicalStore, command: Command): CanonicalS
       game.players = game.players.filter((playerId) => playerId !== command.payload.player_id)
       return nextStore
     }
+    case 'trigger_revalidation': {
+      const { trigger_condition, source_phase, target_phases, entity_refs, description } = command.payload
+      const id = generateEntityId('revalidation_event')
+      const event: import('../types/evidence').RevalidationEvent = {
+        id,
+        trigger_condition: trigger_condition as import('../types/evidence').RevalidationTrigger,
+        triggered_at: new Date().toISOString(),
+        source_phase,
+        target_phases,
+        description,
+        entity_refs,
+        resolution: 'pending' as const,
+        pass_number: 1,
+      }
+      const nextStore = cloneStore(store)
+      return {
+        ...nextStore,
+        revalidation_events: { ...nextStore.revalidation_events, [id]: event },
+      }
+    }
     case 'apply_cascade_effect':
     case 'promote_play_result':
       throw new CommandError(`Command kind ${command.kind} is not implemented yet.`)

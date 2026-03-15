@@ -76,6 +76,16 @@ export function storeToAnalysisFile(
     cross_game_links: mapToArray(store.cross_game_links),
     scenarios: mapToArray(store.scenarios),
     playbooks: mapToArray(store.playbooks),
+    escalation_ladders: mapToArray(store.escalation_ladders),
+    trust_assessments: mapToArray(store.trust_assessments),
+    eliminated_outcomes: mapToArray(store.eliminated_outcomes),
+    signal_classifications: mapToArray(store.signal_classifications),
+    repeated_game_patterns: mapToArray(store.repeated_game_patterns),
+    revalidation_events: mapToArray(store.revalidation_events),
+    dynamic_inconsistency_risks: mapToArray(store.dynamic_inconsistency_risks),
+    cross_game_constraint_tables: mapToArray(store.cross_game_constraint_tables),
+    central_theses: mapToArray(store.central_theses),
+    tail_risks: mapToArray(store.tail_risks),
     metadata: meta.metadata,
   }
 }
@@ -99,5 +109,15 @@ export function analysisFileToStore(file: AnalysisFile): CanonicalStore {
     cross_game_links: arrayToMap(file.cross_game_links),
     scenarios: arrayToMap(file.scenarios),
     playbooks: arrayToMap(file.playbooks),
+    escalation_ladders: arrayToMap(file.escalation_ladders),
+    trust_assessments: arrayToMap(file.trust_assessments),
+    eliminated_outcomes: arrayToMap(file.eliminated_outcomes),
+    signal_classifications: arrayToMap(file.signal_classifications),
+    repeated_game_patterns: arrayToMap(file.repeated_game_patterns),
+    revalidation_events: arrayToMap(file.revalidation_events),
+    dynamic_inconsistency_risks: arrayToMap(file.dynamic_inconsistency_risks),
+    cross_game_constraint_tables: arrayToMap(file.cross_game_constraint_tables),
+    central_theses: arrayToMap(file.central_theses),
+    tail_risks: arrayToMap(file.tail_risks),
   }
 }

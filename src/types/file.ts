@@ -20,6 +20,16 @@ export const analysisEntityKeys = [
   'cross_game_links',
   'scenarios',
   'playbooks',
+  'escalation_ladders',
+  'trust_assessments',
+  'eliminated_outcomes',
+  'signal_classifications',
+  'repeated_game_patterns',
+  'revalidation_events',
+  'dynamic_inconsistency_risks',
+  'cross_game_constraint_tables',
+  'central_theses',
+  'tail_risks',
 ] as const
 
 export type AnalysisEntityKey = (typeof analysisEntityKeys)[number]

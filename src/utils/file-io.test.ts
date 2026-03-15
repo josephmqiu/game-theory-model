@@ -148,7 +148,7 @@ describe('file io pipeline', () => {
     await saveAnalysisWithIo('/analysis.gta.json', file, fs)
 
     expect(fs.files.get('/analysis.gta.json.backup')).toBe('{"existing":true}')
-    expect(fs.files.get('/analysis.gta.json')).toContain('"schema_version": 1')
+    expect(fs.files.get('/analysis.gta.json')).toContain('"schema_version": 2')
     expect([...fs.files.keys()].some((path) => path.includes('.tmp.'))).toBe(false)
   })
 

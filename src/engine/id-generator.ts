@@ -17,6 +17,16 @@ const ENTITY_ID_PREFIXES = {
   cross_game_link: 'cross_game_link',
   scenario: 'scenario',
   playbook: 'playbook',
+  escalation_ladder: 'escalation_ladder',
+  trust_assessment: 'trust_assessment',
+  eliminated_outcome: 'eliminated_outcome',
+  signal_classification: 'signal_classification',
+  repeated_game_pattern: 'repeated_game_pattern',
+  revalidation_event: 'revalidation_event',
+  dynamic_inconsistency_risk: 'dynamic_inconsistency_risk',
+  cross_game_constraint_table: 'cross_game_constraint_table',
+  central_thesis: 'central_thesis',
+  tail_risk: 'tail_risk',
 } as const satisfies Record<EntityType, string>
 
 const ENTITY_TYPE_ENTRIES = Object.entries(ENTITY_ID_PREFIXES).sort(

@@ -20,6 +20,16 @@ function createScopeSets(): ScopeSets {
     cross_game_link: new Set(),
     scenario: new Set(),
     playbook: new Set(),
+    escalation_ladder: new Set(),
+    trust_assessment: new Set(),
+    eliminated_outcome: new Set(),
+    signal_classification: new Set(),
+    repeated_game_pattern: new Set(),
+    revalidation_event: new Set(),
+    dynamic_inconsistency_risk: new Set(),
+    cross_game_constraint_table: new Set(),
+    central_thesis: new Set(),
+    tail_risk: new Set(),
   }
 }
 

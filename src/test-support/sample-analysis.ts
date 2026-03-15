@@ -302,6 +302,16 @@ export function createSampleCanonicalStore(): CanonicalStore {
         stale_markers: staleMarkers,
       },
     },
+    escalation_ladders: {},
+    trust_assessments: {},
+    eliminated_outcomes: {},
+    signal_classifications: {},
+    repeated_game_patterns: {},
+    revalidation_events: {},
+    dynamic_inconsistency_risks: {},
+    cross_game_constraint_tables: {},
+    central_theses: {},
+    tail_risks: {},
   }
 
   return store

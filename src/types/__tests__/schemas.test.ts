@@ -498,6 +498,16 @@ const canonicalStore = {
   cross_game_links: { [crossGameLink.id]: crossGameLink },
   scenarios: { [scenario.id]: scenario },
   playbooks: { [playbook.id]: playbook },
+  escalation_ladders: {},
+  trust_assessments: {},
+  eliminated_outcomes: {},
+  signal_classifications: {},
+  repeated_game_patterns: {},
+  revalidation_events: {},
+  dynamic_inconsistency_risks: {},
+  cross_game_constraint_tables: {},
+  central_theses: {},
+  tail_risks: {},
 }
 
 describe('session 1.1 foundation contracts', () => {
@@ -505,8 +515,8 @@ describe('session 1.1 foundation contracts', () => {
     const store = emptyCanonicalStore()
     const entityTypeOptions = entityTypeSchema.options as readonly EntityType[]
 
-    expect(entityTypeOptions).toHaveLength(16)
-    expect(Object.keys(STORE_KEY)).toHaveLength(16)
+    expect(entityTypeOptions).toHaveLength(26)
+    expect(Object.keys(STORE_KEY)).toHaveLength(26)
 
     for (const entityType of entityTypeOptions) {
       const key = STORE_KEY[entityType]
@@ -519,7 +529,7 @@ describe('session 1.1 foundation contracts', () => {
     const first = emptyCanonicalStore()
     const second = emptyCanonicalStore()
 
-    expect(Object.keys(first)).toHaveLength(16)
+    expect(Object.keys(first)).toHaveLength(26)
     for (const value of Object.values(first)) {
       expect(value).toEqual({})
     }

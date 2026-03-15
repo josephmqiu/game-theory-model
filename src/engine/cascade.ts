@@ -235,7 +235,7 @@ function makeDeleteCommand(entity: EntityRef): Command {
 
 export function expandCascadeFromImpact(
   store: CanonicalStore,
-  deleteCommand: DeleteEntityCommand<EntityType>,
+  deleteCommand: Command & { payload: { id: string } },
   impact: ImpactReport,
 ): Command {
   const targetType = deleteCommand.kind.slice('delete_'.length) as EntityType
@@ -286,5 +286,5 @@ export function expandCascade(
 ): Command {
   const targetType = deleteCommand.kind.slice('delete_'.length) as EntityType
   const target = createEntityRef(targetType, deleteCommand.payload.id)
-  return expandCascadeFromImpact(store, deleteCommand, computeImpact(store, index, target))
+  return expandCascadeFromImpact(store, deleteCommand as Command & { payload: { id: string } }, computeImpact(store, index, target))
 }

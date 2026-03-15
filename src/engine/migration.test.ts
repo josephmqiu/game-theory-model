@@ -85,7 +85,7 @@ describe('migration engine', () => {
   it('validates and normalizes when the file is already on the current version', async () => {
     const file = storeToAnalysisFile(createSampleCanonicalStore(), createSampleAnalysisMeta())
 
-    const result = await migrateFile(file, 1, 1)
+    const result = await migrateFile(file, 2, 2)
 
     expect(result.status).toBe('success')
     if (result.status !== 'success') {
@@ -102,7 +102,7 @@ describe('migration engine', () => {
     expect(result).toMatchObject({
       status: 'unsupported_version',
       file_version: 9,
-      app_version: 1,
+      app_version: 2,
     })
   })
 
