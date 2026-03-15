@@ -9,6 +9,13 @@ import {
   buildCreateSourceCommand,
   buildCreateClaimCommand,
   buildCreateAssumptionCommand,
+  buildCreateObservationCommand,
+  buildCreateInferenceCommand,
+  buildCreateContradictionCommand,
+  buildCreateLatentFactorCommand,
+  buildCreateCrossGameLinkCommand,
+  buildCreateScenarioCommand,
+  buildCreatePlaybookCommand,
 } from '../builders'
 
 function payload(command: { kind: string; payload?: unknown }): Record<string, unknown> {
@@ -234,5 +241,184 @@ describe('buildCreateAssumptionCommand', () => {
       sensitivity: 'high',
       confidence: 0.85,
     })
+  })
+})
+
+describe('buildCreateObservationCommand', () => {
+  it('produces an add_observation command', () => {
+    const command = buildCreateObservationCommand({
+      sourceId: 's1',
+      text: 'Troop movements observed near border',
+    })
+
+    expect(command.kind).toBe('add_observation')
+    expect(payload(command)).toMatchObject({
+      source_id: 's1',
+      text: 'Troop movements observed near border',
+    })
+    expect(payload(command).captured_at).toBeDefined()
+  })
+})
+
+describe('buildCreateInferenceCommand', () => {
+  it('produces an add_inference command', () => {
+    const command = buildCreateInferenceCommand({
+      statement: 'Military escalation is likely',
+      derivedFrom: ['c1', 'c2'],
+      confidence: 0.75,
+      rationale: 'Based on troop movements and rhetoric',
+    })
+
+    expect(command.kind).toBe('add_inference')
+    expect(payload(command)).toMatchObject({
+      statement: 'Military escalation is likely',
+      derived_from: ['c1', 'c2'],
+      confidence: 0.75,
+      rationale: 'Based on troop movements and rhetoric',
+    })
+  })
+})
+
+describe('buildCreateContradictionCommand', () => {
+  it('produces an add_contradiction command', () => {
+    const command = buildCreateContradictionCommand({
+      leftRef: 'c1',
+      rightRef: 'c2',
+      description: 'Claims about intent conflict',
+      resolutionStatus: 'open',
+      notes: 'Need more data',
+    })
+
+    expect(command.kind).toBe('add_contradiction')
+    expect(payload(command)).toMatchObject({
+      left_ref: 'c1',
+      right_ref: 'c2',
+      description: 'Claims about intent conflict',
+      resolution_status: 'open',
+      notes: 'Need more data',
+    })
+  })
+
+  it('omits notes when not provided', () => {
+    const command = buildCreateContradictionCommand({
+      leftRef: 'c1',
+      rightRef: 'c2',
+      description: 'Conflict',
+      resolutionStatus: 'open',
+    })
+
+    expect(payload(command).notes).toBeUndefined()
+  })
+})
+
+describe('buildCreateLatentFactorCommand', () => {
+  it('produces an add_latent_factor command', () => {
+    const command = buildCreateLatentFactorCommand({
+      name: 'Regime Stability',
+      description: 'Internal political stability of the regime',
+      states: [
+        { label: 'stable', probability: 0.6, confidence: 0.7 },
+        { label: 'unstable', probability: 0.4, confidence: 0.7 },
+      ],
+      affects: ['g1'],
+    })
+
+    expect(command.kind).toBe('add_latent_factor')
+    expect(payload(command)).toMatchObject({
+      name: 'Regime Stability',
+      description: 'Internal political stability of the regime',
+      states: [
+        { label: 'stable', probability: 0.6, confidence: 0.7 },
+        { label: 'unstable', probability: 0.4, confidence: 0.7 },
+      ],
+      affects: ['g1'],
+    })
+  })
+})
+
+describe('buildCreateCrossGameLinkCommand', () => {
+  it('produces an add_cross_game_link command', () => {
+    const command = buildCreateCrossGameLinkCommand({
+      sourceGameId: 'g1',
+      targetGameId: 'g2',
+      triggerRef: 'e1',
+      effectType: 'payoff_shift',
+      targetRef: 'n5',
+      rationale: 'Sanctions affect trade payoffs',
+      targetPlayerId: 'p2',
+    })
+
+    expect(command.kind).toBe('add_cross_game_link')
+    expect(payload(command)).toMatchObject({
+      source_game_id: 'g1',
+      target_game_id: 'g2',
+      trigger_ref: 'e1',
+      effect_type: 'payoff_shift',
+      target_ref: 'n5',
+      rationale: 'Sanctions affect trade payoffs',
+      target_player_id: 'p2',
+    })
+  })
+
+  it('omits target_player_id when not provided', () => {
+    const command = buildCreateCrossGameLinkCommand({
+      sourceGameId: 'g1',
+      targetGameId: 'g2',
+      triggerRef: 'e1',
+      effectType: 'timing_change',
+      targetRef: 'n5',
+      rationale: 'Timing change',
+    })
+
+    expect(payload(command).target_player_id).toBeUndefined()
+  })
+})
+
+describe('buildCreateScenarioCommand', () => {
+  it('produces an add_scenario command', () => {
+    const command = buildCreateScenarioCommand({
+      name: 'Escalation Path',
+      formalizationId: 'f1',
+      narrative: 'Both sides escalate over 3 rounds',
+      probabilityModel: 'independent',
+    })
+
+    expect(command.kind).toBe('add_scenario')
+    expect(payload(command)).toMatchObject({
+      name: 'Escalation Path',
+      formalization_id: 'f1',
+      path: [],
+      probability_model: 'independent',
+      key_assumptions: [],
+      invalidators: [],
+      narrative: 'Both sides escalate over 3 rounds',
+    })
+  })
+})
+
+describe('buildCreatePlaybookCommand', () => {
+  it('produces an add_playbook command', () => {
+    const command = buildCreatePlaybookCommand({
+      name: 'Deterrence Playbook',
+      formalizationId: 'f1',
+      notes: 'Focus on credible threats',
+    })
+
+    expect(command.kind).toBe('add_playbook')
+    expect(payload(command)).toMatchObject({
+      name: 'Deterrence Playbook',
+      formalization_id: 'f1',
+      role_assignments: {},
+      notes: 'Focus on credible threats',
+    })
+  })
+
+  it('omits notes when not provided', () => {
+    const command = buildCreatePlaybookCommand({
+      name: 'Basic',
+      formalizationId: 'f1',
+    })
+
+    expect(payload(command).notes).toBeUndefined()
   })
 })

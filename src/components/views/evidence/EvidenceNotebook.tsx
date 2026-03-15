@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Plus } from 'lucide-react'
 
@@ -7,13 +7,21 @@ import { refKey } from '../../../types/canonical'
 import { Button } from '../../design-system'
 import { coordinationBus, useCoordinationHandler } from '../../../coordination'
 import {
-  useEvidenceLadder,
+  selectEvidenceLadder,
   LADDER_ORDER,
   type EvidenceNotebookEntry,
   type EvidenceLadderType,
 } from '../../../store/selectors/evidence-notebook-selectors'
 import { EvidenceCard } from './EvidenceCard'
 import { ContradictionCard } from './ContradictionCard'
+import {
+  CreateEvidenceWizard,
+  CreateObservationWizard,
+  CreateClaimWizard,
+  CreateInferenceWizard,
+  CreateAssumptionWizard,
+  CreateContradictionWizard,
+} from '../../editors/wizards'
 
 const SECTION_LABELS: Record<EvidenceLadderType, string> = {
   source: 'Sources',
@@ -23,6 +31,8 @@ const SECTION_LABELS: Record<EvidenceLadderType, string> = {
   assumption: 'Assumptions',
   contradiction: 'Contradictions',
 }
+
+type WizardKind = 'source' | 'observation' | 'claim' | 'inference' | 'assumption' | 'contradiction'
 
 function entityTypeForLadderType(ladderType: EvidenceLadderType): string {
   switch (ladderType) {
@@ -51,8 +61,10 @@ export function EvidenceNotebook(): ReactNode {
   const containerRef = useRef<HTMLDivElement>(null)
   const cardRefsMap = useRef<Map<string, HTMLDivElement>>(new Map())
 
+  const [activeWizard, setActiveWizard] = useState<WizardKind | null>(null)
+
   const ladder = useMemo(
-    () => useEvidenceLadder(canonical, activeGameId),
+    () => selectEvidenceLadder(canonical, activeGameId),
     [canonical, activeGameId],
   )
 
@@ -145,6 +157,8 @@ export function EvidenceNotebook(): ReactNode {
     }
   }, [])
 
+  const closeWizard = useCallback(() => setActiveWizard(null), [])
+
   if (!activeGameId) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-muted">
@@ -171,9 +185,17 @@ export function EvidenceNotebook(): ReactNode {
           <h1 className="text-lg font-heading font-bold text-text-primary">
             Evidence Notebook — {gameName}
           </h1>
-          <Button variant="secondary" icon={<Plus size={14} />} onClick={() => {}}>
-            Add Source
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setActiveWizard('source')}>
+              Source
+            </Button>
+            <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setActiveWizard('observation')}>
+              Observation
+            </Button>
+            <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setActiveWizard('claim')}>
+              Claim
+            </Button>
+          </div>
         </div>
 
         {LADDER_ORDER.map((type) => {
@@ -181,10 +203,20 @@ export function EvidenceNotebook(): ReactNode {
 
           return (
             <section key={type} className="mb-6">
-              <h2 className="text-xs font-mono font-bold uppercase tracking-wide text-text-muted mb-3 sticky top-0 bg-bg-page py-1 z-10">
-                {SECTION_LABELS[type]}
-                <span className="ml-2 text-text-muted font-normal">({entries.length})</span>
-              </h2>
+              <div className="flex items-center justify-between sticky top-0 bg-bg-page py-1 z-10">
+                <h2 className="text-xs font-mono font-bold uppercase tracking-wide text-text-muted">
+                  {SECTION_LABELS[type]}
+                  <span className="ml-2 text-text-muted font-normal">({entries.length})</span>
+                </h2>
+                {(type === 'inference' || type === 'assumption' || type === 'contradiction') && (
+                  <button
+                    onClick={() => setActiveWizard(type)}
+                    className="text-[10px] font-mono text-accent hover:text-text-primary transition-colors"
+                  >
+                    + ADD
+                  </button>
+                )}
+              </div>
 
               {entries.length === 0 ? (
                 <div className="text-xs text-text-muted italic py-2">
@@ -222,6 +254,13 @@ export function EvidenceNotebook(): ReactNode {
           )
         })}
       </div>
+
+      <CreateEvidenceWizard open={activeWizard === 'source'} onClose={closeWizard} />
+      <CreateObservationWizard open={activeWizard === 'observation'} onClose={closeWizard} />
+      <CreateClaimWizard open={activeWizard === 'claim'} onClose={closeWizard} />
+      <CreateInferenceWizard open={activeWizard === 'inference'} onClose={closeWizard} />
+      <CreateAssumptionWizard open={activeWizard === 'assumption'} onClose={closeWizard} />
+      <CreateContradictionWizard open={activeWizard === 'contradiction'} onClose={closeWizard} />
     </div>
   )
 }

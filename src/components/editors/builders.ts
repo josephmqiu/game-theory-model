@@ -209,3 +209,143 @@ export function buildCreateAssumptionCommand(input: CreateAssumptionInput): Comm
     },
   }
 }
+
+export interface CreateObservationInput {
+  sourceId: string
+  text: string
+}
+
+export function buildCreateObservationCommand(input: CreateObservationInput): Command {
+  return {
+    kind: 'add_observation',
+    payload: {
+      source_id: input.sourceId,
+      text: input.text,
+      captured_at: new Date().toISOString(),
+    },
+  }
+}
+
+export interface CreateInferenceInput {
+  statement: string
+  derivedFrom: string[]
+  confidence: number
+  rationale: string
+}
+
+export function buildCreateInferenceCommand(input: CreateInferenceInput): Command {
+  return {
+    kind: 'add_inference',
+    payload: {
+      statement: input.statement,
+      derived_from: input.derivedFrom,
+      confidence: input.confidence,
+      rationale: input.rationale,
+    },
+  }
+}
+
+export interface CreateContradictionInput {
+  leftRef: string
+  rightRef: string
+  description: string
+  resolutionStatus: 'open' | 'partially_resolved' | 'resolved' | 'deferred'
+  notes?: string
+}
+
+export function buildCreateContradictionCommand(input: CreateContradictionInput): Command {
+  return {
+    kind: 'add_contradiction',
+    payload: {
+      left_ref: input.leftRef,
+      right_ref: input.rightRef,
+      description: input.description,
+      resolution_status: input.resolutionStatus,
+      notes: input.notes,
+    },
+  }
+}
+
+export interface CreateLatentFactorInput {
+  name: string
+  description?: string
+  states: Array<{ label: string; probability: number; confidence: number }>
+  affects: string[]
+}
+
+export function buildCreateLatentFactorCommand(input: CreateLatentFactorInput): Command {
+  return {
+    kind: 'add_latent_factor',
+    payload: {
+      name: input.name,
+      description: input.description,
+      states: input.states,
+      affects: input.affects,
+    },
+  }
+}
+
+export interface CreateCrossGameLinkInput {
+  sourceGameId: string
+  targetGameId: string
+  triggerRef: string
+  effectType: (typeof import('../../types/evidence').crossGameLinkEffectTypes)[number]
+  targetRef: string
+  rationale: string
+  targetPlayerId?: string
+}
+
+export function buildCreateCrossGameLinkCommand(input: CreateCrossGameLinkInput): Command {
+  return {
+    kind: 'add_cross_game_link',
+    payload: {
+      source_game_id: input.sourceGameId,
+      target_game_id: input.targetGameId,
+      trigger_ref: input.triggerRef,
+      effect_type: input.effectType,
+      target_ref: input.targetRef,
+      rationale: input.rationale,
+      target_player_id: input.targetPlayerId,
+    },
+  }
+}
+
+export interface CreateScenarioInput {
+  name: string
+  formalizationId: string
+  narrative: string
+  probabilityModel: 'independent' | 'dependency_aware' | 'ordinal_only'
+}
+
+export function buildCreateScenarioCommand(input: CreateScenarioInput): Command {
+  return {
+    kind: 'add_scenario',
+    payload: {
+      name: input.name,
+      formalization_id: input.formalizationId,
+      path: [],
+      probability_model: input.probabilityModel,
+      key_assumptions: [],
+      invalidators: [],
+      narrative: input.narrative,
+    },
+  }
+}
+
+export interface CreatePlaybookInput {
+  name: string
+  formalizationId: string
+  notes?: string
+}
+
+export function buildCreatePlaybookCommand(input: CreatePlaybookInput): Command {
+  return {
+    kind: 'add_playbook',
+    payload: {
+      name: input.name,
+      formalization_id: input.formalizationId,
+      role_assignments: {},
+      notes: input.notes,
+    },
+  }
+}
