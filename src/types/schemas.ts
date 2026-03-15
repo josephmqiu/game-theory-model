@@ -646,3 +646,208 @@ export const canonicalStoreSchema = z.object({
   scenarios: z.record(z.string(), scenarioSchema),
   playbooks: z.record(z.string(), playbookSchema),
 })
+
+const persistedBaseFormalizationSchema = baseFormalizationSchema.omit({
+  readiness_cache: true,
+})
+
+const persistedNormalFormModelSchema = persistedBaseFormalizationSchema.extend({
+  kind: z.literal('normal_form'),
+  strategies: z.record(z.string(), z.array(z.string().min(1))),
+  payoff_cells: z.array(normalFormCellSchema),
+})
+
+const persistedExtensiveFormModelSchema = persistedBaseFormalizationSchema.extend({
+  kind: z.literal('extensive_form'),
+  root_node_id: z.string().min(1),
+  information_sets: z.array(informationSetSchema),
+})
+
+const persistedRepeatedGameModelSchema = persistedBaseFormalizationSchema.extend({
+  kind: z.literal('repeated'),
+  stage_formalization_id: z.string().min(1),
+  horizon: z.enum(repeatedGameHorizons),
+  discount_factors: z.record(z.string(), discountModelSchema),
+  equilibrium_selection: z
+    .object({
+      criterion: z.enum(repeatedEquilibriumCriteria),
+      custom_description: z.string().min(1).optional(),
+    })
+    .optional(),
+})
+
+const persistedBayesianGameModelSchema = persistedBaseFormalizationSchema.extend({
+  kind: z.literal('bayesian'),
+  player_types: z.record(z.string(), z.array(playerTypeSchema)),
+  priors: z.array(priorDistributionSchema),
+  signal_structure: signalStructureSchema.optional(),
+})
+
+const persistedCoalitionModelSchema = persistedBaseFormalizationSchema.extend({
+  kind: z.literal('coalition'),
+  agenda_setters: z.array(z.string().min(1)).optional(),
+  coalition_options: z.array(coalitionOptionSchema),
+  solution_concept: z
+    .object({
+      kind: z.enum(coalitionSolutionConceptKinds),
+      characteristic_function: z.record(z.string(), estimateValueSchema).optional(),
+      threat_points: z.record(z.string(), estimateValueSchema).optional(),
+      custom_description: z.string().min(1).optional(),
+    })
+    .optional(),
+})
+
+const persistedBargainingFormalizationSchema = persistedBaseFormalizationSchema.extend({
+  kind: z.literal('bargaining'),
+  protocol: z.enum(bargainingProtocols),
+  parties: z.array(z.string().min(1)).min(1),
+  outside_options: z.record(z.string(), estimateValueSchema),
+  discount_factors: z.record(z.string(), estimateValueSchema),
+  surplus: estimateValueSchema,
+  deadline: z
+    .object({
+      rounds: estimateValueSchema.optional(),
+      pressure_model: z.enum(bargainingPressureModels).optional(),
+      breakdown_probability: estimateValueSchema.optional(),
+    })
+    .optional(),
+  first_mover: z.string().min(1).optional(),
+  commitment_power: z.record(z.string(), estimateValueSchema).optional(),
+})
+
+const persistedEvolutionaryFormalizationBaseSchema = persistedBaseFormalizationSchema.extend({
+  kind: z.literal('evolutionary'),
+  strategy_types: z.array(strategyTypeSchema).readonly(),
+  fitness_matrix: z.record(z.string(), z.record(z.string(), estimateValueSchema)),
+  initial_distribution: z.record(z.string(), z.number()),
+  dynamics: z.enum(evolutionaryDynamics),
+  population_size: populationSizeSchema,
+  mutation_rate: estimateValueSchema.optional(),
+})
+
+const persistedEvolutionaryFormalizationSchema =
+  persistedEvolutionaryFormalizationBaseSchema.superRefine(
+    (value: z.infer<typeof persistedEvolutionaryFormalizationBaseSchema>, ctx) => {
+      const strategyIds = value.strategy_types.map((strategy) => strategy.id)
+      const distributionKeys = Object.keys(value.initial_distribution)
+      const total = Object.values(value.initial_distribution).reduce(
+        (sum, current) => sum + current,
+        0,
+      )
+
+      if (Math.abs(total - 1) > 0.001) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['initial_distribution'],
+          message: 'Initial distribution values must sum to 1.0 ± 0.001.',
+        })
+      }
+
+      for (const key of distributionKeys) {
+        if (!strategyIds.includes(key)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['initial_distribution', key],
+            message: 'Initial distribution keys must match strategy_types ids.',
+          })
+        }
+      }
+
+      for (const key of strategyIds) {
+        if (!(key in value.initial_distribution)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['initial_distribution', key],
+            message: 'Initial distribution must include every strategy type id.',
+          })
+        }
+      }
+
+      const rowKeys = Object.keys(value.fitness_matrix)
+      for (const rowKey of rowKeys) {
+        if (!strategyIds.includes(rowKey)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['fitness_matrix', rowKey],
+            message: 'Fitness matrix rows must match strategy_types ids.',
+          })
+        }
+
+        const columnKeys = Object.keys(value.fitness_matrix[rowKey] ?? {})
+        for (const strategyId of strategyIds) {
+          if (!(strategyId in (value.fitness_matrix[rowKey] ?? {}))) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['fitness_matrix', rowKey, strategyId],
+              message: 'Fitness matrix must be complete for every row/column pair.',
+            })
+          }
+        }
+
+        for (const columnKey of columnKeys) {
+          if (!strategyIds.includes(columnKey)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['fitness_matrix', rowKey, columnKey],
+              message: 'Fitness matrix columns must match strategy_types ids.',
+            })
+          }
+        }
+      }
+
+      for (const strategyId of strategyIds) {
+        if (!(strategyId in value.fitness_matrix)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['fitness_matrix', strategyId],
+            message: 'Fitness matrix must include every strategy type id as a row.',
+          })
+        }
+      }
+    },
+  )
+
+export const persistedFormalizationSchema = z.union([
+  persistedNormalFormModelSchema,
+  persistedExtensiveFormModelSchema,
+  persistedRepeatedGameModelSchema,
+  persistedBayesianGameModelSchema,
+  persistedCoalitionModelSchema,
+  persistedBargainingFormalizationSchema,
+  persistedEvolutionaryFormalizationSchema,
+])
+
+export const analysisFileMetadataSchema = z.object({
+  tags: z.array(z.string()),
+  primary_event_dates: z
+    .object({
+      start: z.string().min(1).optional(),
+      end: z.string().min(1).optional(),
+    })
+    .optional(),
+})
+
+export const analysisFileSchema = z.object({
+  schema_version: z.literal(1),
+  name: z.string().min(1),
+  description: z.string().min(1).optional(),
+  created_at: z.string().min(1),
+  updated_at: z.string().min(1),
+  games: z.array(strategicGameSchema),
+  formalizations: z.array(persistedFormalizationSchema),
+  players: z.array(playerSchema),
+  nodes: z.array(gameNodeSchema),
+  edges: z.array(gameEdgeSchema),
+  sources: z.array(sourceSchema),
+  observations: z.array(observationSchema),
+  claims: z.array(claimSchema),
+  inferences: z.array(inferenceSchema),
+  assumptions: z.array(assumptionSchema),
+  contradictions: z.array(contradictionSchema),
+  derivations: z.array(derivationEdgeSchema),
+  latent_factors: z.array(latentFactorSchema),
+  cross_game_links: z.array(crossGameLinkSchema),
+  scenarios: z.array(scenarioSchema),
+  playbooks: z.array(playbookSchema),
+  metadata: analysisFileMetadataSchema,
+})
