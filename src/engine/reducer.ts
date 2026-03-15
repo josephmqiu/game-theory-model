@@ -144,6 +144,28 @@ export function reduceStore(store: CanonicalStore, command: Command): CanonicalS
       }
       return nextStore
     }
+    case 'update_normal_form_payoff': {
+      const nextStore = cloneStore(store)
+      const formalization = nextStore.formalizations[command.payload.formalization_id]
+      if (!formalization) {
+        throw new CommandError(`Formalization ${command.payload.formalization_id} does not exist.`)
+      }
+      if (formalization.kind !== 'normal_form') {
+        throw new CommandError(
+          `Formalization ${command.payload.formalization_id} is not normal-form.`,
+        )
+      }
+      const cell = formalization.payoff_cells[command.payload.cell_index]
+      if (!cell) {
+        throw new CommandError(`Cell index ${command.payload.cell_index} out of bounds.`)
+      }
+      formalization.payoff_cells = formalization.payoff_cells.map((c, i) =>
+        i === command.payload.cell_index
+          ? { ...c, payoffs: { ...c.payoffs, [command.payload.player_id]: command.payload.value } }
+          : c,
+      )
+      return nextStore
+    }
     case 'mark_stale': {
       const target = findEntityRefById(store, command.payload.id)
       if (!target) {

@@ -74,6 +74,15 @@ export type StructuralCommand =
       payload: { node_id: string; player_id: string; value: EstimateValue }
     })
   | (BaseCommand & {
+      kind: 'update_normal_form_payoff'
+      payload: {
+        formalization_id: string
+        cell_index: number
+        player_id: string
+        value: EstimateValue
+      }
+    })
+  | (BaseCommand & {
       kind: 'mark_stale'
       payload: { id: string; reason: string }
     })
