@@ -35,8 +35,8 @@ function makeTestStore(): CanonicalStore {
     id: 'f1',
     game_id: 'g1',
     kind: 'extensive_form',
-    purpose: 'analysis',
-    abstraction_level: 'full',
+    purpose: 'explanatory',
+    abstraction_level: 'detailed',
     assumptions: [],
     root_node_id: 'n1',
     information_sets: [],
@@ -125,7 +125,7 @@ describe('EntityDetail', () => {
     render(<EntityDetail entityRef={{ type: 'formalization', id: 'f1' }} canonical={store} />)
 
     expect(screen.getByText('extensive_form')).toBeInTheDocument()
-    expect(screen.getByText('analysis')).toBeInTheDocument()
+    expect(screen.getByText('explanatory')).toBeInTheDocument()
     expect(screen.getByText('Prisoner Dilemma')).toBeInTheDocument()
   })
 

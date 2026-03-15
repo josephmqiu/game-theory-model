@@ -41,8 +41,8 @@ function makeTestStore(): CanonicalStore {
     id: 'f1',
     game_id: 'g1',
     kind: 'extensive_form',
-    purpose: 'analysis',
-    abstraction_level: 'full',
+    purpose: 'explanatory',
+    abstraction_level: 'detailed',
     assumptions: [],
     root_node_id: 'n1',
     information_sets: [],
@@ -72,14 +72,14 @@ function makeTestStore(): CanonicalStore {
     label: 'Outcome',
     terminal_payoffs: {
       p1: {
-        representation: 'point',
+        representation: 'cardinal_estimate',
         value: 10,
         confidence: 0.8,
         rationale: 'Best outcome for Alice',
         source_claims: [],
       },
       p2: {
-        representation: 'point',
+        representation: 'cardinal_estimate',
         value: 5,
         confidence: 0.7,
         rationale: 'Moderate for Bob',
