@@ -17,8 +17,8 @@ export function EmptyStateNoAI({ onSetupGuide, onContinueWithoutAI }: EmptyState
       </h3>
       <p className="font-mono text-xs text-text-muted text-center max-w-sm mb-6 leading-relaxed">
         The platform is fully functional without AI. You can manually model games,
-        players, and strategic situations. Connect an AI provider later to enable
-        assisted analysis, automated suggestions, and play-out sessions.
+        players, and strategic situations. Connect an MCP-capable AI client
+        (Claude Desktop, ChatGPT) to enable assisted analysis and play-out sessions.
       </p>
       <div className="flex gap-3">
         <Button variant="secondary" onClick={onSetupGuide}>
