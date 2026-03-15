@@ -8,6 +8,9 @@ import { GraphView } from '../views/graph/GraphView'
 import { EvidenceNotebook } from '../views/evidence/EvidenceNotebook'
 import { MatrixView } from '../views/matrix/MatrixView'
 import { TreeView } from '../views/tree/TreeView'
+import { TimelineView } from '../views/timeline/TimelineView'
+import { PlayerLensView } from '../views/player-lens/PlayerLensView'
+import { DiffView } from '../views/diff/DiffView'
 import { InspectorPanel } from '../inspector'
 
 export function ViewRouter(): ReactNode {
@@ -50,6 +53,12 @@ export function ViewRouter(): ReactNode {
       )
     case 'evidence_notebook':
       return <EvidenceNotebook />
+    case 'timeline':
+      return <TimelineView />
+    case 'player_lens':
+      return <PlayerLensView />
+    case 'diff':
+      return <DiffView />
     default:
       return <div className="p-8 text-text-muted">{activeView}</div>
   }
