@@ -431,3 +431,197 @@ export function buildCreatePlaybookCommand(input: CreatePlaybookInput): Command 
     },
   }
 }
+
+export interface CreateEscalationLadderInput { gameId: string }
+export function buildCreateEscalationLadderCommand(input: CreateEscalationLadderInput): Command {
+  return {
+    kind: 'add_escalation_ladder',
+    payload: {
+      game_id: input.gameId,
+      rungs: [],
+      current_rung_index: null,
+      escalation_dominance: null,
+      stability_instability_paradox: false,
+    },
+  }
+}
+
+export interface CreateTrustAssessmentInput {
+  assessorPlayerId: string
+  targetPlayerId: string
+  level: 'zero' | 'low' | 'moderate' | 'high'
+}
+export function buildCreateTrustAssessmentCommand(input: CreateTrustAssessmentInput): Command {
+  return {
+    kind: 'add_trust_assessment',
+    payload: {
+      assessor_player_id: input.assessorPlayerId,
+      target_player_id: input.targetPlayerId,
+      level: input.level,
+      posterior_belief: {
+        representation: 'ordinal_rank',
+        confidence: 0.5,
+        rationale: 'Initial assessment',
+        source_claims: [],
+      },
+      evidence_refs: [],
+      interaction_history_summary: '',
+      driving_patterns: [],
+      implications: '',
+    },
+  }
+}
+
+export interface CreateEliminatedOutcomeInput { outcomeDescription: string }
+export function buildCreateEliminatedOutcomeCommand(input: CreateEliminatedOutcomeInput): Command {
+  return {
+    kind: 'add_eliminated_outcome',
+    payload: {
+      outcome_description: input.outcomeDescription,
+      elimination_reasoning: 'To be specified',
+      citing_phases: [],
+      evidence_refs: [],
+      surprise_factor: 'medium',
+      related_scenarios: [],
+    },
+  }
+}
+
+export interface CreateSignalClassificationInput {
+  playerId: string
+  classification: 'cheap_talk' | 'costly_signal' | 'audience_cost'
+}
+export function buildCreateSignalClassificationCommand(input: CreateSignalClassificationInput): Command {
+  return {
+    kind: 'add_signal_classification',
+    payload: {
+      player_id: input.playerId,
+      signal_description: 'To be specified',
+      classification: input.classification,
+      cost_description: null,
+      informativeness: 'medium',
+      informativeness_conditions: [],
+      evidence_refs: [],
+      game_refs: [],
+    },
+  }
+}
+
+export interface CreateRepeatedGamePatternInput {
+  gameId: string
+  patternType: 'defection_during_cooperation' | 'tit_for_tat' | 'grim_trigger' | 'selective_forgiveness' | 'dual_track_deception' | 'adverse_selection'
+}
+export function buildCreateRepeatedGamePatternCommand(input: CreateRepeatedGamePatternInput): Command {
+  return {
+    kind: 'add_repeated_game_pattern',
+    payload: {
+      game_id: input.gameId,
+      pattern_type: input.patternType,
+      description: '',
+      instances: [],
+      impact_on_trust: '',
+      impact_on_model: '',
+    },
+  }
+}
+
+export type RevalidationTriggerCondition =
+  | 'new_player_discovered' | 'objective_function_changed' | 'new_game_identified'
+  | 'game_reframed' | 'repeated_dominates_oneshot' | 'new_cross_game_link'
+  | 'escalation_ladder_revision' | 'institutional_constraint_changed'
+  | 'critical_empirical_assumption_invalidated' | 'model_cannot_explain_fact'
+  | 'behavioral_overlay_changes_prediction'
+
+export interface CreateRevalidationEventInput {
+  triggerCondition: RevalidationTriggerCondition
+  sourcePhase: number
+  targetPhases: number[]
+}
+export function buildCreateRevalidationEventCommand(input: CreateRevalidationEventInput): Command {
+  return {
+    kind: 'add_revalidation_event',
+    payload: {
+      trigger_condition: input.triggerCondition,
+      triggered_at: new Date().toISOString(),
+      source_phase: input.sourcePhase,
+      target_phases: input.targetPhases,
+      description: '',
+      entity_refs: [],
+      resolution: 'pending',
+      pass_number: 1,
+    },
+  }
+}
+
+export interface CreateDynamicInconsistencyRiskInput {
+  playerId: string
+  riskType: 'leadership_transition' | 'electoral_cycle' | 'executive_vs_legislative' | 'bureaucratic_reversal' | 'other'
+}
+export function buildCreateDynamicInconsistencyRiskCommand(input: CreateDynamicInconsistencyRiskInput): Command {
+  return {
+    kind: 'add_dynamic_inconsistency_risk',
+    payload: {
+      player_id: input.playerId,
+      commitment_description: '',
+      risk_type: input.riskType,
+      durability: 'moderate',
+      evidence_refs: [],
+      affected_games: [],
+      mitigation: null,
+    },
+  }
+}
+
+export interface CreateCrossGameConstraintTableInput {
+  games: Array<{ type: 'game'; id: string }>
+}
+export function buildCreateCrossGameConstraintTableCommand(input: CreateCrossGameConstraintTableInput): Command {
+  return {
+    kind: 'add_cross_game_constraint_table',
+    payload: {
+      strategies: [],
+      games: input.games,
+      cells: [],
+      trapped_players: [],
+    },
+  }
+}
+
+export interface CreateCentralThesisInput { statement: string }
+export function buildCreateCentralThesisCommand(input: CreateCentralThesisInput): Command {
+  return {
+    kind: 'add_central_thesis',
+    payload: {
+      statement: input.statement,
+      falsification_condition: 'To be specified',
+      evidence_refs: [],
+      assumption_refs: [],
+      scenario_refs: [],
+      forecast_basis: 'mixed',
+    },
+  }
+}
+
+export interface CreateTailRiskInput { eventDescription: string }
+export function buildCreateTailRiskCommand(input: CreateTailRiskInput): Command {
+  return {
+    kind: 'add_tail_risk',
+    payload: {
+      event_description: input.eventDescription,
+      probability: {
+        mode: 'point',
+        confidence: 0.3,
+        rationale: 'Initial tail risk estimate',
+        source_claims: [],
+        assumptions: [],
+      },
+      trigger: 'To be specified',
+      why_unlikely: '',
+      consequences: '',
+      drift_toward: false,
+      drift_evidence: null,
+      related_scenarios: [],
+      evidence_refs: [],
+    },
+  }
+}

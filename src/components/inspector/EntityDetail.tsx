@@ -311,6 +311,128 @@ function EvidenceDetail({
         </Card>
       )
     }
+    case 'escalation_ladder': {
+      const entity = canonical.escalation_ladders[id]
+      if (!entity) return <div className="text-text-muted text-sm">Escalation ladder not found</div>
+      return (
+        <Card title="Escalation Ladder">
+          <DetailRow label="ID"><span className="font-mono text-xs">{id}</span></DetailRow>
+          <DetailRow label="Game">{entity.game_id}</DetailRow>
+          <DetailRow label="Rungs">{entity.rungs.length}</DetailRow>
+          <DetailRow label="Paradox"><Badge>{entity.stability_instability_paradox ? 'yes' : 'no'}</Badge></DetailRow>
+          <StaleSection staleMarkers={entity.stale_markers} />
+        </Card>
+      )
+    }
+    case 'trust_assessment': {
+      const entity = canonical.trust_assessments[id]
+      if (!entity) return <div className="text-text-muted text-sm">Trust assessment not found</div>
+      const assessor = canonical.players[entity.assessor_player_id]?.name ?? entity.assessor_player_id
+      const target = canonical.players[entity.target_player_id]?.name ?? entity.target_player_id
+      return (
+        <Card title="Trust Assessment">
+          <DetailRow label="Assessor">{assessor}</DetailRow>
+          <DetailRow label="Target">{target}</DetailRow>
+          <DetailRow label="Level"><Badge>{entity.level}</Badge></DetailRow>
+          <StaleSection staleMarkers={entity.stale_markers} />
+        </Card>
+      )
+    }
+    case 'eliminated_outcome': {
+      const entity = canonical.eliminated_outcomes[id]
+      if (!entity) return <div className="text-text-muted text-sm">Eliminated outcome not found</div>
+      return (
+        <Card title="Eliminated Outcome">
+          <div className="text-sm text-text-primary mb-2">{entity.outcome_description}</div>
+          <DetailRow label="Surprise"><Badge>{entity.surprise_factor}</Badge></DetailRow>
+          <StaleSection staleMarkers={entity.stale_markers} />
+        </Card>
+      )
+    }
+    case 'signal_classification': {
+      const entity = canonical.signal_classifications[id]
+      if (!entity) return <div className="text-text-muted text-sm">Signal classification not found</div>
+      const player = canonical.players[entity.player_id]?.name ?? entity.player_id
+      return (
+        <Card title="Signal Classification">
+          <DetailRow label="Player">{player}</DetailRow>
+          <DetailRow label="Classification"><Badge>{entity.classification}</Badge></DetailRow>
+          <DetailRow label="Informativeness"><Badge>{entity.informativeness}</Badge></DetailRow>
+          <StaleSection staleMarkers={entity.stale_markers} />
+        </Card>
+      )
+    }
+    case 'repeated_game_pattern': {
+      const entity = canonical.repeated_game_patterns[id]
+      if (!entity) return <div className="text-text-muted text-sm">Repeated game pattern not found</div>
+      return (
+        <Card title="Repeated Game Pattern">
+          <DetailRow label="Pattern"><Badge>{entity.pattern_type}</Badge></DetailRow>
+          <DetailRow label="Instances">{entity.instances.length}</DetailRow>
+          <StaleSection staleMarkers={entity.stale_markers} />
+        </Card>
+      )
+    }
+    case 'revalidation_event': {
+      const entity = canonical.revalidation_events[id]
+      if (!entity) return <div className="text-text-muted text-sm">Revalidation event not found</div>
+      return (
+        <Card title="Revalidation Event">
+          <DetailRow label="Trigger"><Badge>{entity.trigger_condition}</Badge></DetailRow>
+          <DetailRow label="Source phase">{entity.source_phase}</DetailRow>
+          <DetailRow label="Resolution"><Badge>{entity.resolution}</Badge></DetailRow>
+          <DetailRow label="Pass">{entity.pass_number}</DetailRow>
+          <StaleSection staleMarkers={entity.stale_markers} />
+        </Card>
+      )
+    }
+    case 'dynamic_inconsistency_risk': {
+      const entity = canonical.dynamic_inconsistency_risks[id]
+      if (!entity) return <div className="text-text-muted text-sm">Dynamic inconsistency risk not found</div>
+      const player = canonical.players[entity.player_id]?.name ?? entity.player_id
+      return (
+        <Card title="Dynamic Inconsistency Risk">
+          <DetailRow label="Player">{player}</DetailRow>
+          <DetailRow label="Risk type"><Badge>{entity.risk_type}</Badge></DetailRow>
+          <DetailRow label="Durability"><Badge>{entity.durability}</Badge></DetailRow>
+          <StaleSection staleMarkers={entity.stale_markers} />
+        </Card>
+      )
+    }
+    case 'cross_game_constraint_table': {
+      const entity = canonical.cross_game_constraint_tables[id]
+      if (!entity) return <div className="text-text-muted text-sm">Constraint table not found</div>
+      return (
+        <Card title="Cross-Game Constraint Table">
+          <DetailRow label="Strategies">{entity.strategies.length}</DetailRow>
+          <DetailRow label="Games">{entity.games.length}</DetailRow>
+          <DetailRow label="Trapped players">{entity.trapped_players.length}</DetailRow>
+          <StaleSection staleMarkers={entity.stale_markers} />
+        </Card>
+      )
+    }
+    case 'central_thesis': {
+      const entity = canonical.central_theses[id]
+      if (!entity) return <div className="text-text-muted text-sm">Central thesis not found</div>
+      return (
+        <Card title="Central Thesis">
+          <div className="text-sm text-text-primary mb-2">{entity.statement}</div>
+          <DetailRow label="Forecast basis"><Badge>{entity.forecast_basis}</Badge></DetailRow>
+          <StaleSection staleMarkers={entity.stale_markers} />
+        </Card>
+      )
+    }
+    case 'tail_risk': {
+      const entity = canonical.tail_risks[id]
+      if (!entity) return <div className="text-text-muted text-sm">Tail risk not found</div>
+      return (
+        <Card title="Tail Risk">
+          <div className="text-sm text-text-primary mb-2">{entity.event_description}</div>
+          <DetailRow label="Drift toward"><Badge>{entity.drift_toward ? 'yes' : 'no'}</Badge></DetailRow>
+          <StaleSection staleMarkers={entity.stale_markers} />
+        </Card>
+      )
+    }
     default:
       return (
         <Card title={entityType}>

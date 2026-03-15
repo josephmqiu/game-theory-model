@@ -19,15 +19,27 @@ import { BrowserFileService } from '../platform/browser-file-service'
 
 export type ViewType =
   | 'welcome'
+  | 'new_analysis'
+  | 'overview'
+  | 'timeline'
+  | 'scenarios'
+  | 'playout'
+  | 'game_map'
+  | 'evidence'
+  | 'players'
+  | 'assumptions'
+  | 'phase_1' | 'phase_2' | 'phase_3' | 'phase_4' | 'phase_5'
+  | 'phase_6' | 'phase_7' | 'phase_8' | 'phase_9' | 'phase_10'
+  | 'settings'
+  // Legacy views (kept for drill-down access)
   | 'board'
   | 'players_registry'
   | 'evidence_library'
   | 'graph'
   | 'matrix'
   | 'tree'
-  | 'timeline'
-  | 'player_lens'
   | 'evidence_notebook'
+  | 'player_lens'
   | 'scenario'
   | 'play'
   | 'diff'
@@ -55,6 +67,11 @@ export interface AppStore {
     activeFormalizationId: string | null
     inspectedRefs: EntityRef[]
     sidebarCollapsed: boolean
+    inspectorState: {
+      inspectedEntity: EntityRef | null
+      breadcrumb: string[]
+    }
+    phaseStatuses: Record<number, 'pending' | 'active' | 'complete' | 'needs_rerun' | 'partial' | 'review_needed'>
   }
 
   eventLog: EventLog
@@ -111,6 +128,8 @@ function createInitialState() {
       activeFormalizationId: null as string | null,
       inspectedRefs: [] as EntityRef[],
       sidebarCollapsed: false,
+      inspectorState: { inspectedEntity: null, breadcrumb: [] },
+      phaseStatuses: {} as Record<number, 'pending' | 'active' | 'complete' | 'needs_rerun' | 'partial' | 'review_needed'>,
     },
     eventLog: createEventLog(analysisId),
     inverseIndex: {} as InverseIndex,
@@ -343,7 +362,7 @@ export function createAppStore(
         recovery: { active: false },
         viewState: {
           ...get().viewState,
-          activeView: 'board',
+          activeView: 'overview',
         },
       })
     },

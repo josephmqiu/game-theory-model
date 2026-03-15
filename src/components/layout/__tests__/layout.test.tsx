@@ -19,12 +19,12 @@ describe('AppLayout', () => {
     renderWithProviders()
     // STRATEGIC LENS appears in both sidebar and welcome screen — check sidebar specifically
     expect(screen.getAllByText('STRATEGIC LENS').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText('WORKFLOW BOARD')).toBeInTheDocument()
-    expect(screen.getByText('PLAYERS')).toBeInTheDocument()
-    expect(screen.getByText('EVIDENCE')).toBeInTheDocument()
+    expect(screen.getByText('Overview')).toBeInTheDocument()
+    expect(screen.getByText('Players')).toBeInTheDocument()
+    expect(screen.getByText('Evidence')).toBeInTheDocument()
   })
 
-  it('does not show game section when no game selected', () => {
+  it('does not show legacy game section labels in sidebar', () => {
     renderWithProviders()
     expect(screen.queryByText('GRAPH')).not.toBeInTheDocument()
   })

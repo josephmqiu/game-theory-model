@@ -11,7 +11,16 @@ export function InspectorPanel(): ReactNode {
   const setInspectedRefs = useAppStore((s) => s.setInspectedRefs)
 
   if (inspectedRefs.length === 0) {
-    return null
+    return (
+      <div className="w-[320px] flex-shrink-0 h-full border-l border-border bg-bg-surface overflow-y-auto" data-testid="inspector-panel">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <h2 className="text-xs font-mono font-bold uppercase tracking-wide text-text-muted">Inspector</h2>
+        </div>
+        <div className="flex flex-col items-center justify-center h-48 text-text-muted">
+          <p className="text-sm">Click any item to see details</p>
+        </div>
+      </div>
+    )
   }
 
   const primaryRef = inspectedRefs[0]!

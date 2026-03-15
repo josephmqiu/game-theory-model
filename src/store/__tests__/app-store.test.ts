@@ -333,7 +333,7 @@ describe('AppStore', () => {
 
     expect(getState(store).canonical).toEqual(result.store)
     expect(getState(store).fileMeta.path).toBe('loaded-analysis.gta.json')
-    expect(getState(store).viewState.activeView).toBe('board')
+    expect(getState(store).viewState.activeView).toBe('overview')
     expect(getState(store).recovery).toEqual({ active: false })
   })
 
