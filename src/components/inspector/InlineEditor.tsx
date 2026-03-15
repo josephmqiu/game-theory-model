@@ -343,6 +343,7 @@ export function InlineEditor({ entityRef, canonical }: InlineEditorProps): React
   if (!editing) {
     return (
       <button
+        type="button"
         onClick={startEditing}
         className="flex items-center gap-1 text-[11px] font-mono text-accent hover:text-text-primary transition-colors mt-3"
         data-testid="inline-edit-button"
@@ -407,6 +408,7 @@ export function InlineEditor({ entityRef, canonical }: InlineEditorProps): React
 
       <div className="flex gap-2 mt-3">
         <button
+          type="button"
           onClick={saveEditing}
           className="flex items-center gap-1 px-2 py-1 bg-accent text-bg-page rounded font-mono text-[10px] font-bold hover:opacity-90"
         >
@@ -414,6 +416,7 @@ export function InlineEditor({ entityRef, canonical }: InlineEditorProps): React
           Save
         </button>
         <button
+          type="button"
           onClick={cancelEditing}
           className="flex items-center gap-1 px-2 py-1 border border-border text-text-muted rounded font-mono text-[10px] hover:text-text-primary"
         >

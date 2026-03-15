@@ -21,6 +21,7 @@ interface CreatePlayerWizardProps {
 export function CreatePlayerWizard({ open, onClose }: CreatePlayerWizardProps): ReactNode {
   const dispatch = useAppStore((s) => s.dispatch)
   const canonical = useAppStore((s) => s.canonical)
+  const activeGameId = useAppStore((s) => s.viewState.activeGameId)
   const setInspectedRefs = useAppStore((s) => s.setInspectedRefs)
 
   const [name, setName] = useState('')
@@ -41,7 +42,10 @@ export function CreatePlayerWizard({ open, onClose }: CreatePlayerWizardProps): 
     }
 
     const keysBefore = new Set(Object.keys(canonical.players))
-    const command = buildCreatePlayerCommand(validation.data)
+    const command = buildCreatePlayerCommand({
+      ...validation.data,
+      gameIds: activeGameId ? [activeGameId] : [],
+    })
     const result = dispatch(command)
 
     if (result.status === 'committed') {
@@ -57,7 +61,7 @@ export function CreatePlayerWizard({ open, onClose }: CreatePlayerWizardProps): 
     } else if (result.status === 'rejected') {
       setErrors(result.errors)
     }
-  }, [name, type, description, canonical, dispatch, setInspectedRefs, onClose])
+  }, [name, type, description, canonical, dispatch, setInspectedRefs, onClose, activeGameId])
 
   const handleCancel = useCallback(() => {
     setName('')
@@ -82,6 +86,11 @@ export function CreatePlayerWizard({ open, onClose }: CreatePlayerWizardProps): 
         </h2>
 
         <div className="flex flex-col gap-4">
+          {activeGameId && (
+            <div className="rounded border border-border bg-bg-surface px-3 py-2 font-mono text-xs text-text-muted">
+              This player will be attached to the active game automatically.
+            </div>
+          )}
           <div>
             <label className="block font-mono text-xs text-text-muted mb-1">Name</label>
             <input

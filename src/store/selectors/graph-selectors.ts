@@ -2,6 +2,11 @@ import type { Node, Edge } from '@xyflow/react'
 
 import type { CanonicalStore, GameNode, GameEdge } from '../../types/canonical'
 import type { Formalization } from '../../types/formalizations'
+import {
+  buildPlayerColorMap,
+  nodeTypeToReactFlowType,
+  resolvePlayerInfo,
+} from './graph-view-helpers'
 
 export interface GraphNodeData {
   label: string
@@ -31,51 +36,6 @@ export interface GraphViewModel {
   formalization: Formalization | null
 }
 
-const PLAYER_COLORS = [
-  '#3B82F6', // blue
-  '#EF4444', // red
-  '#22C55E', // green
-  '#F59E0B', // amber
-  '#8B5CF6', // violet
-  '#EC4899', // pink
-  '#06B6D4', // cyan
-  '#F97316', // orange
-]
-
-function getPlayerColor(index: number): string {
-  return PLAYER_COLORS[index % PLAYER_COLORS.length] ?? '#6B7280'
-}
-
-function resolvePlayerInfo(
-  node: GameNode,
-  players: CanonicalStore['players'],
-  playerColorMap: Map<string, string>,
-): { playerId: string | null; playerName: string | null; playerColor: string | null } {
-  if (node.actor.kind !== 'player') {
-    return { playerId: null, playerName: null, playerColor: null }
-  }
-
-  const player = players[node.actor.player_id]
-  const color = playerColorMap.get(node.actor.player_id) ?? '#6B7280'
-
-  return {
-    playerId: node.actor.player_id,
-    playerName: player?.name ?? 'Unknown',
-    playerColor: color,
-  }
-}
-
-function nodeTypeToReactFlowType(kind: GameNode['type']): 'decision' | 'chance' | 'terminal' {
-  switch (kind) {
-    case 'decision':
-      return 'decision'
-    case 'chance':
-      return 'chance'
-    case 'terminal':
-      return 'terminal'
-  }
-}
-
 export function buildGraphViewModel(
   canonical: CanonicalStore,
   activeFormalizationId: string | null,
@@ -90,13 +50,7 @@ export function buildGraphViewModel(
   }
 
   // Build player color map from the game's player list
-  const game = canonical.games[formalization.game_id]
-  const playerColorMap = new Map<string, string>()
-  if (game) {
-    for (let i = 0; i < game.players.length; i++) {
-      playerColorMap.set(game.players[i]!, getPlayerColor(i))
-    }
-  }
+  const playerColorMap = buildPlayerColorMap(canonical, formalization.game_id)
 
   // Filter nodes belonging to this formalization
   const formNodes = Object.values(canonical.nodes).filter(

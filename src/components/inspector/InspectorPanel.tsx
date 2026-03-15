@@ -26,6 +26,7 @@ export function InspectorPanel(): ReactNode {
           Inspector
         </h2>
         <button
+          type="button"
           onClick={() => setInspectedRefs([])}
           className="text-text-muted hover:text-text-primary transition-colors p-1"
           aria-label="Close inspector"

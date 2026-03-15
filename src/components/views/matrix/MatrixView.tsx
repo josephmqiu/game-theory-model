@@ -5,12 +5,23 @@ import { useAppStore } from '../../../store'
 import {
   selectNormalFormViewModel,
   findCell,
-  type NormalFormCell,
 } from '../../../store/selectors/normal-form-selectors'
 import { EstimateEditor } from '../../editors/EstimateEditor'
 import { PayoffCell } from './PayoffCell'
 import type { EstimateValue } from '../../../types/estimates'
 import { EmptyStateNewGame } from '../../shell/EmptyStateNewGame'
+import { Button } from '../../design-system'
+import { CreateFormalizationWizard } from '../../editors/wizards'
+
+function createEmptyEstimate(): EstimateValue {
+  return {
+    representation: 'cardinal_estimate',
+    value: 0,
+    confidence: 0.5,
+    rationale: 'Initial analyst estimate.',
+    source_claims: [],
+  }
+}
 
 export function MatrixView(): ReactNode {
   const canonical = useAppStore((s) => s.canonical)
@@ -18,8 +29,10 @@ export function MatrixView(): ReactNode {
   const activeGameId = useAppStore((s) => s.viewState.activeGameId)
   const dispatch = useAppStore((s) => s.dispatch)
 
-  const [selectedCell, setSelectedCell] = useState<NormalFormCell | null>(null)
+  const [selectedCellKey, setSelectedCellKey] = useState<{ rowStrategy: string; colStrategy: string } | null>(null)
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null)
+  const [editingError, setEditingError] = useState<string | null>(null)
+  const [showCreateFormalization, setShowCreateFormalization] = useState(false)
 
   const viewModel = useMemo(
     () => selectNormalFormViewModel(canonical, activeFormalizationId),
@@ -32,36 +45,50 @@ export function MatrixView(): ReactNode {
     : ''
   const title = gameName && formName ? `${gameName} — ${formName}` : gameName || formName
 
-  const handleCellSelect = useCallback((cell: NormalFormCell) => {
-    setSelectedCell(cell)
+  const handleCellSelect = useCallback((rowStrategy: string, colStrategy: string) => {
+    setSelectedCellKey({ rowStrategy, colStrategy })
     setEditingPlayerId(null)
+    setEditingError(null)
   }, [])
 
   const handleEditPayoff = useCallback((playerId: string) => {
     setEditingPlayerId(playerId)
+    setEditingError(null)
   }, [])
 
   const handleSavePayoff = useCallback(
     (updated: EstimateValue) => {
-      if (!selectedCell || !editingPlayerId || !activeFormalizationId) return
+      if (!selectedCellKey || !editingPlayerId || !activeFormalizationId) return
 
-      dispatch({
+      const liveCell = findCell(viewModel, selectedCellKey.rowStrategy, selectedCellKey.colStrategy)
+      const result = dispatch({
         kind: 'update_normal_form_payoff',
         payload: {
           formalization_id: activeFormalizationId,
-          cell_index: selectedCell.cellIndex,
+          cell_index: liveCell?.cellIndex ?? -1,
           player_id: editingPlayerId,
           value: updated,
+          row_strategy: selectedCellKey.rowStrategy,
+          col_strategy: selectedCellKey.colStrategy,
         },
       })
 
-      setEditingPlayerId(null)
+      if (result.status === 'committed') {
+        setEditingPlayerId(null)
+        setEditingError(null)
+        return
+      }
+
+      if (result.status === 'rejected') {
+        setEditingError(result.errors.join('; '))
+      }
     },
-    [selectedCell, editingPlayerId, activeFormalizationId, dispatch],
+    [selectedCellKey, editingPlayerId, activeFormalizationId, dispatch, viewModel],
   )
 
   const handleCancelEdit = useCallback(() => {
     setEditingPlayerId(null)
+    setEditingError(null)
   }, [])
 
   if (!viewModel.formalization) {
@@ -88,6 +115,29 @@ export function MatrixView(): ReactNode {
   const colPlayer = viewModel.players[1]
   const rowPlayerName = rowPlayer ? (canonical.players[rowPlayer]?.name ?? rowPlayer) : ''
   const colPlayerName = colPlayer ? (canonical.players[colPlayer]?.name ?? colPlayer) : ''
+  const selectedCell = selectedCellKey
+    ? findCell(viewModel, selectedCellKey.rowStrategy, selectedCellKey.colStrategy)
+    : undefined
+
+  if (viewModel.players.length < 2 || viewModel.rowStrategies.length === 0 || viewModel.colStrategies.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="max-w-lg text-center">
+          <h2 className="mb-2 text-lg font-heading text-text-primary">Matrix setup incomplete</h2>
+          <p className="mb-4 text-sm text-text-muted">
+            Normal-form views need two players and seed strategies. Create a new normal-form formalization to initialize the matrix.
+          </p>
+          <Button variant="primary" onClick={() => setShowCreateFormalization(true)}>
+            Create Normal-Form Formalization
+          </Button>
+          <CreateFormalizationWizard
+            open={showCreateFormalization}
+            onClose={() => setShowCreateFormalization(false)}
+          />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -127,13 +177,15 @@ export function MatrixView(): ReactNode {
                   {viewModel.colStrategies.map((colStrategy) => {
                     const cell = findCell(viewModel, rowStrategy, colStrategy)
                     const isSelected =
-                      selectedCell !== null &&
-                      selectedCell.rowStrategy === rowStrategy &&
-                      selectedCell.colStrategy === colStrategy
+                      selectedCellKey !== null &&
+                      selectedCellKey.rowStrategy === rowStrategy &&
+                      selectedCellKey.colStrategy === colStrategy
 
                     return (
                       <PayoffCell
                         key={`${rowStrategy}-${colStrategy}`}
+                        rowStrategy={rowStrategy}
+                        colStrategy={colStrategy}
                         cell={cell}
                         playerIds={viewModel.players}
                         isSelected={isSelected}
@@ -147,15 +199,15 @@ export function MatrixView(): ReactNode {
           </table>
         </div>
 
-        {selectedCell && !editingPlayerId && (
+        {selectedCellKey && !editingPlayerId && (
           <div className="mt-4 bg-bg-card border border-border rounded p-4">
             <h3 className="text-xs font-mono font-bold uppercase tracking-wide text-text-muted mb-3">
-              Selected: {selectedCell.rowStrategy} / {selectedCell.colStrategy}
+              Selected: {selectedCellKey.rowStrategy} / {selectedCellKey.colStrategy}
             </h3>
             <div className="flex flex-col gap-2">
               {viewModel.players.map((playerId) => {
                 const playerName = canonical.players[playerId]?.name ?? playerId
-                const payoff = selectedCell.payoffs[playerId]
+                const payoff = selectedCell?.payoffs[playerId]
 
                 return (
                   <div key={playerId} className="flex items-center gap-3">
@@ -171,6 +223,7 @@ export function MatrixView(): ReactNode {
                           conf: {payoff.confidence}
                         </span>
                         <button
+                          type="button"
                           className="text-xs text-accent hover:underline"
                           onClick={() => handleEditPayoff(playerId)}
                         >
@@ -178,7 +231,13 @@ export function MatrixView(): ReactNode {
                         </button>
                       </>
                     ) : (
-                      <span className="text-sm text-text-muted">No payoff</span>
+                      <button
+                        type="button"
+                        className="text-xs text-accent hover:underline"
+                        onClick={() => handleEditPayoff(playerId)}
+                      >
+                        Add payoff
+                      </button>
                     )}
                   </div>
                 )
@@ -187,14 +246,17 @@ export function MatrixView(): ReactNode {
           </div>
         )}
 
-        {selectedCell && editingPlayerId && (
+        {selectedCellKey && editingPlayerId && (
           <div className="mt-4">
             <div className="text-xs text-text-muted mb-2 font-mono">
               Editing payoff for{' '}
               {canonical.players[editingPlayerId]?.name ?? editingPlayerId}
             </div>
+            {editingError && (
+              <div className="mb-2 font-mono text-xs text-warning">{editingError}</div>
+            )}
             <EstimateEditor
-              existing={selectedCell.payoffs[editingPlayerId]!}
+              existing={selectedCell?.payoffs[editingPlayerId] ?? createEmptyEstimate()}
               onSave={handleSavePayoff}
               onCancel={handleCancelEdit}
             />

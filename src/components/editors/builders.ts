@@ -31,20 +31,38 @@ export interface CreatePlayerInput {
   name: string
   type: 'state' | 'organization' | 'individual' | 'coalition' | 'market' | 'public'
   description?: string
+  gameIds?: string[]
 }
 
 export function buildCreatePlayerCommand(input: CreatePlayerInput): Command {
+  const playerId = `player_${crypto.randomUUID()}`
+  const gameIds = input.gameIds ?? []
+
   return {
-    kind: 'add_player',
-    payload: {
-      name: input.name,
-      type: input.type,
-      objectives: [],
-      constraints: [],
-      metadata: input.description
-        ? { description: input.description }
-        : undefined,
-    },
+    kind: 'batch',
+    label: 'Create player',
+    commands: [
+      {
+        kind: 'add_player',
+        id: playerId,
+        payload: {
+          name: input.name,
+          type: input.type,
+          objectives: [],
+          constraints: [],
+          metadata: input.description
+            ? { description: input.description }
+            : undefined,
+        },
+      },
+      ...gameIds.map<Command>((gameId) => ({
+        kind: 'attach_player_to_game',
+        payload: {
+          game_id: gameId,
+          player_id: playerId,
+        },
+      })),
+    ],
   }
 }
 
@@ -58,12 +76,16 @@ export interface CreateNodeInput {
 }
 
 export function buildCreateNodeCommand(input: CreateNodeInput): Command {
-  const actor =
-    input.actorKind === 'player' && input.playerId
-      ? { kind: 'player' as const, player_id: input.playerId }
+  if (input.actorKind === 'player' && !input.playerId) {
+    throw new Error('playerId is required when actorKind is player')
+  }
+
+  const actor: import('../../types/canonical').Actor =
+    input.actorKind === 'player'
+      ? { kind: 'player', player_id: input.playerId! }
       : input.actorKind === 'nature'
-        ? { kind: 'nature' as const }
-        : { kind: 'environment' as const }
+        ? { kind: 'nature' }
+        : { kind: 'environment' }
 
   return {
     kind: 'add_game_node',
@@ -101,43 +123,84 @@ export interface CreateFormalizationInput {
   kind: 'normal_form' | 'extensive_form'
   purpose: 'explanatory' | 'computational' | 'playout'
   abstractionLevel: 'coarse' | 'medium' | 'detailed'
+  rowPlayerId?: string
+  colPlayerId?: string
+  rowStrategies?: string[]
+  colStrategies?: string[]
 }
 
-export function buildCreateFormalizationCommand(input: CreateFormalizationInput): Command {
+export type CreateFormalizationCommandResult = Command & {
+  formalizationId: string
+  rootNodeId?: string
+}
+
+export function buildCreateFormalizationCommand(
+  input: CreateFormalizationInput,
+): CreateFormalizationCommandResult {
+  const formalizationId = `formalization_${crypto.randomUUID()}`
+
   if (input.kind === 'normal_form') {
-    return {
-      kind: 'add_formalization',
-      payload: {
-        game_id: input.gameId,
-        kind: 'normal_form' as const,
-        purpose: input.purpose,
-        abstraction_level: input.abstractionLevel,
-        assumptions: [],
-        strategies: {},
-        payoff_cells: [],
-      } as Omit<import('../../types/formalizations').NormalFormModel, 'id'>,
+    const strategies: Record<string, string[]> = {}
+
+    if (input.rowPlayerId) {
+      strategies[input.rowPlayerId] = input.rowStrategies ?? []
     }
+    if (input.colPlayerId) {
+      strategies[input.colPlayerId] = input.colStrategies ?? []
+    }
+
+    const payoffCells =
+      input.rowPlayerId && input.colPlayerId
+        ? (input.rowStrategies ?? []).flatMap((rowStrategy) =>
+            (input.colStrategies ?? []).map((colStrategy) => ({
+              strategy_profile: {
+                [input.rowPlayerId!]: rowStrategy,
+                [input.colPlayerId!]: colStrategy,
+              },
+              payoffs: {},
+            })),
+          )
+        : []
+
+    const command: Command = {
+      kind: 'batch' as const,
+      label: 'Create normal-form formalization',
+      commands: [
+        {
+          kind: 'add_formalization' as const,
+          id: formalizationId,
+          payload: {
+            game_id: input.gameId,
+            kind: 'normal_form' as const,
+            purpose: input.purpose,
+            abstraction_level: input.abstractionLevel,
+            assumptions: [],
+            strategies,
+            payoff_cells: payoffCells,
+          } as Omit<import('../../types/formalizations').NormalFormModel, 'id'>,
+        },
+        {
+          kind: 'attach_formalization_to_game' as const,
+          payload: {
+            game_id: input.gameId,
+            formalization_id: formalizationId,
+          },
+        },
+      ],
+    }
+
+    return Object.assign(command, { formalizationId })
   }
 
   // For extensive form, auto-create a root decision node and reference it
   const rootNodeId = `game_node_${crypto.randomUUID()}`
-
-  return {
-    kind: 'batch',
+  const command: Command = {
+    kind: 'batch' as const,
     label: 'Create extensive-form formalization with root node',
     commands: [
       {
-        kind: 'add_game_node',
-        id: rootNodeId,
-        payload: {
-          formalization_id: input.gameId,
-          label: 'Root',
-          type: 'decision',
-          actor: { kind: 'nature' },
-        },
-      },
-      {
-        kind: 'add_formalization',
+        kind: 'add_formalization' as const,
+        id: formalizationId,
         payload: {
           game_id: input.gameId,
           kind: 'extensive_form' as const,
@@ -148,8 +211,27 @@ export function buildCreateFormalizationCommand(input: CreateFormalizationInput)
           information_sets: [],
         } as Omit<import('../../types/formalizations').ExtensiveFormModel, 'id'>,
       },
+      {
+        kind: 'attach_formalization_to_game' as const,
+        payload: {
+          game_id: input.gameId,
+          formalization_id: formalizationId,
+        },
+      },
+      {
+        kind: 'add_game_node' as const,
+        id: rootNodeId,
+        payload: {
+          formalization_id: formalizationId,
+          label: 'Root',
+          type: 'decision' as const,
+          actor: { kind: 'nature' as const },
+        },
+      },
     ],
   }
+
+  return Object.assign(command, { formalizationId, rootNodeId })
 }
 
 export interface CreateSourceInput {

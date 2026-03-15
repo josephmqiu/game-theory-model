@@ -16,6 +16,7 @@ export function NavItem({ icon, label, active = false, onClick }: NavItemProps) 
 
   return (
     <button
+      type="button"
       className={`${base} ${active ? activeStyles : inactiveStyles}`}
       onClick={onClick}
     >

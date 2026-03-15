@@ -12,10 +12,10 @@ describe('detectPlatform', () => {
     expect(platform.capabilities.nativeDialogs).toBe(false)
   })
 
-  it('detects tauri platform when Tauri internals present', () => {
+  it('keeps browser platform even when Tauri internals are present', () => {
     ;(globalThis as any).__TAURI_INTERNALS__ = {}
     const platform = detectPlatform()
-    expect(platform.type).toBe('tauri')
-    expect(platform.capabilities.nativeDialogs).toBe(true)
+    expect(platform.type).toBe('browser')
+    expect(platform.capabilities.nativeDialogs).toBe(false)
   })
 })

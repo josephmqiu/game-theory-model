@@ -157,13 +157,66 @@ export function reduceStore(store: CanonicalStore, command: Command): CanonicalS
       }
       const cell = formalization.payoff_cells[command.payload.cell_index]
       if (!cell) {
-        throw new CommandError(`Cell index ${command.payload.cell_index} out of bounds.`)
+        const { row_strategy: rowStrategy, col_strategy: colStrategy } = command.payload
+        if (!rowStrategy || !colStrategy) {
+          throw new CommandError(`Cell index ${command.payload.cell_index} out of bounds.`)
+        }
+
+        const playerIds = Object.keys(formalization.strategies)
+        if (playerIds.length < 2) {
+          throw new CommandError('Normal-form formalization must have two players before editing payoffs.')
+        }
+
+        const rowPlayerId = playerIds[0]!
+        const colPlayerId = playerIds[1]!
+
+        formalization.payoff_cells = [
+          ...formalization.payoff_cells,
+          {
+            strategy_profile: {
+              [rowPlayerId]: rowStrategy,
+              [colPlayerId]: colStrategy,
+            },
+            payoffs: {
+              [command.payload.player_id]: command.payload.value,
+            },
+          },
+        ]
+        return nextStore
       }
       formalization.payoff_cells = formalization.payoff_cells.map((c, i) =>
         i === command.payload.cell_index
           ? { ...c, payoffs: { ...c.payoffs, [command.payload.player_id]: command.payload.value } }
           : c,
       )
+      return nextStore
+    }
+    case 'attach_player_to_game': {
+      const nextStore = cloneStore(store)
+      const game = nextStore.games[command.payload.game_id]
+      if (!game) {
+        throw new CommandError(`Game ${command.payload.game_id} does not exist.`)
+      }
+      if (!(command.payload.player_id in nextStore.players)) {
+        throw new CommandError(`Player ${command.payload.player_id} does not exist.`)
+      }
+      if (!game.players.includes(command.payload.player_id)) {
+        game.players = [...game.players, command.payload.player_id]
+      }
+      return nextStore
+    }
+    case 'attach_formalization_to_game': {
+      const nextStore = cloneStore(store)
+      const game = nextStore.games[command.payload.game_id]
+      if (!game) {
+        throw new CommandError(`Game ${command.payload.game_id} does not exist.`)
+      }
+      if (!(command.payload.formalization_id in nextStore.formalizations)) {
+        throw new CommandError(`Formalization ${command.payload.formalization_id} does not exist.`)
+      }
+      if (!game.formalizations.includes(command.payload.formalization_id)) {
+        game.formalizations = [...game.formalizations, command.payload.formalization_id]
+      }
       return nextStore
     }
     case 'mark_stale': {

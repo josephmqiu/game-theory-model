@@ -66,6 +66,7 @@ export function EvidenceLibrary(): ReactNode {
           EVIDENCE LIBRARY
         </h1>
         <button
+          type="button"
           className="flex items-center gap-1 px-3 py-2 font-mono text-xs font-bold text-bg-page bg-accent rounded hover:opacity-90 transition-opacity"
           onClick={handleAddSource}
         >

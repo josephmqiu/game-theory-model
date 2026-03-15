@@ -5,9 +5,10 @@ import { Plus } from 'lucide-react'
 import { useAppStore } from '../../../store'
 import { refKey } from '../../../types/canonical'
 import { Button } from '../../design-system'
-import { coordinationBus, useCoordinationHandler } from '../../../coordination'
+import { useCoordinationChannel, useCoordinationHandler } from '../../../coordination'
 import {
   selectEvidenceLadder,
+  selectDerivationChain,
   LADDER_ORDER,
   type EvidenceNotebookEntry,
   type EvidenceLadderType,
@@ -58,6 +59,7 @@ export function EvidenceNotebook(): ReactNode {
   const activeGameId = useAppStore((s) => s.viewState.activeGameId)
   const inverseIndex = useAppStore((s) => s.inverseIndex)
   const setInspectedRefs = useAppStore((s) => s.setInspectedRefs)
+  const coordination = useCoordinationChannel('evidence_notebook')
   const containerRef = useRef<HTMLDivElement>(null)
   const cardRefsMap = useRef<Map<string, HTMLDivElement>>(new Map())
 
@@ -84,25 +86,21 @@ export function EvidenceNotebook(): ReactNode {
 
       setInspectedRefs(refs)
 
-      coordinationBus.emit({
+      coordination.emit({
         kind: 'focus_entity',
-        source_view: 'evidence_notebook',
-        correlation_id: crypto.randomUUID(),
         ref: refs[0]!,
       })
 
       // Use InverseIndex to find game nodes that reference this evidence item
       const dependentNodeRefs = findDependentNodeRefs(entityType, entry.id)
 
-      coordinationBus.emit({
+      coordination.emit({
         kind: 'highlight_dependents',
-        source_view: 'evidence_notebook',
-        correlation_id: crypto.randomUUID(),
         root_ref: refs[0]!,
         dependent_refs: dependentNodeRefs,
       })
     },
-    [setInspectedRefs, findDependentNodeRefs],
+    [setInspectedRefs, findDependentNodeRefs, coordination],
   )
 
   const handleContradictionClick = useCallback(
@@ -111,32 +109,27 @@ export function EvidenceNotebook(): ReactNode {
 
       setInspectedRefs(refs)
 
-      coordinationBus.emit({
+      coordination.emit({
         kind: 'focus_entity',
-        source_view: 'evidence_notebook',
-        correlation_id: crypto.randomUUID(),
         ref: refs[0]!,
       })
 
       // Use InverseIndex to find game nodes that reference this contradiction
       const dependentNodeRefs = findDependentNodeRefs('contradiction', contradictionId)
 
-      coordinationBus.emit({
+      coordination.emit({
         kind: 'highlight_dependents',
-        source_view: 'evidence_notebook',
-        correlation_id: crypto.randomUUID(),
         root_ref: refs[0]!,
         dependent_refs: dependentNodeRefs,
       })
     },
-    [setInspectedRefs, findDependentNodeRefs],
+    [setInspectedRefs, findDependentNodeRefs, coordination],
   )
 
   // Cross-view sync: scroll to entity on focus_entity events
   const handleFocusEntity = useCallback(
     (event: import('../../../coordination/types').CoordinationEvent) => {
       if (event.kind !== 'focus_entity') return
-      if (event.source_view === 'evidence_notebook') return
 
       const targetId = event.ref.id
       const cardEl = cardRefsMap.current.get(targetId)
@@ -147,7 +140,7 @@ export function EvidenceNotebook(): ReactNode {
     [],
   )
 
-  useCoordinationHandler('focus_entity', handleFocusEntity)
+  useCoordinationHandler(coordination, 'focus_entity', handleFocusEntity)
 
   const setCardRef = useCallback((id: string, el: HTMLDivElement | null) => {
     if (el) {
@@ -210,6 +203,7 @@ export function EvidenceNotebook(): ReactNode {
                 </h2>
                 {(type === 'inference' || type === 'assumption' || type === 'contradiction') && (
                   <button
+                    type="button"
                     onClick={() => setActiveWizard(type)}
                     className="text-[10px] font-mono text-accent hover:text-text-primary transition-colors"
                   >
@@ -234,6 +228,7 @@ export function EvidenceNotebook(): ReactNode {
                             contradictionId={entry.id}
                             canonical={canonical}
                             onClick={handleContradictionClick}
+                            derivationChain={selectDerivationChain(canonical, entry.id)}
                           />
                         </div>
                       ))
@@ -245,6 +240,7 @@ export function EvidenceNotebook(): ReactNode {
                           <EvidenceCard
                             entry={entry}
                             onClick={handleCardClick}
+                            derivationChain={selectDerivationChain(canonical, entry.id)}
                           />
                         </div>
                       ))}

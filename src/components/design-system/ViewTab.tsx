@@ -16,6 +16,7 @@ export function ViewTab({ icon, label, active = false, onClick }: ViewTabProps) 
 
   return (
     <button
+      type="button"
       className={`${base} ${active ? activeStyles : inactiveStyles}`}
       onClick={onClick}
     >

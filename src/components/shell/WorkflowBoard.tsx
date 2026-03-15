@@ -40,6 +40,7 @@ function GameCard({ game, formalizationCount, onClick }: GameCardProps) {
 
   return (
     <button
+      type="button"
       className="w-full bg-bg-card border border-border rounded p-4 text-left hover:border-accent transition-colors"
       onClick={onClick}
     >
@@ -131,15 +132,16 @@ export function WorkflowBoard(): ReactNode {
           ANALYSIS WORKFLOW
         </h1>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1 px-3 py-2 font-mono text-xs text-text-muted border border-border rounded hover:text-text-primary hover:border-text-muted transition-colors">
+          <button type="button" className="flex items-center gap-1 px-3 py-2 font-mono text-xs text-text-muted border border-border rounded hover:text-text-primary hover:border-text-muted transition-colors">
             <Filter size={12} />
             FILTER
           </button>
-          <button className="flex items-center gap-1 px-3 py-2 font-mono text-xs text-text-muted border border-border rounded hover:text-text-primary hover:border-text-muted transition-colors">
+          <button type="button" className="flex items-center gap-1 px-3 py-2 font-mono text-xs text-text-muted border border-border rounded hover:text-text-primary hover:border-text-muted transition-colors">
             <ArrowUpDown size={12} />
             SORT
           </button>
           <button
+            type="button"
             className="flex items-center gap-1 px-3 py-2 font-mono text-xs font-bold text-bg-page bg-accent rounded hover:opacity-90 transition-opacity"
             onClick={() => setShowCreateGame(true)}
           >

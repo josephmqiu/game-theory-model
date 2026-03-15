@@ -2,30 +2,20 @@ import type { ReactNode } from 'react'
 
 import type { EntityRef, CanonicalStore, EntityType } from '../../types/canonical'
 import { Badge, ConfidenceBadge, StaleBadge, Card, EstimateValueDisplay } from '../design-system'
-import { coordinationBus } from '../../coordination'
-
-function emitFocusEntity(ref: EntityRef): void {
-  coordinationBus.emit({
-    kind: 'focus_entity',
-    // Inspector lives next to the graph view; use 'graph' as source so that
-    // the EvidenceNotebook's handler (which ignores 'evidence_notebook' source)
-    // correctly picks up focus events from the inspector.
-    source_view: 'graph',
-    correlation_id: crypto.randomUUID(),
-    ref,
-  })
-}
+import { useCoordinationChannel } from '../../coordination'
 
 interface EvidenceLinkButtonProps {
   entityRef: EntityRef
   label: string
+  onFocusEntity: (ref: EntityRef) => void
 }
 
-function EvidenceLinkButton({ entityRef, label }: EvidenceLinkButtonProps): ReactNode {
+function EvidenceLinkButton({ entityRef, label, onFocusEntity }: EvidenceLinkButtonProps): ReactNode {
   return (
     <button
+      type="button"
       className="text-xs text-accent hover:underline font-mono truncate max-w-full text-left"
-      onClick={() => emitFocusEntity(entityRef)}
+      onClick={() => onFocusEntity(entityRef)}
       data-testid={`evidence-link-${entityRef.id}`}
     >
       {label}
@@ -190,7 +180,17 @@ function FormalizationDetail({ id, canonical }: { id: string; canonical: Canonic
   )
 }
 
-function EvidenceDetail({ id, entityType, canonical }: { id: string; entityType: EntityType; canonical: CanonicalStore }): ReactNode {
+function EvidenceDetail({
+  id,
+  entityType,
+  canonical,
+  onFocusEntity,
+}: {
+  id: string
+  entityType: EntityType
+  canonical: CanonicalStore
+  onFocusEntity: (ref: EntityRef) => void
+}): ReactNode {
   switch (entityType) {
     case 'source': {
       const source = canonical.sources[id]
@@ -227,6 +227,7 @@ function EvidenceDetail({ id, entityType, canonical }: { id: string; entityType:
                       key={obsId}
                       entityRef={{ type: 'observation', id: obsId }}
                       label={obs ? obs.text.slice(0, 60) : obsId}
+                      onFocusEntity={onFocusEntity}
                     />
                   )
                 })}
@@ -277,6 +278,7 @@ function EvidenceDetail({ id, entityType, canonical }: { id: string; entityType:
                       key={sourceId}
                       entityRef={{ type, id: sourceId }}
                       label={label}
+                      onFocusEntity={onFocusEntity}
                     />
                   )
                 })}
@@ -319,6 +321,14 @@ function EvidenceDetail({ id, entityType, canonical }: { id: string; entityType:
 }
 
 export function EntityDetail({ entityRef, canonical }: EntityDetailProps): ReactNode {
+  const coordination = useCoordinationChannel('graph')
+  const handleFocusEntity = (ref: EntityRef): void => {
+    coordination.emit({
+      kind: 'focus_entity',
+      ref,
+    })
+  }
+
   switch (entityRef.type) {
     case 'game':
       return <GameDetail id={entityRef.id} canonical={canonical} />
@@ -331,6 +341,13 @@ export function EntityDetail({ entityRef, canonical }: EntityDetailProps): React
     case 'formalization':
       return <FormalizationDetail id={entityRef.id} canonical={canonical} />
     default:
-      return <EvidenceDetail id={entityRef.id} entityType={entityRef.type} canonical={canonical} />
+      return (
+        <EvidenceDetail
+          id={entityRef.id}
+          entityType={entityRef.type}
+          canonical={canonical}
+          onFocusEntity={handleFocusEntity}
+        />
+      )
   }
 }

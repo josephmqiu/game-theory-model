@@ -14,6 +14,14 @@ const createNodeSchema = z.object({
   actorKind: z.enum(['player', 'nature', 'environment']),
   playerId: z.string().optional(),
   description: z.string().optional(),
+}).superRefine((value, ctx) => {
+  if (value.actorKind === 'player' && !value.playerId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['playerId'],
+      message: 'Player selection is required for player-controlled nodes',
+    })
+  }
 })
 
 interface CreateNodeWizardProps {
@@ -137,7 +145,7 @@ export function CreateNodeWizard({ open, onClose }: CreateNodeWizardProps): Reac
             </select>
           </div>
 
-          {actorKind === 'player' && gamePlayers.length > 0 && (
+          {actorKind === 'player' && (
             <div>
               <label className="block font-mono text-xs text-text-muted mb-1">Player</label>
               <select
@@ -145,7 +153,9 @@ export function CreateNodeWizard({ open, onClose }: CreateNodeWizardProps): Reac
                 onChange={(e) => setPlayerId(e.target.value)}
                 className="w-full bg-bg-surface border border-border rounded px-3 py-2 font-mono text-sm text-text-primary focus:outline-none focus:border-accent"
               >
-                <option value="">Select player...</option>
+                <option value="">
+                  {gamePlayers.length > 0 ? 'Select player...' : 'Add a player to this game first'}
+                </option>
                 {gamePlayers.map((pid) => (
                   <option key={pid} value={pid}>
                     {canonical.players[pid]?.name ?? pid}

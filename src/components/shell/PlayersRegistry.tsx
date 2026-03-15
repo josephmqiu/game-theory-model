@@ -28,6 +28,7 @@ function PlayerCard({ player, gameCount, onClick }: PlayerCardProps) {
 
   return (
     <button
+      type="button"
       className="bg-bg-card border border-border rounded p-4 text-left hover:border-accent transition-colors w-full"
       onClick={onClick}
     >
@@ -52,6 +53,7 @@ function PlayerCard({ player, gameCount, onClick }: PlayerCardProps) {
 export function PlayersRegistry(): ReactNode {
   const canonical = useAppStore((s) => s.canonical)
   const setInspectedRefs = useAppStore((s) => s.setInspectedRefs)
+  const setActiveView = useAppStore((s) => s.setActiveView)
 
   const [showCreatePlayer, setShowCreatePlayer] = useState(false)
 
@@ -59,6 +61,7 @@ export function PlayersRegistry(): ReactNode {
 
   function handlePlayerClick(playerId: string) {
     setInspectedRefs([{ type: 'player', id: playerId }])
+    setActiveView('player_lens')
   }
 
   return (
@@ -66,6 +69,7 @@ export function PlayersRegistry(): ReactNode {
       <div className="flex items-center justify-between mb-6">
         <h1 className="font-mono font-bold text-lg tracking-widest text-text-primary">PLAYERS</h1>
         <button
+          type="button"
           className="flex items-center gap-1 px-3 py-2 font-mono text-xs font-bold text-bg-page bg-accent rounded hover:opacity-90 transition-opacity"
           onClick={() => setShowCreatePlayer(true)}
         >

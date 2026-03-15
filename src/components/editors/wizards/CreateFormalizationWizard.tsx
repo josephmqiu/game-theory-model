@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { z } from 'zod'
 
@@ -12,11 +12,66 @@ const createFormalizationSchema = z.object({
   kind: z.enum(['normal_form', 'extensive_form']),
   purpose: z.enum(formalizationPurposes),
   abstractionLevel: z.enum(abstractionLevels),
+  rowPlayerId: z.string().optional(),
+  colPlayerId: z.string().optional(),
+  rowStrategies: z.array(z.string()).optional(),
+  colStrategies: z.array(z.string()).optional(),
+}).superRefine((value, ctx) => {
+  if (value.kind !== 'normal_form') {
+    return
+  }
+
+  if (!value.rowPlayerId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['rowPlayerId'],
+      message: 'Row player is required for normal-form setup',
+    })
+  }
+
+  if (!value.colPlayerId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['colPlayerId'],
+      message: 'Column player is required for normal-form setup',
+    })
+  }
+
+  if (value.rowPlayerId && value.colPlayerId && value.rowPlayerId === value.colPlayerId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['colPlayerId'],
+      message: 'Normal-form setup requires two distinct players',
+    })
+  }
+
+  if (!value.rowStrategies || value.rowStrategies.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['rowStrategies'],
+      message: 'Add at least one row strategy',
+    })
+  }
+
+  if (!value.colStrategies || value.colStrategies.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['colStrategies'],
+      message: 'Add at least one column strategy',
+    })
+  }
 })
 
 interface CreateFormalizationWizardProps {
   open: boolean
   onClose: () => void
+}
+
+function parseStrategies(text: string): string[] {
+  return text
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value, index, array) => value.length > 0 && array.indexOf(value) === index)
 }
 
 export function CreateFormalizationWizard({ open, onClose }: CreateFormalizationWizardProps): ReactNode {
@@ -28,7 +83,24 @@ export function CreateFormalizationWizard({ open, onClose }: CreateFormalization
   const [kind, setKind] = useState<'normal_form' | 'extensive_form'>('extensive_form')
   const [purpose, setPurpose] = useState<(typeof formalizationPurposes)[number]>('explanatory')
   const [abstractionLevel, setAbstractionLevel] = useState<(typeof abstractionLevels)[number]>('medium')
+  const [rowPlayerId, setRowPlayerId] = useState('')
+  const [colPlayerId, setColPlayerId] = useState('')
+  const [rowStrategiesText, setRowStrategiesText] = useState('Cooperate, Defect')
+  const [colStrategiesText, setColStrategiesText] = useState('Cooperate, Defect')
   const [errors, setErrors] = useState<string[]>([])
+
+  const activeGame = activeGameId ? canonical.games[activeGameId] : null
+  const availablePlayers = useMemo(
+    () => (activeGame?.players ?? []).map((id) => ({ id, name: canonical.players[id]?.name ?? id })),
+    [activeGame, canonical.players],
+  )
+
+  useEffect(() => {
+    if (availablePlayers.length >= 2) {
+      setRowPlayerId((current) => current || availablePlayers[0]!.id)
+      setColPlayerId((current) => current || availablePlayers[1]!.id)
+    }
+  }, [availablePlayers])
 
   const handleSubmit = useCallback(() => {
     const validation = createFormalizationSchema.safeParse({
@@ -36,55 +108,52 @@ export function CreateFormalizationWizard({ open, onClose }: CreateFormalization
       kind,
       purpose,
       abstractionLevel,
+      rowPlayerId: kind === 'normal_form' ? rowPlayerId : undefined,
+      colPlayerId: kind === 'normal_form' ? colPlayerId : undefined,
+      rowStrategies: kind === 'normal_form' ? parseStrategies(rowStrategiesText) : undefined,
+      colStrategies: kind === 'normal_form' ? parseStrategies(colStrategiesText) : undefined,
     })
 
     if (!validation.success) {
-      setErrors(validation.error.issues.map((i) => i.message))
+      setErrors(validation.error.issues.map((issue) => issue.message))
       return
     }
 
-    const command = buildCreateFormalizationCommand(validation.data)
-    const result = dispatch(command)
+    const buildResult = buildCreateFormalizationCommand(validation.data)
+    const result = dispatch(buildResult)
 
     if (result.status === 'committed') {
-      // Find the newly created formalization ID
-      const previousFormIds = new Set(Object.keys(canonical.formalizations))
-      const formId = Object.keys(result.store.formalizations).find(
-        (id) => !previousFormIds.has(id),
-      )
-
-      if (formId && activeGameId) {
-        // Link the formalization to the game by updating the game's formalizations array
-        const game = result.store.games[activeGameId]
-        if (game) {
-          const updateResult = dispatch({
-            kind: 'update_game',
-            payload: {
-              id: activeGameId,
-              formalizations: [...game.formalizations, formId],
-            },
-          })
-          if (updateResult.status !== 'committed') {
-            setErrors(updateResult.status === 'rejected' ? updateResult.errors : ['Failed to link formalization to game'])
-            return
-          }
-        }
-        setActiveFormalization(formId)
-      }
+      setActiveFormalization(buildResult.formalizationId)
       setKind('extensive_form')
       setPurpose('explanatory')
       setAbstractionLevel('medium')
+      setRowStrategiesText('Cooperate, Defect')
+      setColStrategiesText('Cooperate, Defect')
       setErrors([])
       onClose()
     } else if (result.status === 'rejected') {
       setErrors(result.errors)
     }
-  }, [activeGameId, kind, purpose, abstractionLevel, dispatch, setActiveFormalization, onClose])
+  }, [
+    activeGameId,
+    kind,
+    purpose,
+    abstractionLevel,
+    rowPlayerId,
+    colPlayerId,
+    rowStrategiesText,
+    colStrategiesText,
+    dispatch,
+    setActiveFormalization,
+    onClose,
+  ])
 
   const handleCancel = useCallback(() => {
     setKind('extensive_form')
     setPurpose('explanatory')
     setAbstractionLevel('medium')
+    setRowStrategiesText('Cooperate, Defect')
+    setColStrategiesText('Cooperate, Defect')
     setErrors([])
     onClose()
   }, [onClose])
@@ -99,7 +168,7 @@ export function CreateFormalizationWizard({ open, onClose }: CreateFormalization
         className="bg-bg-card border border-border rounded p-6 w-[480px] max-h-[90vh] overflow-y-auto"
         role="dialog"
         aria-label="Create Formalization"
-        onKeyDown={(e) => { if (e.key === 'Escape') handleCancel() }}
+        onKeyDown={(event) => { if (event.key === 'Escape') handleCancel() }}
       >
         <h2 className="font-mono font-bold text-sm tracking-widest text-text-primary mb-4">
           CREATE FORMALIZATION
@@ -114,7 +183,7 @@ export function CreateFormalizationWizard({ open, onClose }: CreateFormalization
             <label className="block font-mono text-xs text-text-muted mb-1">Kind</label>
             <select
               value={kind}
-              onChange={(e) => setKind(e.target.value as 'normal_form' | 'extensive_form')}
+              onChange={(event) => setKind(event.target.value as 'normal_form' | 'extensive_form')}
               className="w-full bg-bg-surface border border-border rounded px-3 py-2 font-mono text-sm text-text-primary focus:outline-none focus:border-accent"
             >
               <option value="extensive_form">Extensive Form</option>
@@ -126,11 +195,11 @@ export function CreateFormalizationWizard({ open, onClose }: CreateFormalization
             <label className="block font-mono text-xs text-text-muted mb-1">Purpose</label>
             <select
               value={purpose}
-              onChange={(e) => setPurpose(e.target.value as (typeof formalizationPurposes)[number])}
+              onChange={(event) => setPurpose(event.target.value as (typeof formalizationPurposes)[number])}
               className="w-full bg-bg-surface border border-border rounded px-3 py-2 font-mono text-sm text-text-primary focus:outline-none focus:border-accent"
             >
-              {formalizationPurposes.map((p) => (
-                <option key={p} value={p}>{p}</option>
+              {formalizationPurposes.map((value) => (
+                <option key={value} value={value}>{value}</option>
               ))}
             </select>
           </div>
@@ -139,7 +208,7 @@ export function CreateFormalizationWizard({ open, onClose }: CreateFormalization
             <label className="block font-mono text-xs text-text-muted mb-1">Abstraction Level</label>
             <select
               value={abstractionLevel}
-              onChange={(e) => setAbstractionLevel(e.target.value as (typeof abstractionLevels)[number])}
+              onChange={(event) => setAbstractionLevel(event.target.value as (typeof abstractionLevels)[number])}
               className="w-full bg-bg-surface border border-border rounded px-3 py-2 font-mono text-sm text-text-primary focus:outline-none focus:border-accent"
             >
               {abstractionLevels.map((level) => (
@@ -148,10 +217,68 @@ export function CreateFormalizationWizard({ open, onClose }: CreateFormalization
             </select>
           </div>
 
+          {kind === 'normal_form' && (
+            <>
+              <div className="rounded border border-border bg-bg-surface px-3 py-2 text-xs text-text-muted">
+                Normal-form setup requires two players and seed strategies so the matrix is immediately editable.
+              </div>
+
+              <div>
+                <label className="block font-mono text-xs text-text-muted mb-1">Row Player</label>
+                <select
+                  value={rowPlayerId}
+                  onChange={(event) => setRowPlayerId(event.target.value)}
+                  className="w-full bg-bg-surface border border-border rounded px-3 py-2 font-mono text-sm text-text-primary focus:outline-none focus:border-accent"
+                >
+                  <option value="">Select row player...</option>
+                  {availablePlayers.map((player) => (
+                    <option key={player.id} value={player.id}>{player.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-mono text-xs text-text-muted mb-1">Column Player</label>
+                <select
+                  value={colPlayerId}
+                  onChange={(event) => setColPlayerId(event.target.value)}
+                  className="w-full bg-bg-surface border border-border rounded px-3 py-2 font-mono text-sm text-text-primary focus:outline-none focus:border-accent"
+                >
+                  <option value="">Select column player...</option>
+                  {availablePlayers.map((player) => (
+                    <option key={player.id} value={player.id}>{player.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-mono text-xs text-text-muted mb-1">Row Strategies</label>
+                <input
+                  type="text"
+                  value={rowStrategiesText}
+                  onChange={(event) => setRowStrategiesText(event.target.value)}
+                  className="w-full bg-bg-surface border border-border rounded px-3 py-2 font-mono text-sm text-text-primary focus:outline-none focus:border-accent"
+                  placeholder="Comma-separated strategies"
+                />
+              </div>
+
+              <div>
+                <label className="block font-mono text-xs text-text-muted mb-1">Column Strategies</label>
+                <input
+                  type="text"
+                  value={colStrategiesText}
+                  onChange={(event) => setColStrategiesText(event.target.value)}
+                  className="w-full bg-bg-surface border border-border rounded px-3 py-2 font-mono text-sm text-text-primary focus:outline-none focus:border-accent"
+                  placeholder="Comma-separated strategies"
+                />
+              </div>
+            </>
+          )}
+
           {errors.length > 0 && (
             <div className="text-warning text-xs font-mono">
-              {errors.map((err, i) => (
-                <p key={i}>{err}</p>
+              {errors.map((err, index) => (
+                <p key={index}>{err}</p>
               ))}
             </div>
           )}

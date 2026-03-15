@@ -1,6 +1,7 @@
 import type { CanonicalStore, EntityType } from '../../types/canonical'
 import type { EventLog, ModelEvent } from '../../engine/events'
 import { parseCrudCommandKind } from '../../engine/commands'
+import { entityBelongsToGame } from './game-scope'
 
 export type TimelineEntryKind = 'event_time' | 'model_time' | 'evidence_update'
 
@@ -10,6 +11,60 @@ export interface TimelineEntry {
   entity_ref: { type: EntityType; id: string } | null
   kind: TimelineEntryKind
   timestamp: string
+}
+
+function extractRefsFromPatches(event: ModelEvent): Array<{ type: EntityType; id: string }> {
+  const refs: Array<{ type: EntityType; id: string }> = []
+
+  for (const patch of event.patches) {
+    const segments = patch.path.split('/').filter((segment) => segment.length > 0)
+    const collection = segments[0]
+    const id = segments[1]
+    if (!collection || !id) continue
+
+    const collectionToType: Record<string, EntityType> = {
+      games: 'game',
+      formalizations: 'formalization',
+      players: 'player',
+      nodes: 'game_node',
+      edges: 'game_edge',
+      sources: 'source',
+      observations: 'observation',
+      claims: 'claim',
+      inferences: 'inference',
+      assumptions: 'assumption',
+      contradictions: 'contradiction',
+      derivations: 'derivation',
+      latent_factors: 'latent_factor',
+      cross_game_links: 'cross_game_link',
+      scenarios: 'scenario',
+      playbooks: 'playbook',
+    }
+
+    const type = collectionToType[collection]
+    if (type) {
+      refs.push({ type, id })
+    }
+  }
+
+  return refs
+}
+
+function eventBelongsToGame(
+  canonical: CanonicalStore,
+  gameId: string | null,
+  event: ModelEvent,
+): boolean {
+  if (!gameId) {
+    return true
+  }
+
+  const primaryRef = extractEntityRef(event)
+  if (primaryRef && entityBelongsToGame(canonical, gameId, primaryRef)) {
+    return true
+  }
+
+  return extractRefsFromPatches(event).some((ref) => entityBelongsToGame(canonical, gameId, ref))
 }
 
 function classifyEventKind(event: ModelEvent): TimelineEntryKind {
@@ -146,14 +201,17 @@ function extractEntityRef(
 export function selectTimelineEntries(
   canonical: CanonicalStore,
   eventLog: EventLog,
+  gameId: string | null = null,
 ): TimelineEntry[] {
   const activeEvents = eventLog.events.slice(0, eventLog.cursor)
 
-  return activeEvents.map((event) => ({
-    id: event.id,
-    label: buildLabel(event, canonical),
-    entity_ref: extractEntityRef(event),
-    kind: classifyEventKind(event),
-    timestamp: event.timestamp,
-  }))
+  return activeEvents
+    .filter((event) => eventBelongsToGame(canonical, gameId, event))
+    .map((event) => ({
+      id: event.id,
+      label: buildLabel(event, canonical),
+      entity_ref: extractEntityRef(event),
+      kind: classifyEventKind(event),
+      timestamp: event.timestamp,
+    }))
 }

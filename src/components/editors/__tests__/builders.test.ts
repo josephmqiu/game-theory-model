@@ -57,15 +57,18 @@ describe('buildCreateGameCommand', () => {
 })
 
 describe('buildCreatePlayerCommand', () => {
-  it('produces an add_player command', () => {
+  it('produces a player creation batch command', () => {
     const command = buildCreatePlayerCommand({
       name: 'Alice',
       type: 'state',
       description: 'A state actor',
+      gameIds: [],
     })
 
-    expect(command.kind).toBe('add_player')
-    expect(payload(command)).toMatchObject({
+    expect(command.kind).toBe('batch')
+    const batch = command as { kind: 'batch'; commands: Array<{ kind: string; payload?: unknown }> }
+    expect(batch.commands[0]!.kind).toBe('add_player')
+    expect(payload(batch.commands[0]!)).toMatchObject({
       name: 'Alice',
       type: 'state',
       objectives: [],
@@ -78,18 +81,22 @@ describe('buildCreatePlayerCommand', () => {
       name: 'Bob',
       type: 'individual',
       description: 'An individual player',
+      gameIds: [],
     })
 
-    expect(payload(command).metadata).toEqual({ description: 'An individual player' })
+    const batch = command as { kind: 'batch'; commands: Array<{ kind: string; payload?: unknown }> }
+    expect(payload(batch.commands[0]!).metadata).toEqual({ description: 'An individual player' })
   })
 
   it('omits metadata when no description', () => {
     const command = buildCreatePlayerCommand({
       name: 'Charlie',
       type: 'organization',
+      gameIds: [],
     })
 
-    expect(payload(command).metadata).toBeUndefined()
+    const batch = command as { kind: 'batch'; commands: Array<{ kind: string; payload?: unknown }> }
+    expect(payload(batch.commands[0]!).metadata).toBeUndefined()
   })
 })
 
@@ -152,8 +159,12 @@ describe('buildCreateFormalizationCommand', () => {
       abstractionLevel: 'medium',
     })
 
-    expect(command.kind).toBe('add_formalization')
-    expect(payload(command)).toMatchObject({
+    expect(command.kind).toBe('batch')
+    const batch = command as { kind: 'batch'; commands: Array<{ kind: string; payload?: unknown }> }
+    expect(batch.commands).toHaveLength(2)
+    expect(batch.commands[0]!.kind).toBe('add_formalization')
+    expect(batch.commands[1]!.kind).toBe('attach_formalization_to_game')
+    expect(payload(batch.commands[0]!)).toMatchObject({
       game_id: 'g1',
       kind: 'normal_form',
       purpose: 'explanatory',
@@ -173,11 +184,12 @@ describe('buildCreateFormalizationCommand', () => {
 
     expect(command.kind).toBe('batch')
     const batch = command as { kind: 'batch'; commands: Array<{ kind: string; payload?: unknown; id?: string }> }
-    expect(batch.commands).toHaveLength(2)
-    expect(batch.commands[0]!.kind).toBe('add_game_node')
-    expect(batch.commands[1]!.kind).toBe('add_formalization')
+    expect(batch.commands).toHaveLength(3)
+    expect(batch.commands[0]!.kind).toBe('add_formalization')
+    expect(batch.commands[1]!.kind).toBe('attach_formalization_to_game')
+    expect(batch.commands[2]!.kind).toBe('add_game_node')
 
-    const formPayload = batch.commands[1]!.payload as Record<string, unknown>
+    const formPayload = batch.commands[0]!.payload as Record<string, unknown>
     expect(formPayload).toMatchObject({
       game_id: 'g1',
       kind: 'extensive_form',
@@ -186,7 +198,7 @@ describe('buildCreateFormalizationCommand', () => {
       information_sets: [],
     })
     // root_node_id should reference the auto-created node
-    expect(formPayload.root_node_id).toBe(batch.commands[0]!.id)
+    expect(formPayload.root_node_id).toBe(batch.commands[2]!.id)
   })
 })
 

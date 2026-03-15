@@ -1,6 +1,8 @@
+import type { CanonicalStore } from '../../types/canonical'
 import type { EntityType } from '../../types/canonical'
 import type { EventLog, ModelEvent } from '../../engine/events'
 import { parseCrudCommandKind } from '../../engine/commands'
+import { entityBelongsToGame } from './game-scope'
 
 export type DiffChangeType = 'created' | 'updated' | 'deleted' | 'marked_stale' | 'stale_cleared'
 
@@ -133,7 +135,24 @@ function eventToDiffEntries(event: ModelEvent): DiffEntry[] {
   }))
 }
 
-export function selectDiffEntries(eventLog: EventLog): DiffEntry[] {
+export function selectDiffEntries(eventLog: EventLog): DiffEntry[]
+export function selectDiffEntries(
+  canonical: CanonicalStore,
+  eventLog: EventLog,
+  gameId: string | null,
+): DiffEntry[]
+export function selectDiffEntries(
+  canonicalOrEventLog: CanonicalStore | EventLog,
+  maybeEventLog?: EventLog,
+  gameId: string | null = null,
+): DiffEntry[] {
+  const eventLog = maybeEventLog ?? canonicalOrEventLog as EventLog
+  const canonical = maybeEventLog ? canonicalOrEventLog as CanonicalStore : null
   const activeEvents = eventLog.events.slice(0, eventLog.cursor)
-  return activeEvents.flatMap(eventToDiffEntries)
+  const entries = activeEvents.flatMap(eventToDiffEntries)
+  if (!gameId || !canonical) {
+    return entries
+  }
+
+  return entries.filter((entry) => entityBelongsToGame(canonical, gameId, entry.entity_ref))
 }

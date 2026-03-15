@@ -1,5 +1,5 @@
 export { createCoordinationBus } from './bus'
-export { useCoordinationHandler } from './hooks'
+export { useCoordinationChannel, useCoordinationHandler } from './hooks'
 export type {
   CoordinationBus,
   CoordinationEvent,

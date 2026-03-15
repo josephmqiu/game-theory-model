@@ -4,15 +4,17 @@ import { useStore } from 'zustand'
 
 import { createAppStore } from './app-store'
 import type { AppStore } from './app-store'
+import { usePlatform } from '../platform'
 
 type AppStoreApi = ReturnType<typeof createAppStore>
 
 const StoreCtx = createContext<AppStoreApi | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }): ReactNode {
+  const { fileService } = usePlatform()
   const storeRef = useRef<AppStoreApi>(null)
   if (!storeRef.current) {
-    storeRef.current = createAppStore()
+    storeRef.current = createAppStore({ fileService })
   }
   return <StoreCtx.Provider value={storeRef.current}>{children}</StoreCtx.Provider>
 }

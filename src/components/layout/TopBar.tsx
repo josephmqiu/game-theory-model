@@ -13,6 +13,7 @@ interface ToolbarButtonProps {
 function ToolbarButton({ disabled, onClick, title, children }: ToolbarButtonProps): ReactNode {
   return (
     <button
+      type="button"
       className="flex items-center justify-center w-8 h-8 rounded text-text-dim hover:text-text-primary hover:bg-white/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       disabled={disabled}
       onClick={onClick}
@@ -76,16 +77,19 @@ export function TopBar(): ReactNode {
   const canSave = fileMeta.dirty
 
   function handleSave() {
-    saveFile().catch(() => {
-      // saveFile not yet implemented — silently ignore
-    })
+    void saveFile()
   }
 
   return (
     <header className="flex items-center justify-between h-12 px-6 border-b border-border-subtle flex-shrink-0">
       <Breadcrumb segments={breadcrumbs} />
 
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-3">
+        {fileMeta.error && (
+          <span className="font-mono text-[10px] text-warning max-w-[260px] truncate">
+            {fileMeta.error}
+          </span>
+        )}
         <ToolbarButton disabled={!canUndo} onClick={() => undo()} title="Undo">
           <Undo2 className="w-4 h-4" />
         </ToolbarButton>

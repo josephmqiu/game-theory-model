@@ -2,6 +2,8 @@ import type { ReactNode } from 'react'
 
 import { Badge } from '../../design-system'
 import type { CanonicalStore } from '../../../types/canonical'
+import type { DerivationChainResult } from '../../../store/selectors/evidence-notebook-selectors'
+import { DerivationChain } from './DerivationChain'
 
 const RESOLUTION_COLORS: Record<string, string> = {
   open: '#EF4444',
@@ -14,12 +16,14 @@ interface ContradictionCardProps {
   contradictionId: string
   canonical: CanonicalStore
   onClick: (contradictionId: string) => void
+  derivationChain?: DerivationChainResult
 }
 
 export function ContradictionCard({
   contradictionId,
   canonical,
   onClick,
+  derivationChain,
 }: ContradictionCardProps): ReactNode {
   const contradiction = canonical.contradictions[contradictionId]
 
@@ -33,6 +37,7 @@ export function ContradictionCard({
 
   return (
     <button
+      type="button"
       className="w-full text-left bg-bg-card border border-border rounded px-4 py-3 hover:border-accent transition-colors cursor-pointer"
       onClick={() => onClick(contradictionId)}
       data-testid={`contradiction-card-${contradictionId}`}
@@ -60,6 +65,12 @@ export function ContradictionCard({
       {contradiction.description && (
         <div className="mt-2 text-xs text-text-muted">
           {contradiction.description}
+        </div>
+      )}
+
+      {derivationChain && (
+        <div className="mt-2">
+          <DerivationChain entityId={contradictionId} chain={derivationChain} />
         </div>
       )}
     </button>

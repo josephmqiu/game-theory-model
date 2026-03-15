@@ -3,6 +3,7 @@ import { createStore } from 'zustand/vanilla'
 import type { CanonicalStore, EntityRef } from '../types/canonical'
 import { emptyCanonicalStore } from '../types/canonical'
 import type { AnalysisFileMeta, LoadResult } from '../types/file'
+import type { FileService } from '../platform'
 import type { Command } from '../engine/commands'
 import type { EventLog, ModelEvent } from '../engine/events'
 import { createEventLog } from '../engine/events'
@@ -13,6 +14,8 @@ import {
   type DispatchResult,
 } from '../engine/dispatch'
 import { buildInverseIndex, type InverseIndex } from '../engine/inverse-index'
+import { loadAnalysisJson } from '../utils/file-io'
+import { BrowserFileService } from '../platform/browser-file-service'
 
 export type ViewType =
   | 'welcome'
@@ -61,6 +64,7 @@ export interface AppStore {
     meta: AnalysisFileMeta | null
     lastSaved: number | null
     dirty: boolean
+    error: string | null
   }
 
   recovery: RecoveryState
@@ -80,8 +84,11 @@ export interface AppStore {
   // File actions
   loadFile: (filepath?: string) => Promise<void>
   saveFile: () => Promise<void>
+  saveFileAs: () => Promise<void>
   loadFromResult: (result: Extract<LoadResult, { status: 'success' }>) => void
+  retryRecovery: (rawJson: string) => Promise<void>
   newAnalysis: () => void
+  clearFileError: () => void
 
   // L2 actions
   setActiveView: (view: ViewType) => void
@@ -112,12 +119,34 @@ function createInitialState() {
       meta: null as AnalysisFileMeta | null,
       lastSaved: null as number | null,
       dirty: false,
+      error: null as string | null,
     },
     recovery: { active: false } as RecoveryState,
   }
 }
 
-export function createAppStore() {
+function createDefaultMeta(existing: AnalysisFileMeta | null): AnalysisFileMeta {
+  const now = new Date().toISOString()
+  return {
+    name: existing?.name ?? 'Untitled analysis',
+    description: existing?.description ?? '',
+    created_at: existing?.created_at ?? now,
+    updated_at: now,
+    metadata: existing?.metadata ?? { tags: [] },
+  }
+}
+
+function fileErrorFromResult(result: Exclude<LoadResult, { status: 'success' }>): string {
+  return `${result.stage}: ${result.error.message}`
+}
+
+export interface AppStoreDependencies {
+  fileService: FileService
+}
+
+export function createAppStore(
+  { fileService = new BrowserFileService() }: Partial<AppStoreDependencies> = {},
+) {
   return createStore<AppStore>((set, get) => ({
     ...createInitialState(),
 
@@ -142,6 +171,7 @@ export function createAppStore() {
           fileMeta: {
             ...state.fileMeta,
             dirty: true,
+            error: null,
           },
         })
       }
@@ -167,6 +197,7 @@ export function createAppStore() {
         fileMeta: {
           ...state.fileMeta,
           dirty: true,
+          error: null,
         },
       })
 
@@ -188,18 +219,107 @@ export function createAppStore() {
         fileMeta: {
           ...state.fileMeta,
           dirty: true,
+          error: null,
         },
       })
 
       return true
     },
 
-    loadFile: async (_filepath?: string) => {
-      console.warn('File loading not yet wired to platform service')
+    loadFile: async (filepath?: string) => {
+      const result = filepath
+        ? await fileService.openFilePath(filepath)
+        : await fileService.openFile()
+
+      if (result.status === 'success') {
+        get().loadFromResult(result)
+        return
+      }
+
+      if (result.raw_json.length === 0 && result.parsed_json === undefined) {
+        set((state) => ({
+          fileMeta: {
+            ...state.fileMeta,
+            error: fileErrorFromResult(result),
+          },
+        }))
+        return
+      }
+
+      set((state) => ({
+        recovery: {
+          active: true,
+          stage: result.stage,
+          raw_json: result.raw_json,
+          parsed_json: result.parsed_json,
+          error: result.error,
+        },
+        fileMeta: {
+          ...state.fileMeta,
+          error: fileErrorFromResult(result),
+        },
+      }))
     },
 
     saveFile: async () => {
-      console.warn('File saving not yet wired to platform service')
+      const state = get()
+      const meta = createDefaultMeta(state.fileMeta.meta)
+
+      const saveResult = state.fileMeta.path
+        ? await fileService.saveFile(state.fileMeta.path, state.canonical, meta)
+        : await fileService.saveFileAs(state.canonical, meta)
+
+      if (!saveResult.success) {
+        set({
+          fileMeta: {
+            ...state.fileMeta,
+            error: saveResult.error ?? 'Failed to save analysis.',
+          },
+        })
+        return
+      }
+
+      set({
+        fileMeta: {
+          path: saveResult.path,
+          meta: {
+            ...meta,
+            updated_at: new Date().toISOString(),
+          },
+          lastSaved: Date.now(),
+          dirty: false,
+          error: null,
+        },
+      })
+    },
+
+    saveFileAs: async () => {
+      const state = get()
+      const meta = createDefaultMeta(state.fileMeta.meta)
+      const saveResult = await fileService.saveFileAs(state.canonical, meta)
+
+      if (!saveResult.success) {
+        set({
+          fileMeta: {
+            ...state.fileMeta,
+            error: saveResult.error ?? 'Failed to save analysis.',
+          },
+        })
+        return
+      }
+
+      set({
+        fileMeta: {
+          path: saveResult.path,
+          meta: {
+            ...meta,
+            updated_at: new Date().toISOString(),
+          },
+          lastSaved: Date.now(),
+          dirty: false,
+          error: null,
+        },
+      })
     },
 
     loadFromResult: (result) => {
@@ -208,7 +328,7 @@ export function createAppStore() {
         eventLog: result.event_log,
         inverseIndex: result.derived.inverse_index,
         fileMeta: {
-          path: null,
+          path: result.path,
           meta: {
             name: result.analysis.name,
             description: result.analysis.description,
@@ -218,15 +338,51 @@ export function createAppStore() {
           },
           lastSaved: Date.now(),
           dirty: false,
+          error: null,
         },
         recovery: { active: false },
+        viewState: {
+          ...get().viewState,
+          activeView: 'board',
+        },
       })
+    },
+
+    retryRecovery: async (rawJson) => {
+      const result = await loadAnalysisJson(rawJson)
+      if (result.status === 'success') {
+        get().loadFromResult(result)
+        return
+      }
+
+      set((state) => ({
+        recovery: {
+          active: true,
+          stage: result.stage,
+          raw_json: result.raw_json,
+          parsed_json: result.parsed_json,
+          error: result.error,
+        },
+        fileMeta: {
+          ...state.fileMeta,
+          error: fileErrorFromResult(result),
+        },
+      }))
     },
 
     newAnalysis: () => {
       set({
         ...createInitialState(),
       })
+    },
+
+    clearFileError: () => {
+      set((state) => ({
+        fileMeta: {
+          ...state.fileMeta,
+          error: null,
+        },
+      }))
     },
 
     setActiveView: (view) => {

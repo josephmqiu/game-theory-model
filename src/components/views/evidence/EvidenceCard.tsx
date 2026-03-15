@@ -1,7 +1,11 @@
 import type { ReactNode } from 'react'
 
 import { Badge, ConfidenceBadge, StaleBadge } from '../../design-system'
-import type { EvidenceNotebookEntry } from '../../../store/selectors/evidence-notebook-selectors'
+import type {
+  DerivationChainResult,
+  EvidenceNotebookEntry,
+} from '../../../store/selectors/evidence-notebook-selectors'
+import { DerivationChain } from './DerivationChain'
 
 const TYPE_COLORS: Record<string, string> = {
   source: '#3B82F6',
@@ -15,13 +19,15 @@ const TYPE_COLORS: Record<string, string> = {
 interface EvidenceCardProps {
   entry: EvidenceNotebookEntry
   onClick: (entry: EvidenceNotebookEntry) => void
+  derivationChain?: DerivationChainResult
 }
 
-export function EvidenceCard({ entry, onClick }: EvidenceCardProps): ReactNode {
+export function EvidenceCard({ entry, onClick, derivationChain }: EvidenceCardProps): ReactNode {
   const color = TYPE_COLORS[entry.type] ?? '#6B7280'
 
   return (
     <button
+      type="button"
       className="w-full text-left bg-bg-card border border-border rounded px-4 py-3 hover:border-accent transition-colors cursor-pointer"
       onClick={() => onClick(entry)}
       data-testid={`evidence-card-${entry.id}`}
@@ -36,6 +42,11 @@ export function EvidenceCard({ entry, onClick }: EvidenceCardProps): ReactNode {
       <div className="mt-2 text-sm text-text-primary leading-relaxed line-clamp-2">
         {entry.title}
       </div>
+      {derivationChain && (
+        <div className="mt-2">
+          <DerivationChain entityId={entry.id} chain={derivationChain} />
+        </div>
+      )}
     </button>
   )
 }

@@ -9,7 +9,10 @@ import {
   Grid3x3,
   ListTree,
   BookOpen,
-  Play,
+  Clock3,
+  UserRound,
+  SplitSquareVertical,
+  Map,
   Settings,
 } from 'lucide-react'
 
@@ -107,10 +110,28 @@ export function Sidebar(): ReactNode {
             onClick={() => handleGameNav('evidence_notebook')}
           />
           <NavItem
-            icon={<Play className="w-4 h-4" />}
-            label="PLAY"
-            active={activeView === 'play'}
-            onClick={() => handleGameNav('play')}
+            icon={<Clock3 className="w-4 h-4" />}
+            label="TIMELINE"
+            active={activeView === 'timeline'}
+            onClick={() => handleGameNav('timeline')}
+          />
+          <NavItem
+            icon={<UserRound className="w-4 h-4" />}
+            label="PLAYER LENS"
+            active={activeView === 'player_lens'}
+            onClick={() => handleGameNav('player_lens')}
+          />
+          <NavItem
+            icon={<SplitSquareVertical className="w-4 h-4" />}
+            label="DIFF"
+            active={activeView === 'diff'}
+            onClick={() => handleGameNav('diff')}
+          />
+          <NavItem
+            icon={<Map className="w-4 h-4" />}
+            label="SCENARIO"
+            active={activeView === 'scenario'}
+            onClick={() => handleGameNav('scenario')}
           />
         </nav>
       )}

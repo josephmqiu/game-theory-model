@@ -1,4 +1,5 @@
 import type { CanonicalStore, StaleMarker } from '../../types/canonical'
+import { collectGameScope } from './game-scope'
 
 export type EvidenceLadderType =
   | 'source'
@@ -49,59 +50,6 @@ function hasStaleMarkers(markers: readonly StaleMarker[] | undefined): boolean {
   return markers !== undefined && markers.length > 0
 }
 
-function isLinkedToGame(
-  entityId: string,
-  gamePlayerIds: ReadonlySet<string>,
-  gameAssumptionIds: ReadonlySet<string>,
-  canonical: CanonicalStore,
-): boolean {
-  // If this is a key_assumption of the game, it's linked
-  if (gameAssumptionIds.has(entityId)) {
-    return true
-  }
-
-  // Check claims referenced by game nodes
-  for (const node of Object.values(canonical.nodes)) {
-    if (node.claims?.includes(entityId)) return true
-    if (node.inferences?.includes(entityId)) return true
-    if (node.assumptions?.includes(entityId)) return true
-  }
-
-  // Check observations whose source is linked
-  const observation = canonical.observations[entityId]
-  if (observation) {
-    // Observation is linked if its source is in the store (game-scoped is relaxed for now)
-    return observation.source_id in canonical.sources
-  }
-
-  // Check if this is a source referenced by any observation in the store
-  if (entityId in canonical.sources) {
-    for (const obs of Object.values(canonical.observations)) {
-      if (obs.source_id === entityId) {
-        return true
-      }
-    }
-  }
-
-  // Check derivation edges for linkage
-  for (const derivation of Object.values(canonical.derivations)) {
-    if (derivation.from_ref === entityId || derivation.to_ref === entityId) {
-      return true
-    }
-  }
-
-  // Check contradictions referencing claims in the store
-  const contradiction = canonical.contradictions[entityId]
-  if (contradiction) {
-    return (
-      contradiction.left_ref in canonical.claims ||
-      contradiction.right_ref in canonical.claims
-    )
-  }
-
-  return false
-}
-
 export function selectEvidenceLadder(
   canonical: CanonicalStore,
   gameId: string | null,
@@ -119,13 +67,18 @@ export function selectEvidenceLadder(
     return emptyLadder
   }
 
-  const game = canonical.games[gameId]
-  if (!game) {
+  if (!canonical.games[gameId]) {
     return emptyLadder
   }
+  const scope = collectGameScope(canonical, gameId)
+  const scopeIsEmpty =
+    scope.source.size === 0 &&
+    scope.observation.size === 0 &&
+    scope.claim.size === 0 &&
+    scope.inference.size === 0 &&
+    scope.contradiction.size === 0
 
-  const gameAssumptionIds = new Set(game.key_assumptions)
-  const gamePlayerIds = new Set(game.players)
+  const includeAllEvidence = scopeIsEmpty && canonical.games[gameId]!.formalizations.length === 0
 
   const sources: EvidenceNotebookEntry[] = []
   const observations: EvidenceNotebookEntry[] = []
@@ -135,7 +88,7 @@ export function selectEvidenceLadder(
   const contradictions: EvidenceNotebookEntry[] = []
 
   for (const source of Object.values(canonical.sources)) {
-    if (!isLinkedToGame(source.id, gamePlayerIds, gameAssumptionIds, canonical)) continue
+    if (!includeAllEvidence && !scope.source.has(source.id)) continue
     sources.push({
       id: source.id,
       type: 'source',
@@ -145,7 +98,7 @@ export function selectEvidenceLadder(
   }
 
   for (const observation of Object.values(canonical.observations)) {
-    if (!isLinkedToGame(observation.id, gamePlayerIds, gameAssumptionIds, canonical)) continue
+    if (!includeAllEvidence && !scope.observation.has(observation.id)) continue
     observations.push({
       id: observation.id,
       type: 'observation',
@@ -155,7 +108,7 @@ export function selectEvidenceLadder(
   }
 
   for (const claim of Object.values(canonical.claims)) {
-    if (!isLinkedToGame(claim.id, gamePlayerIds, gameAssumptionIds, canonical)) continue
+    if (!includeAllEvidence && !scope.claim.has(claim.id)) continue
     claims.push({
       id: claim.id,
       type: 'claim',
@@ -166,7 +119,7 @@ export function selectEvidenceLadder(
   }
 
   for (const inference of Object.values(canonical.inferences)) {
-    if (!isLinkedToGame(inference.id, gamePlayerIds, gameAssumptionIds, canonical)) continue
+    if (!includeAllEvidence && !scope.inference.has(inference.id)) continue
     inferences.push({
       id: inference.id,
       type: 'inference',
@@ -177,7 +130,7 @@ export function selectEvidenceLadder(
   }
 
   for (const assumption of Object.values(canonical.assumptions)) {
-    if (!isLinkedToGame(assumption.id, gamePlayerIds, gameAssumptionIds, canonical)) continue
+    if (!includeAllEvidence && !scope.assumption.has(assumption.id)) continue
     assumptions.push({
       id: assumption.id,
       type: 'assumption',
@@ -188,7 +141,7 @@ export function selectEvidenceLadder(
   }
 
   for (const contradiction of Object.values(canonical.contradictions)) {
-    if (!isLinkedToGame(contradiction.id, gamePlayerIds, gameAssumptionIds, canonical)) continue
+    if (!includeAllEvidence && !scope.contradiction.has(contradiction.id)) continue
     contradictions.push({
       id: contradiction.id,
       type: 'contradiction',

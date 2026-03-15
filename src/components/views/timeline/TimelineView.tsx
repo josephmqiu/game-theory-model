@@ -119,10 +119,11 @@ function SwimlaneSection({ kind, entries }: SwimlaneSectionProps) {
 export function TimelineView(): ReactNode {
   const canonical = useAppStore((s) => s.canonical)
   const eventLog = useAppStore((s) => s.eventLog)
+  const activeGameId = useAppStore((s) => s.viewState.activeGameId)
 
   const entries = useMemo(
-    () => selectTimelineEntries(canonical, eventLog),
-    [canonical, eventLog],
+    () => selectTimelineEntries(canonical, eventLog, activeGameId),
+    [canonical, eventLog, activeGameId],
   )
 
   const grouped = useMemo(() => {

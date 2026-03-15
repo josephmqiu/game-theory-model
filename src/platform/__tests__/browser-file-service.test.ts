@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { BrowserFileService } from '../browser-file-service'
 
 function clearLocalStorage(): void {
@@ -20,6 +20,10 @@ describe('BrowserFileService', () => {
     service = new BrowserFileService()
   })
 
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('returns empty recent files initially', async () => {
     const files = await service.getRecentFiles()
     expect(files).toEqual([])
@@ -28,5 +32,23 @@ describe('BrowserFileService', () => {
   it('loads fixture by name', async () => {
     const result = await service.loadFixture('sample')
     expect(result.status).toBe('success')
+  })
+
+  it('sanitizes malformed recent files from storage', async () => {
+    const payload = JSON.stringify([
+      { path: 'valid.gta.json', name: 'valid.gta.json', lastOpened: 123 },
+      { path: 42, name: 'broken', lastOpened: 'today' },
+    ])
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => (key === 'strategic-lens:recent-files' ? payload : null),
+      setItem: vi.fn(),
+      clear: vi.fn(),
+    })
+
+    const files = await service.getRecentFiles()
+
+    expect(files).toEqual([
+      { path: 'valid.gta.json', name: 'valid.gta.json', lastOpened: 123 },
+    ])
   })
 })

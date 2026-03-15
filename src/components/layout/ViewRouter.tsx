@@ -11,14 +11,16 @@ import { TreeView } from '../views/tree/TreeView'
 import { TimelineView } from '../views/timeline/TimelineView'
 import { PlayerLensView } from '../views/player-lens/PlayerLensView'
 import { DiffView } from '../views/diff/DiffView'
+import { ScenarioView } from '../views/scenario/ScenarioView'
 import { InspectorPanel } from '../inspector'
+import { RecoveryView } from '../shell/RecoveryView'
 
 export function ViewRouter(): ReactNode {
   const activeView = useAppStore((s) => s.viewState.activeView)
   const recoveryActive = useAppStore((s) => s.recovery.active)
 
   if (recoveryActive) {
-    return <div className="p-8 text-warning">Recovery mode — file has errors</div>
+    return <RecoveryView />
   }
 
   switch (activeView) {
@@ -59,6 +61,8 @@ export function ViewRouter(): ReactNode {
       return <PlayerLensView />
     case 'diff':
       return <DiffView />
+    case 'scenario':
+      return <ScenarioView />
     default:
       return <div className="p-8 text-text-muted">{activeView}</div>
   }

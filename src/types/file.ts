@@ -47,6 +47,7 @@ export interface StructuralIssue {
 export type LoadResult =
   | {
       status: 'success'
+      path: string | null
       analysis: AnalysisFile
       store: CanonicalStore
       derived: {

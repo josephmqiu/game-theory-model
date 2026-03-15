@@ -104,23 +104,18 @@ export async function loadAnalysisFile(filepath: string): Promise<LoadResult> {
   return loadAnalysisFileWithIo(filepath, nodeFileSystem)
 }
 
-export async function loadAnalysisFileWithIo(
-  filepath: string,
-  io: FileSystemOps,
+export async function loadAnalysisJson(
+  rawJson: string,
+  sourcePath: string | null = null,
 ): Promise<LoadResult> {
-  let rawJson: string
-  try {
-    rawJson = await io.readFile(filepath)
-  } catch (error) {
-    return {
-      status: 'recovery',
-      stage: 'parse',
-      raw_json: '',
-      error: {
-        message: error instanceof Error ? error.message : 'Unable to read analysis file.',
-      },
-    }
-  }
+  return loadAnalysisJsonWithPersistedRevision(rawJson, sourcePath, 0)
+}
+
+async function loadAnalysisJsonWithPersistedRevision(
+  rawJson: string,
+  sourcePath: string | null,
+  persistedRevision: number,
+): Promise<LoadResult> {
   let parsedJson: unknown
 
   try {
@@ -223,20 +218,9 @@ export async function loadAnalysisFileWithIo(
     }
   }
 
-  let persistedRevision = 0
-  const warnings = [...integrity.warnings]
-  try {
-    persistedRevision = await getCanonicalRevision(filepath)
-  } catch (error) {
-    warnings.push(
-      error instanceof Error
-        ? `Unable to load persisted revision history; defaulted to revision 0. ${error.message}`
-        : 'Unable to load persisted revision history; defaulted to revision 0.',
-    )
-  }
-
   return {
     status: 'success',
+    path: sourcePath,
     analysis: validation.data,
     store,
     derived: {
@@ -244,9 +228,9 @@ export async function loadAnalysisFileWithIo(
     },
     integrity: {
       ok: true,
-      warnings: warnings.length > 0 ? warnings : undefined,
+      warnings: integrity.warnings.length > 0 ? integrity.warnings : undefined,
     },
-    event_log: createEventLog(filepath, persistedRevision),
+    event_log: createEventLog(sourcePath ?? validation.data.name, persistedRevision),
     migration: {
       from: schemaVersion,
       to: validation.data.schema_version,
@@ -254,6 +238,45 @@ export async function loadAnalysisFileWithIo(
       discarded_data: migration.discarded_data,
     },
   }
+}
+
+export async function loadAnalysisFileWithIo(
+  filepath: string,
+  io: FileSystemOps,
+): Promise<LoadResult> {
+  let rawJson: string
+  try {
+    rawJson = await io.readFile(filepath)
+  } catch (error) {
+    return {
+      status: 'recovery',
+      stage: 'parse',
+      raw_json: '',
+      error: {
+        message: error instanceof Error ? error.message : 'Unable to read analysis file.',
+      },
+    }
+  }
+  let persistedRevision = 0
+  const revisionWarnings: string[] = []
+  try {
+    persistedRevision = await getCanonicalRevision(filepath)
+  } catch (error) {
+    revisionWarnings.push(
+      error instanceof Error
+        ? `Unable to load persisted revision history; defaulted to revision 0. ${error.message}`
+        : 'Unable to load persisted revision history; defaulted to revision 0.',
+    )
+  }
+
+  const result = await loadAnalysisJsonWithPersistedRevision(rawJson, filepath, persistedRevision)
+  if (result.status === 'success' && revisionWarnings.length > 0) {
+    result.integrity = {
+      ...result.integrity,
+      warnings: [...(result.integrity.warnings ?? []), ...revisionWarnings],
+    }
+  }
+  return result
 }
 
 export async function saveAnalysis(filepath: string, data: AnalysisFile): Promise<void> {

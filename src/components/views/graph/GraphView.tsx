@@ -9,16 +9,19 @@ import {
   type EdgeTypes,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
+import { Plus } from 'lucide-react'
 
 import { useAppStore } from '../../../store'
 import { buildGraphViewModel } from '../../../store/selectors/graph-selectors'
-import { coordinationBus, useCoordinationHandler } from '../../../coordination'
+import { useCoordinationChannel, useCoordinationHandler } from '../../../coordination'
 import type { CoordinationEvent } from '../../../coordination'
 import { DecisionNode } from './nodes/DecisionNode'
 import { ChanceNode } from './nodes/ChanceNode'
 import { TerminalNode } from './nodes/TerminalNode'
 import { GameEdge } from './edges/GameEdge'
 import { EmptyStateNewGame } from '../../shell/EmptyStateNewGame'
+import { Button } from '../../design-system'
+import { CreateNodeWizard, CreateEdgeWizard } from '../../editors/wizards'
 
 const nodeTypes: NodeTypes = {
   decision: DecisionNode,
@@ -35,8 +38,11 @@ export function GraphView(): ReactNode {
   const activeFormalizationId = useAppStore((s) => s.viewState.activeFormalizationId)
   const activeGameId = useAppStore((s) => s.viewState.activeGameId)
   const setInspectedRefs = useAppStore((s) => s.setInspectedRefs)
+  const coordination = useCoordinationChannel('graph')
 
   const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set())
+  const [showCreateNode, setShowCreateNode] = useState(false)
+  const [showCreateEdge, setShowCreateEdge] = useState(false)
 
   const { nodes, edges, formalization } = useMemo(
     () => buildGraphViewModel(canonical, activeFormalizationId),
@@ -68,14 +74,12 @@ export function GraphView(): ReactNode {
 
       setInspectedRefs(refs)
 
-      coordinationBus.emit({
+      coordination.emit({
         kind: 'selection_changed',
-        source_view: 'graph',
-        correlation_id: crypto.randomUUID(),
         refs,
       })
     },
-    [setInspectedRefs],
+    [setInspectedRefs, coordination],
   )
 
   const handleHighlightDependents = useCallback((event: CoordinationEvent) => {
@@ -87,8 +91,8 @@ export function GraphView(): ReactNode {
     setHighlightedIds(new Set())
   }, [])
 
-  useCoordinationHandler('highlight_dependents', handleHighlightDependents)
-  useCoordinationHandler('highlight_clear', handleHighlightClear)
+  useCoordinationHandler(coordination, 'highlight_dependents', handleHighlightDependents)
+  useCoordinationHandler(coordination, 'highlight_clear', handleHighlightClear)
 
   if (!formalization) {
     const activeGame = activeGameId ? canonical.games[activeGameId] : null
@@ -110,6 +114,14 @@ export function GraphView(): ReactNode {
 
   return (
     <div className="flex-1 h-full" data-testid="graph-canvas">
+      <div className="absolute right-6 top-6 z-10 flex gap-2">
+        <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setShowCreateNode(true)}>
+          Node
+        </Button>
+        <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setShowCreateEdge(true)}>
+          Edge
+        </Button>
+      </div>
       <ReactFlow
         nodes={nodesWithHighlight}
         edges={edges}
@@ -123,6 +135,8 @@ export function GraphView(): ReactNode {
         <Background />
         <Controls />
       </ReactFlow>
+      <CreateNodeWizard open={showCreateNode} onClose={() => setShowCreateNode(false)} />
+      <CreateEdgeWizard open={showCreateEdge} onClose={() => setShowCreateEdge(false)} />
     </div>
   )
 }

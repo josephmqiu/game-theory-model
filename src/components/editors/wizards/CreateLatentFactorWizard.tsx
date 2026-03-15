@@ -140,6 +140,7 @@ export function CreateLatentFactorWizard({ open, onClose }: CreateLatentFactorWi
                       {s.label} (p={s.probability}, c={s.confidence})
                     </span>
                     <button
+                      type="button"
                       onClick={() => handleRemoveState(i)}
                       className="text-xs text-warning font-mono hover:underline"
                     >

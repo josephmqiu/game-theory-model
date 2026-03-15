@@ -1,4 +1,6 @@
 .superpowers/
+.claude/
 node_modules/
 coverage/
+dist/
 *.tsbuildinfo

@@ -80,7 +80,17 @@ export type StructuralCommand =
         cell_index: number
         player_id: string
         value: EstimateValue
+        row_strategy?: string
+        col_strategy?: string
       }
+    })
+  | (BaseCommand & {
+      kind: 'attach_player_to_game'
+      payload: { game_id: string; player_id: string }
+    })
+  | (BaseCommand & {
+      kind: 'attach_formalization_to_game'
+      payload: { game_id: string; formalization_id: string }
     })
   | (BaseCommand & {
       kind: 'mark_stale'

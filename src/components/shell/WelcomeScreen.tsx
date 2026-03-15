@@ -17,6 +17,7 @@ interface ActionCardProps {
 function ActionCard({ icon, title, description, onClick, disabled = false }: ActionCardProps) {
   return (
     <button
+      type="button"
       className="bg-bg-card border border-border p-6 w-60 rounded text-left hover:border-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       onClick={onClick}
       disabled={disabled}
@@ -44,17 +45,35 @@ function RecentFileRow({ file }: RecentFileRowProps) {
 
 export function WelcomeScreen(): ReactNode {
   const newAnalysis = useAppStore((s) => s.newAnalysis)
+  const loadFile = useAppStore((s) => s.loadFile)
   const setActiveView = useAppStore((s) => s.setActiveView)
   const loadFromResult = useAppStore((s) => s.loadFromResult)
+  const fileError = useAppStore((s) => s.fileMeta.error)
+  const clearFileError = useAppStore((s) => s.clearFileError)
   const { fileService } = usePlatform()
 
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([])
   const [showNoAI, setShowNoAI] = useState(false)
 
   useEffect(() => {
-    fileService.getRecentFiles().then((files) => {
-      setRecentFiles(files)
-    })
+    let cancelled = false
+
+    fileService
+      .getRecentFiles()
+      .then((files) => {
+        if (!cancelled) {
+          setRecentFiles(files)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRecentFiles([])
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [fileService])
 
   function handleNewAnalysis() {
@@ -63,21 +82,27 @@ export function WelcomeScreen(): ReactNode {
   }
 
   function handleOpenFile() {
-    console.warn('File open not yet wired to platform service')
+    clearFileError()
+    void loadFile()
   }
 
   function handleLoadExample() {
+    clearFileError()
     fileService
       .loadFixture('sample')
       .then((result) => {
         if (result.status === 'success') {
           loadFromResult(result)
-          setActiveView('board')
         }
       })
-      .catch((error) => {
-        console.error('Failed to load example:', error)
+      .catch(() => {
+        // Keep the current screen and let the shared file error surface explain failures.
       })
+  }
+
+  function handleRecentFileOpen(path: string) {
+    clearFileError()
+    void loadFile(path)
   }
 
   return (
@@ -121,6 +146,12 @@ export function WelcomeScreen(): ReactNode {
         />
       </div>
 
+      {fileError && (
+        <div className="w-full max-w-xl mb-6 rounded border border-warning/40 bg-warning/10 px-4 py-3 font-mono text-xs text-warning">
+          {fileError}
+        </div>
+      )}
+
       {recentFiles.length > 0 && (
         <div className="w-full max-w-xl mb-8">
           <h2 className="font-mono text-xs font-bold tracking-widest text-text-muted mb-2 uppercase">
@@ -128,7 +159,14 @@ export function WelcomeScreen(): ReactNode {
           </h2>
           <div className="border border-border rounded bg-bg-card overflow-hidden">
             {recentFiles.map((file) => (
-              <RecentFileRow key={file.path} file={file} />
+              <button
+                key={file.path}
+                type="button"
+                className="w-full text-left"
+                onClick={() => handleRecentFileOpen(file.path)}
+              >
+                <RecentFileRow file={file} />
+              </button>
             ))}
           </div>
         </div>

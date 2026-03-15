@@ -81,13 +81,18 @@ function DiffEntryRow({ entry }: DiffEntryRowProps) {
 }
 
 export function DiffView(): ReactNode {
+  const canonical = useAppStore((s) => s.canonical)
   const eventLog = useAppStore((s) => s.eventLog)
+  const activeGameId = useAppStore((s) => s.viewState.activeGameId)
 
   const [entityTypeFilter, setEntityTypeFilter] = useState<EntityType | 'all'>('all')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
 
-  const allEntries = useMemo(() => selectDiffEntries(eventLog), [eventLog])
+  const allEntries = useMemo(
+    () => selectDiffEntries(canonical, eventLog, activeGameId),
+    [canonical, eventLog, activeGameId],
+  )
 
   const filteredEntries = useMemo(() => {
     let result = allEntries

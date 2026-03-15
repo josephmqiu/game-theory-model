@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 import { createAppStore } from '../app-store'
 import type { AppStore, ViewType } from '../app-store'
@@ -6,6 +6,12 @@ import { emptyCanonicalStore } from '../../types/canonical'
 import { resetPersistedEventStore } from '../../engine/event-persistence'
 import type { Command } from '../../engine/commands'
 import type { EntityRef } from '../../types/canonical'
+import type { FileService } from '../../platform'
+import { createSampleAnalysisMeta, createSampleCanonicalStore } from '../../test-support/sample-analysis'
+import { buildInverseIndex } from '../../engine/inverse-index'
+import { createEventLog } from '../../engine/events'
+import { storeToAnalysisFile } from '../../utils/serialization'
+import type { LoadResult } from '../../types/file'
 
 type StoreApi = ReturnType<typeof createAppStore>
 
@@ -15,10 +21,29 @@ function getState(store: StoreApi): AppStore {
 
 describe('AppStore', () => {
   let store: StoreApi
+  let fileService: FileService
 
   beforeEach(() => {
     resetPersistedEventStore()
-    store = createAppStore()
+    fileService = {
+      openFile: vi.fn(async (): Promise<LoadResult> => ({
+        status: 'recovery',
+        stage: 'parse',
+        raw_json: '',
+        error: { message: 'No file selected.' },
+      })),
+      openFilePath: vi.fn(async (): Promise<LoadResult> => ({
+        status: 'recovery',
+        stage: 'parse',
+        raw_json: '',
+        error: { message: 'Missing recent file.' },
+      })),
+      saveFile: vi.fn(async (path) => ({ success: true, path })),
+      saveFileAs: vi.fn(async () => ({ success: true, path: 'saved-analysis.gta.json' })),
+      getRecentFiles: vi.fn(async () => []),
+      loadFixture: vi.fn(async () => makeSuccessLoadResult()),
+    }
+    store = createAppStore({ fileService })
   })
 
   it('initializes with welcome view', () => {
@@ -44,6 +69,7 @@ describe('AppStore', () => {
     expect(state.fileMeta.meta).toBeNull()
     expect(state.fileMeta.lastSaved).toBeNull()
     expect(state.fileMeta.dirty).toBe(false)
+    expect(state.fileMeta.error).toBeNull()
   })
 
   it('initializes with inactive recovery', () => {
@@ -298,4 +324,85 @@ describe('AppStore', () => {
     expect(getState(store).eventLog.events).toHaveLength(2)
     expect(Object.keys(getState(store).canonical.games)).toHaveLength(2)
   })
+
+  it('loadFile hydrates canonical state from the file service', async () => {
+    const result = makeSuccessLoadResult('loaded-analysis.gta.json')
+    fileService.openFile = vi.fn(async () => result)
+
+    await getState(store).loadFile()
+
+    expect(getState(store).canonical).toEqual(result.store)
+    expect(getState(store).fileMeta.path).toBe('loaded-analysis.gta.json')
+    expect(getState(store).viewState.activeView).toBe('board')
+    expect(getState(store).recovery).toEqual({ active: false })
+  })
+
+  it('saveFile uses saveFileAs when no path exists and clears dirty state', async () => {
+    const command: Command = {
+      kind: 'add_game',
+      payload: {
+        name: 'Save Test',
+        description: 'Needs persistence',
+        semantic_labels: [],
+        players: [],
+        status: 'active',
+        formalizations: [],
+        coupling_links: [],
+        key_assumptions: [],
+        created_at: '2026-03-14T00:00:00Z',
+        updated_at: '2026-03-14T00:00:00Z',
+      },
+    }
+
+    getState(store).dispatch(command)
+    await getState(store).saveFile()
+
+    expect(fileService.saveFileAs).toHaveBeenCalledOnce()
+    expect(getState(store).fileMeta.dirty).toBe(false)
+    expect(getState(store).fileMeta.path).toBe('saved-analysis.gta.json')
+    expect(getState(store).fileMeta.error).toBeNull()
+  })
+
+  it('loadFile enters recovery mode on parse failure with raw content', async () => {
+    fileService.openFile = vi.fn(async (): Promise<LoadResult> => ({
+      status: 'recovery',
+      stage: 'validation',
+      raw_json: '{"bad":true}',
+      parsed_json: { bad: true },
+      error: { message: 'Invalid analysis file.' },
+    }))
+
+    await getState(store).loadFile()
+
+    expect(getState(store).recovery).toMatchObject({
+      active: true,
+      stage: 'validation',
+      raw_json: '{"bad":true}',
+    })
+    expect(getState(store).fileMeta.error).toContain('validation')
+  })
 })
+
+function makeSuccessLoadResult(path: string | null = null): Extract<LoadResult, { status: 'success' }> {
+  const store = createSampleCanonicalStore()
+  const meta = createSampleAnalysisMeta()
+
+  return {
+    status: 'success',
+    path,
+    analysis: storeToAnalysisFile(store, meta),
+    store,
+    derived: {
+      inverse_index: buildInverseIndex(store),
+    },
+    integrity: {
+      ok: true,
+    },
+    event_log: createEventLog(path ?? meta.name),
+    migration: {
+      from: 5,
+      to: 5,
+      steps_applied: [],
+    },
+  }
+}

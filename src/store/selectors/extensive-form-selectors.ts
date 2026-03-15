@@ -1,9 +1,14 @@
 import type { Node, Edge } from '@xyflow/react'
 
-import type { CanonicalStore, GameNode, GameEdge } from '../../types/canonical'
+import type { CanonicalStore } from '../../types/canonical'
 import type { ExtensiveFormModel } from '../../types/formalizations'
 import type { GraphNodeData, GraphEdgeData } from './graph-selectors'
 import { computeTreeLayout } from '../../components/views/tree/tree-layout'
+import {
+  buildPlayerColorMap,
+  nodeTypeToReactFlowType,
+  resolvePlayerInfo,
+} from './graph-view-helpers'
 
 export type TreeNode = Node<GraphNodeData, 'decision' | 'chance' | 'terminal'>
 export type TreeEdge = Edge<GraphEdgeData, 'game'>
@@ -20,51 +25,6 @@ export interface ExtensiveFormViewModel {
   rootNodeId: string | null
   informationSets: readonly InformationSetGroup[]
   formalization: ExtensiveFormModel | null
-}
-
-const PLAYER_COLORS = [
-  '#3B82F6',
-  '#EF4444',
-  '#22C55E',
-  '#F59E0B',
-  '#8B5CF6',
-  '#EC4899',
-  '#06B6D4',
-  '#F97316',
-]
-
-function getPlayerColor(index: number): string {
-  return PLAYER_COLORS[index % PLAYER_COLORS.length] ?? '#6B7280'
-}
-
-function nodeTypeToReactFlowType(kind: GameNode['type']): 'decision' | 'chance' | 'terminal' {
-  switch (kind) {
-    case 'decision':
-      return 'decision'
-    case 'chance':
-      return 'chance'
-    case 'terminal':
-      return 'terminal'
-  }
-}
-
-function resolvePlayerInfo(
-  node: GameNode,
-  players: CanonicalStore['players'],
-  playerColorMap: Map<string, string>,
-): { playerId: string | null; playerName: string | null; playerColor: string | null } {
-  if (node.actor.kind !== 'player') {
-    return { playerId: null, playerName: null, playerColor: null }
-  }
-
-  const player = players[node.actor.player_id]
-  const color = playerColorMap.get(node.actor.player_id) ?? '#6B7280'
-
-  return {
-    playerId: node.actor.player_id,
-    playerName: player?.name ?? 'Unknown',
-    playerColor: color,
-  }
 }
 
 const EMPTY_VIEW_MODEL: ExtensiveFormViewModel = {
@@ -90,13 +50,7 @@ export function selectExtensiveFormViewModel(
 
   const ef = formalization as ExtensiveFormModel
 
-  const game = canonical.games[ef.game_id]
-  const playerColorMap = new Map<string, string>()
-  if (game) {
-    for (let i = 0; i < game.players.length; i++) {
-      playerColorMap.set(game.players[i]!, getPlayerColor(i))
-    }
-  }
+  const playerColorMap = buildPlayerColorMap(canonical, ef.game_id)
 
   const formNodes = Object.values(canonical.nodes).filter(
     (n) => n.formalization_id === formalizationId,
