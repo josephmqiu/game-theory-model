@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { Filter, ArrowUpDown, Plus } from 'lucide-react'
 import { useAppStore } from '../../store'
@@ -5,6 +6,7 @@ import { Badge } from '../design-system'
 import { useWorkflowColumns } from '../../store/selectors/board-selectors'
 import type { WorkflowColumn } from '../../store/selectors/board-selectors'
 import type { StrategicGame } from '../../types/canonical'
+import { CreateGameWizard } from '../editors/wizards'
 
 const COLUMN_LABELS: Record<WorkflowColumn, string> = {
   draft: 'DRAFT',
@@ -105,7 +107,8 @@ export function WorkflowBoard(): ReactNode {
   const canonical = useAppStore((s) => s.canonical)
   const setActiveGame = useAppStore((s) => s.setActiveGame)
   const setActiveView = useAppStore((s) => s.setActiveView)
-  const dispatch = useAppStore((s) => s.dispatch)
+
+  const [showCreateGame, setShowCreateGame] = useState(false)
 
   const columns = useWorkflowColumns(canonical)
 
@@ -117,25 +120,6 @@ export function WorkflowBoard(): ReactNode {
   function handleGameClick(gameId: string) {
     setActiveGame(gameId)
     setActiveView('graph')
-  }
-
-  function handleAddGame() {
-    const now = new Date().toISOString()
-    dispatch({
-      kind: 'add_game',
-      payload: {
-        name: 'New Game',
-        description: 'A new strategic game.',
-        semantic_labels: [],
-        players: [],
-        status: 'active',
-        formalizations: [],
-        coupling_links: [],
-        key_assumptions: [],
-        created_at: now,
-        updated_at: now,
-      },
-    })
   }
 
   const columnOrder: WorkflowColumn[] = ['draft', 'modeling', 'formalized', 'review']
@@ -157,7 +141,7 @@ export function WorkflowBoard(): ReactNode {
           </button>
           <button
             className="flex items-center gap-1 px-3 py-2 font-mono text-xs font-bold text-bg-page bg-accent rounded hover:opacity-90 transition-opacity"
-            onClick={handleAddGame}
+            onClick={() => setShowCreateGame(true)}
           >
             <Plus size={12} />
             ADD
@@ -176,6 +160,8 @@ export function WorkflowBoard(): ReactNode {
           />
         ))}
       </div>
+
+      <CreateGameWizard open={showCreateGame} onClose={() => setShowCreateGame(false)} />
     </div>
   )
 }

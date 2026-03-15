@@ -5,6 +5,7 @@ import { useAppStore } from '../../store'
 import { Badge, ConfidenceBadge, StaleBadge, ViewTab } from '../design-system'
 import { useEvidenceLibrary } from '../../store/selectors/evidence-selectors'
 import type { EvidenceTab, EvidenceEntry } from '../../store/selectors/evidence-selectors'
+import { CreateEvidenceWizard } from '../editors/wizards'
 
 const EVIDENCE_TYPE_COLORS: Record<string, string> = {
   source: '#6366F1',
@@ -44,6 +45,7 @@ export function EvidenceLibrary(): ReactNode {
   const canonical = useAppStore((s) => s.canonical)
   const [activeTab, setActiveTab] = useState<EvidenceTab>('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [showCreateSource, setShowCreateSource] = useState(false)
 
   const allEntries = useEvidenceLibrary(canonical, activeTab)
 
@@ -54,7 +56,7 @@ export function EvidenceLibrary(): ReactNode {
     : allEntries
 
   function handleAddSource() {
-    // Placeholder: manual modeling UI will be built in a later session
+    setShowCreateSource(true)
   }
 
   return (
@@ -110,6 +112,8 @@ export function EvidenceLibrary(): ReactNode {
           ))}
         </div>
       )}
+
+      <CreateEvidenceWizard open={showCreateSource} onClose={() => setShowCreateSource(false)} />
     </div>
   )
 }

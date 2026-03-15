@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { Plus } from 'lucide-react'
 import { useAppStore } from '../../store'
 import { Badge } from '../design-system'
 import { usePlayersRegistry } from '../../store/selectors/player-selectors'
 import type { Player } from '../../types/canonical'
+import { CreatePlayerWizard } from '../editors/wizards'
 
 const PLAYER_TYPE_COLORS: Record<string, string> = {
   state: '#6366F1',
@@ -51,14 +53,12 @@ export function PlayersRegistry(): ReactNode {
   const canonical = useAppStore((s) => s.canonical)
   const setInspectedRefs = useAppStore((s) => s.setInspectedRefs)
 
+  const [showCreatePlayer, setShowCreatePlayer] = useState(false)
+
   const entries = usePlayersRegistry(canonical)
 
   function handlePlayerClick(playerId: string) {
     setInspectedRefs([{ type: 'player', id: playerId }])
-  }
-
-  function handleAddPlayer() {
-    // Placeholder: manual modeling UI will be built in a later session
   }
 
   return (
@@ -67,7 +67,7 @@ export function PlayersRegistry(): ReactNode {
         <h1 className="font-mono font-bold text-lg tracking-widest text-text-primary">PLAYERS</h1>
         <button
           className="flex items-center gap-1 px-3 py-2 font-mono text-xs font-bold text-bg-page bg-accent rounded hover:opacity-90 transition-opacity"
-          onClick={handleAddPlayer}
+          onClick={() => setShowCreatePlayer(true)}
         >
           <Plus size={12} />
           ADD PLAYER
@@ -95,6 +95,8 @@ export function PlayersRegistry(): ReactNode {
           ))}
         </div>
       )}
+
+      <CreatePlayerWizard open={showCreatePlayer} onClose={() => setShowCreatePlayer(false)} />
     </div>
   )
 }
