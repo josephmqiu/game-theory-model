@@ -300,6 +300,50 @@ describe('AppStore', () => {
     expect(state.eventLog.cursor).toBe(0)
   })
 
+  it('resetAnalysisSession clears model state while preserving the shell view', () => {
+    const initialAnalysisId = getState(store).eventLog.analysis_id
+
+    getState(store).dispatch({
+      kind: 'add_game',
+      payload: {
+        name: 'Will Be Replaced',
+        description: 'Should disappear after resetAnalysisSession',
+        semantic_labels: [],
+        players: [],
+        status: 'active',
+        formalizations: [],
+        coupling_links: [],
+        key_assumptions: [],
+        created_at: '2026-03-14T00:00:00Z',
+        updated_at: '2026-03-14T00:00:00Z',
+      },
+    })
+    getState(store).setActiveView('board')
+    getState(store).setManualMode(true)
+    store.setState((state) => ({
+      viewState: {
+        ...state.viewState,
+        sidebarCollapsed: true,
+      },
+    }))
+
+    getState(store).resetAnalysisSession()
+
+    const state = getState(store)
+    expect(state.eventLog.analysis_id).not.toBe(initialAnalysisId)
+    expect(state.canonical).toEqual(emptyCanonicalStore())
+    expect(state.viewState.activeView).toBe('board')
+    expect(state.viewState.sidebarCollapsed).toBe(true)
+    expect(state.viewState.manualMode).toBe(false)
+    expect(state.viewState.activeGameId).toBeNull()
+    expect(state.viewState.activeFormalizationId).toBeNull()
+    expect(state.fileMeta.dirty).toBe(false)
+    expect(state.fileMeta.path).toBeNull()
+    expect(state.recovery).toEqual({ active: false })
+    expect(state.eventLog.events).toHaveLength(0)
+    expect(state.eventLog.cursor).toBe(0)
+  })
+
   it('multiple dispatches increment event log cursor', () => {
     const makeAddGameCommand = (name: string): Command => ({
       kind: 'add_game',

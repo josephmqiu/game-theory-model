@@ -221,6 +221,9 @@ export function updateProposalStatus(
   proposalId: string,
   status: EvidenceProposal['status'],
   mergeAction: 'accepted' | 'rejected' | 'modified',
+  options?: {
+    conflicts?: EvidenceProposal['conflicts']
+  },
 ): void {
   conversationStore.setState((state) => {
     const existing = state.proposals_by_id[proposalId]
@@ -268,6 +271,9 @@ export function updateProposalStatus(
         [proposalId]: {
           ...existing,
           status,
+          conflicts: status === 'conflict'
+            ? options?.conflicts ?? existing.conflicts
+            : existing.conflicts,
         },
       },
       proposal_review: {

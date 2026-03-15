@@ -13,8 +13,7 @@ const phaseDefinitions = {
     schema: z.object({
       situation_description: z.string(),
       focus_areas: z.array(z.string()).optional(),
-      attachments: z.array(z.string()).optional(),
-    }),
+    }).strict(),
   },
   2: {
     name: 'run_phase_2_players',
@@ -22,23 +21,19 @@ const phaseDefinitions = {
     description: 'Phase 2: Identify strategic players, objectives, and information asymmetries. Requires Phase 1 to be complete.',
     schema: z.object({
       additional_context: z.string().optional(),
-    }),
+    }).strict(),
   },
   3: {
     name: 'run_phase_3_baseline',
     phase_name: 'Baseline Strategic Model',
     description: 'Phase 3: Build the smallest baseline strategic model and canonical game mapping. Requires Phase 2 to be complete.',
-    schema: z.object({
-      game_type_hints: z.array(z.string()).optional(),
-    }),
+    schema: z.object({}).strict(),
   },
   4: {
     name: 'run_phase_4_history',
     phase_name: 'Historical Repeated Game',
     description: 'Phase 4: Map historical interactions, trust, and repeated-game patterns. Requires Phase 3 to be complete.',
-    schema: z.object({
-      time_horizon: z.string().optional(),
-    }),
+    schema: z.object({}).strict(),
   },
 } as const
 
@@ -106,7 +101,9 @@ export function registerPhaseTools(server: McpServerLike, context: RuntimeToolCo
         if (!currentAnalysis || currentAnalysis.event_description !== input.situation_description) {
           await context.orchestrator.startAnalysis(input.situation_description)
         }
-        await context.orchestrator.runPhase(1)
+        await context.orchestrator.runPhase(1, {
+          focus_areas: input.focus_areas,
+        })
         const phaseResult = getPipelineState().phase_results[1] as { proposals: EvidenceProposal[] } | undefined
         return successResult({
           phase: 1,
@@ -124,9 +121,11 @@ export function registerPhaseTools(server: McpServerLike, context: RuntimeToolCo
     name: phaseDefinitions[2].name,
     description: phaseDefinitions[2].description,
     inputSchema: phaseDefinitions[2].schema,
-    async execute() {
+    async execute(input) {
       try {
-        await context.orchestrator.runPhase(2)
+        await context.orchestrator.runPhase(2, {
+          additional_context: input.additional_context,
+        })
         const phaseResult = getPipelineState().phase_results[2] as { proposals: EvidenceProposal[] } | undefined
         return successResult({
           phase: 2,
@@ -180,7 +179,7 @@ export function registerPhaseTools(server: McpServerLike, context: RuntimeToolCo
     },
   })
 
-  const stubPhaseSchema = z.object({})
+  const stubPhaseSchema = z.object({}).strict()
   const stubs: Array<{ phase: number; name: string; phase_name: string; description: string }> = [
     { phase: 5, name: 'run_phase_5_revalidation', phase_name: 'Recursive Revalidation', description: 'Phase 5: Recursive Revalidation.' },
     { phase: 6, name: 'run_phase_6_formalization', phase_name: 'Full Formalization', description: 'Phase 6: Full formal modeling.' },

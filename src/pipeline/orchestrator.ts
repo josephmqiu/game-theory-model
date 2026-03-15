@@ -4,13 +4,14 @@ import type { CanonicalStore, CurrentAnalysisFile } from '../types'
 import type {
   AnalysisState,
   EvidenceProposal,
+  PhaseRunInput,
   PhaseExecution,
   PhaseResult,
   PipelinePhaseStatus,
   PipelineOrchestrator,
 } from '../types/analysis-pipeline'
 import type { ConversationMessage } from '../types/conversation'
-import { clearConversation, getFirstPendingProposalPhase, getConversationState, registerProposalGroup } from '../store/conversation'
+import { getFirstPendingProposalPhase, getConversationState, registerProposalGroup } from '../store/conversation'
 import {
   addSteeringMessage,
   getPipelineState,
@@ -30,6 +31,7 @@ interface OrchestratorDependencies {
   getAnalysisFile: () => CurrentAnalysisFile | null
   getPersistedRevision: () => number
   getActiveAnalysisId: () => string
+  resetAnalysisSession: () => void
   dispatch: (command: Command) => DispatchResult
   emitConversationMessage: (message: Omit<ConversationMessage, 'id' | 'timestamp'>) => void
 }
@@ -122,6 +124,18 @@ function getAnalysisStateOrThrow(): AnalysisState {
   return analysisState
 }
 
+function readPhase1Input(input?: PhaseRunInput): Pick<Phase1Input, 'focus_areas'> {
+  return input && 'focus_areas' in input
+    ? { focus_areas: input.focus_areas }
+    : {}
+}
+
+function readPhase2Input(input?: PhaseRunInput): Phase2Input {
+  return input && 'additional_context' in input
+    ? { additional_context: input.additional_context }
+    : {}
+}
+
 function requirePhasePrerequisite(phase: number): void {
   const blockingPhase = getFirstPendingProposalPhase(phase)
   if (blockingPhase != null) {
@@ -148,8 +162,11 @@ export function createPipelineOrchestrator(deps: OrchestratorDependencies): Pipe
   return {
     async startAnalysis(description, options) {
       const currentAnalysis = getPipelineState().analysis_state
-      if (currentAnalysis && currentAnalysis.event_description !== description) {
-        clearConversation()
+      const replacingAnalysis = Boolean(
+        currentAnalysis && currentAnalysis.event_description !== description,
+      )
+      if (replacingAnalysis) {
+        deps.resetAnalysisSession()
       }
 
       const classification = classifySituation(description)
@@ -164,7 +181,7 @@ export function createPipelineOrchestrator(deps: OrchestratorDependencies): Pipe
         role: 'ai',
         content: options?.manual
           ? 'Manual mode is active. Use the phase screens to build the model without an MCP client.'
-          : currentAnalysis && currentAnalysis.event_description !== description
+          : replacingAnalysis
             ? `Replaced the active analysis with: ${description}`
             : `Starting analysis of: ${description}`,
         message_type: 'phase_transition',
@@ -174,7 +191,7 @@ export function createPipelineOrchestrator(deps: OrchestratorDependencies): Pipe
       return analysisState
     },
 
-    async runPhase(phase) {
+    async runPhase(phase, input) {
       requirePhasePrerequisite(phase)
 
       const analysisState = getPipelineState().analysis_state
@@ -201,6 +218,7 @@ export function createPipelineOrchestrator(deps: OrchestratorDependencies): Pipe
         const output = runPhase1Grounding(
           {
             situation_description: analysisState.event_description,
+            ...readPhase1Input(input),
           } satisfies Phase1Input,
           { canonical, baseRevision, phaseExecution },
         )
@@ -210,7 +228,7 @@ export function createPipelineOrchestrator(deps: OrchestratorDependencies): Pipe
         updateAnalysisState((state) => state ? { ...state, classification: output.classification } : state)
       } else if (phase === 2) {
         const output = runPhase2Players(
-          {} satisfies Phase2Input,
+          readPhase2Input(input),
           { canonical, analysisState, baseRevision, phaseExecution },
         )
         result = output.status

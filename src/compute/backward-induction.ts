@@ -2,7 +2,14 @@ import type { CanonicalStore, GameEdge, GameNode } from '../types/canonical'
 import type { ExtensiveFormModel } from '../types/formalizations'
 import type { BackwardInductionResult, SubgameValue } from '../types/solver-results'
 import { checkSolverGate, computeReadiness } from './readiness'
-import { getFormalizationEdges, getFormalizationNodes, readEstimateNumeric } from './utils'
+import {
+  buildOutgoingEdgeMap,
+  findReachableCycleNode,
+  formatReachableCycleError,
+  getFormalizationEdges,
+  getFormalizationNodes,
+  readEstimateNumeric,
+} from './utils'
 
 interface NodeEvaluation {
   payoffs: Record<string, number>
@@ -11,7 +18,10 @@ interface NodeEvaluation {
   warnings: string[]
 }
 
-function baseResult(formalization: ExtensiveFormModel, store: CanonicalStore): BackwardInductionResult {
+function baseResult(
+  formalization: ExtensiveFormModel,
+  store: CanonicalStore,
+): BackwardInductionResult {
   return {
     id: crypto.randomUUID(),
     formalization_id: formalization.id,
@@ -32,12 +42,29 @@ function baseResult(formalization: ExtensiveFormModel, store: CanonicalStore): B
   }
 }
 
-function getActingPlayerId(node: GameNode, canonical: CanonicalStore, formalization: ExtensiveFormModel): string {
+function getActingPlayerId(
+  node: GameNode,
+  canonical: CanonicalStore,
+  formalization: ExtensiveFormModel,
+): string {
   if (node.actor.kind === 'player') {
     return node.actor.player_id
   }
 
   return canonical.games[formalization.game_id]?.players[0] ?? 'unknown_player'
+}
+
+function failBackwardInduction(
+  result: BackwardInductionResult,
+  gateWarnings: ReadonlyArray<string>,
+  error: string,
+): BackwardInductionResult {
+  return {
+    ...result,
+    status: 'failed',
+    warnings: [...new Set([...gateWarnings, error])],
+    error,
+  }
 }
 
 export function solveBackwardInduction(
@@ -59,12 +86,15 @@ export function solveBackwardInduction(
   const nodes = getFormalizationNodes(store, formalization.id)
   const edges = getFormalizationEdges(store, formalization.id)
   const nodeById = new Map(nodes.map((node) => [node.id, node]))
-  const outgoingByNode = new Map<string, GameEdge[]>()
-  for (const edge of edges) {
-    outgoingByNode.set(edge.from, [...(outgoingByNode.get(edge.from) ?? []), edge])
+  const outgoingByNode = buildOutgoingEdgeMap(edges)
+  const edgeById = new Map(edges.map((edge) => [edge.id, edge]))
+  const cycleNodeId = findReachableCycleNode(formalization.root_node_id, outgoingByNode)
+  if (cycleNodeId) {
+    return failBackwardInduction(result, gate.warnings, formatReachableCycleError(cycleNodeId))
   }
 
-  const informationSetByNode = new Map<string, ExtensiveFormModel['information_sets'][number]>()
+  const informationSetByNode =
+    new Map<string, ExtensiveFormModel['information_sets'][number]>()
   for (const informationSet of formalization.information_sets) {
     for (const nodeId of informationSet.node_ids) {
       informationSetByNode.set(nodeId, informationSet)
@@ -77,26 +107,46 @@ export function solveBackwardInduction(
   let usesUniformBeliefs = false
 
   const depthMemo = new Map<string, number>()
-  const computeDepth = (nodeId: string, depth = 0): void => {
-    if (depthMemo.has(nodeId)) {
+  const computeDepth = (
+    nodeId: string,
+    depth = 0,
+    visiting = new Set<string>(),
+  ): void => {
+    if (visiting.has(nodeId)) {
+      throw new Error(formatReachableCycleError(nodeId))
+    }
+
+    const cachedDepth = depthMemo.get(nodeId)
+    if (typeof cachedDepth === 'number' && cachedDepth >= depth) {
       return
     }
+
     depthMemo.set(nodeId, depth)
+    visiting.add(nodeId)
     for (const edge of outgoingByNode.get(nodeId) ?? []) {
-      computeDepth(edge.to, depth + 1)
+      computeDepth(edge.to, depth + 1, visiting)
     }
+    visiting.delete(nodeId)
   }
-  computeDepth(formalization.root_node_id, 0)
+
+  try {
+    computeDepth(formalization.root_node_id, 0)
+  } catch (error) {
+    return failBackwardInduction(
+      result,
+      gate.warnings,
+      error instanceof Error ? error.message : formatReachableCycleError(),
+    )
+  }
 
   for (const informationSet of formalization.information_sets) {
     const depths = informationSet.node_ids.map((nodeId) => depthMemo.get(nodeId) ?? -1)
     if (new Set(depths).size > 1) {
-      return {
-        ...result,
-        status: 'failed',
-        warnings: [`Information set ${informationSet.id} spans different tree depths.`],
-        error: `Information set ${informationSet.id} spans different tree depths.`,
-      }
+      return failBackwardInduction(
+        result,
+        gate.warnings,
+        `Information set ${informationSet.id} spans different tree depths.`,
+      )
     }
   }
 
@@ -193,7 +243,10 @@ export function solveBackwardInduction(
           alternatives.push({
             edge_id: chosenEdge.id,
             player_payoffs: chosenEvaluation.payoffs,
-            payoff_difference: buildPayoffDifference(chosenEvaluation.payoffs, childEvaluation.payoffs),
+            payoff_difference: buildPayoffDifference(
+              chosenEvaluation.payoffs,
+              childEvaluation.payoffs,
+            ),
           })
         }
         bestScore = score
@@ -238,10 +291,16 @@ export function solveBackwardInduction(
       }
     }
 
-    const nodeIds = informationSet.node_ids.filter((candidateId) => nodeById.has(candidateId))
-    const actionLabels = [...new Set(
-      nodeIds.flatMap((candidateId) => (outgoingByNode.get(candidateId) ?? []).map((edge) => edge.action_id ?? edge.label)),
-    )]
+    const nodeIds = informationSet.node_ids.filter((candidateId) =>
+      nodeById.has(candidateId),
+    )
+    const actionLabels = [
+      ...new Set(
+        nodeIds.flatMap((candidateId) =>
+          (outgoingByNode.get(candidateId) ?? []).map((edge) => edge.action_id ?? edge.label),
+        ),
+      ),
+    ]
     const beliefs = informationSet.beliefs
     if (!beliefs) {
       usesUniformBeliefs = true
@@ -287,7 +346,10 @@ export function solveBackwardInduction(
                 return {
                   edge_id: edge.id,
                   player_payoffs: alternative.payoffs,
-                  payoff_difference: buildPayoffDifference(childEvaluation.payoffs, alternative.payoffs),
+                  payoff_difference: buildPayoffDifference(
+                    childEvaluation.payoffs,
+                    alternative.payoffs,
+                  ),
                 }
               }),
           },
@@ -317,16 +379,27 @@ export function solveBackwardInduction(
     }
     infoSetMemo.set(informationSet.id, bucket)
 
-    const current = bucket.get(node.id) ?? createFallbackEvaluation(`Node ${node.id} not found in information set ${informationSet.id}.`)
+    const current =
+      bucket.get(node.id) ??
+      createFallbackEvaluation(
+        `Node ${node.id} not found in information set ${informationSet.id}.`,
+      )
     if (!bestAction) {
       warnings.add(`Information set ${informationSet.id} has no shared actions.`)
     }
     return current
   }
 
-  const evaluateNode = (nodeId: string): NodeEvaluation => {
+  const evaluateNode = (
+    nodeId: string,
+    visiting = new Set<string>(),
+  ): NodeEvaluation => {
     if (memo.has(nodeId)) {
       return memo.get(nodeId)!
+    }
+
+    if (visiting.has(nodeId)) {
+      throw new Error(formatReachableCycleError(nodeId))
     }
 
     const node = nodeById.get(nodeId)
@@ -336,28 +409,45 @@ export function solveBackwardInduction(
       return fallback
     }
 
-    const outgoing = outgoingByNode.get(nodeId) ?? []
-    if (outgoing.length === 0 || node.type === 'terminal') {
-      return evaluateTerminalNode(node, nodeId)
-    }
+    visiting.add(nodeId)
+    try {
+      const outgoing = outgoingByNode.get(nodeId) ?? []
+      if (outgoing.length === 0 || node.type === 'terminal') {
+        return evaluateTerminalNode(node, nodeId)
+      }
 
-    const informationSet = node.information_set_id ? informationSetByNode.get(node.id) : null
-    if (informationSet) {
-      return evaluateInformationSet(node, informationSet, evaluateNode)
-    }
+      const visitChild = (childNodeId: string) => evaluateNode(childNodeId, visiting)
+      const informationSet = node.information_set_id
+        ? informationSetByNode.get(node.id)
+        : null
+      if (informationSet) {
+        return evaluateInformationSet(node, informationSet, visitChild)
+      }
 
-    if (node.type === 'chance' || node.actor.kind === 'nature') {
-      const evaluation = evaluateChanceNode(node, outgoing, evaluateNode)
+      if (node.type === 'chance' || node.actor.kind === 'nature') {
+        const evaluation = evaluateChanceNode(node, outgoing, visitChild)
+        memo.set(nodeId, evaluation)
+        return evaluation
+      }
+
+      const evaluation = evaluateDecisionNode(node, outgoing, visitChild)
       memo.set(nodeId, evaluation)
       return evaluation
+    } finally {
+      visiting.delete(nodeId)
     }
-
-    const evaluation = evaluateDecisionNode(node, outgoing, evaluateNode)
-    memo.set(nodeId, evaluation)
-    return evaluation
   }
 
-  evaluateNode(formalization.root_node_id)
+  try {
+    evaluateNode(formalization.root_node_id)
+  } catch (error) {
+    return failBackwardInduction(
+      result,
+      gate.warnings,
+      error instanceof Error ? error.message : formatReachableCycleError(),
+    )
+  }
+
   const optimalStrategies: Record<string, string> = {}
   const subgameValues: Record<string, SubgameValue> = {}
   for (const [nodeId, evaluation] of memo.entries()) {
@@ -371,13 +461,24 @@ export function solveBackwardInduction(
 
   const solutionPath: string[] = []
   let currentNodeId: string | null = formalization.root_node_id
+  const visitedPathNodes = new Set<string>()
   while (currentNodeId) {
-    const edgeId: string | undefined = optimalStrategies[currentNodeId]
+    if (visitedPathNodes.has(currentNodeId)) {
+      return failBackwardInduction(
+        result,
+        gate.warnings,
+        formatReachableCycleError(currentNodeId),
+      )
+    }
+    visitedPathNodes.add(currentNodeId)
+
+    const edgeId = optimalStrategies[currentNodeId]
     if (!edgeId) {
       break
     }
+
     solutionPath.push(edgeId)
-    const edge: GameEdge | undefined = edges.find((candidate) => candidate.id === edgeId)
+    const edge = edgeById.get(edgeId)
     currentNodeId = edge?.to ?? null
   }
 
@@ -397,7 +498,7 @@ export function solveBackwardInduction(
           method_id: 'backward_induction_weighted_belief',
         },
     status: warnings.size > 0 ? 'partial' : 'success',
-    warnings: [...gate.warnings, ...warnings],
+    warnings: [...new Set([...gate.warnings, ...warnings])],
     solution_path: solutionPath,
     subgame_values: subgameValues,
     optimal_strategies: optimalStrategies,

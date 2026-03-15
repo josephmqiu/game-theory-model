@@ -8,6 +8,9 @@ import type {
 } from '../types/formalizations'
 import type { SolverGateResult, SolverRequirement } from '../types/readiness'
 import {
+  buildOutgoingEdgeMap,
+  formatReachableCycleError,
+  findReachableCycleNode,
   collectRelevantEstimates,
   getFormalizationEdges,
   getFormalizationNodes,
@@ -160,6 +163,13 @@ function checkBackwardInduction(formalization: Formalization, store: CanonicalSt
   const outgoingByNode = new Map<string, number>()
   for (const edge of edges) {
     outgoingByNode.set(edge.from, (outgoingByNode.get(edge.from) ?? 0) + 1)
+  }
+
+  if (ef.root_node_id) {
+    const cycleNodeId = findReachableCycleNode(ef.root_node_id, buildOutgoingEdgeMap(edges))
+    if (cycleNodeId) {
+      blockers.push(formatReachableCycleError(cycleNodeId))
+    }
   }
 
   const leaves = nodes.filter((node) => (outgoingByNode.get(node.id) ?? 0) === 0)

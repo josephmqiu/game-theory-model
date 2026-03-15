@@ -390,6 +390,16 @@ export interface PipelinePersistenceSnapshot {
   proposal_review: DiffReviewState
 }
 
+export interface Phase1RunInput {
+  focus_areas?: string[]
+}
+
+export interface Phase2RunInput {
+  additional_context?: string
+}
+
+export type PhaseRunInput = Phase1RunInput | Phase2RunInput
+
 export interface PipelinePhaseRunnerContext {
   analysisState: AnalysisState
   phaseExecution: PhaseExecution
@@ -398,7 +408,7 @@ export interface PipelinePhaseRunnerContext {
 
 export interface PipelineOrchestrator {
   startAnalysis(description: string, options?: { manual?: boolean }): Promise<AnalysisState>
-  runPhase(phase: number): Promise<PhaseResult>
+  runPhase(phase: number, input?: PhaseRunInput): Promise<PhaseResult>
   pause(): void
   resume(): void
   cancelCurrentPhase(): void

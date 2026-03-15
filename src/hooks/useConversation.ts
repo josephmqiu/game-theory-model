@@ -1,10 +1,18 @@
 import { useCallback } from 'react'
 
-import { appendConversationMessage, clearConversation as clearConversationState, getEvidenceProposal, updateProposalStatus, useAppStore, useConversationStore } from '../store'
+import {
+  acceptConversationProposal,
+  appendConversationMessage,
+  clearConversation as clearConversationState,
+  updateProposalStatus,
+  useAppStore,
+  useConversationStore,
+} from '../store'
 import { usePipelineController } from './usePipelineController'
 
 export function useConversation() {
   const messages = useConversationStore((state) => state.messages)
+  const canonical = useAppStore((state) => state.canonical)
   const dispatch = useAppStore((state) => state.dispatch)
   const persistedRevision = useAppStore((state) => state.eventLog.persisted_revision)
   const manualMode = useAppStore((state) => state.viewState.manualMode)
@@ -42,44 +50,37 @@ export function useConversation() {
   }, [analysisState, handleSteering, manualMode, startAnalysis])
 
   const acceptProposal = useCallback((proposalId: string) => {
-    const proposal = getEvidenceProposal(proposalId)
-    if (!proposal) {
+    const outcome = acceptConversationProposal({
+      proposalId,
+      canonical,
+      currentPersistedRevision: persistedRevision,
+      dispatch,
+    })
+
+    if (outcome.status === 'rejected') {
+      appendConversationMessage({
+        role: 'ai',
+        content: outcome.proposal
+          ? `Could not accept proposal: ${outcome.proposal.description}. ${outcome.errors.join(' ')}`
+          : outcome.errors.join(' '),
+        message_type: 'proposal',
+        phase: outcome.proposal?.phase,
+      })
       return {
         status: 'rejected' as const,
-        reason: 'error' as const,
-        errors: ['Proposal not found.'],
+        reason: outcome.reason,
+        errors: outcome.errors,
       }
     }
 
-    const result = dispatch({
-      kind: 'batch',
-      label: proposal.description,
-      base_revision: persistedRevision,
-      commands: proposal.commands,
-    })
-
-    if (result.status === 'committed') {
-      updateProposalStatus(proposalId, 'accepted', 'accepted')
-      appendConversationMessage({
-        role: 'ai',
-        content: `Accepted proposal: ${proposal.description}`,
-        message_type: 'result',
-        phase: proposal.phase,
-      })
-      return result
-    }
-
-    updateProposalStatus(proposalId, 'conflict', 'modified')
     appendConversationMessage({
       role: 'ai',
-      content: `Could not accept proposal: ${proposal.description}. ${
-        result.status === 'rejected' ? result.errors.join(' ') : 'The proposal was not committed.'
-      }`,
-      message_type: 'proposal',
-      phase: proposal.phase,
+      content: `Accepted proposal: ${outcome.proposal.description}`,
+      message_type: 'result',
+      phase: outcome.proposal.phase,
     })
-    return result
-  }, [dispatch, persistedRevision])
+    return outcome.result
+  }, [canonical, dispatch, persistedRevision])
 
   const rejectProposal = useCallback((proposalId: string) => {
     updateProposalStatus(proposalId, 'rejected', 'rejected')

@@ -3,6 +3,24 @@ import type { BayesianGameModel } from '../types/formalizations'
 import type { BayesianStep, BayesianUpdateResult, PosteriorBelief } from '../types/solver-results'
 import { checkSolverGate, computeReadiness } from './readiness'
 
+function orderedObservations(
+  signals: NonNullable<BayesianGameModel['signal_structure']>['signals'],
+): string[] {
+  const seen = new Set<string>()
+  const observations: string[] = []
+
+  for (const signal of signals) {
+    if (seen.has(signal.label)) {
+      continue
+    }
+
+    seen.add(signal.label)
+    observations.push(signal.label)
+  }
+
+  return observations
+}
+
 function normalizeDistribution(distribution: Record<string, number>): Record<string, number> {
   const total = Object.values(distribution).reduce((sum, value) => sum + value, 0)
   if (total === 0) {
@@ -51,26 +69,32 @@ export function computeBayesianUpdate(
   }
 
   const signals = formalization.signal_structure?.signals ?? []
-  const uniqueObservations = [...new Set(signals.map((signal) => signal.label))]
+  const uniqueObservations = orderedObservations(signals)
   const updateChain: BayesianStep[] = []
   const posteriorBeliefs: PosteriorBelief[] = []
   const warnings = new Set(gate.warnings)
   let successfulObservations = 0
+  let totalObservations = 0
 
   for (const priorDistribution of formalization.priors) {
-    const currentPrior = Object.fromEntries(
+    let currentPrior = Object.fromEntries(
       priorDistribution.types.map((playerType) => [playerType.label, playerType.prior_probability]),
     )
-    for (const [index, observation] of uniqueObservations.entries()) {
+    const evidenceUsed: string[] = []
+
+    for (const observation of uniqueObservations) {
+      totalObservations += 1
+
+      const priorSnapshot = { ...currentPrior }
       const likelihood: Record<string, number> = {}
       let normalizer = 0
-      for (const typeLabel of Object.keys(currentPrior)) {
+      for (const typeLabel of Object.keys(priorSnapshot)) {
         const signal = signals.find(
           (candidate) => candidate.label === observation && candidate.type_label === typeLabel,
         )
         const probability = signal?.probability ?? 0
         likelihood[typeLabel] = probability
-        normalizer += currentPrior[typeLabel]! * probability
+        normalizer += priorSnapshot[typeLabel]! * probability
       }
 
       if (normalizer === 0) {
@@ -79,8 +103,8 @@ export function computeBayesianUpdate(
       }
 
       const posteriorBeforeNormalization: Record<string, number> = {}
-      for (const typeLabel of Object.keys(currentPrior)) {
-        const rawPosterior = (currentPrior[typeLabel]! * likelihood[typeLabel]!) / normalizer
+      for (const typeLabel of Object.keys(priorSnapshot)) {
+        const rawPosterior = (priorSnapshot[typeLabel]! * likelihood[typeLabel]!) / normalizer
         const clampedPosterior = rawPosterior < 1e-10 ? 1e-10 : rawPosterior
         if (clampedPosterior !== rawPosterior) {
           warnings.add(`Near-zero posterior for type ${typeLabel} after observing "${observation}" — numerical precision limit reached.`)
@@ -88,26 +112,27 @@ export function computeBayesianUpdate(
         posteriorBeforeNormalization[typeLabel] = clampedPosterior
       }
       const posterior = normalizeDistribution(posteriorBeforeNormalization)
+      evidenceUsed.push(observation)
 
       updateChain.push({
-        step: index + 1,
+        step: updateChain.length + 1,
         observation,
-        prior: currentPrior,
+        prior: priorSnapshot,
         likelihood,
         posterior,
       })
 
       for (const [typeLabel, posteriorValue] of Object.entries(posterior)) {
-        const originalPrior = priorDistribution.types.find((playerType) => playerType.label === typeLabel)?.prior_probability ?? 0
         posteriorBeliefs.push({
           player_id: priorDistribution.player_id,
           type_label: typeLabel,
-          prior: originalPrior,
+          prior: priorSnapshot[typeLabel] ?? 0,
           posterior: posteriorValue,
-          evidence_used: [observation],
+          evidence_used: [...evidenceUsed],
         })
       }
 
+      currentPrior = posterior
       successfulObservations += 1
     }
   }
@@ -123,12 +148,12 @@ export function computeBayesianUpdate(
 
   return {
     ...result,
-    status: successfulObservations < uniqueObservations.length * formalization.priors.length ? 'partial' : 'success',
+    status: successfulObservations < totalObservations ? 'partial' : 'success',
     warnings: [...warnings],
     meta: {
       ...result.meta,
       method_id: 'bayesian_update_signal_structure_heuristic',
-      assumptions_used: ['Approximate Bayesian update (heuristic)', 'Each observation branch is evaluated independently.'],
+      assumptions_used: ['Approximate Bayesian update (heuristic)', 'Observations are applied sequentially in signal-list order.'],
     },
     posterior_beliefs: posteriorBeliefs,
     update_chain: updateChain,

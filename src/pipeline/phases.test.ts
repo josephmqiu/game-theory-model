@@ -106,6 +106,22 @@ describe('M5 phase runners', () => {
     expect(output.result.proposals).toHaveLength(7)
   })
 
+  it('surfaces unmatched focus areas as phase 1 grounding gaps', () => {
+    const output = runPhase1Grounding(
+      {
+        situation_description: 'State A vs State B sanctions bargaining',
+        focus_areas: ['intel', 'timeline'],
+      },
+      {
+        canonical: emptyCanonicalStore(),
+        baseRevision: 0,
+        phaseExecution: createExecution(1),
+      },
+    )
+
+    expect(output.result.coverage_assessment.gaps).toEqual(['intel'])
+  })
+
   it('adds an internal player proposal and revalidation trigger when internal agency is detected', () => {
     const output = runPhase2Players(
       { additional_context: 'Cabinet faction has its own independent incentives.' },

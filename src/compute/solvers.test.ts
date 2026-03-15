@@ -84,6 +84,49 @@ describe('M4 solvers', () => {
     expect(result.solution_path).toEqual(['edge_left'])
   })
 
+  it('fails backward induction cleanly when the extensive-form graph contains a reachable cycle', () => {
+    const baseStore = createExtensiveFormStore()
+    const formalization = baseStore.formalizations.formalization_1 as ExtensiveFormModel
+    const store = {
+      ...baseStore,
+      nodes: {
+        ...baseStore.nodes,
+        node_right: {
+          ...baseStore.nodes.node_right,
+          type: 'decision' as const,
+          actor: { kind: 'player' as const, player_id: 'player_1' },
+          available_actions: ['Loop'],
+          terminal_payoffs: undefined,
+        },
+      },
+      edges: {
+        ...baseStore.edges,
+        edge_cycle: {
+          id: 'edge_cycle',
+          formalization_id: 'formalization_1',
+          from: 'node_right',
+          to: 'node_root',
+          label: 'Loop',
+          action_id: 'loop',
+        },
+      },
+      formalizations: {
+        ...baseStore.formalizations,
+        formalization_1: {
+          ...formalization,
+        },
+      },
+    }
+
+    const result = solveBackwardInduction(
+      store.formalizations.formalization_1 as ExtensiveFormModel,
+      store,
+    )
+
+    expect(result.status).toBe('failed')
+    expect(result.error).toContain('acyclic')
+  })
+
   it('computes Bayesian posterior shifts', () => {
     const store = createBayesianStore()
     const formalization = store.formalizations.formalization_1 as BayesianGameModel
@@ -97,7 +140,7 @@ describe('M4 solvers', () => {
     expect(toughPosterior?.posterior).toBeGreaterThan(0.5)
   })
 
-  it('computes independent Bayesian branches for each observation', () => {
+  it('chains Bayesian posteriors across sequential observations', () => {
     const baseStore = createBayesianStore()
     const formalization = baseStore.formalizations.formalization_1 as BayesianGameModel
     const existingSignals = formalization.signal_structure?.signals ?? []
@@ -122,14 +165,16 @@ describe('M4 solvers', () => {
 
     expect(result.status).toBe('success')
     expect(result.update_chain).toHaveLength(2)
-    const hawkishTough = result.posterior_beliefs.find(
-      (belief) => belief.type_label === 'tough' && belief.evidence_used[0] === 'hawkish',
+    expect(result.update_chain[1]?.prior.tough).toBeCloseTo(0.8, 8)
+
+    const finalToughBelief = result.posterior_beliefs.find(
+      (belief) =>
+        belief.type_label === 'tough' &&
+        belief.evidence_used.join(',') === 'hawkish,dovish',
     )
-    const dovishTough = result.posterior_beliefs.find(
-      (belief) => belief.type_label === 'tough' && belief.evidence_used[0] === 'dovish',
-    )
-    expect(hawkishTough?.posterior).toBeGreaterThan(0.5)
-    expect(dovishTough?.posterior).toBeLessThan(0.5)
+
+    expect(finalToughBelief?.prior).toBeCloseTo(0.8, 8)
+    expect(finalToughBelief?.posterior).toBeCloseTo(0.5, 8)
   })
 
   it('returns partial Bayesian results when one observation branch is invalid', () => {

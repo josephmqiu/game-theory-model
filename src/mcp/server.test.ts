@@ -1,10 +1,20 @@
 import { PassThrough } from 'node:stream'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { registerProposalGroup, resetConversationStore, resetMcpStore, resetPipelineStore } from '../store'
+import {
+  clearConversation,
+  getPipelineState,
+  resetConversationStore,
+  resetMcpStore,
+  resetPipelineStore,
+} from '../store'
+import type {
+  GroundingResult,
+  PlayerIdentificationResult,
+} from '../types/analysis-pipeline'
 import { createConfiguredMcpServer } from './bootstrap'
-import { createStdioTransport } from './transports/stdio'
 import { startServer, stopServer } from './server'
+import { createStdioTransport } from './transports/stdio'
 
 function createRegisteredServer() {
   return createConfiguredMcpServer({
@@ -32,18 +42,62 @@ describe('MCP server shell', () => {
 
   it('returns a prerequisite error when phase 2 is called before phase 1', async () => {
     const { server } = createRegisteredServer()
-    const result = await server.callTool<{ success: boolean; error?: string }>('run_phase_2_players', {})
+    const result = await server.callTool<{ success: boolean; error?: string }>(
+      'run_phase_2_players',
+      {},
+    )
     expect(result.success).toBe(false)
     expect(result.error).toMatch(/Phase 1/)
   })
 
+  it('does not expose accept_proposal on the MCP surface', () => {
+    const { server } = createRegisteredServer()
+    expect(server.tools.has('accept_proposal')).toBe(false)
+  })
+
+  it('rejects removed no-op phase inputs at the tool boundary', () => {
+    const { server } = createRegisteredServer()
+
+    expect(
+      server.tools.get('run_phase_1_grounding')?.inputSchema.safeParse({
+        situation_description: 'State A vs State B sanctions bargaining',
+        attachments: ['memo.pdf'],
+      }).success,
+    ).toBe(false)
+    expect(
+      server.tools.get('run_phase_3_baseline')?.inputSchema.safeParse({
+        game_type_hints: ['signaling'],
+      }).success,
+    ).toBe(false)
+    expect(
+      server.tools.get('run_phase_4_history')?.inputSchema.safeParse({
+        time_horizon: '10 years',
+      }).success,
+    ).toBe(false)
+  })
+
   it('runs phase 1 grounding and returns pending proposals', async () => {
     const { server } = createRegisteredServer()
-    const result = await server.callTool<{ success: boolean; proposals: Array<{ id: string }> }>('run_phase_1_grounding', {
+    const result = await server.callTool<{
+      success: boolean
+      proposals: Array<{ id: string }>
+    }>('run_phase_1_grounding', {
       situation_description: 'State A vs State B sanctions bargaining',
     })
+
     expect(result.success).toBe(true)
     expect(result.proposals.length).toBeGreaterThan(0)
+  })
+
+  it('threads focus areas into the phase 1 grounding result', async () => {
+    const { server } = createRegisteredServer()
+    await server.callTool('run_phase_1_grounding', {
+      situation_description: 'State A vs State B sanctions bargaining',
+      focus_areas: ['intel'],
+    })
+
+    const phaseResult = getPipelineState().phase_results[1] as GroundingResult | undefined
+    expect(phaseResult?.coverage_assessment.gaps).toContain('intel')
   })
 
   it('blocks later phases until prior proposals are reviewed', async () => {
@@ -52,14 +106,20 @@ describe('MCP server shell', () => {
       situation_description: 'State A vs State B sanctions bargaining',
     })
 
-    const result = await server.callTool<{ success: boolean; error?: string }>('run_phase_2_players', {})
+    const result = await server.callTool<{ success: boolean; error?: string }>(
+      'run_phase_2_players',
+      {},
+    )
     expect(result.success).toBe(false)
     expect(result.error).toMatch(/pending review/i)
   })
 
-  it('proposes and accepts an entity through the command spine', async () => {
+  it('proposes an entity without mutating canonical state', async () => {
     const { appStore, server } = createRegisteredServer()
-    const proposal = await server.callTool<{ success: boolean; data: { proposal_id: string } }>('propose_entity', {
+    const proposal = await server.callTool<{
+      success: boolean
+      data: { proposal_id: string }
+    }>('propose_entity', {
       action: 'create',
       entity_type: 'player',
       data: {
@@ -74,107 +134,82 @@ describe('MCP server shell', () => {
 
     expect(proposal.success).toBe(true)
     expect(Object.keys(appStore.getState().canonical.players)).toHaveLength(0)
-
-    const accepted = await server.callTool<{ success: boolean }>('accept_proposal', {
-      proposal_id: proposal.data.proposal_id,
-    })
-
-    expect(accepted.success).toBe(true)
-    expect(Object.keys(appStore.getState().canonical.players)).toHaveLength(1)
   })
 
-  it('accepts multiple proposals from the same revision snapshot sequentially', async () => {
+  it('threads additional_context into phase 2 player identification', async () => {
+    const { server } = createRegisteredServer()
+    await server.callTool('run_phase_1_grounding', {
+      situation_description: 'State A bargaining with State B',
+    })
+
+    clearConversation()
+
+    await server.callTool('run_phase_2_players', {
+      additional_context: 'Cabinet faction has its own independent incentives.',
+    })
+
+    const phaseResult = getPipelineState().phase_results[2] as
+      | PlayerIdentificationResult
+      | undefined
+    expect(
+      phaseResult?.proposed_players.some((player) => player.role === 'internal'),
+    ).toBe(true)
+  })
+
+  it('keeps the same analysis session when phase 1 is rerun with the same description', async () => {
     const { appStore, server } = createRegisteredServer()
-    registerProposalGroup({
-      phase: 1,
-      content: 'Review both sources.',
-      proposals: [
-        {
-          id: 'proposal_source_1',
-          description: 'Add source one',
-          phase: 1,
-          phase_execution_id: 'phase_execution_1',
-          base_revision: 0,
-          status: 'pending',
-          commands: [
-            {
-              kind: 'add_source',
-              id: 'source_one',
-              payload: {
-                kind: 'manual',
-                title: 'Source one',
-                captured_at: new Date().toISOString(),
-                quality_rating: 'high',
-              },
-            },
-          ],
-          entity_previews: [
-            {
-              entity_type: 'source',
-              action: 'add',
-              entity_id: 'source_one',
-              preview: { title: 'Source one' },
-              accepted: false,
-            },
-          ],
-          conflicts: [],
-        },
-        {
-          id: 'proposal_source_2',
-          description: 'Add source two',
-          phase: 1,
-          phase_execution_id: 'phase_execution_1',
-          base_revision: 0,
-          status: 'pending',
-          commands: [
-            {
-              kind: 'add_source',
-              id: 'source_two',
-              payload: {
-                kind: 'manual',
-                title: 'Source two',
-                captured_at: new Date().toISOString(),
-                quality_rating: 'medium',
-              },
-            },
-          ],
-          entity_previews: [
-            {
-              entity_type: 'source',
-              action: 'add',
-              entity_id: 'source_two',
-              preview: { title: 'Source two' },
-              accepted: false,
-            },
-          ],
-          conflicts: [],
-        },
-      ],
-    })
-
-    const firstResult = await server.callTool<{ success: boolean }>('accept_proposal', {
-      proposal_id: 'proposal_source_1',
-    })
-    const secondResult = await server.callTool<{ success: boolean }>('accept_proposal', {
-      proposal_id: 'proposal_source_2',
-    })
-
-    expect(firstResult.success).toBe(true)
-    expect(secondResult.success).toBe(true)
-    expect(Object.keys(appStore.getState().canonical.sources)).toHaveLength(2)
-  })
-
-  it('restarts phase 1 when a new situation description is provided', async () => {
-    const { context, server } = createRegisteredServer()
     await server.callTool('run_phase_1_grounding', {
       situation_description: 'State A vs State B sanctions bargaining',
     })
+
+    appStore.getState().dispatch({
+      kind: 'add_source',
+      id: 'same_session_source',
+      payload: {
+        kind: 'manual',
+        title: 'Keep me',
+        captured_at: new Date().toISOString(),
+        quality_rating: 'high',
+      },
+    })
+    const initialAnalysisId = appStore.getState().eventLog.analysis_id
+
+    await server.callTool('run_phase_1_grounding', {
+      situation_description: 'State A vs State B sanctions bargaining',
+    })
+
+    expect(appStore.getState().eventLog.analysis_id).toBe(initialAnalysisId)
+    expect(appStore.getState().canonical.sources.same_session_source).toBeDefined()
+  })
+
+  it('replaces the active analysis session when a new situation description is provided', async () => {
+    const { appStore, context, server } = createRegisteredServer()
+    await server.callTool('run_phase_1_grounding', {
+      situation_description: 'State A vs State B sanctions bargaining',
+    })
+
+    appStore.getState().dispatch({
+      kind: 'add_source',
+      id: 'stale_source',
+      payload: {
+        kind: 'manual',
+        title: 'Old source',
+        captured_at: new Date().toISOString(),
+        quality_rating: 'medium',
+      },
+    })
+    const initialAnalysisId = appStore.getState().eventLog.analysis_id
 
     await server.callTool('run_phase_1_grounding', {
       situation_description: 'Platform incumbent versus entrant pricing war',
     })
 
-    expect(context.orchestrator.getState()?.event_description).toBe('Platform incumbent versus entrant pricing war')
+    expect(appStore.getState().eventLog.analysis_id).not.toBe(initialAnalysisId)
+    expect(appStore.getState().eventLog.events).toHaveLength(0)
+    expect(appStore.getState().canonical.sources.stale_source).toBeUndefined()
+    expect(context.orchestrator.getState()?.event_description).toBe(
+      'Platform incumbent versus entrant pricing war',
+    )
   })
 
   it('starts and stops a real stdio-backed MCP server lifecycle', async () => {
@@ -191,7 +226,14 @@ describe('MCP server shell', () => {
 
   it('returns model summary counts and phase statuses', async () => {
     const { server } = createRegisteredServer()
-    const result = await server.callTool<{ success: boolean; data: { entity_counts: Record<string, number>; phase_statuses: unknown[] } }>('get_model_summary', {})
+    const result = await server.callTool<{
+      success: boolean
+      data: {
+        entity_counts: Record<string, number>
+        phase_statuses: unknown[]
+      }
+    }>('get_model_summary', {})
+
     expect(result.success).toBe(true)
     expect(result.data.entity_counts.player).toBe(0)
     expect(result.data.phase_statuses).toHaveLength(10)

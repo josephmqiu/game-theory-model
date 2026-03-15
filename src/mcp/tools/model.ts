@@ -32,7 +32,7 @@ import {
 } from '../../types/schemas'
 import { entityTypes, STORE_KEY, type CanonicalStore, type EntityType } from '../../types/canonical'
 import type { ModelQueryResult } from '../../types/mcp'
-import { getConversationState, getEvidenceProposal, registerProposalGroup, updateProposalStatus } from '../../store/conversation'
+import { getConversationState, registerProposalGroup } from '../../store/conversation'
 import { createEntityPreview } from '../../pipeline'
 import { setPipelineProposalReview } from '../../store/pipeline'
 import type { McpServerLike, RuntimeToolContext } from '../context'
@@ -272,47 +272,6 @@ export function registerModelTools(server: McpServerLike, context: RuntimeToolCo
         data: {
           proposal_id: proposalId,
           entity_id: entityId,
-        },
-      }
-    },
-  })
-
-  server.registerTool({
-    name: 'accept_proposal',
-    description: 'Accept a pending proposal by ID. This dispatches the corresponding commands through the command spine.',
-    inputSchema: z.object({
-      proposal_id: z.string(),
-    }),
-    execute(input): ModelQueryResult {
-      const proposal = getEvidenceProposal(input.proposal_id)
-      if (!proposal) {
-        return {
-          success: false,
-          data: { error: 'Proposal not found.' },
-        }
-      }
-
-      const result = context.dispatch({
-        kind: 'batch',
-        label: proposal.description,
-        base_revision: context.getPersistedRevision(),
-        commands: proposal.commands,
-      })
-
-      if (result.status === 'committed') {
-        updateProposalStatus(input.proposal_id, 'accepted', 'accepted')
-        return {
-          success: true,
-          data: { proposal_id: input.proposal_id },
-        }
-      }
-
-      updateProposalStatus(input.proposal_id, 'conflict', 'modified')
-      return {
-        success: false,
-        data: {
-          proposal_id: input.proposal_id,
-          error: result.status === 'rejected' ? result.errors : ['Proposal was not committed.'],
         },
       }
     },

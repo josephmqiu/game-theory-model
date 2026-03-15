@@ -2,6 +2,8 @@ import type { CanonicalStore, GameEdge, GameNode } from '../types/canonical'
 import type { EstimateValue } from '../types/estimates'
 import type { Formalization, NormalFormModel, ExtensiveFormModel } from '../types/formalizations'
 
+export const EXTENSIVE_FORM_CYCLE_ERROR = 'Extensive-form graph must be acyclic from the root node.'
+
 export interface NumericEstimate {
   value: number
   min?: number
@@ -204,4 +206,51 @@ export function buildChanceWeightMap(
     }
   }
   return weights
+}
+
+export function buildOutgoingEdgeMap(
+  edges: ReadonlyArray<GameEdge>,
+): Map<string, GameEdge[]> {
+  const outgoingByNode = new Map<string, GameEdge[]>()
+  for (const edge of edges) {
+    outgoingByNode.set(edge.from, [...(outgoingByNode.get(edge.from) ?? []), edge])
+  }
+  return outgoingByNode
+}
+
+export function findReachableCycleNode(
+  rootNodeId: string,
+  outgoingByNode: ReadonlyMap<string, ReadonlyArray<GameEdge>>,
+): string | null {
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+
+  const visit = (nodeId: string): string | null => {
+    if (visiting.has(nodeId)) {
+      return nodeId
+    }
+
+    if (visited.has(nodeId)) {
+      return null
+    }
+
+    visiting.add(nodeId)
+    for (const edge of outgoingByNode.get(nodeId) ?? []) {
+      const cycleNodeId = visit(edge.to)
+      if (cycleNodeId) {
+        return cycleNodeId
+      }
+    }
+    visiting.delete(nodeId)
+    visited.add(nodeId)
+    return null
+  }
+
+  return visit(rootNodeId)
+}
+
+export function formatReachableCycleError(cycleNodeId?: string | null): string {
+  return cycleNodeId
+    ? `${EXTENSIVE_FORM_CYCLE_ERROR} Cycle detected at node "${cycleNodeId}".`
+    : EXTENSIVE_FORM_CYCLE_ERROR
 }

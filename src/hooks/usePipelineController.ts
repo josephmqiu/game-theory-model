@@ -5,6 +5,7 @@ import { appendConversationMessage } from '../store/conversation'
 import {
   getFirstPendingProposalPhase,
   getPipelineState,
+  type PhaseRunInput,
   useAppStore,
   useAppStoreApi,
   useMcpConnectionStatus,
@@ -79,6 +80,7 @@ export function usePipelineController() {
     },
     getPersistedRevision: () => appStore.getState().eventLog.persisted_revision,
     getActiveAnalysisId: () => appStore.getState().eventLog.analysis_id,
+    resetAnalysisSession: () => appStore.getState().resetAnalysisSession(),
     dispatch: (command) => appStore.getState().dispatch(command),
     emitConversationMessage: (message) => {
       appendConversationMessage(message)
@@ -94,8 +96,8 @@ export function usePipelineController() {
     return state
   }
 
-  async function runPhase(phase: number) {
-    return orchestrator.runPhase(phase)
+  async function runPhase(phase: number, input?: PhaseRunInput) {
+    return orchestrator.runPhase(phase, input)
   }
 
   async function runNextPhase() {

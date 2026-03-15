@@ -9,6 +9,7 @@ export {
 } from './DerivedStoreProvider'
 export { createAppStore } from './app-store'
 export type { AppStore, ViewType } from './app-store'
+export type { PhaseRunInput } from '../types/analysis-pipeline'
 export {
   appendConversationMessage,
   clearConversation,
@@ -23,6 +24,7 @@ export {
   updateProposalStatus,
   useConversationStore,
 } from './conversation'
+export { acceptConversationProposal } from './proposals'
 export {
   addSteeringMessage,
   getPipelineState,

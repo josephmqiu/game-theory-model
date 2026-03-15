@@ -81,6 +81,7 @@ export function createToolContext(appStore: ReturnType<typeof createAppStore>): 
     },
     getPersistedRevision: () => appStore.getState().eventLog.persisted_revision,
     getActiveAnalysisId: () => appStore.getState().eventLog.analysis_id,
+    resetAnalysisSession: () => appStore.getState().resetAnalysisSession(),
     dispatch: (command) => appStore.getState().dispatch(command),
     emitConversationMessage: (message) => {
       appendConversationMessage(message)

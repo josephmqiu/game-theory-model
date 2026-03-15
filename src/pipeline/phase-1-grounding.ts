@@ -15,7 +15,6 @@ import {
 export interface Phase1Input {
   situation_description: string
   focus_areas?: string[]
-  attachments?: string[]
 }
 
 export interface PhaseRunnerContext {

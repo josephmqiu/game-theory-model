@@ -109,6 +109,7 @@ export interface AppStore {
   loadFromResult: (result: Extract<LoadResult, { status: 'success' }>) => void
   retryRecovery: (rawJson: string) => Promise<void>
   newAnalysis: () => void
+  resetAnalysisSession: () => void
   clearFileError: () => void
 
   // L2 actions
@@ -147,6 +148,21 @@ function createInitialState() {
       error: null as string | null,
     },
     recovery: { active: false } as RecoveryState,
+  }
+}
+
+function createSessionResetState(
+  viewState: AppStore['viewState'],
+): ReturnType<typeof createInitialState> {
+  const nextState = createInitialState()
+  return {
+    ...nextState,
+    viewState: {
+      ...nextState.viewState,
+      activeView: viewState.activeView,
+      sidebarCollapsed: viewState.sidebarCollapsed,
+      manualMode: false,
+    },
   }
 }
 
@@ -409,6 +425,14 @@ export function createAppStore(
     newAnalysis: () => {
       resetDerivedState()
       const nextState = createInitialState()
+      setConversationActiveAnalysis(nextState.eventLog.analysis_id)
+      setPipelineActiveAnalysis(nextState.eventLog.analysis_id)
+      set(nextState)
+    },
+
+    resetAnalysisSession: () => {
+      resetDerivedState()
+      const nextState = createSessionResetState(get().viewState)
       setConversationActiveAnalysis(nextState.eventLog.analysis_id)
       setPipelineActiveAnalysis(nextState.eventLog.analysis_id)
       set(nextState)
