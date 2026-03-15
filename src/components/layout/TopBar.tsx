@@ -46,7 +46,7 @@ function buildBreadcrumbs(
   activeGameId: string | null,
   gameName: string | null,
 ): string[] {
-  const gameViews: ViewType[] = ['graph', 'matrix', 'tree', 'evidence_notebook', 'play']
+  const gameViews: ViewType[] = ['graph', 'matrix', 'tree', 'evidence_notebook', 'play', 'timeline', 'player_lens', 'diff', 'scenario']
   const isGameView = gameViews.includes(activeView)
 
   if (isGameView && activeGameId !== null && gameName !== null) {

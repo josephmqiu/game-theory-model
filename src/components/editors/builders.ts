@@ -119,17 +119,36 @@ export function buildCreateFormalizationCommand(input: CreateFormalizationInput)
     }
   }
 
+  // For extensive form, auto-create a root decision node and reference it
+  const rootNodeId = `game_node_${crypto.randomUUID()}`
+
   return {
-    kind: 'add_formalization',
-    payload: {
-      game_id: input.gameId,
-      kind: 'extensive_form' as const,
-      purpose: input.purpose,
-      abstraction_level: input.abstractionLevel,
-      assumptions: [],
-      root_node_id: '',
-      information_sets: [],
-    } as Omit<import('../../types/formalizations').ExtensiveFormModel, 'id'>,
+    kind: 'batch',
+    label: 'Create extensive-form formalization with root node',
+    commands: [
+      {
+        kind: 'add_game_node',
+        id: rootNodeId,
+        payload: {
+          formalization_id: input.gameId,
+          label: 'Root',
+          type: 'decision',
+          actor: { kind: 'nature' },
+        },
+      },
+      {
+        kind: 'add_formalization',
+        payload: {
+          game_id: input.gameId,
+          kind: 'extensive_form' as const,
+          purpose: input.purpose,
+          abstraction_level: input.abstractionLevel,
+          assumptions: [],
+          root_node_id: rootNodeId,
+          information_sets: [],
+        } as Omit<import('../../types/formalizations').ExtensiveFormModel, 'id'>,
+      },
+    ],
   }
 }
 

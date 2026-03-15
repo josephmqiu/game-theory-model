@@ -47,12 +47,28 @@ export function CreateFormalizationWizard({ open, onClose }: CreateFormalization
     const result = dispatch(command)
 
     if (result.status === 'committed') {
+      // Find the newly created formalization ID
+      const previousFormIds = new Set(Object.keys(canonical.formalizations))
       const formId = Object.keys(result.store.formalizations).find(
-        (id) =>
-          result.store.formalizations[id]?.game_id === activeGameId &&
-          result.store.formalizations[id]?.kind === kind,
+        (id) => !previousFormIds.has(id),
       )
-      if (formId) {
+
+      if (formId && activeGameId) {
+        // Link the formalization to the game by updating the game's formalizations array
+        const game = result.store.games[activeGameId]
+        if (game) {
+          const updateResult = dispatch({
+            kind: 'update_game',
+            payload: {
+              id: activeGameId,
+              formalizations: [...game.formalizations, formId],
+            },
+          })
+          if (updateResult.status !== 'committed') {
+            setErrors(updateResult.status === 'rejected' ? updateResult.errors : ['Failed to link formalization to game'])
+            return
+          }
+        }
         setActiveFormalization(formId)
       }
       setKind('extensive_form')

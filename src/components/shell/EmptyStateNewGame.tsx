@@ -3,11 +3,11 @@ import type { ReactNode } from 'react'
 import { PlusCircle } from 'lucide-react'
 
 import { Button } from '../design-system'
-import { CreatePlayerWizard, CreateNodeWizard } from '../editors/wizards'
+import { CreatePlayerWizard, CreateFormalizationWizard } from '../editors/wizards'
 
 export function EmptyStateNewGame(): ReactNode {
   const [showCreatePlayer, setShowCreatePlayer] = useState(false)
-  const [showCreateNode, setShowCreateNode] = useState(false)
+  const [showCreateFormalization, setShowCreateFormalization] = useState(false)
 
   return (
     <div className="flex flex-1 items-center justify-center h-full">
@@ -17,21 +17,21 @@ export function EmptyStateNewGame(): ReactNode {
           Start Building Your Game
         </h2>
         <p className="font-mono text-sm text-text-muted mb-6 leading-relaxed">
-          This game has no formalization yet. Add players and decision nodes to begin
-          modeling the strategic situation.
+          This game has no formalization yet. Add a formalization to begin
+          modeling the strategic situation, then add players and decision nodes.
         </p>
         <div className="flex gap-3 justify-center">
-          <Button variant="primary" onClick={() => setShowCreatePlayer(true)}>
-            ADD PLAYER
+          <Button variant="primary" onClick={() => setShowCreateFormalization(true)}>
+            ADD FORMALIZATION
           </Button>
-          <Button variant="primary" onClick={() => setShowCreateNode(true)}>
-            ADD DECISION NODE
+          <Button variant="secondary" onClick={() => setShowCreatePlayer(true)}>
+            ADD PLAYER
           </Button>
         </div>
       </div>
 
       <CreatePlayerWizard open={showCreatePlayer} onClose={() => setShowCreatePlayer(false)} />
-      <CreateNodeWizard open={showCreateNode} onClose={() => setShowCreateNode(false)} />
+      <CreateFormalizationWizard open={showCreateFormalization} onClose={() => setShowCreateFormalization(false)} />
     </div>
   )
 }

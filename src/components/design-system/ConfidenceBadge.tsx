@@ -21,7 +21,7 @@ export function ConfidenceBadge({ value }: ConfidenceBadgeProps) {
         className="rounded-full flex-shrink-0"
         style={{ width: 6, height: 6, backgroundColor: color }}
       />
-      {value}
+      {value.toFixed(2)}
     </span>
   )
 }

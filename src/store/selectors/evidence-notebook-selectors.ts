@@ -74,6 +74,15 @@ function isLinkedToGame(
     return observation.source_id in canonical.sources
   }
 
+  // Check if this is a source referenced by any observation in the store
+  if (entityId in canonical.sources) {
+    for (const obs of Object.values(canonical.observations)) {
+      if (obs.source_id === entityId) {
+        return true
+      }
+    }
+  }
+
   // Check derivation edges for linkage
   for (const derivation of Object.values(canonical.derivations)) {
     if (derivation.from_ref === entityId || derivation.to_ref === entityId) {
@@ -126,6 +135,7 @@ export function useEvidenceLadder(
   const contradictions: EvidenceNotebookEntry[] = []
 
   for (const source of Object.values(canonical.sources)) {
+    if (!isLinkedToGame(source.id, gamePlayerIds, gameAssumptionIds, canonical)) continue
     sources.push({
       id: source.id,
       type: 'source',
@@ -135,6 +145,7 @@ export function useEvidenceLadder(
   }
 
   for (const observation of Object.values(canonical.observations)) {
+    if (!isLinkedToGame(observation.id, gamePlayerIds, gameAssumptionIds, canonical)) continue
     observations.push({
       id: observation.id,
       type: 'observation',
@@ -144,6 +155,7 @@ export function useEvidenceLadder(
   }
 
   for (const claim of Object.values(canonical.claims)) {
+    if (!isLinkedToGame(claim.id, gamePlayerIds, gameAssumptionIds, canonical)) continue
     claims.push({
       id: claim.id,
       type: 'claim',
@@ -154,6 +166,7 @@ export function useEvidenceLadder(
   }
 
   for (const inference of Object.values(canonical.inferences)) {
+    if (!isLinkedToGame(inference.id, gamePlayerIds, gameAssumptionIds, canonical)) continue
     inferences.push({
       id: inference.id,
       type: 'inference',
@@ -164,6 +177,7 @@ export function useEvidenceLadder(
   }
 
   for (const assumption of Object.values(canonical.assumptions)) {
+    if (!isLinkedToGame(assumption.id, gamePlayerIds, gameAssumptionIds, canonical)) continue
     assumptions.push({
       id: assumption.id,
       type: 'assumption',
@@ -174,6 +188,7 @@ export function useEvidenceLadder(
   }
 
   for (const contradiction of Object.values(canonical.contradictions)) {
+    if (!isLinkedToGame(contradiction.id, gamePlayerIds, gameAssumptionIds, canonical)) continue
     contradictions.push({
       id: contradiction.id,
       type: 'contradiction',

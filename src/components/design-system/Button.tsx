@@ -19,6 +19,7 @@ export function Button({ variant, icon, onClick, disabled, children }: ButtonPro
 
   return (
     <button
+      type="button"
       className={`${base} ${variants[variant]}`}
       onClick={onClick}
       disabled={disabled}

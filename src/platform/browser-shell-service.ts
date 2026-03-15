@@ -5,13 +5,9 @@ export class BrowserShellService implements ShellService {
     document.title = title
   }
 
-  onBeforeClose(cb: () => Promise<boolean>): void {
+  onBeforeClose(_cb: () => Promise<boolean>): void {
     window.addEventListener('beforeunload', (event) => {
-      cb().then((shouldBlock) => {
-        if (shouldBlock) {
-          event.preventDefault()
-        }
-      })
+      event.preventDefault()
     })
   }
 }

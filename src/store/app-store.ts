@@ -2,7 +2,7 @@ import { createStore } from 'zustand/vanilla'
 
 import type { CanonicalStore, EntityRef } from '../types/canonical'
 import { emptyCanonicalStore } from '../types/canonical'
-import type { AnalysisFileMeta } from '../types/file'
+import type { AnalysisFileMeta, LoadResult } from '../types/file'
 import type { Command } from '../engine/commands'
 import type { EventLog, ModelEvent } from '../engine/events'
 import { createEventLog } from '../engine/events'
@@ -80,6 +80,7 @@ export interface AppStore {
   // File actions
   loadFile: (filepath?: string) => Promise<void>
   saveFile: () => Promise<void>
+  loadFromResult: (result: Extract<LoadResult, { status: 'success' }>) => void
   newAnalysis: () => void
 
   // L2 actions
@@ -194,17 +195,32 @@ export function createAppStore() {
     },
 
     loadFile: async (_filepath?: string) => {
-      // Deferred: will be implemented when file service integration is ready.
-      // The file service (src/platform/types.ts) provides openFile/openFilePath
-      // which returns a LoadResult. On success, set canonical/eventLog/inverseIndex/fileMeta.
-      // On recovery, set recovery state.
-      throw new Error('loadFile not yet implemented')
+      console.warn('File loading not yet wired to platform service')
     },
 
     saveFile: async () => {
-      // Deferred: will be implemented when file service integration is ready.
-      // The file service provides saveFile which takes filepath, store, and meta.
-      throw new Error('saveFile not yet implemented')
+      console.warn('File saving not yet wired to platform service')
+    },
+
+    loadFromResult: (result) => {
+      set({
+        canonical: result.store,
+        eventLog: result.event_log,
+        inverseIndex: result.derived.inverse_index,
+        fileMeta: {
+          path: null,
+          meta: {
+            name: result.analysis.name,
+            description: result.analysis.description,
+            created_at: result.analysis.created_at,
+            updated_at: result.analysis.updated_at,
+            metadata: result.analysis.metadata,
+          },
+          lastSaved: Date.now(),
+          dirty: false,
+        },
+        recovery: { active: false },
+      })
     },
 
     newAnalysis: () => {
@@ -223,12 +239,17 @@ export function createAppStore() {
     },
 
     setActiveGame: (gameId) => {
-      set((state) => ({
+      const state = get()
+      const game = gameId ? state.canonical.games[gameId] : null
+      const firstFormalizationId =
+        game && game.formalizations.length > 0 ? game.formalizations[0]! : null
+      set({
         viewState: {
           ...state.viewState,
           activeGameId: gameId,
+          activeFormalizationId: firstFormalizationId,
         },
-      }))
+      })
     },
 
     setActiveFormalization: (formId) => {

@@ -136,7 +136,7 @@ describe('EntityDetail', () => {
     expect(screen.getByText('Players are rational')).toBeInTheDocument()
     expect(screen.getByText('behavioral')).toBeInTheDocument()
     expect(screen.getByText('high')).toBeInTheDocument()
-    expect(screen.getByText('0.9')).toBeInTheDocument()
+    expect(screen.getByText('0.90')).toBeInTheDocument()
   })
 
   it('renders claim details', () => {

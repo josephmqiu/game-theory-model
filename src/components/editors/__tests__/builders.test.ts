@@ -156,7 +156,7 @@ describe('buildCreateFormalizationCommand', () => {
     })
   })
 
-  it('produces an extensive_form formalization command', () => {
+  it('produces an extensive_form formalization command as batch with root node', () => {
     const command = buildCreateFormalizationCommand({
       gameId: 'g1',
       kind: 'extensive_form',
@@ -164,15 +164,22 @@ describe('buildCreateFormalizationCommand', () => {
       abstractionLevel: 'detailed',
     })
 
-    expect(command.kind).toBe('add_formalization')
-    expect(payload(command)).toMatchObject({
+    expect(command.kind).toBe('batch')
+    const batch = command as { kind: 'batch'; commands: Array<{ kind: string; payload?: unknown; id?: string }> }
+    expect(batch.commands).toHaveLength(2)
+    expect(batch.commands[0]!.kind).toBe('add_game_node')
+    expect(batch.commands[1]!.kind).toBe('add_formalization')
+
+    const formPayload = batch.commands[1]!.payload as Record<string, unknown>
+    expect(formPayload).toMatchObject({
       game_id: 'g1',
       kind: 'extensive_form',
       purpose: 'computational',
       abstraction_level: 'detailed',
-      root_node_id: '',
       information_sets: [],
     })
+    // root_node_id should reference the auto-created node
+    expect(formPayload.root_node_id).toBe(batch.commands[0]!.id)
   })
 })
 

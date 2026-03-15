@@ -187,6 +187,13 @@ describe('useEvidenceLadder', () => {
       url: 'https://fallback.com',
       captured_at: '2026-01-01T00:00:00Z',
     }
+    // Link s2 to the game via an observation
+    store.observations['obs2'] = {
+      id: 'obs2',
+      source_id: 's2',
+      text: 'Fallback observation',
+      captured_at: '2026-01-01T00:00:00Z',
+    }
 
     const result = useEvidenceLadder(store, 'g1')
     const s2 = result.source.find((s) => s.id === 's2')

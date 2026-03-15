@@ -45,6 +45,7 @@ function RecentFileRow({ file }: RecentFileRowProps) {
 export function WelcomeScreen(): ReactNode {
   const newAnalysis = useAppStore((s) => s.newAnalysis)
   const setActiveView = useAppStore((s) => s.setActiveView)
+  const loadFromResult = useAppStore((s) => s.loadFromResult)
   const { fileService } = usePlatform()
 
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([])
@@ -62,17 +63,20 @@ export function WelcomeScreen(): ReactNode {
   }
 
   function handleOpenFile() {
-    alert('File open coming soon')
+    console.warn('File open not yet wired to platform service')
   }
 
   function handleLoadExample() {
     fileService
       .loadFixture('sample')
-      .then(() => {
-        setActiveView('board')
+      .then((result) => {
+        if (result.status === 'success') {
+          loadFromResult(result)
+          setActiveView('board')
+        }
       })
-      .catch(() => {
-        setActiveView('board')
+      .catch((error) => {
+        console.error('Failed to load example:', error)
       })
   }
 

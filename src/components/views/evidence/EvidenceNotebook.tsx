@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Plus } from 'lucide-react'
 
 import { useAppStore } from '../../../store'
+import { refKey } from '../../../types/canonical'
 import { Button } from '../../design-system'
 import { coordinationBus, useCoordinationHandler } from '../../../coordination'
 import {
@@ -45,6 +46,7 @@ function entityTypeForLadderType(ladderType: EvidenceLadderType): string {
 export function EvidenceNotebook(): ReactNode {
   const canonical = useAppStore((s) => s.canonical)
   const activeGameId = useAppStore((s) => s.viewState.activeGameId)
+  const inverseIndex = useAppStore((s) => s.inverseIndex)
   const setInspectedRefs = useAppStore((s) => s.setInspectedRefs)
   const containerRef = useRef<HTMLDivElement>(null)
   const cardRefsMap = useRef<Map<string, HTMLDivElement>>(new Map())
@@ -52,6 +54,15 @@ export function EvidenceNotebook(): ReactNode {
   const ladder = useMemo(
     () => useEvidenceLadder(canonical, activeGameId),
     [canonical, activeGameId],
+  )
+
+  const findDependentNodeRefs = useCallback(
+    (entityType: string, entityId: string) => {
+      const key = refKey({ type: entityType as import('../../../types/canonical').EntityType, id: entityId })
+      const dependents = inverseIndex[key] ?? []
+      return dependents.filter((ref) => ref.type === 'game_node')
+    },
+    [inverseIndex],
   )
 
   const handleCardClick = useCallback(
@@ -68,11 +79,8 @@ export function EvidenceNotebook(): ReactNode {
         ref: refs[0]!,
       })
 
-      // Emit highlight_dependents so the graph can visually highlight
-      // any game nodes that reference this evidence item
-      const dependentNodeRefs = Object.values(canonical.nodes)
-        .filter((node) => node.stale_markers?.some((m) => m.caused_by.id === entry.id))
-        .map((node) => ({ type: 'game_node' as const, id: node.id }))
+      // Use InverseIndex to find game nodes that reference this evidence item
+      const dependentNodeRefs = findDependentNodeRefs(entityType, entry.id)
 
       coordinationBus.emit({
         kind: 'highlight_dependents',
@@ -82,7 +90,7 @@ export function EvidenceNotebook(): ReactNode {
         dependent_refs: dependentNodeRefs,
       })
     },
-    [setInspectedRefs, canonical.nodes],
+    [setInspectedRefs, findDependentNodeRefs],
   )
 
   const handleContradictionClick = useCallback(
@@ -98,10 +106,8 @@ export function EvidenceNotebook(): ReactNode {
         ref: refs[0]!,
       })
 
-      // Emit highlight_dependents for any graph nodes that reference this contradiction
-      const dependentNodeRefs = Object.values(canonical.nodes)
-        .filter((node) => node.stale_markers?.some((m) => m.caused_by.id === contradictionId))
-        .map((node) => ({ type: 'game_node' as const, id: node.id }))
+      // Use InverseIndex to find game nodes that reference this contradiction
+      const dependentNodeRefs = findDependentNodeRefs('contradiction', contradictionId)
 
       coordinationBus.emit({
         kind: 'highlight_dependents',
@@ -111,7 +117,7 @@ export function EvidenceNotebook(): ReactNode {
         dependent_refs: dependentNodeRefs,
       })
     },
-    [setInspectedRefs, canonical.nodes],
+    [setInspectedRefs, findDependentNodeRefs],
   )
 
   // Cross-view sync: scroll to entity on focus_entity events
