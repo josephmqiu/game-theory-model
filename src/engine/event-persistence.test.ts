@@ -16,8 +16,20 @@ describe('stale propagation and audit persistence', () => {
     resetPersistedEventStore()
   })
 
-  it('propagates stale marks transitively and clears them by cause', () => {
+  function withoutFixtureStaleMarkers() {
     const store = createSampleCanonicalStore()
+
+    for (const record of Object.values(store)) {
+      for (const entity of Object.values(record)) {
+        delete (entity as { stale_markers?: unknown }).stale_markers
+      }
+    }
+
+    return store
+  }
+
+  it('propagates stale marks transitively and clears them by cause', () => {
+    const store = withoutFixtureStaleMarkers()
     const markResult = dispatch(store, createEventLog('/analysis.gta.json'), {
       kind: 'mark_stale',
       payload: {
@@ -66,6 +78,70 @@ describe('stale propagation and audit persistence', () => {
 
     const undone = undo(clearResult.store, clearResult.event_log)
     expect(undone?.store.claims.claim_1.stale_markers?.some((marker) => marker.caused_by.id === 'source_1')).toBe(true)
+  })
+
+  it('deduplicates stale markers by cause even when the reason changes', () => {
+    const store = withoutFixtureStaleMarkers()
+
+    const first = dispatch(store, createEventLog('/analysis.gta.json'), {
+      kind: 'mark_stale',
+      payload: {
+        id: 'source_1',
+        reason: 'Initial refresh',
+      },
+    })
+
+    expect(first.status).toBe('committed')
+    if (first.status !== 'committed') {
+      throw new Error('Expected first mark_stale to commit.')
+    }
+
+    const second = dispatch(first.store, first.event_log, {
+      kind: 'mark_stale',
+      payload: {
+        id: 'source_1',
+        reason: 'Reworded refresh',
+      },
+    })
+
+    expect(second.status).toBe('committed')
+    if (second.status !== 'committed') {
+      throw new Error('Expected second mark_stale to commit.')
+    }
+
+    expect(
+      second.store.sources.source_1.stale_markers?.filter(
+        (marker) => marker.caused_by.type === 'source' && marker.caused_by.id === 'source_1',
+      ),
+    ).toHaveLength(1)
+    expect(
+      second.store.observations.observation_1.stale_markers?.filter(
+        (marker) => marker.caused_by.type === 'source' && marker.caused_by.id === 'source_1',
+      ),
+    ).toHaveLength(1)
+  })
+
+  it('propagates stale through analytical refs without fanning out through structural containment', () => {
+    const store = withoutFixtureStaleMarkers()
+
+    const result = dispatch(store, createEventLog('/analysis.gta.json'), {
+      kind: 'mark_stale',
+      payload: {
+        id: 'player_1',
+        reason: 'Player inputs changed',
+      },
+    })
+
+    expect(result.status).toBe('committed')
+    if (result.status !== 'committed') {
+      throw new Error('Expected mark_stale to commit.')
+    }
+
+    expect(result.store.players.player_1.stale_markers?.length).toBe(1)
+    expect(result.store.games.game_1.stale_markers).toBeUndefined()
+    expect(result.store.formalizations.formalization_1.stale_markers).toBeUndefined()
+    expect(result.store.nodes.game_node_1.stale_markers).toBeUndefined()
+    expect(result.store.edges.game_edge_1.stale_markers).toBeUndefined()
   })
 
   it('persists committed events, supports filtered queries, and keeps undo append-only', async () => {

@@ -1,24 +1,21 @@
 import { z } from 'zod'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createSampleCanonicalStore, createSampleAnalysisMeta } from '../test-support/sample-analysis'
+import { createSampleAnalysisMeta, createSampleCanonicalStore } from '../test-support/sample-analysis'
 import { storeToAnalysisFile } from '../utils/serialization'
 import {
-  MIGRATIONS,
-  SCHEMA_REGISTRY,
   buildMigrationPath,
   getCurrentSchemaVersion,
   migrateFile,
+  resetMigrationsForTests,
+  resetSchemaRegistryForTests,
   type MigrationTransform,
   type SchemaVersion,
 } from './migration'
 
-const originalSchemas = [...SCHEMA_REGISTRY]
-const originalMigrations = [...MIGRATIONS]
-
 afterEach(() => {
-  SCHEMA_REGISTRY.splice(0, SCHEMA_REGISTRY.length, ...originalSchemas)
-  MIGRATIONS.splice(0, MIGRATIONS.length, ...originalMigrations)
+  resetSchemaRegistryForTests()
+  resetMigrationsForTests()
 })
 
 describe('migration engine', () => {
@@ -40,31 +37,35 @@ describe('migration engine', () => {
       },
     ]
 
-    MIGRATIONS.splice(0, MIGRATIONS.length, ...migrations)
+    resetMigrationsForTests(migrations)
 
     expect(buildMigrationPath(1, 3)).toEqual(migrations)
   })
 
   it('throws when an intermediate migration step is missing', () => {
-    MIGRATIONS.splice(0, MIGRATIONS.length, {
-      from: 1,
-      to: 2,
-      description: 'step one',
-      lossy: false,
-      transform: (data) => ({ result: data }),
-    })
+    resetMigrationsForTests([
+      {
+        from: 1,
+        to: 2,
+        description: 'step one',
+        lossy: false,
+        transform: (data) => ({ result: data }),
+      },
+    ])
 
     expect(() => buildMigrationPath(1, 3)).toThrow(/2 to 3/)
   })
 
   it('returns migration_failed instead of throwing when the migration path is incomplete', async () => {
-    MIGRATIONS.splice(0, MIGRATIONS.length, {
-      from: 1,
-      to: 2,
-      description: 'step one',
-      lossy: false,
-      transform: (data) => ({ result: data }),
-    })
+    resetMigrationsForTests([
+      {
+        from: 1,
+        to: 2,
+        description: 'step one',
+        lossy: false,
+        transform: (data) => ({ result: data }),
+      },
+    ])
 
     const result = await migrateFile({ schema_version: 1 }, 1, 3)
 
@@ -135,14 +136,16 @@ describe('migration engine', () => {
       },
     ]
 
-    SCHEMA_REGISTRY.splice(0, SCHEMA_REGISTRY.length, ...schemas)
-    MIGRATIONS.splice(0, MIGRATIONS.length, {
-      from: 1,
-      to: 2,
-      description: 'break the payload',
-      lossy: false,
-      transform: () => ({ result: null }),
-    })
+    resetSchemaRegistryForTests(schemas)
+    resetMigrationsForTests([
+      {
+        from: 1,
+        to: 2,
+        description: 'break the payload',
+        lossy: false,
+        transform: () => ({ result: null }),
+      },
+    ])
 
     const result = await migrateFile(file, 1, 2)
 
@@ -178,7 +181,7 @@ describe('migration engine', () => {
       }),
     }) as unknown as z.ZodType<typeof baseFile>
 
-    SCHEMA_REGISTRY.splice(0, SCHEMA_REGISTRY.length,
+    resetSchemaRegistryForTests([
       {
         format: 1,
         schema: v1Schema,
@@ -193,35 +196,42 @@ describe('migration engine', () => {
         released_at: '2026-03-15',
         breaking: false,
       },
-    )
-    MIGRATIONS.splice(0, MIGRATIONS.length, {
-      from: 1,
-      to: 2,
-      description: 'drop the old note',
-      lossy: true,
-      discarded_fields: ['legacy_note'],
-      transform: (data) => {
-        const source = data as Record<string, unknown>
-        return {
-          result: {
-            ...source,
-            schema_version: 2,
-            metadata: {
-              tags: ['fixture'],
-              primary_event_dates: {
-                start: '2026-03-01',
+    ])
+    resetMigrationsForTests([
+      {
+        from: 1,
+        to: 2,
+        description: 'drop the old note',
+        lossy: true,
+        discarded_fields: ['legacy_note'],
+        transform: (data) => {
+          const source = data as Record<string, unknown>
+          return {
+            result: {
+              ...source,
+              schema_version: 2,
+              metadata: {
+                tags: ['fixture'],
+                primary_event_dates: {
+                  start: '2026-03-01',
+                },
               },
             },
-          },
-          discarded: {
-            legacy_note: 'deprecated',
-          },
-        }
+            discarded: {
+              legacy_note: 'deprecated',
+            },
+          }
+        },
       },
-    })
+    ])
 
     const result = await migrateFile(
-      { schema_version: 1, name: baseFile.name, metadata: { tags: ['fixture'] }, legacy_note: 'deprecated' },
+      {
+        schema_version: 1,
+        name: baseFile.name,
+        metadata: { tags: ['fixture'] },
+        legacy_note: 'deprecated',
+      },
       1,
       2,
     )
@@ -303,7 +313,7 @@ describe('migration engine', () => {
       }),
     }) as unknown as z.ZodType<typeof file>
 
-    SCHEMA_REGISTRY.splice(0, SCHEMA_REGISTRY.length,
+    resetSchemaRegistryForTests([
       {
         format: 1,
         schema: v1Schema,
@@ -318,28 +328,30 @@ describe('migration engine', () => {
         released_at: '2026-03-15',
         breaking: false,
       },
-    )
-    MIGRATIONS.splice(0, MIGRATIONS.length, {
-      from: 1,
-      to: 2,
-      description: 'add primary event dates',
-      lossy: false,
-      transform: (data) => {
-        const source = data as typeof file
-        return {
-          result: {
-            ...source,
-            schema_version: 2,
-            metadata: {
-              ...source.metadata,
-              primary_event_dates: {
-                start: '2026-03-01',
+    ])
+    resetMigrationsForTests([
+      {
+        from: 1,
+        to: 2,
+        description: 'add primary event dates',
+        lossy: false,
+        transform: (data) => {
+          const source = data as typeof file
+          return {
+            result: {
+              ...source,
+              schema_version: 2,
+              metadata: {
+                ...source.metadata,
+                primary_event_dates: {
+                  start: '2026-03-01',
+                },
               },
             },
-          },
-        }
+          }
+        },
       },
-    })
+    ])
 
     const v1File = {
       ...file,

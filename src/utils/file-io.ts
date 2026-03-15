@@ -108,7 +108,19 @@ export async function loadAnalysisFileWithIo(
   filepath: string,
   io: FileSystemOps,
 ): Promise<LoadResult> {
-  const rawJson = await io.readFile(filepath)
+  let rawJson: string
+  try {
+    rawJson = await io.readFile(filepath)
+  } catch (error) {
+    return {
+      status: 'recovery',
+      stage: 'parse',
+      raw_json: '',
+      error: {
+        message: error instanceof Error ? error.message : 'Unable to read analysis file.',
+      },
+    }
+  }
   let parsedJson: unknown
 
   try {
@@ -156,7 +168,7 @@ export async function loadAnalysisFileWithIo(
       status: 'recovery',
       stage: 'migration',
       raw_json: rawJson,
-      parsed_json: parsedJson,
+      parsed_json: migration.status === 'migration_failed' ? migration.partial_data : parsedJson,
       error: {
         message:
           migration.status === 'unsupported_version'
@@ -211,7 +223,17 @@ export async function loadAnalysisFileWithIo(
     }
   }
 
-  const persistedRevision = await getCanonicalRevision(filepath)
+  let persistedRevision = 0
+  const warnings = [...integrity.warnings]
+  try {
+    persistedRevision = await getCanonicalRevision(filepath)
+  } catch (error) {
+    warnings.push(
+      error instanceof Error
+        ? `Unable to load persisted revision history; defaulted to revision 0. ${error.message}`
+        : 'Unable to load persisted revision history; defaulted to revision 0.',
+    )
+  }
 
   return {
     status: 'success',
@@ -222,7 +244,7 @@ export async function loadAnalysisFileWithIo(
     },
     integrity: {
       ok: true,
-      warnings: integrity.warnings.length > 0 ? integrity.warnings : undefined,
+      warnings: warnings.length > 0 ? warnings : undefined,
     },
     event_log: createEventLog(filepath, persistedRevision),
     migration: {
@@ -262,6 +284,13 @@ export async function saveAnalysisWithIo(
         `Written file failed structural checks: ${structuralIssues
           .map((issue) => issue.message)
           .join('; ')}`,
+      )
+    }
+
+    const integrity = validateStoreInvariants(analysisFileToStore(verification.data))
+    if (integrity.errors.length > 0) {
+      throw new Error(
+        `Written file failed integrity checks: ${integrity.errors.join('; ')}`,
       )
     }
 

@@ -2,7 +2,7 @@ import { compare, type Operation } from 'fast-json-patch'
 
 import type { CanonicalStore, EntityRef, EntityType, StaleMarker } from '../types'
 import { canonicalStoreSchema } from '../types/schemas'
-import { createEntityRef } from '../types/canonical'
+import { createEntityRef, refKey } from '../types/canonical'
 
 import type {
   AddEntityCommand,
@@ -52,9 +52,7 @@ function appendStaleMarker(
     caused_by: target,
   }
   const staleMarkers = entity.stale_markers ?? []
-  const duplicate = staleMarkers.some(
-    (candidate) => candidate.reason === reason && candidate.caused_by.id === target.id,
-  )
+  const duplicate = staleMarkers.some((candidate) => refKey(candidate.caused_by) === refKey(target))
   if (!duplicate) {
     entity.stale_markers = [...staleMarkers, marker]
   }
@@ -69,7 +67,7 @@ function removeStaleMarker(store: CanonicalStore, target: EntityRef): CanonicalS
   }
 
   const staleMarkers = (entity.stale_markers ?? []).filter(
-    (marker) => marker.caused_by.id !== target.id,
+    (marker) => refKey(marker.caused_by) !== refKey(target),
   )
   if (staleMarkers.length > 0) {
     entity.stale_markers = staleMarkers

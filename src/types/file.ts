@@ -23,7 +23,14 @@ export const analysisEntityKeys = [
 ] as const
 
 export type AnalysisEntityKey = (typeof analysisEntityKeys)[number]
-export type AnalysisFile = import('zod').infer<typeof import('./schemas').analysisFileSchema>
+export type CurrentAnalysisFile = import('zod').infer<
+  typeof import('./schemas').analysisFileSchema
+>
+export interface VersionedAnalysisFile {
+  schema_version: number
+  [key: string]: unknown
+}
+export type AnalysisFile = CurrentAnalysisFile
 export type AnalysisFileMeta = Omit<
   AnalysisFile,
   'schema_version' | AnalysisEntityKey

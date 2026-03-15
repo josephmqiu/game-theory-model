@@ -19,7 +19,7 @@ function actionKey(action: IntegrityAction): string {
     case 'cascade_delete':
       return `cascade_delete:${refKey(action.entity)}`
     case 'mark_stale':
-      return `mark_stale:${refKey(action.entity)}:${action.reason}`
+      return `mark_stale:${refKey(action.entity)}:${refKey(action.caused_by)}`
     case 'remove_ref':
       return `remove_ref:${refKey(action.entity)}:${action.field}:${action.ref_id}`
   }
@@ -74,7 +74,7 @@ export function computeImpact(
   const queue: EntityRef[] = [target]
   const pendingRemovals = new Map<
     string,
-    { dependent: EntityRef; field: string; removedIds: Set<string> }
+    { dependent: EntityRef; field: string; removedRefs: Map<string, EntityRef> }
   >()
 
   while (queue.length > 0) {
@@ -118,6 +118,7 @@ export function computeImpact(
               kind: 'mark_stale',
               entity: dependent,
               reason: `Dependency ${current.type}:${current.id} was deleted`,
+              caused_by: current,
             })
             break
           case 'remove_ref':
@@ -139,9 +140,9 @@ export function computeImpact(
             const existing = pendingRemovals.get(removalKey) ?? {
               dependent,
               field: reference.field,
-              removedIds: new Set<string>(),
+              removedRefs: new Map<string, EntityRef>(),
             }
-            existing.removedIds.add(current.id)
+            existing.removedRefs.set(refKey(current), current)
             pendingRemovals.set(removalKey, existing)
             break
           }
@@ -150,7 +151,7 @@ export function computeImpact(
     }
   }
 
-  for (const { dependent, field, removedIds } of pendingRemovals.values()) {
+  for (const { dependent, field, removedRefs } of pendingRemovals.values()) {
     if (!dependent || deleted.has(refKey(dependent))) {
       continue
     }
@@ -158,12 +159,21 @@ export function computeImpact(
     if (!entity) {
       continue
     }
-    if (fieldWouldBeEmptyAfterRemovals(entity, field, removedIds)) {
-      addAction(actions, {
-        kind: 'mark_stale',
-        entity: dependent,
-        reason: `Required references removed from ${field}`,
-      })
+    if (
+      fieldWouldBeEmptyAfterRemovals(
+        entity,
+        field,
+        new Set([...removedRefs.values()].map((ref) => ref.id)),
+      )
+    ) {
+      for (const removedRef of removedRefs.values()) {
+        addAction(actions, {
+          kind: 'mark_stale',
+          entity: dependent,
+          reason: `Required references removed from ${field}`,
+          caused_by: removedRef,
+        })
+      }
     }
   }
 
@@ -223,14 +233,13 @@ function makeDeleteCommand(entity: EntityRef): Command {
   } as Command
 }
 
-export function expandCascade(
+export function expandCascadeFromImpact(
   store: CanonicalStore,
-  index: InverseIndex,
   deleteCommand: DeleteEntityCommand<EntityType>,
+  impact: ImpactReport,
 ): Command {
   const targetType = deleteCommand.kind.slice('delete_'.length) as EntityType
   const target = createEntityRef(targetType, deleteCommand.payload.id)
-  const impact = computeImpact(store, index, target)
   const mutatedEntities = new Map<string, { ref: EntityRef; entity: Record<string, unknown> }>()
 
   for (const action of impact.proposed_actions) {
@@ -263,21 +272,19 @@ export function expandCascade(
     commands.push(makeUpdateCommand(ref, entity))
   }
 
-  for (const action of impact.proposed_actions) {
-    if (action.kind === 'mark_stale') {
-      commands.push({
-        kind: 'mark_stale',
-        payload: {
-          id: action.entity.id,
-          reason: action.reason,
-        },
-      })
-    }
-  }
-
   return {
     kind: 'batch',
     label: `Cascade delete ${target.type}:${target.id}`,
     commands,
   }
+}
+
+export function expandCascade(
+  store: CanonicalStore,
+  index: InverseIndex,
+  deleteCommand: DeleteEntityCommand<EntityType>,
+): Command {
+  const targetType = deleteCommand.kind.slice('delete_'.length) as EntityType
+  const target = createEntityRef(targetType, deleteCommand.payload.id)
+  return expandCascadeFromImpact(store, deleteCommand, computeImpact(store, index, target))
 }

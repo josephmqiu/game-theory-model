@@ -5,14 +5,14 @@ import { createEntityRef } from '../types/canonical'
 
 import type { Command } from './commands'
 import { isDeleteCommand } from './commands'
-import { computeImpact, expandCascade } from './cascade'
-import {
-  getCanonicalRevisionSync,
-  incrementRevisionSync,
-  persistEventSync,
-} from './event-persistence'
+import { computeImpact, expandCascadeFromImpact } from './cascade'
+import { incrementRevisionSync, persistEventSync } from './event-persistence'
 import { createEventLog, type EventLog, type ModelEvent } from './events'
-import { validateStoreInvariants } from './integrity'
+import {
+  validateStoreInvariants,
+  type ImpactReport,
+  type IntegrityAction,
+} from './integrity'
 import { buildInverseIndex, type InverseIndex } from './inverse-index'
 import { reduce, reduceStore, CommandError } from './reducer'
 import { clearStale, propagateStale } from './stale'
@@ -30,7 +30,7 @@ export type DispatchResult =
   | {
       status: 'dry_run'
       event: ModelEvent
-      impact_report?: import('./integrity').ImpactReport
+      impact_report?: ImpactReport
       store: CanonicalStore
       event_log: EventLog
       inverse_index: InverseIndex
@@ -45,14 +45,21 @@ export type DispatchResult =
 interface StaleCommandRoot {
   kind: 'mark_stale' | 'clear_stale'
   target: EntityRef
+  cause: EntityRef
   reason?: string
+}
+
+interface PreprocessResult {
+  command: Command
+  impactReport?: ImpactReport
+  integrityActions: IntegrityAction[]
 }
 
 function createModelEvent(
   command: Command,
   patches: ReadonlyArray<Operation>,
   inversePatches: ReadonlyArray<Operation>,
-  integrityActions: ReadonlyArray<import('./integrity').IntegrityAction>,
+  integrityActions: ReadonlyArray<IntegrityAction>,
   source: ModelEvent['source'],
   metadata?: Record<string, unknown>,
 ): ModelEvent {
@@ -98,18 +105,23 @@ function retryPendingPersistence(eventLog: EventLog): EventLog {
 
 function preprocessCommand(
   store: CanonicalStore,
+  index: InverseIndex,
   command: Command,
-): { command: Command; impactReport?: import('./integrity').ImpactReport } {
+): PreprocessResult {
   if (command.kind === 'batch') {
     let nextStore = store
+    let nextIndex = index
     const commands: Command[] = []
-    let impactReport: import('./integrity').ImpactReport | undefined
+    const integrityActions: IntegrityAction[] = []
+    let impactReport: ImpactReport | undefined
 
     for (const nested of command.commands) {
-      const result = preprocessCommand(nextStore, nested)
+      const result = preprocessCommand(nextStore, nextIndex, nested)
       commands.push(result.command)
+      integrityActions.push(...result.integrityActions)
       impactReport ??= result.impactReport
       nextStore = reduceStore(nextStore, result.command)
+      nextIndex = buildInverseIndex(nextStore)
     }
 
     return {
@@ -118,33 +130,34 @@ function preprocessCommand(
         commands,
       },
       impactReport,
+      integrityActions,
     }
   }
 
   if (!isDeleteCommand(command)) {
-    return { command }
+    return { command, integrityActions: [] }
   }
 
   const target = createEntityRef(
     command.kind.slice('delete_'.length) as EntityType,
     command.payload.id,
   )
-  const index = buildInverseIndex(store)
   const impactReport = computeImpact(store, index, target)
 
   if (impactReport.proposed_actions.some((action) => action.kind === 'block')) {
-    return { command, impactReport }
+    return { command, impactReport, integrityActions: impactReport.proposed_actions }
   }
 
   return {
-    command: expandCascade(store, index, command),
+    command: expandCascadeFromImpact(store, command, impactReport),
     impactReport,
+    integrityActions: impactReport.proposed_actions,
   }
 }
 
-function collectStaleRoots(store: CanonicalStore, command: Command): StaleCommandRoot[] {
+function collectCommandStaleRoots(store: CanonicalStore, command: Command): StaleCommandRoot[] {
   if (command.kind === 'batch') {
-    return command.commands.flatMap((nested) => collectStaleRoots(store, nested))
+    return command.commands.flatMap((nested) => collectCommandStaleRoots(store, nested))
   }
 
   if (command.kind !== 'mark_stale' && command.kind !== 'clear_stale') {
@@ -157,25 +170,52 @@ function collectStaleRoots(store: CanonicalStore, command: Command): StaleComman
         {
           kind: command.kind,
           target,
+          cause: target,
           reason: command.kind === 'mark_stale' ? command.payload.reason : undefined,
         },
       ]
     : []
 }
 
+function collectIntegrityStaleRoots(
+  integrityActions: ReadonlyArray<IntegrityAction>,
+): StaleCommandRoot[] {
+  return integrityActions.flatMap((action) =>
+    action.kind === 'mark_stale'
+      ? [
+          {
+            kind: 'mark_stale' as const,
+            target: action.entity,
+            cause: action.caused_by,
+            reason: action.reason,
+          },
+        ]
+      : [],
+  )
+}
+
 function applyStaleEffects(
   store: CanonicalStore,
-  command: Command,
+  index: InverseIndex,
+  roots: ReadonlyArray<StaleCommandRoot>,
 ): CanonicalStore {
   let nextStore = store
-  for (const root of collectStaleRoots(store, command)) {
-    const index = buildInverseIndex(nextStore)
+
+  for (const root of roots) {
     if (root.kind === 'mark_stale') {
-      nextStore = propagateStale(nextStore, index, root.target, root.reason ?? 'Marked stale').store
+      nextStore = propagateStale(
+        nextStore,
+        index,
+        root.target,
+        root.reason ?? 'Marked stale',
+        root.cause,
+      ).store
       continue
     }
-    nextStore = clearStale(nextStore, index, root.target).store
+
+    nextStore = clearStale(nextStore, index, root.target, root.cause).store
   }
+
   return nextStore
 }
 
@@ -203,19 +243,30 @@ export function dispatch(
   }
 
   try {
-    const { command: effectiveCommand, impactReport } = preprocessCommand(store, command)
-    if (impactReport?.proposed_actions.some((action) => action.kind === 'block')) {
+    const initialIndex = buildInverseIndex(store)
+    const {
+      command: effectiveCommand,
+      impactReport,
+      integrityActions,
+    } = preprocessCommand(store, initialIndex, command)
+    const blockingActions = integrityActions.filter(
+      (action): action is Extract<IntegrityAction, { kind: 'block' }> => action.kind === 'block',
+    )
+
+    if (blockingActions.length > 0) {
       return {
         status: 'rejected',
         reason: 'invariant_violated',
-        errors: impactReport.proposed_actions
-          .filter((action): action is Extract<typeof action, { kind: 'block' }> => action.kind === 'block')
-          .map((action) => action.reason),
+        errors: blockingActions.map((action) => action.reason),
       }
     }
 
     const reduced = reduce(store, effectiveCommand)
-    const staleAppliedStore = applyStaleEffects(reduced.newStore, effectiveCommand)
+    const reducedIndex = buildInverseIndex(reduced.newStore)
+    const staleAppliedStore = applyStaleEffects(reduced.newStore, reducedIndex, [
+      ...collectCommandStaleRoots(reduced.newStore, effectiveCommand),
+      ...collectIntegrityStaleRoots(integrityActions),
+    ])
     const invariantResult = validateStoreInvariants(staleAppliedStore)
     if (invariantResult.errors.length > 0) {
       return {
@@ -225,14 +276,20 @@ export function dispatch(
       }
     }
 
-    const patches = compare(store, staleAppliedStore)
-    const inversePatches = compare(staleAppliedStore, store)
+    const patches =
+      staleAppliedStore === reduced.newStore
+        ? reduced.patches
+        : compare(store, staleAppliedStore)
+    const inversePatches =
+      staleAppliedStore === reduced.newStore
+        ? reduced.inversePatches
+        : compare(staleAppliedStore, store)
     const inverseIndex = buildInverseIndex(staleAppliedStore)
     const event = createModelEvent(
       effectiveCommand,
       patches,
       inversePatches,
-      impactReport?.proposed_actions ?? [],
+      integrityActions,
       opts?.source ?? 'user',
       invariantResult.warnings.length > 0
         ? { integrity_warnings: invariantResult.warnings }
@@ -337,4 +394,3 @@ export function redo(
 }
 
 export { createEventLog }
-

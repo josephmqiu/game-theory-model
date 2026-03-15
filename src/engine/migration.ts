@@ -1,13 +1,13 @@
 import type { ZodType } from 'zod'
 
 import { analysisFileSchema } from '../types/schemas'
-import type { AnalysisFile } from '../types/file'
+import type { AnalysisFile, CurrentAnalysisFile } from '../types/file'
 import { MigrationError } from './migration-error'
 
 export interface SchemaVersion {
   format: number
-  schema: ZodType<AnalysisFile>
-  normalize: (data: AnalysisFile) => AnalysisFile
+  schema: ZodType<CurrentAnalysisFile>
+  normalize: (data: CurrentAnalysisFile) => CurrentAnalysisFile
   released_at: string
   breaking: boolean
 }
@@ -54,20 +54,47 @@ export type MigrationResult =
       recovery_available: true
     }
 
-export const SCHEMA_REGISTRY: SchemaVersion[] = [
+function normalizeV1AnalysisFile(data: CurrentAnalysisFile): CurrentAnalysisFile {
+  return data
+}
+
+const defaultSchemaRegistry: SchemaVersion[] = [
   {
     format: 1,
     schema: analysisFileSchema,
-    normalize: (data) => data,
+    normalize: normalizeV1AnalysisFile,
     released_at: '2026-03-14',
     breaking: false,
   },
 ]
 
-export const MIGRATIONS: MigrationTransform[] = []
+const schemaRegistry: SchemaVersion[] = [...defaultSchemaRegistry]
+const migrations: MigrationTransform[] = []
+
+export function resetSchemaRegistryForTests(
+  schemas: ReadonlyArray<SchemaVersion> = defaultSchemaRegistry,
+): void {
+  schemaRegistry.length = 0
+  schemaRegistry.push(...schemas)
+}
+
+export function registerSchemaVersionForTests(...schemas: SchemaVersion[]): void {
+  schemaRegistry.push(...schemas)
+}
+
+export function resetMigrationsForTests(
+  nextMigrations: ReadonlyArray<MigrationTransform> = [],
+): void {
+  migrations.length = 0
+  migrations.push(...nextMigrations)
+}
+
+export function registerMigrationForTests(...nextMigrations: MigrationTransform[]): void {
+  migrations.push(...nextMigrations)
+}
 
 export function getSchema(format: number): SchemaVersion {
-  const entry = SCHEMA_REGISTRY.find((schemaVersion) => schemaVersion.format === format)
+  const entry = schemaRegistry.find((schemaVersion) => schemaVersion.format === format)
   if (!entry) {
     throw new MigrationError(`No schema registered for format ${format}.`, { format })
   }
@@ -75,11 +102,11 @@ export function getSchema(format: number): SchemaVersion {
 }
 
 export function getCurrentSchemaVersion(): number {
-  if (SCHEMA_REGISTRY.length === 0) {
+  if (schemaRegistry.length === 0) {
     throw new MigrationError('No schema versions have been registered.')
   }
 
-  return Math.max(...SCHEMA_REGISTRY.map((schemaVersion) => schemaVersion.format))
+  return Math.max(...schemaRegistry.map((schemaVersion) => schemaVersion.format))
 }
 
 export function buildMigrationPath(from: number, to: number): MigrationTransform[] {
@@ -94,7 +121,7 @@ export function buildMigrationPath(from: number, to: number): MigrationTransform
   const path: MigrationTransform[] = []
 
   for (let version = from; version < to; version += 1) {
-    const step = MIGRATIONS.find(
+    const step = migrations.find(
       (migration) => migration.from === version && migration.to === version + 1,
     )
 

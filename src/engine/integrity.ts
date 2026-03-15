@@ -1,5 +1,5 @@
-import type { CanonicalStore, EntityRef, EntityType } from '../types'
-import { createEntityRef, refKey } from '../types/canonical'
+import type { CanonicalStore, EntityRef, EntityType, StaleMarker } from '../types'
+import { STORE_KEY, createEntityRef, refKey } from '../types/canonical'
 
 import { collectDeclaredReferences, allowsTargetType } from './reference-utils'
 import { listEntities } from './store-utils'
@@ -19,7 +19,7 @@ export interface RefDeclaration {
 
 export type IntegrityAction =
   | { kind: 'remove_ref'; entity: EntityRef; field: string; ref_id: string }
-  | { kind: 'mark_stale'; entity: EntityRef; reason: string }
+  | { kind: 'mark_stale'; entity: EntityRef; reason: string; caused_by: EntityRef }
   | { kind: 'cascade_delete'; entity: EntityRef }
   | { kind: 'block'; reason: string }
 
@@ -146,6 +146,15 @@ export interface IntegrityValidationResult {
   warnings: string[]
 }
 
+function hasMatchingStaleCause(entity: unknown, target: EntityRef): boolean {
+  const markers = (entity as { stale_markers?: ReadonlyArray<StaleMarker> }).stale_markers
+  if (!Array.isArray(markers)) {
+    return false
+  }
+
+  return markers.some((marker) => refKey(marker.caused_by) === refKey(target))
+}
+
 export function validateStoreInvariants(store: CanonicalStore): IntegrityValidationResult {
   const errors: string[] = []
   const warnings: string[] = []
@@ -165,44 +174,10 @@ export function validateStoreInvariants(store: CanonicalStore): IntegrityValidat
       }
 
       const target = createEntityRef(reference.target_type, reference.ref_id)
-      const targetRecord = store[reference.target_type === 'game_node'
-        ? 'nodes'
-        : reference.target_type === 'game_edge'
-          ? 'edges'
-          : reference.target_type === 'latent_factor'
-            ? 'latent_factors'
-            : reference.target_type === 'cross_game_link'
-              ? 'cross_game_links'
-              : reference.target_type === 'formalization'
-                ? 'formalizations'
-                : reference.target_type === 'observation'
-                  ? 'observations'
-                  : reference.target_type === 'claim'
-                    ? 'claims'
-                    : reference.target_type === 'inference'
-                      ? 'inferences'
-                      : reference.target_type === 'assumption'
-                        ? 'assumptions'
-                        : reference.target_type === 'contradiction'
-                          ? 'contradictions'
-                          : reference.target_type === 'derivation'
-                            ? 'derivations'
-                            : reference.target_type === 'scenario'
-                              ? 'scenarios'
-                              : reference.target_type === 'playbook'
-                                ? 'playbooks'
-                                : reference.target_type === 'player'
-                                  ? 'players'
-                                  : reference.target_type === 'source'
-                                    ? 'sources'
-                                    : 'games']
+      const targetRecord = store[STORE_KEY[reference.target_type]]
 
       if (!(target.id in targetRecord)) {
-        if (
-          reference.declaration.on_delete === 'mark_stale' &&
-          Array.isArray((entity as { stale_markers?: unknown[] }).stale_markers) &&
-          (entity as { stale_markers?: unknown[] }).stale_markers!.length > 0
-        ) {
+        if (reference.declaration.on_delete === 'mark_stale' && hasMatchingStaleCause(entity, target)) {
           continue
         }
 
