@@ -7,6 +7,7 @@ import { EvidenceLibrary } from '../shell/EvidenceLibrary'
 import { GraphView } from '../views/graph/GraphView'
 import { EvidenceNotebook } from '../views/evidence/EvidenceNotebook'
 import { MatrixView } from '../views/matrix/MatrixView'
+import { TreeView } from '../views/tree/TreeView'
 import { InspectorPanel } from '../inspector'
 
 export function ViewRouter(): ReactNode {
@@ -41,7 +42,12 @@ export function ViewRouter(): ReactNode {
         </div>
       )
     case 'tree':
-      return <div className="p-8 text-text-muted">Tree View</div>
+      return (
+        <div className="flex flex-1 h-full">
+          <TreeView />
+          <InspectorPanel />
+        </div>
+      )
     case 'evidence_notebook':
       return <EvidenceNotebook />
     default:
