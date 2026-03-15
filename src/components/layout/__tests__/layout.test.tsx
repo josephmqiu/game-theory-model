@@ -17,7 +17,8 @@ function renderWithProviders() {
 describe('AppLayout', () => {
   it('renders sidebar with app navigation', () => {
     renderWithProviders()
-    expect(screen.getByText('STRATEGIC LENS')).toBeInTheDocument()
+    // STRATEGIC LENS appears in both sidebar and welcome screen — check sidebar specifically
+    expect(screen.getAllByText('STRATEGIC LENS').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('WORKFLOW BOARD')).toBeInTheDocument()
     expect(screen.getByText('PLAYERS')).toBeInTheDocument()
     expect(screen.getByText('EVIDENCE')).toBeInTheDocument()
@@ -35,6 +36,7 @@ describe('AppLayout', () => {
 
   it('shows welcome screen by default', () => {
     renderWithProviders()
-    expect(screen.getByText('Welcome Screen')).toBeInTheDocument()
+    // WelcomeScreen is now live — check for its actual footer text
+    expect(screen.getByText('v0.1.0 — LOCAL-FIRST ANALYSIS')).toBeInTheDocument()
   })
 })

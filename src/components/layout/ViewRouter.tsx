@@ -1,5 +1,9 @@
 import type { ReactNode } from 'react'
 import { useAppStore } from '../../store'
+import { WelcomeScreen } from '../shell/WelcomeScreen'
+import { WorkflowBoard } from '../shell/WorkflowBoard'
+import { PlayersRegistry } from '../shell/PlayersRegistry'
+import { EvidenceLibrary } from '../shell/EvidenceLibrary'
 
 export function ViewRouter(): ReactNode {
   const activeView = useAppStore((s) => s.viewState.activeView)
@@ -11,13 +15,13 @@ export function ViewRouter(): ReactNode {
 
   switch (activeView) {
     case 'welcome':
-      return <div className="p-8 text-text-muted">Welcome Screen</div>
+      return <WelcomeScreen />
     case 'board':
-      return <div className="p-8 text-text-muted">Workflow Board</div>
+      return <WorkflowBoard />
     case 'players_registry':
-      return <div className="p-8 text-text-muted">Players Registry</div>
+      return <PlayersRegistry />
     case 'evidence_library':
-      return <div className="p-8 text-text-muted">Evidence Library</div>
+      return <EvidenceLibrary />
     case 'graph':
       return <div className="p-8 text-text-muted">Graph View</div>
     case 'matrix':
