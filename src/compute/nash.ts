@@ -4,21 +4,56 @@ import type { NashEquilibrium, NashResult } from '../types/solver-results'
 import { checkSolverGate, computeReadiness } from './readiness'
 import { getNormalFormShape, readEstimateNumeric } from './utils'
 
-function payoffAt(
+interface PayoffLookupEntry {
+  payoffs: Record<string, number>
+  usedMidpoint: boolean
+}
+
+function payoffKey(rowStrategy: string, colStrategy: string): string {
+  return `${rowStrategy}__${colStrategy}`
+}
+
+function buildPayoffLookup(
   formalization: NormalFormModel,
+  rowPlayerId: string,
+  colPlayerId: string,
+): Map<string, PayoffLookupEntry> {
+  const lookup = new Map<string, PayoffLookupEntry>()
+  for (const cell of formalization.payoff_cells) {
+    const rowStrategy = cell.strategy_profile[rowPlayerId]
+    const colStrategy = cell.strategy_profile[colPlayerId]
+    if (!rowStrategy || !colStrategy) {
+      continue
+    }
+
+    const payoffs: Record<string, number> = {}
+    let usedMidpoint = false
+    for (const [playerId, estimate] of Object.entries(cell.payoffs)) {
+      const numeric = readEstimateNumeric(estimate)
+      if (!numeric) {
+        continue
+      }
+
+      payoffs[playerId] = numeric.value
+      usedMidpoint = usedMidpoint || Boolean(numeric.usedMidpoint)
+    }
+
+    lookup.set(payoffKey(rowStrategy, colStrategy), {
+      payoffs,
+      usedMidpoint,
+    })
+  }
+
+  return lookup
+}
+
+function payoffAt(
+  lookup: Map<string, PayoffLookupEntry>,
   playerId: string,
   rowStrategy: string,
   colStrategy: string,
 ): number | null {
-  const [rowPlayerId, colPlayerId] = Object.keys(formalization.strategies)
-  const cell = formalization.payoff_cells.find(
-    (entry) =>
-      entry.strategy_profile[rowPlayerId!] === rowStrategy &&
-      entry.strategy_profile[colPlayerId!] === colStrategy,
-  )
-  const estimate = cell?.payoffs[playerId]
-  const numeric = estimate ? readEstimateNumeric(estimate) : null
-  return numeric?.value ?? null
+  return lookup.get(payoffKey(rowStrategy, colStrategy))?.payoffs[playerId] ?? null
 }
 
 function baseResult(formalization: NormalFormModel, store: CanonicalStore): NashResult {
@@ -67,45 +102,39 @@ export function solveNash(
     }
   }
 
+  const lookup = buildPayoffLookup(formalization, rowPlayerId, colPlayerId)
   const equilibria: NashEquilibrium[] = []
   let usedMidpoint = false
+  const warnings = [...gate.warnings]
 
   for (const rowStrategy of rowStrategies) {
     for (const colStrategy of colStrategies) {
-      const currentRowPayoff = payoffAt(formalization, rowPlayerId, rowStrategy, colStrategy)
-      const currentColPayoff = payoffAt(formalization, colPlayerId, rowStrategy, colStrategy)
+      const currentRowPayoff = payoffAt(lookup, rowPlayerId, rowStrategy, colStrategy)
+      const currentColPayoff = payoffAt(lookup, colPlayerId, rowStrategy, colStrategy)
       if (currentRowPayoff === null || currentColPayoff === null) {
         continue
       }
 
       const rowBest = Math.max(
         ...rowStrategies
-          .map((candidate) => payoffAt(formalization, rowPlayerId, candidate, colStrategy))
+          .map((candidate) => payoffAt(lookup, rowPlayerId, candidate, colStrategy))
           .filter((value): value is number => value !== null),
       )
       const colBest = Math.max(
         ...colStrategies
-          .map((candidate) => payoffAt(formalization, colPlayerId, rowStrategy, candidate))
+          .map((candidate) => payoffAt(lookup, colPlayerId, rowStrategy, candidate))
           .filter((value): value is number => value !== null),
       )
 
       const rowBestCount = rowStrategies.filter(
-        (candidate) => payoffAt(formalization, rowPlayerId, candidate, colStrategy) === rowBest,
+        (candidate) => payoffAt(lookup, rowPlayerId, candidate, colStrategy) === rowBest,
       ).length
       const colBestCount = colStrategies.filter(
-        (candidate) => payoffAt(formalization, colPlayerId, rowStrategy, candidate) === colBest,
+        (candidate) => payoffAt(lookup, colPlayerId, rowStrategy, candidate) === colBest,
       ).length
 
       if (currentRowPayoff === rowBest && currentColPayoff === colBest) {
-        const currentCell = formalization.payoff_cells.find(
-          (cell) =>
-            cell.strategy_profile[rowPlayerId] === rowStrategy &&
-            cell.strategy_profile[colPlayerId] === colStrategy,
-        )
-        usedMidpoint = usedMidpoint || Object.values(currentCell?.payoffs ?? {}).some((estimate) => {
-          const numeric = readEstimateNumeric(estimate)
-          return Boolean(numeric?.usedMidpoint)
-        })
+        usedMidpoint = usedMidpoint || Boolean(lookup.get(payoffKey(rowStrategy, colStrategy))?.usedMidpoint)
 
         equilibria.push({
           id: `${rowStrategy}__${colStrategy}`,
@@ -133,14 +162,14 @@ export function solveNash(
   if (rowStrategies.length === 2 && colStrategies.length === 2) {
     const [r1, r2] = rowStrategies
     const [c1, c2] = colStrategies
-    const a = payoffAt(formalization, rowPlayerId, r1!, c1!)
-    const b = payoffAt(formalization, rowPlayerId, r1!, c2!)
-    const c = payoffAt(formalization, rowPlayerId, r2!, c1!)
-    const d = payoffAt(formalization, rowPlayerId, r2!, c2!)
-    const e = payoffAt(formalization, colPlayerId, r1!, c1!)
-    const f = payoffAt(formalization, colPlayerId, r1!, c2!)
-    const g = payoffAt(formalization, colPlayerId, r2!, c1!)
-    const h = payoffAt(formalization, colPlayerId, r2!, c2!)
+    const a = payoffAt(lookup, rowPlayerId, r1!, c1!)
+    const b = payoffAt(lookup, rowPlayerId, r1!, c2!)
+    const c = payoffAt(lookup, rowPlayerId, r2!, c1!)
+    const d = payoffAt(lookup, rowPlayerId, r2!, c2!)
+    const e = payoffAt(lookup, colPlayerId, r1!, c1!)
+    const f = payoffAt(lookup, colPlayerId, r1!, c2!)
+    const g = payoffAt(lookup, colPlayerId, r2!, c1!)
+    const h = payoffAt(lookup, colPlayerId, r2!, c2!)
     const mixedInputs = [a, b, c, d, e, f, g, h]
 
     if (mixedInputs.every((value): value is number => value !== null)) {
@@ -179,12 +208,14 @@ export function solveNash(
         }
       }
     }
+  } else if (rowStrategies.length > 2 || colStrategies.length > 2) {
+    warnings.push('Mixed-strategy search is limited to 2x2 games and was skipped for this matrix.')
   }
 
   return {
     ...result,
     warnings: [
-      ...gate.warnings,
+      ...warnings,
       ...(usedMidpoint ? ['Equilibria computed on midpoint of interval estimates.'] : []),
     ],
     equilibria,

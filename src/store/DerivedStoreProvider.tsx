@@ -46,7 +46,7 @@ export function useSolverResults(formalizationId: string | null) {
 
 export function useSensitivityAnalysis(
   formalizationId: string | null,
-  solver: import('../types').SolverKind | null,
+  solver: SolverKind | null,
 ) {
   return useDerivedStore((state) =>
     formalizationId && solver
@@ -57,6 +57,6 @@ export function useSensitivityAnalysis(
 
 export function useRunSolver() {
   const canonical = useAppStore((state) => state.canonical)
-  return (formalizationId: string, solver: import('../types').SolverKind) =>
+  return (formalizationId: string, solver: SolverKind) =>
     runSolver(formalizationId, solver, canonical)
 }

@@ -1,7 +1,7 @@
 import { createStore } from 'zustand/vanilla'
 
 import type { Command } from '../engine/commands'
-import type { CanonicalStore, SolverKind } from '../types'
+import type { CanonicalStore, Formalization, SolverKind } from '../types'
 import type { ReadinessReport } from '../types/readiness'
 import type { SensitivityAnalysis, SolverResultUnion } from '../types/solver-results'
 import { computeReadiness } from '../compute/readiness'
@@ -29,6 +29,31 @@ function createInitialState(): DerivedState {
 }
 
 const derivedStore = createStore<DerivedState>(() => createInitialState())
+
+function omitKey<T>(record: Record<string, T>, keyToOmit: string): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(record).filter(([key]) => key !== keyToOmit),
+  )
+}
+
+function pruneRemovedFormalizations(canonical: CanonicalStore): void {
+  const validFormalizationIds = new Set(Object.keys(canonical.formalizations))
+  derivedStore.setState((state) => ({
+    ...state,
+    readinessReportsByFormalization: Object.fromEntries(
+      Object.entries(state.readinessReportsByFormalization).filter(([id]) => validFormalizationIds.has(id)),
+    ),
+    solverResultsByFormalization: Object.fromEntries(
+      Object.entries(state.solverResultsByFormalization).filter(([id]) => validFormalizationIds.has(id)),
+    ),
+    sensitivityByFormalizationAndSolver: Object.fromEntries(
+      Object.entries(state.sensitivityByFormalizationAndSolver).filter(([id]) => validFormalizationIds.has(id)),
+    ),
+    dirtyFormalizations: Object.fromEntries(
+      Object.entries(state.dirtyFormalizations).filter(([id]) => validFormalizationIds.has(id)),
+    ),
+  }))
+}
 
 function setFormalizationsDirty(formalizationIds: Iterable<string>): void {
   const ids = [...new Set([...formalizationIds].filter(Boolean))]
@@ -74,14 +99,18 @@ function replaceSolverResult(
 
 function clearSensitivity(formalizationId: string, solver: SolverKind): void {
   derivedStore.setState((state) => {
-    const entry = { ...(state.sensitivityByFormalizationAndSolver[formalizationId] ?? {}) }
-    delete entry[solver]
+    const existingEntry = state.sensitivityByFormalizationAndSolver[formalizationId] ?? {}
+    const entry = Object.fromEntries(
+      Object.entries(existingEntry).filter(([key]) => key !== solver),
+    ) as Partial<Record<SolverKind, SensitivityAnalysis>>
     return {
       ...state,
-      sensitivityByFormalizationAndSolver: {
-        ...state.sensitivityByFormalizationAndSolver,
-        [formalizationId]: entry,
-      },
+      sensitivityByFormalizationAndSolver: Object.keys(entry).length > 0
+        ? {
+            ...state.sensitivityByFormalizationAndSolver,
+            [formalizationId]: entry,
+          }
+        : omitKey(state.sensitivityByFormalizationAndSolver, formalizationId),
     }
   })
 }
@@ -135,26 +164,7 @@ export function runSolver(
 
   ensureReadiness(formalizationId, canonical)
 
-  let result: SolverResultUnion | null = null
-  switch (solver) {
-    case 'nash':
-      result = formalization.kind === 'normal_form' ? solveNash(formalization, canonical) : null
-      break
-    case 'dominance':
-      result = formalization.kind === 'normal_form' ? eliminateDominance(formalization, canonical) : null
-      break
-    case 'expected_utility':
-      result = formalization.kind === 'normal_form' ? computeExpectedUtility(formalization, canonical) : null
-      break
-    case 'backward_induction':
-      result = formalization.kind === 'extensive_form' ? solveBackwardInduction(formalization, canonical) : null
-      break
-    case 'bayesian_update':
-      result = formalization.kind === 'bayesian' ? computeBayesianUpdate(formalization, canonical) : null
-      break
-    default:
-      result = null
-  }
+  const result = solveForFormalization(formalization, solver, canonical)
 
   if (!result) {
     return null
@@ -222,6 +232,13 @@ function findFormalizationsReferencingPlayer(canonical: CanonicalStore, playerId
   return [...ids]
 }
 
+function findFormalizationsReferencingPlayerInStores(
+  playerId: string,
+  ...stores: CanonicalStore[]
+): string[] {
+  return [...new Set(stores.flatMap((store) => findFormalizationsReferencingPlayer(store, playerId)))]
+}
+
 function findFormalizationsReferencingAssumption(canonical: CanonicalStore, assumptionId: string): string[] {
   const ids = new Set<string>()
   for (const formalization of Object.values(canonical.formalizations)) {
@@ -247,6 +264,34 @@ function findFormalizationsReferencingAssumption(canonical: CanonicalStore, assu
   }
 
   return [...ids]
+}
+
+function findFormalizationsReferencingAssumptionInStores(
+  assumptionId: string,
+  ...stores: CanonicalStore[]
+): string[] {
+  return [...new Set(stores.flatMap((store) => findFormalizationsReferencingAssumption(store, assumptionId)))]
+}
+
+function solveForFormalization(
+  formalization: Formalization,
+  solver: SolverKind,
+  canonical: CanonicalStore,
+): SolverResultUnion | null {
+  switch (solver) {
+    case 'nash':
+      return formalization.kind === 'normal_form' ? solveNash(formalization, canonical) : null
+    case 'dominance':
+      return formalization.kind === 'normal_form' ? eliminateDominance(formalization, canonical) : null
+    case 'expected_utility':
+      return formalization.kind === 'normal_form' ? computeExpectedUtility(formalization, canonical) : null
+    case 'backward_induction':
+      return formalization.kind === 'extensive_form' ? solveBackwardInduction(formalization, canonical) : null
+    case 'bayesian_update':
+      return formalization.kind === 'bayesian' ? computeBayesianUpdate(formalization, canonical) : null
+    default:
+      return null
+  }
 }
 
 function collectAffectedFormalizationIds(
@@ -326,7 +371,9 @@ function collectAffectedFormalizationIds(
     const playerId = typeof (command as { payload?: { id?: string } }).payload?.id === 'string'
       ? (command as { payload: { id: string } }).payload.id
       : undefined
-    return playerId ? findFormalizationsReferencingPlayer(nextCanonical, playerId) : allFormalizationIds(nextCanonical)
+    return playerId
+      ? findFormalizationsReferencingPlayerInStores(playerId, previousCanonical, nextCanonical)
+      : allFormalizationIds(nextCanonical)
   }
 
   if (command.kind.startsWith('add_assumption') || command.kind.startsWith('update_assumption') || command.kind === 'delete_assumption') {
@@ -334,7 +381,7 @@ function collectAffectedFormalizationIds(
       ? (command as { payload: { id: string } }).payload.id
       : undefined
     return assumptionId
-      ? findFormalizationsReferencingAssumption(nextCanonical, assumptionId)
+      ? findFormalizationsReferencingAssumptionInStores(assumptionId, previousCanonical, nextCanonical)
       : allFormalizationIds(nextCanonical)
   }
 
@@ -358,4 +405,5 @@ export function invalidateDerivedForCommand(
 ): void {
   const affected = collectAffectedFormalizationIds(command, previousCanonical, nextCanonical)
   setFormalizationsDirty(affected)
+  pruneRemovedFormalizations(nextCanonical)
 }

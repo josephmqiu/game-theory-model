@@ -20,6 +20,7 @@ import { ChanceNode } from '../graph/nodes/ChanceNode'
 import { TerminalNode } from '../graph/nodes/TerminalNode'
 import { GameEdge } from '../graph/edges/GameEdge'
 import { EstimateEditor } from '../../editors/EstimateEditor'
+import { createEmptyEstimate } from '../../editors/create-empty-estimate'
 import type { EstimateValue } from '../../../types/estimates'
 import { EmptyStateNewGame } from '../../shell/EmptyStateNewGame'
 import { Button } from '../../design-system'
@@ -32,16 +33,12 @@ import {
   useSensitivityAnalysis,
   useSolverResults,
 } from '../../../store'
-import type { BackwardInductionResult } from '../../../types/solver-results'
+import type { BackwardInductionResult, SolverResultUnion } from '../../../types/solver-results'
 
-function createEmptyEstimate(): EstimateValue {
-  return {
-    representation: 'cardinal_estimate',
-    value: 0,
-    confidence: 0.5,
-    rationale: 'Initial analyst estimate.',
-    source_claims: [],
-  }
+function getBackwardInductionResult(
+  result: SolverResultUnion | undefined,
+): BackwardInductionResult | null {
+  return result?.solver === 'backward_induction' ? result : null
 }
 
 const nodeTypes: NodeTypes = {
@@ -76,7 +73,7 @@ export function TreeView(): ReactNode {
     () => selectExtensiveFormViewModel(canonical, activeFormalizationId),
     [canonical, activeFormalizationId],
   )
-  const backwardResult = (solverResults.backward_induction ?? null) as BackwardInductionResult | null
+  const backwardResult = getBackwardInductionResult(solverResults.backward_induction)
   const highlightedEdgeIds = new Set(backwardResult?.solution_path ?? [])
   const highlightedNodeIds = new Set<string>()
   if (backwardResult) {

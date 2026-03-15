@@ -7,6 +7,7 @@ import {
   findCell,
 } from '../../../store/selectors/normal-form-selectors'
 import { EstimateEditor } from '../../editors/EstimateEditor'
+import { createEmptyEstimate } from '../../editors/create-empty-estimate'
 import { PayoffCell } from './PayoffCell'
 import type { EstimateValue } from '../../../types/estimates'
 import { EmptyStateNewGame } from '../../shell/EmptyStateNewGame'
@@ -24,16 +25,19 @@ import type {
   DominanceResult,
   ExpectedUtilityResult,
   NashResult,
+  SolverResultUnion,
 } from '../../../types/solver-results'
 
-function createEmptyEstimate(): EstimateValue {
-  return {
-    representation: 'cardinal_estimate',
-    value: 0,
-    confidence: 0.5,
-    rationale: 'Initial analyst estimate.',
-    source_claims: [],
-  }
+function isNashResult(result: SolverResultUnion | undefined): result is NashResult {
+  return result?.solver === 'nash'
+}
+
+function isDominanceResult(result: SolverResultUnion | undefined): result is DominanceResult {
+  return result?.solver === 'dominance'
+}
+
+function isExpectedUtilityResult(result: SolverResultUnion | undefined): result is ExpectedUtilityResult {
+  return result?.solver === 'expected_utility'
 }
 
 export function MatrixView(): ReactNode {
@@ -63,17 +67,21 @@ export function MatrixView(): ReactNode {
     ? `${viewModel.formalization.kind.replace('_', ' ')}`
     : ''
   const title = gameName && formName ? `${gameName} — ${formName}` : gameName || formName
-  const nashResult = (solverResults.nash ?? null) as NashResult | null
-  const dominanceResult = (solverResults.dominance ?? null) as DominanceResult | null
-  const expectedUtilityResult = (solverResults.expected_utility ?? null) as ExpectedUtilityResult | null
+  const rowPlayer = viewModel.players[0]
+  const colPlayer = viewModel.players[1]
+  const nashResult = isNashResult(solverResults.nash) ? solverResults.nash : null
+  const dominanceResult = isDominanceResult(solverResults.dominance) ? solverResults.dominance : null
+  const expectedUtilityResult = isExpectedUtilityResult(solverResults.expected_utility)
+    ? solverResults.expected_utility
+    : null
   const activeSensitivity = nashSensitivity ?? dominanceSensitivity ?? expectedUtilitySensitivity
 
   const equilibriumCells = new Set(
     (nashResult?.equilibria ?? [])
       .filter((equilibrium) => equilibrium.type === 'pure')
       .map((equilibrium) => {
-        const rowEntry = Object.values(equilibrium.strategies)[0]
-        const colEntry = Object.values(equilibrium.strategies)[1]
+        const rowEntry = rowPlayer ? equilibrium.strategies[rowPlayer] : undefined
+        const colEntry = colPlayer ? equilibrium.strategies[colPlayer] : undefined
         const rowStrategy = rowEntry ? Object.keys(rowEntry.distribution)[0] : ''
         const colStrategy = colEntry ? Object.keys(colEntry.distribution)[0] : ''
         return `${rowStrategy}__${colStrategy}`
@@ -157,8 +165,6 @@ export function MatrixView(): ReactNode {
     )
   }
 
-  const rowPlayer = viewModel.players[0]
-  const colPlayer = viewModel.players[1]
   const rowPlayerName = rowPlayer ? (canonical.players[rowPlayer]?.name ?? rowPlayer) : ''
   const colPlayerName = colPlayer ? (canonical.players[colPlayer]?.name ?? colPlayer) : ''
   const selectedCell = selectedCellKey
@@ -348,7 +354,7 @@ export function MatrixView(): ReactNode {
             <div className="rounded border border-border bg-bg-card p-4">
               <div className="text-xs font-mono uppercase tracking-wide text-text-muted">Dominance Result</div>
               <div className="mt-2 text-sm text-text-primary">
-                Eliminated {dominanceResult.eliminated_strategies.length} strategie{dominanceResult.eliminated_strategies.length === 1 ? 's' : 's'}
+                Eliminated {dominanceResult.eliminated_strategies.length} {dominanceResult.eliminated_strategies.length === 1 ? 'strategy' : 'strategies'}
               </div>
             </div>
           )}

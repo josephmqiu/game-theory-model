@@ -100,176 +100,85 @@ export function solveBackwardInduction(
     }
   }
 
-  const evaluateNode = (nodeId: string): NodeEvaluation => {
-    if (memo.has(nodeId)) {
-      return memo.get(nodeId)!
+  const buildPayoffDifference = (
+    referencePayoffs: Record<string, number>,
+    comparisonPayoffs: Record<string, number>,
+  ): Record<string, number> =>
+    Object.fromEntries(
+      Object.entries(referencePayoffs).map(([playerId, payoff]) => [
+        playerId,
+        Number((payoff - (comparisonPayoffs[playerId] ?? 0)).toFixed(4)),
+      ]),
+    )
+
+  const createFallbackEvaluation = (warning: string): NodeEvaluation => ({
+    payoffs: {},
+    chosenEdgeId: null,
+    subgameValue: null,
+    warnings: [warning],
+  })
+
+  const evaluateTerminalNode = (node: GameNode, nodeId: string): NodeEvaluation => {
+    const payoffs: Record<string, number> = {}
+    for (const [playerId, estimate] of Object.entries(node.terminal_payoffs ?? {})) {
+      const numeric = readEstimateNumeric(estimate)
+      if (numeric) {
+        payoffs[playerId] = numeric.value
+      }
     }
 
-    const node = nodeById.get(nodeId)
-    if (!node) {
-      const fallback: NodeEvaluation = {
-        payoffs: {},
-        chosenEdgeId: null,
-        subgameValue: null,
-        warnings: [`Node ${nodeId} not found.`],
-      }
-      memo.set(nodeId, fallback)
-      return fallback
+    if (Object.keys(payoffs).length === 0) {
+      warnings.add(`Terminal node ${node.label} is missing payoffs.`)
     }
 
-    const outgoing = outgoingByNode.get(nodeId) ?? []
-    if (outgoing.length === 0 || node.type === 'terminal') {
-      const payoffs: Record<string, number> = {}
-      for (const [playerId, estimate] of Object.entries(node.terminal_payoffs ?? {})) {
-        const numeric = readEstimateNumeric(estimate)
-        if (numeric) {
-          payoffs[playerId] = numeric.value
-        }
-      }
+    const evaluation: NodeEvaluation = {
+      payoffs,
+      chosenEdgeId: null,
+      subgameValue: null,
+      warnings: [],
+    }
+    memo.set(nodeId, evaluation)
+    return evaluation
+  }
 
-      if (Object.keys(payoffs).length === 0) {
-        warnings.add(`Terminal node ${node.label} is missing payoffs.`)
+  const evaluateChanceNode = (
+    node: GameNode,
+    outgoing: GameEdge[],
+    evaluateNode: (nodeId: string) => NodeEvaluation,
+  ): NodeEvaluation => {
+    const payoffs: Record<string, number> = {}
+    for (const edge of outgoing) {
+      const childEvaluation = evaluateNode(edge.to)
+      const weight = edge.chance_estimate?.value ?? 1 / Math.max(outgoing.length, 1)
+      for (const [playerId, payoff] of Object.entries(childEvaluation.payoffs)) {
+        payoffs[playerId] = (payoffs[playerId] ?? 0) + payoff * weight
       }
-
-      const evaluation: NodeEvaluation = {
-        payoffs,
-        chosenEdgeId: null,
-        subgameValue: null,
-        warnings: [],
-      }
-      memo.set(nodeId, evaluation)
-      return evaluation
     }
 
-    const informationSet = node.information_set_id ? informationSetByNode.get(node.id) : null
-    if (informationSet) {
-      if (infoSetMemo.has(informationSet.id)) {
-        const cached = infoSetMemo.get(informationSet.id)?.get(nodeId)
-        if (cached) {
-          memo.set(nodeId, cached)
-          return cached
-        }
-      }
-
-      const nodeIds = informationSet.node_ids.filter((candidateId) => nodeById.has(candidateId))
-      const actionLabels = [...new Set(
-        nodeIds.flatMap((candidateId) => (outgoingByNode.get(candidateId) ?? []).map((edge) => edge.action_id ?? edge.label)),
-      )]
-      const beliefs = informationSet.beliefs
-      if (!beliefs) {
-        usesUniformBeliefs = true
-      }
-
-      const actingPlayerId = informationSet.player_id
-      let bestAction = actionLabels[0] ?? null
-      let bestScore = Number.NEGATIVE_INFINITY
-      const chosenByNode = new Map<string, NodeEvaluation>()
-
-      for (const actionLabel of actionLabels) {
-        let weightedScore = 0
-        const localEvaluations = new Map<string, NodeEvaluation>()
-
-        for (const candidateId of nodeIds) {
-          const candidateNode = nodeById.get(candidateId)!
-          const candidateEdges = (outgoingByNode.get(candidateId) ?? []).filter(
-            (edge) => (edge.action_id ?? edge.label) === actionLabel,
-          )
-          const selectedEdge = candidateEdges[0]
-          if (!selectedEdge) {
-            continue
+    return {
+      payoffs,
+      chosenEdgeId: outgoing[0]?.id ?? null,
+      subgameValue: outgoing[0]
+        ? {
+            node_id: node.id,
+            player_payoffs: payoffs,
+            chosen_edge_id: outgoing[0].id,
+            alternative_edges: outgoing.slice(1).map((edge) => ({
+              edge_id: edge.id,
+              player_payoffs: evaluateNode(edge.to).payoffs,
+              payoff_difference: {},
+            })),
           }
-
-          const childEvaluation = evaluateNode(selectedEdge.to)
-          const weight = beliefs?.[candidateId] ?? 1 / Math.max(nodeIds.length, 1)
-          weightedScore += (childEvaluation.payoffs[actingPlayerId] ?? 0) * weight
-
-          localEvaluations.set(candidateId, {
-            payoffs: childEvaluation.payoffs,
-            chosenEdgeId: selectedEdge.id,
-            subgameValue: {
-              node_id: candidateNode.id,
-              player_payoffs: childEvaluation.payoffs,
-              chosen_edge_id: selectedEdge.id,
-              alternative_edges: (outgoingByNode.get(candidateNode.id) ?? [])
-                .filter((edge) => edge.id !== selectedEdge.id)
-                .map((edge) => {
-                  const alternative = evaluateNode(edge.to)
-                  const payoffDifference: Record<string, number> = {}
-                  for (const [playerId, payoff] of Object.entries(childEvaluation.payoffs)) {
-                    payoffDifference[playerId] = Number(
-                      (payoff - (alternative.payoffs[playerId] ?? 0)).toFixed(4),
-                    )
-                  }
-                  return {
-                    edge_id: edge.id,
-                    player_payoffs: alternative.payoffs,
-                    payoff_difference: payoffDifference,
-                  }
-                }),
-            },
-            warnings: [],
-          })
-        }
-
-        if (weightedScore > bestScore) {
-          bestScore = weightedScore
-          bestAction = actionLabel
-          for (const [candidateId, evaluation] of localEvaluations) {
-            chosenByNode.set(candidateId, evaluation)
-          }
-        }
-      }
-
-      const bucket = new Map<string, NodeEvaluation>()
-      for (const candidateId of nodeIds) {
-        const evaluation = chosenByNode.get(candidateId) ?? {
-          payoffs: {},
-          chosenEdgeId: null,
-          subgameValue: null,
-          warnings: [],
-        }
-        memo.set(candidateId, evaluation)
-        bucket.set(candidateId, evaluation)
-      }
-      infoSetMemo.set(informationSet.id, bucket)
-
-      const current = bucket.get(nodeId)!
-      if (!bestAction) {
-        warnings.add(`Information set ${informationSet.id} has no shared actions.`)
-      }
-      return current
+        : null,
+      warnings: [],
     }
+  }
 
-    if (node.type === 'chance' || node.actor.kind === 'nature') {
-      const payoffs: Record<string, number> = {}
-      for (const edge of outgoing) {
-        const childEvaluation = evaluateNode(edge.to)
-        const weight = edge.chance_estimate?.value ?? 1 / Math.max(outgoing.length, 1)
-        for (const [playerId, payoff] of Object.entries(childEvaluation.payoffs)) {
-          payoffs[playerId] = (payoffs[playerId] ?? 0) + payoff * weight
-        }
-      }
-      const evaluation: NodeEvaluation = {
-        payoffs,
-        chosenEdgeId: outgoing[0]?.id ?? null,
-        subgameValue: outgoing[0]
-          ? {
-              node_id: node.id,
-              player_payoffs: payoffs,
-              chosen_edge_id: outgoing[0].id,
-              alternative_edges: outgoing.slice(1).map((edge) => ({
-                edge_id: edge.id,
-                player_payoffs: evaluateNode(edge.to).payoffs,
-                payoff_difference: {},
-              })),
-            }
-          : null,
-        warnings: [],
-      }
-      memo.set(nodeId, evaluation)
-      return evaluation
-    }
-
+  const evaluateDecisionNode = (
+    node: GameNode,
+    outgoing: GameEdge[],
+    evaluateNode: (nodeId: string) => NodeEvaluation,
+  ): NodeEvaluation => {
     const actingPlayerId = getActingPlayerId(node, store, formalization)
     let chosenEdge: GameEdge | null = null
     let chosenEvaluation: NodeEvaluation | null = null
@@ -281,35 +190,27 @@ export function solveBackwardInduction(
       const score = childEvaluation.payoffs[actingPlayerId] ?? 0
       if (score > bestScore) {
         if (chosenEdge && chosenEvaluation) {
-          const payoffDifference: Record<string, number> = {}
-          for (const [playerId, payoff] of Object.entries(chosenEvaluation.payoffs)) {
-            payoffDifference[playerId] = Number((payoff - (childEvaluation.payoffs[playerId] ?? 0)).toFixed(4))
-          }
           alternatives.push({
             edge_id: chosenEdge.id,
             player_payoffs: chosenEvaluation.payoffs,
-            payoff_difference: payoffDifference,
+            payoff_difference: buildPayoffDifference(chosenEvaluation.payoffs, childEvaluation.payoffs),
           })
         }
         bestScore = score
         chosenEdge = edge
         chosenEvaluation = childEvaluation
       } else {
-        const payoffDifference: Record<string, number> = {}
-        if (chosenEvaluation) {
-          for (const [playerId, payoff] of Object.entries(chosenEvaluation.payoffs)) {
-            payoffDifference[playerId] = Number((payoff - (childEvaluation.payoffs[playerId] ?? 0)).toFixed(4))
-          }
-        }
         alternatives.push({
           edge_id: edge.id,
           player_payoffs: childEvaluation.payoffs,
-          payoff_difference: payoffDifference,
+          payoff_difference: chosenEvaluation
+            ? buildPayoffDifference(chosenEvaluation.payoffs, childEvaluation.payoffs)
+            : {},
         })
       }
     }
 
-    const evaluation: NodeEvaluation = {
+    return {
       payoffs: chosenEvaluation?.payoffs ?? {},
       chosenEdgeId: chosenEdge?.id ?? null,
       subgameValue: chosenEdge
@@ -322,11 +223,141 @@ export function solveBackwardInduction(
         : null,
       warnings: [],
     }
+  }
+
+  const evaluateInformationSet = (
+    node: GameNode,
+    informationSet: ExtensiveFormModel['information_sets'][number],
+    evaluateNode: (nodeId: string) => NodeEvaluation,
+  ): NodeEvaluation => {
+    if (infoSetMemo.has(informationSet.id)) {
+      const cached = infoSetMemo.get(informationSet.id)?.get(node.id)
+      if (cached) {
+        memo.set(node.id, cached)
+        return cached
+      }
+    }
+
+    const nodeIds = informationSet.node_ids.filter((candidateId) => nodeById.has(candidateId))
+    const actionLabels = [...new Set(
+      nodeIds.flatMap((candidateId) => (outgoingByNode.get(candidateId) ?? []).map((edge) => edge.action_id ?? edge.label)),
+    )]
+    const beliefs = informationSet.beliefs
+    if (!beliefs) {
+      usesUniformBeliefs = true
+    }
+
+    let bestAction = actionLabels[0] ?? null
+    let bestScore = Number.NEGATIVE_INFINITY
+    const chosenByNode = new Map<string, NodeEvaluation>()
+
+    for (const actionLabel of actionLabels) {
+      let weightedScore = 0
+      const localEvaluations = new Map<string, NodeEvaluation>()
+
+      for (const candidateId of nodeIds) {
+        const candidateNode = nodeById.get(candidateId)
+        if (!candidateNode) {
+          continue
+        }
+
+        const candidateEdges = (outgoingByNode.get(candidateId) ?? []).filter(
+          (edge) => (edge.action_id ?? edge.label) === actionLabel,
+        )
+        const selectedEdge = candidateEdges[0]
+        if (!selectedEdge) {
+          continue
+        }
+
+        const childEvaluation = evaluateNode(selectedEdge.to)
+        const weight = beliefs?.[candidateId] ?? 1 / Math.max(nodeIds.length, 1)
+        weightedScore += (childEvaluation.payoffs[informationSet.player_id] ?? 0) * weight
+
+        localEvaluations.set(candidateId, {
+          payoffs: childEvaluation.payoffs,
+          chosenEdgeId: selectedEdge.id,
+          subgameValue: {
+            node_id: candidateNode.id,
+            player_payoffs: childEvaluation.payoffs,
+            chosen_edge_id: selectedEdge.id,
+            alternative_edges: (outgoingByNode.get(candidateNode.id) ?? [])
+              .filter((edge) => edge.id !== selectedEdge.id)
+              .map((edge) => {
+                const alternative = evaluateNode(edge.to)
+                return {
+                  edge_id: edge.id,
+                  player_payoffs: alternative.payoffs,
+                  payoff_difference: buildPayoffDifference(childEvaluation.payoffs, alternative.payoffs),
+                }
+              }),
+          },
+          warnings: [],
+        })
+      }
+
+      if (weightedScore > bestScore) {
+        bestScore = weightedScore
+        bestAction = actionLabel
+        for (const [candidateId, evaluation] of localEvaluations) {
+          chosenByNode.set(candidateId, evaluation)
+        }
+      }
+    }
+
+    const bucket = new Map<string, NodeEvaluation>()
+    for (const candidateId of nodeIds) {
+      const evaluation = chosenByNode.get(candidateId) ?? {
+        payoffs: {},
+        chosenEdgeId: null,
+        subgameValue: null,
+        warnings: [],
+      }
+      memo.set(candidateId, evaluation)
+      bucket.set(candidateId, evaluation)
+    }
+    infoSetMemo.set(informationSet.id, bucket)
+
+    const current = bucket.get(node.id) ?? createFallbackEvaluation(`Node ${node.id} not found in information set ${informationSet.id}.`)
+    if (!bestAction) {
+      warnings.add(`Information set ${informationSet.id} has no shared actions.`)
+    }
+    return current
+  }
+
+  const evaluateNode = (nodeId: string): NodeEvaluation => {
+    if (memo.has(nodeId)) {
+      return memo.get(nodeId)!
+    }
+
+    const node = nodeById.get(nodeId)
+    if (!node) {
+      const fallback = createFallbackEvaluation(`Node ${nodeId} not found.`)
+      memo.set(nodeId, fallback)
+      return fallback
+    }
+
+    const outgoing = outgoingByNode.get(nodeId) ?? []
+    if (outgoing.length === 0 || node.type === 'terminal') {
+      return evaluateTerminalNode(node, nodeId)
+    }
+
+    const informationSet = node.information_set_id ? informationSetByNode.get(node.id) : null
+    if (informationSet) {
+      return evaluateInformationSet(node, informationSet, evaluateNode)
+    }
+
+    if (node.type === 'chance' || node.actor.kind === 'nature') {
+      const evaluation = evaluateChanceNode(node, outgoing, evaluateNode)
+      memo.set(nodeId, evaluation)
+      return evaluation
+    }
+
+    const evaluation = evaluateDecisionNode(node, outgoing, evaluateNode)
     memo.set(nodeId, evaluation)
     return evaluation
   }
 
-  const rootEvaluation = evaluateNode(formalization.root_node_id)
+  evaluateNode(formalization.root_node_id)
   const optimalStrategies: Record<string, string> = {}
   const subgameValues: Record<string, SubgameValue> = {}
   for (const [nodeId, evaluation] of memo.entries()) {
@@ -350,15 +381,21 @@ export function solveBackwardInduction(
     currentNodeId = edge?.to ?? null
   }
 
-  if (usesUniformBeliefs) {
-    result.meta.method_id = 'backward_induction_uniform_belief'
-    result.meta.limitations.push('Assumes uniform beliefs at information sets — not equivalent to sequential equilibrium.')
-  } else {
-    result.meta.method_id = 'backward_induction_weighted_belief'
-  }
-
   return {
     ...result,
+    meta: usesUniformBeliefs
+      ? {
+          ...result.meta,
+          method_id: 'backward_induction_uniform_belief',
+          limitations: [
+            ...result.meta.limitations,
+            'Assumes uniform beliefs at information sets — not equivalent to sequential equilibrium.',
+          ],
+        }
+      : {
+          ...result.meta,
+          method_id: 'backward_induction_weighted_belief',
+        },
     status: warnings.size > 0 ? 'partial' : 'success',
     warnings: [...gate.warnings, ...warnings],
     solution_path: solutionPath,

@@ -3,6 +3,17 @@ import type { BayesianGameModel } from '../types/formalizations'
 import type { BayesianStep, BayesianUpdateResult, PosteriorBelief } from '../types/solver-results'
 import { checkSolverGate, computeReadiness } from './readiness'
 
+function normalizeDistribution(distribution: Record<string, number>): Record<string, number> {
+  const total = Object.values(distribution).reduce((sum, value) => sum + value, 0)
+  if (total === 0) {
+    return distribution
+  }
+
+  return Object.fromEntries(
+    Object.entries(distribution).map(([label, value]) => [label, value / total]),
+  )
+}
+
 function baseResult(formalization: BayesianGameModel, store: CanonicalStore): BayesianUpdateResult {
   return {
     id: crypto.randomUUID(),
@@ -43,15 +54,14 @@ export function computeBayesianUpdate(
   const uniqueObservations = [...new Set(signals.map((signal) => signal.label))]
   const updateChain: BayesianStep[] = []
   const posteriorBeliefs: PosteriorBelief[] = []
-  const warnings = [...gate.warnings]
+  const warnings = new Set(gate.warnings)
+  let successfulObservations = 0
 
   for (const priorDistribution of formalization.priors) {
-    let currentPrior = Object.fromEntries(
+    const currentPrior = Object.fromEntries(
       priorDistribution.types.map((playerType) => [playerType.label, playerType.prior_probability]),
     )
-    let stepNumber = 1
-
-    for (const observation of uniqueObservations) {
+    for (const [index, observation] of uniqueObservations.entries()) {
       const likelihood: Record<string, number> = {}
       let normalizer = 0
       for (const typeLabel of Object.keys(currentPrior)) {
@@ -64,63 +74,61 @@ export function computeBayesianUpdate(
       }
 
       if (normalizer === 0) {
-        return {
-          ...result,
-          status: 'failed',
-          warnings: [...warnings, 'Observation rules out all types — check signal structure.'],
-          error: 'Observation rules out all types — check signal structure.',
-        }
+        warnings.add(`Observation "${observation}" rules out all types and was skipped.`)
+        continue
       }
 
-      const posterior: Record<string, number> = {}
+      const posteriorBeforeNormalization: Record<string, number> = {}
       for (const typeLabel of Object.keys(currentPrior)) {
         const rawPosterior = (currentPrior[typeLabel]! * likelihood[typeLabel]!) / normalizer
         const clampedPosterior = rawPosterior < 1e-10 ? 1e-10 : rawPosterior
         if (clampedPosterior !== rawPosterior) {
-          warnings.push(`Near-zero posterior for type ${typeLabel} — numerical precision limit reached.`)
+          warnings.add(`Near-zero posterior for type ${typeLabel} after observing "${observation}" — numerical precision limit reached.`)
         }
-        posterior[typeLabel] = clampedPosterior
+        posteriorBeforeNormalization[typeLabel] = clampedPosterior
       }
+      const posterior = normalizeDistribution(posteriorBeforeNormalization)
 
       updateChain.push({
-        step: stepNumber,
+        step: index + 1,
         observation,
         prior: currentPrior,
         likelihood,
         posterior,
       })
-      currentPrior = posterior
-      stepNumber += 1
-    }
 
-    for (const [typeLabel, posterior] of Object.entries(currentPrior)) {
-      const originalPrior = priorDistribution.types.find((playerType) => playerType.label === typeLabel)?.prior_probability ?? 0
-      posteriorBeliefs.push({
-        player_id: priorDistribution.player_id,
-        type_label: typeLabel,
-        prior: originalPrior,
-        posterior,
-        evidence_used: uniqueObservations,
-      })
+      for (const [typeLabel, posteriorValue] of Object.entries(posterior)) {
+        const originalPrior = priorDistribution.types.find((playerType) => playerType.label === typeLabel)?.prior_probability ?? 0
+        posteriorBeliefs.push({
+          player_id: priorDistribution.player_id,
+          type_label: typeLabel,
+          prior: originalPrior,
+          posterior: posteriorValue,
+          evidence_used: [observation],
+        })
+      }
+
+      successfulObservations += 1
     }
   }
 
-  if (posteriorBeliefs.length === 0) {
+  if (posteriorBeliefs.length === 0 || successfulObservations === 0) {
     return {
       ...result,
       status: 'failed',
-      warnings: [...warnings, 'Observation inconsistent with all types.'],
-      error: 'Observation inconsistent with all types.',
+      warnings: [...warnings, 'All configured observations were inconsistent with the current priors and signal structure.'],
+      error: 'All configured observations were inconsistent with the current priors and signal structure.',
     }
   }
 
   return {
     ...result,
-    warnings,
+    status: successfulObservations < uniqueObservations.length * formalization.priors.length ? 'partial' : 'success',
+    warnings: [...warnings],
     meta: {
       ...result.meta,
       method_id: 'bayesian_update_signal_structure_heuristic',
-      assumptions_used: ['Approximate Bayesian update (heuristic)'],
+      assumptions_used: ['Approximate Bayesian update (heuristic)', 'Each observation branch is evaluated independently.'],
     },
     posterior_beliefs: posteriorBeliefs,
     update_chain: updateChain,
