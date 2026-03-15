@@ -59,7 +59,6 @@ function buildPlayer(name: string, index: number, description: string, evidenceR
     name,
     type: inferPlayerType(name),
     role,
-    parent_player_id: role === 'internal' ? undefined : undefined,
     objectives: [
       {
         description: index === 0 ? 'Preserve strategic leverage and avoid a costly concession.' : 'Improve bargaining position while limiting downside exposure.',
@@ -112,24 +111,26 @@ export function runPhase2Players(
     : extractActorSketch(context.analysisState.event_description)
 
   const seedNames = actorNames.length >= 2 ? actorNames : ['Primary Actor', 'Counterparty']
-  const players = seedNames.slice(0, 3).map((name, index) =>
+  const basePlayers = seedNames.slice(0, 3).map((name, index) =>
     buildPlayer(name, index, context.analysisState.event_description, evidenceRefs.slice(0, 2)),
   )
 
-  if (descriptionContains(
+  const internalPlayers: ProposedPlayer[] = descriptionContains(
     `${context.analysisState.event_description} ${input.additional_context ?? ''}`,
     'cabinet',
     'board',
     'faction',
     'committee',
-  )) {
-    players.push({
-      ...buildPlayer('Internal Decision Cell', players.length, context.analysisState.event_description, evidenceRefs.slice(0, 2)),
-      role: 'internal',
-      parent_player_id: players[0]?.temp_id,
-      stability_indicator: 'shifting',
-    })
-  }
+  )
+    ? [{
+      ...buildPlayer('Internal Decision Cell', basePlayers.length, context.analysisState.event_description, evidenceRefs.slice(0, 2)),
+      role: 'internal' as const,
+      parent_player_id: basePlayers[0]?.temp_id,
+      stability_indicator: 'shifting' as const,
+    }]
+    : []
+
+  const players = [...basePlayers, ...internalPlayers]
 
   const proposals: ModelProposal[] = players.map((player) => {
     const commands: Command[] = [
@@ -179,8 +180,8 @@ export function runPhase2Players(
   })
 
   const internalPlayer = players.find((player) => player.role === 'internal' && player.parent_player_id)
-  if (internalPlayer) {
-    proposals.push(
+  const revalidationProposals = internalPlayer
+    ? [
       buildModelProposal({
         description: `Trigger revalidation because ${internalPlayer.name} adds independent internal agency`,
         phase: 2,
@@ -207,8 +208,8 @@ export function runPhase2Players(
           }),
         ],
       }),
-    )
-  }
+    ]
+    : []
 
   return {
     phase: 2,
@@ -220,6 +221,6 @@ export function runPhase2Players(
     } satisfies PhaseResult,
     proposed_players: players,
     information_asymmetry_map: buildInformationMap(players),
-    proposals,
+    proposals: [...proposals, ...revalidationProposals],
   }
 }

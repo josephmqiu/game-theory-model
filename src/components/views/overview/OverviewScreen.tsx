@@ -20,6 +20,7 @@ export function OverviewScreen(): ReactNode {
     acceptProposal,
     rejectProposal,
     modifyProposal,
+    nextPhaseDecision,
     runNextPhase,
   } = useConversation()
   const phaseProgress = usePhaseProgress()
@@ -45,11 +46,18 @@ export function OverviewScreen(): ReactNode {
             type="button"
             className="rounded-lg border border-border bg-bg-card px-4 py-2 text-sm text-text-primary hover:border-accent"
             onClick={() => void runNextPhase()}
+            disabled={!nextPhaseDecision.canRun}
+            title={nextPhaseDecision.message}
           >
-            Run Next Phase
+            {nextPhaseDecision.canRun && nextPhaseDecision.nextPhase
+              ? `Run Phase ${nextPhaseDecision.nextPhase}`
+              : 'Run Next Phase'}
           </button>
         ) : null}
       </div>
+      {!manualMode && !nextPhaseDecision.canRun ? (
+        <p className="text-sm text-text-muted">{nextPhaseDecision.message}</p>
+      ) : null}
 
       <PhaseProgressBar {...phaseProgress} />
       <KeyFindingsDashboard findings={findings} />

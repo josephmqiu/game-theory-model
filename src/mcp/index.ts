@@ -1,3 +1,4 @@
+export * from './bootstrap'
 export * from './context'
 export * from './prompts'
 export * from './resources'

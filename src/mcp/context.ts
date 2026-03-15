@@ -1,7 +1,7 @@
-import type { ZodTypeAny } from 'zod'
+import type { ZodTypeAny, infer as ZodInfer } from 'zod'
 
-import type { EntityType, CanonicalStore, CurrentAnalysisFile, AnalysisFile } from '../types'
-import type { ToolContext } from '../types/mcp'
+import type { EntityType, CanonicalStore, AnalysisFile } from '../types'
+import type { McpUiPhaseStatus, ToolContext } from '../types/mcp'
 import { STORE_KEY } from '../types/canonical'
 import { appendConversationMessage } from '../store/conversation'
 import { getPipelineState } from '../store/pipeline'
@@ -9,11 +9,11 @@ import { createPipelineOrchestrator } from '../pipeline'
 import { storeToAnalysisFile } from '../utils/serialization'
 import { createAppStore } from '../store'
 
-export interface RegisteredTool<TInput = unknown, TOutput = unknown> {
+export interface RegisteredTool<TSchema extends ZodTypeAny = ZodTypeAny, TOutput = unknown> {
   name: string
   description: string
-  inputSchema: ZodTypeAny
-  execute: (input: unknown) => Promise<TOutput> | TOutput
+  inputSchema: TSchema
+  execute: (input: ZodInfer<TSchema>) => Promise<TOutput> | TOutput
 }
 
 export interface RegisteredResource {
@@ -36,7 +36,7 @@ export interface RegisteredPrompt {
 }
 
 export interface McpServerLike {
-  registerTool: (tool: RegisteredTool) => void
+  registerTool: <TSchema extends ZodTypeAny, TOutput>(tool: RegisteredTool<TSchema, TOutput>) => void
   registerResource: (resource: RegisteredResource) => void
   registerPrompt: (prompt: RegisteredPrompt) => void
 }
@@ -48,21 +48,24 @@ export interface RuntimeToolContext extends ToolContext {
   orchestrator: ReturnType<typeof createPipelineOrchestrator>
 }
 
-function mapPhaseStatus(phase: number): ToolContext['getPhaseStatus'] extends (phase: number) => infer T ? T : never {
+function mapPhaseStatus(phase: number): McpUiPhaseStatus {
   const phaseState = getPipelineState().analysis_state?.phase_states[phase]
   if (!phaseState) {
-    return 'idle' as never
+    return 'idle'
   }
   if (phaseState.status === 'running') {
-    return 'running' as never
+    return 'running'
   }
-  if (phaseState.status === 'complete') {
-    return 'complete' as never
+  if (phaseState.status === 'review_needed') {
+    return 'blocked'
   }
   if (phaseState.status === 'needs_rerun') {
-    return 'stale' as never
+    return 'stale'
   }
-  return 'idle' as never
+  if (phaseState.status === 'complete') {
+    return 'complete'
+  }
+  return 'idle'
 }
 
 export function createToolContext(appStore: ReturnType<typeof createAppStore>): RuntimeToolContext {
@@ -74,7 +77,7 @@ export function createToolContext(appStore: ReturnType<typeof createAppStore>): 
         return null
       }
 
-      return storeToAnalysisFile(appStore.getState().canonical, meta) as CurrentAnalysisFile
+      return storeToAnalysisFile(appStore.getState().canonical, meta)
     },
     getPersistedRevision: () => appStore.getState().eventLog.persisted_revision,
     getActiveAnalysisId: () => appStore.getState().eventLog.analysis_id,

@@ -92,16 +92,11 @@ export function classifySituation(description: string): ClassificationResult {
             : 'custom'
 
   const actorCandidates = extractActorSketch(description)
-  const suggested_emphasis: string[] = []
-  if (domain === 'geopolitical') {
-    suggested_emphasis.push('stakeholder_positions', 'actions_vs_statements', 'rules_constraints')
-  }
-  if (domain === 'business') {
-    suggested_emphasis.push('economic_financial', 'capabilities_resources', 'impact_affected_parties')
-  }
-  if (suggested_emphasis.length === 0) {
-    suggested_emphasis.push('timeline', 'stakeholder_positions')
-  }
+  const suggested_emphasis = domain === 'geopolitical'
+    ? ['stakeholder_positions', 'actions_vs_statements', 'rules_constraints']
+    : domain === 'business'
+      ? ['economic_financial', 'capabilities_resources', 'impact_affected_parties']
+      : ['timeline', 'stakeholder_positions']
 
   return {
     domain,

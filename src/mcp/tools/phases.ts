@@ -100,10 +100,10 @@ export function registerPhaseTools(server: McpServerLike, context: RuntimeToolCo
     name: phaseDefinitions[1].name,
     description: phaseDefinitions[1].description,
     inputSchema: phaseDefinitions[1].schema,
-    async execute(rawInput) {
-      const input = rawInput as z.infer<typeof phaseDefinitions[1]['schema']>
+    async execute(input) {
       try {
-        if (!getPipelineState().analysis_state) {
+        const currentAnalysis = getPipelineState().analysis_state
+        if (!currentAnalysis || currentAnalysis.event_description !== input.situation_description) {
           await context.orchestrator.startAnalysis(input.situation_description)
         }
         await context.orchestrator.runPhase(1)

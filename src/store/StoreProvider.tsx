@@ -31,3 +31,11 @@ export function useAppStore<T>(selector: (state: AppStore) => T): T {
   }
   return useStore(store, selector)
 }
+
+export function useAppStoreApi(): AppStoreApi {
+  const store = useContext(StoreCtx)
+  if (!store) {
+    throw new Error('useAppStoreApi must be used within StoreProvider')
+  }
+  return store
+}

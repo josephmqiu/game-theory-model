@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { AlertTriangle, CheckCircle2, Circle, Loader } from 'lucide-react'
 
 import { useAppStore } from '../../store'
+import type { ViewType } from '../../store'
 import type { PhaseDisplayStatus } from '../../hooks/usePhaseProgress'
 
 function StatusIcon({ status }: { status: PhaseDisplayStatus }): ReactNode {
@@ -23,6 +24,19 @@ interface PhaseProgressBarProps {
   currentPhase: number | null
   passNumber: number
   overallStatus: string
+}
+
+const PHASE_VIEWS: Record<number, ViewType> = {
+  1: 'phase_1',
+  2: 'phase_2',
+  3: 'phase_3',
+  4: 'phase_4',
+  5: 'phase_5',
+  6: 'phase_6',
+  7: 'phase_7',
+  8: 'phase_8',
+  9: 'phase_9',
+  10: 'phase_10',
 }
 
 export function PhaseProgressBar({
@@ -51,7 +65,7 @@ export function PhaseProgressBar({
             key={phase.number}
             type="button"
             className="flex items-center gap-2 rounded-lg border border-border bg-bg-surface px-3 py-2 text-left hover:border-accent"
-            onClick={() => setActiveView(`phase_${phase.number}` as never)}
+            onClick={() => setActiveView(PHASE_VIEWS[phase.number] ?? 'overview')}
           >
             <StatusIcon status={phase.status} />
             <div className="min-w-0">

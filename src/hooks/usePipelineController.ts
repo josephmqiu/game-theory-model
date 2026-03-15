@@ -2,43 +2,88 @@ import { useMemo } from 'react'
 
 import { createPipelineOrchestrator } from '../pipeline'
 import { appendConversationMessage } from '../store/conversation'
-import { getPipelineState, useAppStore, useMcpConnectionStatus, usePipelineStore } from '../store'
+import {
+  getFirstPendingProposalPhase,
+  getPipelineState,
+  useAppStore,
+  useAppStoreApi,
+  useMcpConnectionStatus,
+  usePipelineStore,
+} from '../store'
+import { storeToAnalysisFile } from '../utils/serialization'
 
-function findNextPhase(): number | null {
+export interface NextPhaseDecision {
+  canRun: boolean
+  nextPhase: number | null
+  reason: 'ready' | 'no_analysis' | 'review_needed' | 'complete'
+  blockingPhase: number | null
+  message: string
+}
+
+function findNextPhaseDecision(): NextPhaseDecision {
   const analysisState = getPipelineState().analysis_state
   if (!analysisState) {
-    return 1
+    return {
+      canRun: false,
+      nextPhase: null,
+      reason: 'no_analysis',
+      blockingPhase: null,
+      message: 'Start an analysis before running phases.',
+    }
+  }
+
+  const blockingPhase = getFirstPendingProposalPhase()
+  if (blockingPhase != null) {
+    return {
+      canRun: false,
+      nextPhase: null,
+      reason: 'review_needed',
+      blockingPhase,
+      message: `Review Phase ${blockingPhase} proposals before continuing.`,
+    }
   }
 
   for (let phase = 1; phase <= 10; phase += 1) {
     const phaseState = analysisState.phase_states[phase]
     if (!phaseState || phaseState.status === 'pending' || phaseState.status === 'needs_rerun') {
-      return phase
+      return {
+        canRun: true,
+        nextPhase: phase,
+        reason: 'ready',
+        blockingPhase: null,
+        message: `Phase ${phase} is ready to run.`,
+      }
     }
   }
 
-  return null
+  return {
+    canRun: false,
+    nextPhase: null,
+    reason: 'complete',
+    blockingPhase: null,
+    message: 'All currently implemented phases are complete.',
+  }
 }
 
 export function usePipelineController() {
-  const dispatch = useAppStore((state) => state.dispatch)
-  const canonical = useAppStore((state) => state.canonical)
-  const eventLog = useAppStore((state) => state.eventLog)
-  const fileMeta = useAppStore((state) => state.fileMeta)
+  const appStore = useAppStoreApi()
   const setManualMode = useAppStore((state) => state.setManualMode)
   const connectionStatus = useMcpConnectionStatus()
   const analysisState = usePipelineStore((state) => state.analysis_state)
 
   const orchestrator = useMemo(() => createPipelineOrchestrator({
-    getCanonical: () => canonical,
-    getAnalysisFile: () => null,
-    getPersistedRevision: () => eventLog.persisted_revision,
-    getActiveAnalysisId: () => eventLog.analysis_id,
-    dispatch,
+    getCanonical: () => appStore.getState().canonical,
+    getAnalysisFile: () => {
+      const meta = appStore.getState().fileMeta.meta
+      return meta ? storeToAnalysisFile(appStore.getState().canonical, meta) : null
+    },
+    getPersistedRevision: () => appStore.getState().eventLog.persisted_revision,
+    getActiveAnalysisId: () => appStore.getState().eventLog.analysis_id,
+    dispatch: (command) => appStore.getState().dispatch(command),
     emitConversationMessage: (message) => {
       appendConversationMessage(message)
     },
-  }), [canonical, dispatch, eventLog.analysis_id, eventLog.persisted_revision, fileMeta.meta])
+  }), [appStore])
 
   async function startAnalysis(description: string, options?: { manual?: boolean }) {
     setManualMode(Boolean(options?.manual))
@@ -54,11 +99,15 @@ export function usePipelineController() {
   }
 
   async function runNextPhase() {
-    const nextPhase = findNextPhase()
-    if (!nextPhase) {
-      return null
+    const decision = findNextPhaseDecision()
+    if (!decision.canRun || decision.nextPhase == null) {
+      return decision
     }
-    return orchestrator.runPhase(nextPhase)
+    const result = await orchestrator.runPhase(decision.nextPhase)
+    return {
+      ...decision,
+      result,
+    }
   }
 
   async function handleSteering(message: string) {
@@ -68,6 +117,7 @@ export function usePipelineController() {
   return {
     analysisState,
     connectionStatus,
+    nextPhaseDecision: findNextPhaseDecision(),
     startAnalysis,
     runPhase,
     runNextPhase,

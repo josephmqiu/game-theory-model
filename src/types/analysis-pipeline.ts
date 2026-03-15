@@ -7,7 +7,7 @@ import type {
 } from './conversation'
 import type { RevalidationTrigger } from './evidence'
 
-export type PipelinePhaseStatus = 'pending' | 'running' | 'complete' | 'needs_rerun' | 'skipped'
+export type PipelinePhaseStatus = 'pending' | 'running' | 'review_needed' | 'complete' | 'needs_rerun' | 'skipped'
 export type PipelineStatus = 'not_started' | 'running' | 'paused' | 'complete' | 'failed'
 export type PipelineUiStatus = 'idle' | 'running' | 'complete' | 'stale' | 'blocked'
 

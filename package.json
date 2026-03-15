@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "mcp:sidecar": "tsx mcp-sidecar/index.ts",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
@@ -26,11 +27,13 @@
     "zod": "^3.24.2"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@xyflow/react": "^12.10.1",
     "fast-json-patch": "^3.1.1",
     "lucide-react": "^0.577.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "tsx": "^4.21.0",
     "zustand": "^5.0.11"
   }
 }

@@ -106,6 +106,8 @@ describe('M5 overview shell', () => {
     )
 
     expect(screen.getByText(/No MCP client is connected/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Run Next Phase/i })).toBeDisabled()
+    expect(screen.getByText(/Start an analysis before running phases/i)).toBeInTheDocument()
   })
 
   it('accepts inline proposals and updates the canonical store through the command spine', async () => {

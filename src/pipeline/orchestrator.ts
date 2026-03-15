@@ -6,10 +6,11 @@ import type {
   EvidenceProposal,
   PhaseExecution,
   PhaseResult,
+  PipelinePhaseStatus,
   PipelineOrchestrator,
 } from '../types/analysis-pipeline'
 import type { ConversationMessage } from '../types/conversation'
-import { getConversationState, registerProposalGroup } from '../store/conversation'
+import { clearConversation, getFirstPendingProposalPhase, getConversationState, registerProposalGroup } from '../store/conversation'
 import {
   addSteeringMessage,
   getPipelineState,
@@ -89,7 +90,7 @@ function setPhaseRunning(phase: number, executionId: string): void {
   })
 }
 
-function setPhaseFinished(phase: number, executionId: string, status: 'complete' | 'needs_rerun', paused = true): void {
+function setPhaseFinished(phase: number, executionId: string, status: Extract<PipelinePhaseStatus, 'review_needed' | 'complete' | 'needs_rerun'>, paused = true): void {
   const now = new Date().toISOString()
   updateAnalysisState((analysisState) => {
     if (!analysisState) {
@@ -113,7 +114,7 @@ function setPhaseFinished(phase: number, executionId: string, status: 'complete'
   })
 }
 
-function getPhaseState(phase: number): AnalysisState {
+function getAnalysisStateOrThrow(): AnalysisState {
   const analysisState = getPipelineState().analysis_state
   if (!analysisState) {
     throw new Error('No active analysis state.')
@@ -122,6 +123,11 @@ function getPhaseState(phase: number): AnalysisState {
 }
 
 function requirePhasePrerequisite(phase: number): void {
+  const blockingPhase = getFirstPendingProposalPhase(phase)
+  if (blockingPhase != null) {
+    throw new Error(`Phase ${blockingPhase} proposals are still pending review.`)
+  }
+
   if (phase === 1) {
     return
   }
@@ -131,7 +137,7 @@ function requirePhasePrerequisite(phase: number): void {
     throw new Error(`Phase ${phase - 1} (${PHASE_NAMES[phase - 1]}) must be completed first.`)
   }
 
-  const analysisState = getPhaseState(phase)
+  const analysisState = getAnalysisStateOrThrow()
   const priorState = analysisState.phase_states[phase - 1]
   if (!priorState || priorState.status !== 'complete') {
     throw new Error(`Phase ${phase - 1} (${PHASE_NAMES[phase - 1]}) must be completed first.`)
@@ -141,6 +147,11 @@ function requirePhasePrerequisite(phase: number): void {
 export function createPipelineOrchestrator(deps: OrchestratorDependencies): PipelineOrchestrator {
   return {
     async startAnalysis(description, options) {
+      const currentAnalysis = getPipelineState().analysis_state
+      if (currentAnalysis && currentAnalysis.event_description !== description) {
+        clearConversation()
+      }
+
       const classification = classifySituation(description)
       const analysisState = startPipelineAnalysis({
         analysisId: deps.getActiveAnalysisId(),
@@ -153,7 +164,9 @@ export function createPipelineOrchestrator(deps: OrchestratorDependencies): Pipe
         role: 'ai',
         content: options?.manual
           ? 'Manual mode is active. Use the phase screens to build the model without an MCP client.'
-          : `Starting analysis of: ${description}`,
+          : currentAnalysis && currentAnalysis.event_description !== description
+            ? `Replaced the active analysis with: ${description}`
+            : `Starting analysis of: ${description}`,
         message_type: 'phase_transition',
         phase: 1,
       })
@@ -248,7 +261,12 @@ export function createPipelineOrchestrator(deps: OrchestratorDependencies): Pipe
         })
       }
 
-      setPhaseFinished(phase, phaseExecution.id, result.status === 'failed' ? 'needs_rerun' : 'complete', proposals.length > 0)
+      setPhaseFinished(
+        phase,
+        phaseExecution.id,
+        result.status === 'failed' ? 'needs_rerun' : proposals.length > 0 ? 'review_needed' : 'complete',
+        proposals.length > 0,
+      )
 
       return result
     },

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 
-import { useConversationStore, usePipelineStore } from '../store'
+import { usePipelineStore } from '../store'
 
 const PHASE_LABELS: Record<number, string> = {
   1: 'Grounding',
@@ -19,19 +19,6 @@ export type PhaseDisplayStatus = 'pending' | 'active' | 'complete' | 'needs_reru
 
 export function usePhaseProgress() {
   const analysisState = usePipelineStore((state) => state.analysis_state)
-  const messages = useConversationStore((state) => state.messages)
-
-  const pendingReviewByPhase = useMemo(() => {
-    const phaseMap = new Map<number, boolean>()
-    for (const message of messages) {
-      for (const group of message.structured_content?.proposals ?? []) {
-        if (group.proposals.some((proposal) => proposal.status === 'pending')) {
-          phaseMap.set(group.phase, true)
-        }
-      }
-    }
-    return phaseMap
-  }, [messages])
 
   const phases = useMemo(() => (
     Array.from({ length: 10 }, (_, index) => {
@@ -41,10 +28,12 @@ export function usePhaseProgress() {
 
       if (phaseState?.status === 'running') {
         status = 'active'
+      } else if (phaseState?.status === 'review_needed') {
+        status = 'review_needed'
       } else if (phaseState?.status === 'needs_rerun') {
         status = 'needs_rerun'
       } else if (phaseState?.status === 'complete') {
-        status = pendingReviewByPhase.get(number) ? 'review_needed' : 'complete'
+        status = 'complete'
       }
 
       return {
@@ -53,7 +42,7 @@ export function usePhaseProgress() {
         status,
       }
     })
-  ), [analysisState, pendingReviewByPhase])
+  ), [analysisState])
 
   return {
     phases,

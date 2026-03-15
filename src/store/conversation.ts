@@ -9,6 +9,7 @@ import type {
 } from '../types/conversation'
 import type { EvidenceProposal } from '../types/analysis-pipeline'
 import { createBrowserPersistenceAdapter } from './persistence'
+import { setPipelineProposalReview, syncPipelineReviewStatuses } from './pipeline'
 
 interface ConversationSnapshot {
   messages: ConversationMessage[]
@@ -45,6 +46,15 @@ function persistCurrentState(state: ConversationState): void {
     proposal_review: state.proposal_review,
     proposals_by_id: state.proposals_by_id,
   })
+}
+
+function getProposalGroupsFromMessages(messages: ReadonlyArray<ConversationMessage>): ProposalGroup[] {
+  return messages.flatMap((message) => message.structured_content?.proposals ?? [])
+}
+
+function syncPipelineReviewState(state: ConversationState): void {
+  setPipelineProposalReview(state.proposal_review)
+  syncPipelineReviewStatuses(getProposalGroupsFromMessages(state.messages))
 }
 
 function computeGroupStatus(proposals: ReadonlyArray<Proposal>): ProposalGroup['status'] {
@@ -87,7 +97,9 @@ function loadSnapshot(analysisId: string | null): ConversationState {
 const conversationStore = createStore<ConversationState>(() => createInitialState())
 
 export function setConversationActiveAnalysis(analysisId: string | null): void {
-  conversationStore.setState(loadSnapshot(analysisId))
+  const nextState = loadSnapshot(analysisId)
+  conversationStore.setState(nextState)
+  syncPipelineReviewState(nextState)
 }
 
 export function clearConversationPersistence(analysisId: string | null): void {
@@ -95,7 +107,9 @@ export function clearConversationPersistence(analysisId: string | null): void {
 }
 
 export function resetConversationStore(): void {
-  conversationStore.setState(createInitialState())
+  const nextState = createInitialState()
+  conversationStore.setState(nextState)
+  syncPipelineReviewState(nextState)
 }
 
 export function useConversationStore<T>(selector: (state: ConversationState) => T): T {
@@ -136,6 +150,7 @@ export function clearConversation(): void {
       proposals_by_id: {},
     }
     persistCurrentState(nextState)
+    syncPipelineReviewState(nextState)
     return nextState
   })
 }
@@ -147,19 +162,20 @@ export function registerProposalGroup(params: {
   proposals: EvidenceProposal[]
 }): ProposalGroup {
   const groupId = `proposal_group_${crypto.randomUUID()}`
+  const proposals = params.proposals.map((proposal) => ({
+    id: proposal.id,
+    description: proposal.description,
+    entity_previews: proposal.entity_previews,
+    status: proposal.status === 'partially_accepted' || proposal.status === 'conflict'
+      ? 'modified'
+      : proposal.status,
+  } satisfies Proposal))
   const proposalGroup: ProposalGroup = {
     id: groupId,
     phase: params.phase,
-    proposals: params.proposals.map((proposal) => ({
-      id: proposal.id,
-      description: proposal.description,
-      entity_previews: proposal.entity_previews,
-      status: proposal.status === 'partially_accepted' ? 'modified' : proposal.status === 'conflict' ? 'modified' : proposal.status,
-    })),
-    status: 'pending',
+    proposals,
+    status: computeGroupStatus(proposals),
   }
-
-  proposalGroup.status = computeGroupStatus(proposalGroup.proposals)
 
   conversationStore.setState((state) => {
     const proposals_by_id = { ...state.proposals_by_id }
@@ -190,6 +206,7 @@ export function registerProposalGroup(params: {
       },
     }
     persistCurrentState(nextState)
+    syncPipelineReviewState(nextState)
     return nextState
   })
 
@@ -266,6 +283,27 @@ export function updateProposalStatus(
       },
     }
     persistCurrentState(nextState)
+    syncPipelineReviewState(nextState)
     return nextState
   })
+}
+
+export function getProposalGroups(): ProposalGroup[] {
+  return getProposalGroupsFromMessages(conversationStore.getState().messages)
+}
+
+export function getFirstPendingProposalPhase(maxPhase?: number): number | null {
+  const pendingPhases = getProposalGroups()
+    .filter((group) => group.proposals.some((proposal) => proposal.status === 'pending'))
+    .map((group) => group.phase)
+    .filter((phase) => maxPhase == null || phase < maxPhase)
+    .sort((left, right) => left - right)
+
+  return pendingPhases[0] ?? null
+}
+
+export function hasPendingProposalGroupsForPhase(phase: number): boolean {
+  return getProposalGroups().some((group) =>
+    group.phase === phase && group.proposals.some((proposal) => proposal.status === 'pending'),
+  )
 }

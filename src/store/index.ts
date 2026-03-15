@@ -1,4 +1,4 @@
-export { StoreProvider, useAppStore } from './StoreProvider'
+export { StoreProvider, useAppStore, useAppStoreApi } from './StoreProvider'
 export {
   DerivedStoreProvider,
   useDerivedStore,
@@ -14,6 +14,9 @@ export {
   clearConversation,
   getConversationState,
   getEvidenceProposal,
+  getFirstPendingProposalPhase,
+  getProposalGroups,
+  hasPendingProposalGroupsForPhase,
   registerProposalGroup,
   resetConversationStore,
   setConversationActiveAnalysis,
@@ -27,6 +30,7 @@ export {
   setPhaseResult,
   setPipelineActiveAnalysis,
   setPipelineProposalReview,
+  syncPipelineReviewStatuses,
   startPipelineAnalysis,
   updateAnalysisState,
   upsertPhaseExecution,

@@ -17,6 +17,7 @@ export function ConversationInput({
   onSend,
 }: ConversationInputProps): ReactNode {
   const [value, setValue] = useState('')
+  const helperId = guidance ? 'conversation-guidance' : undefined
 
   function submit() {
     const trimmed = value.trim()
@@ -30,15 +31,23 @@ export function ConversationInput({
   return (
     <div className="rounded-xl border border-border bg-bg-card p-4">
       {guidance ? (
-        <div className="mb-3 rounded border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+        <div id={helperId} className="mb-3 rounded border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
           {guidance}
         </div>
       ) : null}
       <div className="flex gap-3">
         <textarea
+          aria-label="Analysis conversation input"
+          aria-describedby={helperId}
           className="min-h-[88px] flex-1 resize-none rounded-lg border border-border bg-bg-surface px-3 py-3 text-sm text-text-primary outline-none placeholder:text-text-dim focus:border-accent"
           value={value}
           onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+              event.preventDefault()
+              submit()
+            }
+          }}
           placeholder={placeholder}
           disabled={disabled}
         />

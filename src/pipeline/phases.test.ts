@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { emptyCanonicalStore } from '../types/canonical'
+import { emptyCanonicalStore, type CanonicalStore } from '../types/canonical'
 import type { AnalysisState, PhaseExecution } from '../types/analysis-pipeline'
 import { runPhase1Grounding } from './phase-1-grounding'
 import { runPhase2Players } from './phase-2-players'
@@ -46,38 +46,44 @@ function createAnalysisState(description: string): AnalysisState {
   }
 }
 
-function createPlayersCanonicalStore() {
-  const store = emptyCanonicalStore()
-  store.players.player_a = {
-    id: 'player_a',
-    name: 'State A',
-    type: 'state',
-    role: 'primary',
-    objectives: [{ label: 'Preserve leverage', weight: createEstimate(0.8, 'Primary objective') }],
-    constraints: [{ label: 'Budget', type: 'resource', severity: 'hard' }],
+function createPlayersCanonicalStore(): CanonicalStore {
+  const now = new Date().toISOString()
+  return {
+    ...emptyCanonicalStore(),
+    players: {
+      player_a: {
+        id: 'player_a',
+        name: 'State A',
+        type: 'state',
+        role: 'primary',
+        objectives: [{ label: 'Preserve leverage', weight: createEstimate(0.8, 'Primary objective') }],
+        constraints: [{ label: 'Budget', type: 'resource', severity: 'hard' }],
+      },
+      player_b: {
+        id: 'player_b',
+        name: 'State B',
+        type: 'state',
+        role: 'primary',
+        objectives: [{ label: 'Avoid escalation', weight: createEstimate(0.7, 'Primary objective') }],
+        constraints: [{ label: 'Alliance commitments', type: 'diplomatic', severity: 'soft' }],
+      },
+    },
+    games: {
+      game_1: {
+        id: 'game_1',
+        name: 'Baseline game',
+        description: 'Existing baseline game.',
+        semantic_labels: ['bargaining'],
+        players: ['player_a', 'player_b'],
+        status: 'active',
+        formalizations: [],
+        coupling_links: [],
+        key_assumptions: [],
+        created_at: now,
+        updated_at: now,
+      },
+    },
   }
-  store.players.player_b = {
-    id: 'player_b',
-    name: 'State B',
-    type: 'state',
-    role: 'primary',
-    objectives: [{ label: 'Avoid escalation', weight: createEstimate(0.7, 'Primary objective') }],
-    constraints: [{ label: 'Alliance commitments', type: 'diplomatic', severity: 'soft' }],
-  }
-  store.games.game_1 = {
-    id: 'game_1',
-    name: 'Baseline game',
-    description: 'Existing baseline game.',
-    semantic_labels: ['bargaining'],
-    players: ['player_a', 'player_b'],
-    status: 'active',
-    formalizations: [],
-    coupling_links: [],
-    key_assumptions: [],
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }
-  return store
 }
 
 describe('M5 phase runners', () => {

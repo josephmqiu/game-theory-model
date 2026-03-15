@@ -6,8 +6,17 @@ import { usePipelineController } from './usePipelineController'
 export function useConversation() {
   const messages = useConversationStore((state) => state.messages)
   const dispatch = useAppStore((state) => state.dispatch)
+  const persistedRevision = useAppStore((state) => state.eventLog.persisted_revision)
   const manualMode = useAppStore((state) => state.viewState.manualMode)
-  const { analysisState, connectionStatus, handleSteering, startAnalysis, runNextPhase, runPhase } = usePipelineController()
+  const {
+    analysisState,
+    connectionStatus,
+    handleSteering,
+    nextPhaseDecision,
+    startAnalysis,
+    runNextPhase: runNextPhaseInternal,
+    runPhase,
+  } = usePipelineController()
 
   const sendMessage = useCallback((content: string) => {
     const trimmed = content.trim()
@@ -45,7 +54,7 @@ export function useConversation() {
     const result = dispatch({
       kind: 'batch',
       label: proposal.description,
-      base_revision: proposal.base_revision,
+      base_revision: persistedRevision,
       commands: proposal.commands,
     })
 
@@ -70,7 +79,7 @@ export function useConversation() {
       phase: proposal.phase,
     })
     return result
-  }, [dispatch])
+  }, [dispatch, persistedRevision])
 
   const rejectProposal = useCallback((proposalId: string) => {
     updateProposalStatus(proposalId, 'rejected', 'rejected')
@@ -85,6 +94,28 @@ export function useConversation() {
     })
   }, [])
 
+  const runNextPhase = useCallback(async () => {
+    try {
+      const result = await runNextPhaseInternal()
+      if (result && 'canRun' in result && !result.canRun) {
+        appendConversationMessage({
+          role: 'ai',
+          content: result.message,
+          message_type: 'result',
+          phase: result.blockingPhase ?? undefined,
+        })
+      }
+      return result
+    } catch (error) {
+      appendConversationMessage({
+        role: 'ai',
+        content: error instanceof Error ? error.message : 'Could not run the next phase.',
+        message_type: 'result',
+      })
+      return null
+    }
+  }, [runNextPhaseInternal])
+
   return {
     messages,
     connectionStatus,
@@ -93,6 +124,7 @@ export function useConversation() {
     acceptProposal,
     rejectProposal,
     modifyProposal,
+    nextPhaseDecision,
     runNextPhase,
     runPhase,
   }

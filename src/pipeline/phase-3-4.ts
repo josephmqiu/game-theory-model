@@ -103,6 +103,46 @@ function buildBaselineGame(context: Phase34RunnerContext): ProposedBaselineGame 
   }
 }
 
+function buildEscalationRungs(): ProposedEscalationLadder['rungs'] {
+  return [
+    {
+      label: 'Symbolic move',
+      description: 'Low-cost signaling move.',
+      reversible: true,
+      climbed: true,
+      player_attribution: null,
+      evidence_refs: [],
+      strategic_implications: 'Tests resolve without full commitment.',
+    },
+    {
+      label: 'Material pressure',
+      description: 'Concrete coercive or market move.',
+      reversible: false,
+      climbed: false,
+      player_attribution: null,
+      evidence_refs: [],
+      strategic_implications: 'Raises cost of backing down.',
+    },
+  ]
+}
+
+function buildCrossGameConstraintTable(
+  baselineGame: ProposedBaselineGame,
+  strategyTable: ProposedStrategyTable,
+): ProposedCrossGameConstraintTable {
+  return {
+    strategies: strategyTable.strategies.flatMap((entry) =>
+      entry.strategies.map((strategy) => ({
+        player_id: entry.player_id,
+        strategy_label: strategy.label,
+      })),
+    ),
+    games: [asEntityRef('game', baselineGame.temp_id)],
+    cells: [],
+    trapped_players: baselineGame.players.map((playerId) => asEntityRef('player', playerId)),
+  }
+}
+
 function buildBaselineProposals(
   baselineGame: ProposedBaselineGame,
   strategyTable: ProposedStrategyTable,
@@ -188,98 +228,75 @@ function buildBaselineProposals(
     ],
   })
 
-  const proposals = [baselineProposal]
-
-  if (descriptionContains(context.analysisState.event_description, 'sanction', 'strike', 'escalat', 'deterr')) {
-    const escalationId = createEntityId('escalation_ladder')
-    proposals.push(
-      buildModelProposal({
-        description: 'Add escalation ladder for the baseline game',
-        phase: 3,
-        proposal_type: 'escalation',
-        phaseExecution: context.phaseExecution,
-        baseRevision: context.baseRevision,
-        commands: [
-          {
-            kind: 'add_escalation_ladder',
-            id: escalationId,
-            payload: {
-              game_id: baselineGame.temp_id,
-              rungs: [
-                {
+  const escalationProposals = descriptionContains(context.analysisState.event_description, 'sanction', 'strike', 'escalat', 'deterr')
+    ? (() => {
+      const escalationId = createEntityId('escalation_ladder')
+      const rungs = buildEscalationRungs()
+      return [
+        buildModelProposal({
+          description: 'Add escalation ladder for the baseline game',
+          phase: 3,
+          proposal_type: 'escalation',
+          phaseExecution: context.phaseExecution,
+          baseRevision: context.baseRevision,
+          commands: [
+            {
+              kind: 'add_escalation_ladder',
+              id: escalationId,
+              payload: {
+                game_id: baselineGame.temp_id,
+                rungs: rungs.map((rung) => ({
+                  ...rung,
                   id: createEntityId('rung'),
-                  label: 'Symbolic move',
-                  description: 'Low-cost signaling move.',
                   player_attribution: null,
-                  evidence_refs: [],
-                  reversible: true,
-                  climbed: true,
-                  strategic_implications: 'Tests resolve without full commitment.',
-                },
-                {
-                  id: createEntityId('rung'),
-                  label: 'Material pressure',
-                  description: 'Concrete coercive or market move.',
-                  player_attribution: null,
-                  evidence_refs: [],
-                  reversible: false,
-                  climbed: false,
-                  strategic_implications: 'Raises cost of backing down.',
-                },
-              ],
-              current_rung_index: 0,
-              escalation_dominance: null,
-              stability_instability_paradox: true,
-            },
-          },
-        ],
-        entity_previews: [
-          createEntityPreview('escalation_ladder', 'add', escalationId, {
-            game_id: baselineGame.temp_id,
-            rungs: 2,
-          }),
-        ],
-      }),
-    )
-  }
-
-  if (Object.keys(context.canonical.players).length > 2) {
-    const tableId = createEntityId('cross_game_constraint_table')
-    proposals.push(
-      buildModelProposal({
-        description: 'Add cross-game constraint table for overlapping strategic commitments',
-        phase: 3,
-        proposal_type: 'constraint_table',
-        phaseExecution: context.phaseExecution,
-        baseRevision: context.baseRevision,
-        commands: [
-          {
-            kind: 'add_cross_game_constraint_table',
-            id: tableId,
-            payload: {
-              strategies: strategyTable.strategies.flatMap((entry) =>
-                entry.strategies.map((strategy) => ({
-                  player_id: entry.player_id,
-                  strategy_label: strategy.label,
                 })),
-              ),
-              games: [asEntityRef('game', baselineGame.temp_id)],
-              cells: [],
-              trapped_players: baselineGame.players.map((playerId) => asEntityRef('player', playerId)),
+                current_rung_index: 0,
+                escalation_dominance: null,
+                stability_instability_paradox: true,
+              },
             },
-          },
-        ],
-        entity_previews: [
-          createEntityPreview('cross_game_constraint_table', 'add', tableId, {
-            strategies: strategyTable.strategies.length,
-            games: 1,
-          }),
-        ],
-      }),
-    )
-  }
+          ],
+          entity_previews: [
+            createEntityPreview('escalation_ladder', 'add', escalationId, {
+              game_id: baselineGame.temp_id,
+              rungs: rungs.length,
+            }),
+          ],
+        }),
+      ]
+    })()
+    : []
 
-  return proposals
+  const crossGameConstraintProposals = Object.keys(context.canonical.players).length > 2
+    ? (() => {
+      const tableId = createEntityId('cross_game_constraint_table')
+      const constraintTable = buildCrossGameConstraintTable(baselineGame, strategyTable)
+      return [
+        buildModelProposal({
+          description: 'Add cross-game constraint table for overlapping strategic commitments',
+          phase: 3,
+          proposal_type: 'constraint_table',
+          phaseExecution: context.phaseExecution,
+          baseRevision: context.baseRevision,
+          commands: [
+            {
+              kind: 'add_cross_game_constraint_table',
+              id: tableId,
+              payload: constraintTable,
+            },
+          ],
+          entity_previews: [
+            createEntityPreview('cross_game_constraint_table', 'add', tableId, {
+              strategies: constraintTable.strategies.length,
+              games: constraintTable.games.length,
+            }),
+          ],
+        }),
+      ]
+    })()
+    : []
+
+  return [baselineProposal, ...escalationProposals, ...crossGameConstraintProposals]
 }
 
 export function runPhase3Baseline(context: Phase34RunnerContext): BaselineModelResult {
@@ -326,43 +343,14 @@ export function runPhase3Baseline(context: Phase34RunnerContext): BaselineModelR
     escalation_ladder: ladderProposal
       ? {
           game_id: baselineGame.temp_id,
-          rungs: [
-            {
-              label: 'Symbolic move',
-              description: 'Low-cost signaling move.',
-              reversible: true,
-              climbed: true,
-              player_attribution: null,
-              evidence_refs: [],
-              strategic_implications: 'Tests resolve without full commitment.',
-            },
-            {
-              label: 'Material pressure',
-              description: 'Concrete coercive or market move.',
-              reversible: false,
-              climbed: false,
-              player_attribution: null,
-              evidence_refs: [],
-              strategic_implications: 'Raises cost of backing down.',
-            },
-          ],
+          rungs: buildEscalationRungs(),
           escalation_dominance: null,
           stability_instability_paradox: true,
         } satisfies ProposedEscalationLadder
       : null,
     strategy_table: strategyTable,
     cross_game_constraint_table: tableProposal
-      ? {
-          strategies: strategyTable.strategies.flatMap((entry) =>
-            entry.strategies.map((strategy) => ({
-              player_id: entry.player_id,
-              strategy_label: strategy.label,
-            })),
-          ),
-          games: [asEntityRef('game', baselineGame.temp_id)],
-          cells: [],
-          trapped_players: baselineGame.players.map((playerId) => asEntityRef('player', playerId)),
-        } satisfies ProposedCrossGameConstraintTable
+      ? buildCrossGameConstraintTable(baselineGame, strategyTable)
       : null,
     model_gaps: [
       'The baseline model does not yet explain hidden reservation values.',
@@ -372,10 +360,17 @@ export function runPhase3Baseline(context: Phase34RunnerContext): BaselineModelR
   }
 }
 
-function buildRepeatedGameMap(playerIds: string[]): RepeatedGameMapEntry[] {
+function shiftDate(anchor: string | null, yearsAgo: number, monthOffset: number, dayOfMonth: number): string {
+  const date = new Date(anchor ?? new Date().toISOString())
+  date.setUTCFullYear(date.getUTCFullYear() - yearsAgo)
+  date.setUTCMonth(Math.max(0, Math.min(11, date.getUTCMonth() + monthOffset)), dayOfMonth)
+  return date.toISOString().slice(0, 10)
+}
+
+function buildRepeatedGameMap(playerIds: string[], anchor: string | null): RepeatedGameMapEntry[] {
   return [
     {
-      date: '2021-01-15',
+      date: shiftDate(anchor, 5, -2, 15),
       description: 'Initial cooperation signal followed by delayed implementation.',
       move_type: 'cooperation',
       player_id: playerIds[0] ?? 'unknown_player',
@@ -385,7 +380,7 @@ function buildRepeatedGameMap(playerIds: string[]): RepeatedGameMapEntry[] {
       evidence_refs: [],
     },
     {
-      date: '2023-06-04',
+      date: shiftDate(anchor, 3, 1, 4),
       description: 'Punitive move after perceived defection.',
       move_type: 'punishment',
       player_id: playerIds[1] ?? playerIds[0] ?? 'unknown_player',
@@ -395,7 +390,7 @@ function buildRepeatedGameMap(playerIds: string[]): RepeatedGameMapEntry[] {
       evidence_refs: [],
     },
     {
-      date: '2025-02-19',
+      date: shiftDate(anchor, 1, -1, 19),
       description: 'Short-term concession under deadline pressure.',
       move_type: 'concession',
       player_id: playerIds[0] ?? 'unknown_player',
@@ -404,6 +399,138 @@ function buildRepeatedGameMap(playerIds: string[]): RepeatedGameMapEntry[] {
       changed_beliefs_or_rules: false,
       evidence_refs: [],
     },
+  ]
+}
+
+function buildPhase4Proposals(params: {
+  context: Phase34RunnerContext
+  gameId: string
+  patterns: ProposedRepeatedGamePattern[]
+  trustAssessment: ProposedTrustAssessment[]
+  dynamicInconsistencyRisks: ProposedDynamicInconsistencyRisk[]
+  revalidationNeeded: boolean
+}): ModelProposal[] {
+  const { context, dynamicInconsistencyRisks, gameId, patterns, revalidationNeeded, trustAssessment } = params
+  const revalidationProposals = revalidationNeeded
+    ? [
+      buildModelProposal({
+        description: 'Trigger revalidation based on historical repeated-game findings',
+        phase: 4,
+        proposal_type: 'pattern',
+        phaseExecution: context.phaseExecution,
+        baseRevision: context.baseRevision,
+        commands: [
+          {
+            kind: 'trigger_revalidation',
+            payload: {
+              trigger_condition: dynamicInconsistencyRisks[0]!.durability === 'fragile'
+                ? 'objective_function_changed'
+                : 'repeated_dominates_oneshot',
+              source_phase: 4,
+              target_phases: [3, 4],
+              entity_refs: [asEntityRef('game', gameId)],
+              description: 'Historical evidence suggests the baseline should be re-checked as a repeated game.',
+            },
+          },
+        ],
+        entity_previews: [
+          createEntityPreview('revalidation_event', 'add', null, {
+            source_phase: 4,
+            target_phases: [3, 4],
+          }),
+        ],
+      }),
+    ]
+    : []
+
+  return [
+    buildModelProposal({
+      description: 'Add repeated-game pattern',
+      phase: 4,
+      proposal_type: 'pattern',
+      phaseExecution: context.phaseExecution,
+      baseRevision: context.baseRevision,
+      commands: [
+        {
+          kind: 'add_repeated_game_pattern',
+          id: createEntityId('repeated_game_pattern'),
+          payload: {
+            game_id: patterns[0]!.game_id,
+            pattern_type: patterns[0]!.pattern_type,
+            description: patterns[0]!.description,
+            instances: patterns[0]!.instances,
+            impact_on_trust: patterns[0]!.impact_on_trust,
+            impact_on_model: patterns[0]!.impact_on_model,
+          },
+        },
+      ],
+      entity_previews: [
+        createEntityPreview('repeated_game_pattern', 'add', null, {
+          pattern_type: patterns[0]!.pattern_type,
+          game_id: patterns[0]!.game_id,
+        }),
+      ],
+    }),
+    buildModelProposal({
+      description: 'Add trust assessment',
+      phase: 4,
+      proposal_type: 'trust',
+      phaseExecution: context.phaseExecution,
+      baseRevision: context.baseRevision,
+      commands: [
+        {
+          kind: 'add_trust_assessment',
+          id: createEntityId('trust_assessment'),
+          payload: {
+            assessor_player_id: trustAssessment[0]!.assessor_player_id,
+            target_player_id: trustAssessment[0]!.target_player_id,
+            level: trustAssessment[0]!.level,
+            posterior_belief: trustAssessment[0]!.posterior_belief,
+            evidence_refs: [],
+            interaction_history_summary: trustAssessment[0]!.interaction_history_summary,
+            driving_patterns: [],
+            implications: trustAssessment[0]!.implications,
+          },
+        },
+      ],
+      entity_previews: [
+        createEntityPreview('trust_assessment', 'add', null, {
+          assessor_player_id: trustAssessment[0]!.assessor_player_id,
+          target_player_id: trustAssessment[0]!.target_player_id,
+          level: trustAssessment[0]!.level,
+        }),
+      ],
+    }),
+    buildModelProposal({
+      description: 'Add dynamic inconsistency risk',
+      phase: 4,
+      proposal_type: 'dynamic_risk',
+      phaseExecution: context.phaseExecution,
+      baseRevision: context.baseRevision,
+      commands: [
+        {
+          kind: 'add_dynamic_inconsistency_risk',
+          id: createEntityId('dynamic_inconsistency_risk'),
+          payload: {
+            player_id: dynamicInconsistencyRisks[0]!.player_id,
+            commitment_description: dynamicInconsistencyRisks[0]!.commitment_description,
+            risk_type: dynamicInconsistencyRisks[0]!.risk_type,
+            durability: dynamicInconsistencyRisks[0]!.durability,
+            evidence_refs: [],
+            affected_games: dynamicInconsistencyRisks[0]!.affected_games,
+            mitigation: dynamicInconsistencyRisks[0]!.mitigation,
+          },
+        },
+      ],
+      entity_previews: [
+        createEntityPreview('dynamic_inconsistency_risk', 'add', null, {
+          player_id: dynamicInconsistencyRisks[0]!.player_id,
+          risk_type: dynamicInconsistencyRisks[0]!.risk_type,
+          durability: dynamicInconsistencyRisks[0]!.durability,
+        }),
+      ],
+    }),
+    ...revalidationProposals,
   ]
 }
 
@@ -441,7 +568,7 @@ export function runPhase4History(context: Phase34RunnerContext): HistoricalGameR
     }
   }
 
-  const repeated_game_map = buildRepeatedGameMap(playerIds)
+  const repeated_game_map = buildRepeatedGameMap(playerIds, context.analysisState.started_at)
   const patterns_found: ProposedRepeatedGamePattern[] = [
     {
       game_id: games[0]!.id,
@@ -486,126 +613,14 @@ export function runPhase4History(context: Phase34RunnerContext): HistoricalGameR
 
   const revalidationNeeded = trust_assessment[0]!.level === 'low' || dynamic_inconsistency_risks[0]!.durability === 'fragile'
 
-  const proposals: ModelProposal[] = [
-    buildModelProposal({
-      description: 'Add repeated-game pattern',
-      phase: 4,
-      proposal_type: 'pattern',
-      phaseExecution: context.phaseExecution,
-      baseRevision: context.baseRevision,
-      commands: [
-        {
-          kind: 'add_repeated_game_pattern',
-          id: createEntityId('repeated_game_pattern'),
-          payload: {
-            game_id: patterns_found[0]!.game_id,
-            pattern_type: patterns_found[0]!.pattern_type,
-            description: patterns_found[0]!.description,
-            instances: patterns_found[0]!.instances,
-            impact_on_trust: patterns_found[0]!.impact_on_trust,
-            impact_on_model: patterns_found[0]!.impact_on_model,
-          },
-        },
-      ],
-      entity_previews: [
-        createEntityPreview('repeated_game_pattern', 'add', null, {
-          pattern_type: patterns_found[0]!.pattern_type,
-          game_id: patterns_found[0]!.game_id,
-        }),
-      ],
-    }),
-    buildModelProposal({
-      description: 'Add trust assessment',
-      phase: 4,
-      proposal_type: 'trust',
-      phaseExecution: context.phaseExecution,
-      baseRevision: context.baseRevision,
-      commands: [
-        {
-          kind: 'add_trust_assessment',
-          id: createEntityId('trust_assessment'),
-          payload: {
-            assessor_player_id: trust_assessment[0]!.assessor_player_id,
-            target_player_id: trust_assessment[0]!.target_player_id,
-            level: trust_assessment[0]!.level,
-            posterior_belief: trust_assessment[0]!.posterior_belief,
-            evidence_refs: [],
-            interaction_history_summary: trust_assessment[0]!.interaction_history_summary,
-            driving_patterns: [],
-            implications: trust_assessment[0]!.implications,
-          },
-        },
-      ],
-      entity_previews: [
-        createEntityPreview('trust_assessment', 'add', null, {
-          assessor_player_id: trust_assessment[0]!.assessor_player_id,
-          target_player_id: trust_assessment[0]!.target_player_id,
-          level: trust_assessment[0]!.level,
-        }),
-      ],
-    }),
-    buildModelProposal({
-      description: 'Add dynamic inconsistency risk',
-      phase: 4,
-      proposal_type: 'dynamic_risk',
-      phaseExecution: context.phaseExecution,
-      baseRevision: context.baseRevision,
-      commands: [
-        {
-          kind: 'add_dynamic_inconsistency_risk',
-          id: createEntityId('dynamic_inconsistency_risk'),
-          payload: {
-            player_id: dynamic_inconsistency_risks[0]!.player_id,
-            commitment_description: dynamic_inconsistency_risks[0]!.commitment_description,
-            risk_type: dynamic_inconsistency_risks[0]!.risk_type,
-            durability: dynamic_inconsistency_risks[0]!.durability,
-            evidence_refs: [],
-            affected_games: dynamic_inconsistency_risks[0]!.affected_games,
-            mitigation: dynamic_inconsistency_risks[0]!.mitigation,
-          },
-        },
-      ],
-      entity_previews: [
-        createEntityPreview('dynamic_inconsistency_risk', 'add', null, {
-          player_id: dynamic_inconsistency_risks[0]!.player_id,
-          risk_type: dynamic_inconsistency_risks[0]!.risk_type,
-          durability: dynamic_inconsistency_risks[0]!.durability,
-        }),
-      ],
-    }),
-  ]
-
-  if (revalidationNeeded) {
-    proposals.push(
-      buildModelProposal({
-        description: 'Trigger revalidation based on historical repeated-game findings',
-        phase: 4,
-        proposal_type: 'pattern',
-        phaseExecution: context.phaseExecution,
-        baseRevision: context.baseRevision,
-        commands: [
-          {
-            kind: 'trigger_revalidation',
-            payload: {
-              trigger_condition: dynamic_inconsistency_risks[0]!.durability === 'fragile'
-                ? 'objective_function_changed'
-                : 'repeated_dominates_oneshot',
-              source_phase: 4,
-              target_phases: [3, 4],
-              entity_refs: [asEntityRef('game', games[0]!.id)],
-              description: 'Historical evidence suggests the baseline should be re-checked as a repeated game.',
-            },
-          },
-        ],
-        entity_previews: [
-          createEntityPreview('revalidation_event', 'add', null, {
-            source_phase: 4,
-            target_phases: [3, 4],
-          }),
-        ],
-      }),
-    )
-  }
+  const proposals = buildPhase4Proposals({
+    context,
+    gameId: games[0]!.id,
+    patterns: patterns_found,
+    trustAssessment: trust_assessment,
+    dynamicInconsistencyRisks: dynamic_inconsistency_risks,
+    revalidationNeeded,
+  })
 
   return {
     phase: 4,

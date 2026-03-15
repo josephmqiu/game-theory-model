@@ -1,7 +1,7 @@
-import { createMcpServer, createStdioTransport, startServer } from '../src/mcp'
+import { createConfiguredMcpServer, createStdioTransport, startServer } from '../src/mcp'
 
 async function main() {
-  const server = createMcpServer({
+  const { server } = createConfiguredMcpServer({
     name: 'game-theory-analysis',
     version: '0.1.0',
     stdio_enabled: true,
@@ -13,4 +13,7 @@ async function main() {
   await startServer(server, createStdioTransport())
 }
 
-void main()
+void main().catch((error) => {
+  console.error('Failed to start MCP sidecar:', error)
+  process.exit(1)
+})

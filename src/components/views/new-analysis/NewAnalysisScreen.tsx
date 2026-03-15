@@ -7,6 +7,7 @@ import { Button } from '../../design-system'
 
 export function NewAnalysisScreen(): ReactNode {
   const [description, setDescription] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const { connectionStatus, startAnalysis } = usePipelineController()
   const setActiveView = useAppStore((state) => state.setActiveView)
 
@@ -16,15 +17,20 @@ export function NewAnalysisScreen(): ReactNode {
       return
     }
 
-    await startAnalysis(trimmed, { manual })
-    setActiveView('overview')
+    try {
+      setError(null)
+      await startAnalysis(trimmed, { manual })
+      setActiveView('overview')
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Could not start the analysis.')
+    }
   }
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center h-full p-8">
       <h1 className="text-xl font-bold text-text-primary mb-6">New Analysis</h1>
       <p className="mb-4 max-w-2xl text-center text-sm text-text-muted">
-        Describe the strategic situation. The browser-safe M5 flow creates the analysis state now, and a connected MCP client can drive the phase tools from there.
+        Describe the strategic situation. This creates the analysis shell immediately, and a connected MCP client can then drive the phase tools from the Overview.
       </p>
       <textarea
         className="w-full max-w-2xl h-32 bg-bg-surface border border-border rounded-lg p-4 text-text-primary placeholder-text-muted resize-none"
@@ -35,11 +41,14 @@ export function NewAnalysisScreen(): ReactNode {
       <div className="mt-3 text-xs text-text-dim">
         {connectionStatus.connected
           ? `${connectionStatus.client_name ?? 'MCP client'} is connected over ${connectionStatus.transport}.`
-          : 'No MCP client connected. You can still create the analysis and continue in manual mode.'}
+          : 'No MCP client connected. You can still create the analysis shell, review proposals later, and continue in manual mode.'}
       </div>
+      {error ? (
+        <div className="mt-3 text-sm text-red-300">{error}</div>
+      ) : null}
       <div className="flex gap-3 mt-4">
         <Button variant="primary" onClick={() => void handleBeginAnalysis(false)} disabled={description.trim().length === 0}>
-          Begin Analysis
+          {connectionStatus.connected ? 'Begin Analysis' : 'Create Analysis Shell'}
         </Button>
         <Button variant="secondary" onClick={() => void handleBeginAnalysis(true)} disabled={description.trim().length === 0}>
           Manual Mode

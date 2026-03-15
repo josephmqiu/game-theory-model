@@ -7,7 +7,7 @@ import type {
   PhaseState,
   SteeringMessage,
 } from '../types/analysis-pipeline'
-import type { DiffReviewState } from '../types/conversation'
+import type { DiffReviewState, ProposalGroup } from '../types/conversation'
 import { createBrowserPersistenceAdapter } from './persistence'
 
 interface PipelineSnapshot {
@@ -193,6 +193,63 @@ export function setPipelineProposalReview(proposalReview: DiffReviewState): void
     const nextState = {
       ...state,
       proposal_review: proposalReview,
+    }
+    persistCurrentState(nextState)
+    return nextState
+  })
+}
+
+export function syncPipelineReviewStatuses(proposalGroups: ReadonlyArray<ProposalGroup>): void {
+  const pendingPhases = new Set(
+    proposalGroups
+      .filter((group) => group.proposals.some((proposal) => proposal.status === 'pending'))
+      .map((group) => group.phase),
+  )
+
+  pipelineStore.setState((state) => {
+    if (!state.analysis_state) {
+      return state
+    }
+
+    let changed = false
+    const phase_states = Object.fromEntries(
+      Object.entries(state.analysis_state.phase_states).map(([phaseKey, phaseState]) => {
+        const phaseNumber = Number(phaseKey)
+        const shouldReview = pendingPhases.has(phaseNumber)
+        let nextStatus = phaseState.status
+
+        if (phaseState.status === 'complete' && shouldReview) {
+          nextStatus = 'review_needed'
+        } else if (phaseState.status === 'review_needed' && !shouldReview) {
+          nextStatus = 'complete'
+        }
+
+        if (nextStatus !== phaseState.status) {
+          changed = true
+        }
+
+        return [
+          phaseKey,
+          nextStatus === phaseState.status
+            ? phaseState
+            : {
+                ...phaseState,
+                status: nextStatus,
+              } satisfies PhaseState,
+        ]
+      }),
+    ) as Record<number, PhaseState>
+
+    if (!changed) {
+      return state
+    }
+
+    const nextState = {
+      ...state,
+      analysis_state: {
+        ...state.analysis_state,
+        phase_states,
+      },
     }
     persistCurrentState(nextState)
     return nextState
