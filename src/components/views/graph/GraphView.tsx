@@ -1,0 +1,90 @@
+import { useCallback, useMemo } from 'react'
+import type { ReactNode } from 'react'
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  type OnSelectionChangeFunc,
+  type NodeTypes,
+  type EdgeTypes,
+} from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
+
+import { useAppStore } from '../../../store'
+import { buildGraphViewModel } from '../../../store/selectors/graph-selectors'
+import { coordinationBus } from '../../../coordination'
+import { DecisionNode } from './nodes/DecisionNode'
+import { ChanceNode } from './nodes/ChanceNode'
+import { TerminalNode } from './nodes/TerminalNode'
+import { GameEdge } from './edges/GameEdge'
+
+const nodeTypes: NodeTypes = {
+  decision: DecisionNode,
+  chance: ChanceNode,
+  terminal: TerminalNode,
+}
+
+const edgeTypes: EdgeTypes = {
+  game: GameEdge,
+}
+
+export function GraphView(): ReactNode {
+  const canonical = useAppStore((s) => s.canonical)
+  const activeFormalizationId = useAppStore((s) => s.viewState.activeFormalizationId)
+  const setInspectedRefs = useAppStore((s) => s.setInspectedRefs)
+
+  const { nodes, edges, formalization } = useMemo(
+    () => buildGraphViewModel(canonical, activeFormalizationId),
+    [canonical, activeFormalizationId],
+  )
+
+  const onSelectionChange: OnSelectionChangeFunc = useCallback(
+    ({ nodes: selectedNodes }) => {
+      const refs = selectedNodes.map((n) => ({
+        type: 'game_node' as const,
+        id: n.id,
+      }))
+
+      setInspectedRefs(refs)
+
+      coordinationBus.emit({
+        kind: 'selection_changed',
+        source_view: 'graph',
+        correlation_id: crypto.randomUUID(),
+        refs,
+      })
+    },
+    [setInspectedRefs],
+  )
+
+  if (!formalization) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-text-muted">
+        <div className="text-center">
+          <div className="text-lg font-heading mb-2">No formalization selected</div>
+          <div className="text-sm">
+            Select a game and formalization from the sidebar to view its graph.
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex-1 h-full" data-testid="graph-canvas">
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        onSelectionChange={onSelectionChange}
+        fitView
+        className="bg-bg-surface"
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background />
+        <Controls />
+      </ReactFlow>
+    </div>
+  )
+}

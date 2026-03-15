@@ -4,6 +4,8 @@ import { WelcomeScreen } from '../shell/WelcomeScreen'
 import { WorkflowBoard } from '../shell/WorkflowBoard'
 import { PlayersRegistry } from '../shell/PlayersRegistry'
 import { EvidenceLibrary } from '../shell/EvidenceLibrary'
+import { GraphView } from '../views/graph/GraphView'
+import { InspectorPanel } from '../inspector'
 
 export function ViewRouter(): ReactNode {
   const activeView = useAppStore((s) => s.viewState.activeView)
@@ -23,7 +25,12 @@ export function ViewRouter(): ReactNode {
     case 'evidence_library':
       return <EvidenceLibrary />
     case 'graph':
-      return <div className="p-8 text-text-muted">Graph View</div>
+      return (
+        <div className="flex flex-1 h-full">
+          <GraphView />
+          <InspectorPanel />
+        </div>
+      )
     case 'matrix':
       return <div className="p-8 text-text-muted">Matrix View</div>
     case 'tree':
