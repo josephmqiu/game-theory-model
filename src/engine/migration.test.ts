@@ -57,6 +57,26 @@ describe('migration engine', () => {
     expect(() => buildMigrationPath(1, 3)).toThrow(/2 to 3/)
   })
 
+  it('returns migration_failed instead of throwing when the migration path is incomplete', async () => {
+    MIGRATIONS.splice(0, MIGRATIONS.length, {
+      from: 1,
+      to: 2,
+      description: 'step one',
+      lossy: false,
+      transform: (data) => ({ result: data }),
+    })
+
+    const result = await migrateFile({ schema_version: 1 }, 1, 3)
+
+    expect(result.status).toBe('migration_failed')
+    if (result.status !== 'migration_failed') {
+      throw new Error('Expected migration failure result.')
+    }
+
+    expect(result.description).toMatch(/Missing migration from schema 2 to 3/)
+    expect(result.partial_data).toEqual({ schema_version: 1 })
+  })
+
   it('returns an empty path for same-version migrations', () => {
     expect(buildMigrationPath(2, 2)).toEqual([])
   })

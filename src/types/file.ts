@@ -1,4 +1,6 @@
 import type { StepResult } from '../engine/migration'
+import type { EventLog } from '../engine/events'
+import type { InverseIndex } from '../engine/inverse-index'
 import type { CanonicalStore } from './canonical'
 
 export const analysisEntityKeys = [
@@ -41,14 +43,13 @@ export type LoadResult =
       analysis: AnalysisFile
       store: CanonicalStore
       derived: {
-        inverse_index: null
+        inverse_index: InverseIndex
       }
       integrity: {
         ok: true
+        warnings?: string[]
       }
-      event_log: {
-        cursor: 0
-      }
+      event_log: EventLog
       migration: {
         from: number
         to: number

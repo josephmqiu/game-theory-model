@@ -1,6 +1,10 @@
 import { access, copyFile, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
 
+import { getCanonicalRevision } from '../engine/event-persistence'
+import { createEventLog } from '../engine/events'
+import { validateStoreInvariants } from '../engine/integrity'
+import { buildInverseIndex } from '../engine/inverse-index'
 import { getCurrentSchemaVersion, migrateFile } from '../engine/migration'
 import { analysisFileSchema } from '../types/schemas'
 import {
@@ -191,19 +195,36 @@ export async function loadAnalysisFileWithIo(
     }
   }
 
+  const store = analysisFileToStore(validation.data)
+  const inverseIndex = buildInverseIndex(store)
+  const integrity = validateStoreInvariants(store)
+  if (integrity.errors.length > 0) {
+    return {
+      status: 'recovery',
+      stage: 'structural',
+      raw_json: rawJson,
+      parsed_json: validation.data,
+      error: {
+        message: 'Analysis file failed integrity checks.',
+        issues: integrity.errors,
+      },
+    }
+  }
+
+  const persistedRevision = await getCanonicalRevision(filepath)
+
   return {
     status: 'success',
     analysis: validation.data,
-    store: analysisFileToStore(validation.data),
+    store,
     derived: {
-      inverse_index: null,
+      inverse_index: inverseIndex,
     },
     integrity: {
       ok: true,
+      warnings: integrity.warnings.length > 0 ? integrity.warnings : undefined,
     },
-    event_log: {
-      cursor: 0,
-    },
+    event_log: createEventLog(filepath, persistedRevision),
     migration: {
       from: schemaVersion,
       to: validation.data.schema_version,
@@ -233,6 +254,15 @@ export async function saveAnalysisWithIo(
 
     if (!verification.success) {
       throw new Error('Written file failed verification against the current schema.')
+    }
+
+    const structuralIssues = structuralChecks(verification.data)
+    if (structuralIssues.length > 0) {
+      throw new Error(
+        `Written file failed structural checks: ${structuralIssues
+          .map((issue) => issue.message)
+          .join('; ')}`,
+      )
     }
 
     if (await io.fileExists(filepath)) {

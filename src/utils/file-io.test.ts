@@ -126,4 +126,28 @@ describe('file io pipeline', () => {
     expect(fs.files.has('/analysis.gta.json.backup')).toBe(false)
     expect([...fs.files.keys()].some((path) => path.includes('.tmp.'))).toBe(false)
   })
+
+  it('rejects save when the written file fails structural checks', async () => {
+    const file = storeToAnalysisFile(createSampleCanonicalStore(), createSampleAnalysisMeta())
+    const structurallyInvalid = {
+      ...file,
+      assumptions: [
+        {
+          ...file.assumptions[0],
+          id: file.claims[0].id,
+        },
+      ],
+    }
+    const fs = createMemoryFs({
+      '/analysis.gta.json': '{"existing":true}',
+    })
+
+    await expect(
+      saveAnalysisWithIo('/analysis.gta.json', structurallyInvalid, fs),
+    ).rejects.toThrow(/structural checks/i)
+
+    expect(fs.files.get('/analysis.gta.json')).toBe('{"existing":true}')
+    expect(fs.files.has('/analysis.gta.json.backup')).toBe(false)
+    expect([...fs.files.keys()].some((path) => path.includes('.tmp.'))).toBe(false)
+  })
 })

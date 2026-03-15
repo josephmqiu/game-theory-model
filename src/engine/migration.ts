@@ -148,7 +148,22 @@ export async function migrateFile(
     }
   }
 
-  const path = buildMigrationPath(from, to)
+  let path: MigrationTransform[]
+  try {
+    path = buildMigrationPath(from, to)
+  } catch (error) {
+    return {
+      status: 'migration_failed',
+      failed_at_step: { from, to },
+      description:
+        error instanceof Error ? error.message : 'Unable to build the migration path.',
+      errors:
+        error instanceof MigrationError
+          ? [error.details ?? { message: error.message }]
+          : [{ message: 'Unknown migration path error.' }],
+      partial_data: raw,
+    }
+  }
   let data = raw
   const stepResults: StepResult[] = []
   const discardedData: NonNullable<
