@@ -5,6 +5,7 @@ import { WorkflowBoard } from '../shell/WorkflowBoard'
 import { PlayersRegistry } from '../shell/PlayersRegistry'
 import { EvidenceLibrary } from '../shell/EvidenceLibrary'
 import { GraphView } from '../views/graph/GraphView'
+import { EvidenceNotebook } from '../views/evidence/EvidenceNotebook'
 import { InspectorPanel } from '../inspector'
 
 export function ViewRouter(): ReactNode {
@@ -36,7 +37,7 @@ export function ViewRouter(): ReactNode {
     case 'tree':
       return <div className="p-8 text-text-muted">Tree View</div>
     case 'evidence_notebook':
-      return <div className="p-8 text-text-muted">Evidence Notebook</div>
+      return <EvidenceNotebook />
     default:
       return <div className="p-8 text-text-muted">{activeView}</div>
   }
