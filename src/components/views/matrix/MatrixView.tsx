@@ -10,6 +10,7 @@ import {
 import { EstimateEditor } from '../../editors/EstimateEditor'
 import { PayoffCell } from './PayoffCell'
 import type { EstimateValue } from '../../../types/estimates'
+import { EmptyStateNewGame } from '../../shell/EmptyStateNewGame'
 
 export function MatrixView(): ReactNode {
   const canonical = useAppStore((s) => s.canonical)
@@ -64,6 +65,11 @@ export function MatrixView(): ReactNode {
   }, [])
 
   if (!viewModel.formalization) {
+    const activeGame = activeGameId ? canonical.games[activeGameId] : null
+    if (activeGame && activeGame.formalizations.length === 0) {
+      return <EmptyStateNewGame />
+    }
+
     return (
       <div className="flex-1 flex items-center justify-center text-text-muted">
         <div className="text-center">

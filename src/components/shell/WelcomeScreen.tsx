@@ -4,6 +4,7 @@ import { Plus, FolderOpen, BookOpen, Wifi, Hexagon } from 'lucide-react'
 import { useAppStore } from '../../store'
 import { usePlatform } from '../../platform'
 import type { RecentFile } from '../../platform'
+import { EmptyStateNoAI } from './EmptyStateNoAI'
 
 interface ActionCardProps {
   icon: ReactNode
@@ -47,6 +48,7 @@ export function WelcomeScreen(): ReactNode {
   const { fileService } = usePlatform()
 
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([])
+  const [showNoAI, setShowNoAI] = useState(false)
 
   useEffect(() => {
     fileService.getRecentFiles().then((files) => {
@@ -111,8 +113,7 @@ export function WelcomeScreen(): ReactNode {
           icon={<Wifi size={24} />}
           title="CONNECT AI CLIENT"
           description="Configure an AI provider for assisted analysis."
-          onClick={() => {}}
-          disabled
+          onClick={() => setShowNoAI(true)}
         />
       </div>
 
@@ -125,6 +126,17 @@ export function WelcomeScreen(): ReactNode {
             {recentFiles.map((file) => (
               <RecentFileRow key={file.path} file={file} />
             ))}
+          </div>
+        </div>
+      )}
+
+      {showNoAI && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-bg-card border border-border rounded p-6 w-[480px]">
+            <EmptyStateNoAI
+              onSetupGuide={() => setShowNoAI(false)}
+              onContinueWithoutAI={() => setShowNoAI(false)}
+            />
           </div>
         </div>
       )}

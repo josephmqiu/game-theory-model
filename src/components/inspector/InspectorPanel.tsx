@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 
 import { useAppStore } from '../../store'
 import { EntityDetail } from './EntityDetail'
+import { InlineEditor } from './InlineEditor'
 
 export function InspectorPanel(): ReactNode {
   const inspectedRefs = useAppStore((s) => s.viewState.inspectedRefs)
@@ -35,6 +36,7 @@ export function InspectorPanel(): ReactNode {
 
       <div className="p-4">
         <EntityDetail entityRef={primaryRef} canonical={canonical} />
+        <InlineEditor entityRef={primaryRef} canonical={canonical} />
 
         {inspectedRefs.length > 1 && (
           <div className="mt-3 text-[11px] text-text-muted font-mono">

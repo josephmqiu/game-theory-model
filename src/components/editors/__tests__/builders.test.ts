@@ -11,6 +11,10 @@ import {
   buildCreateAssumptionCommand,
 } from '../builders'
 
+function payload(command: { kind: string; payload?: unknown }): Record<string, unknown> {
+  return (command as { payload: Record<string, unknown> }).payload
+}
+
 describe('buildCreateGameCommand', () => {
   it('produces an add_game command with correct payload', () => {
     const command = buildCreateGameCommand({
@@ -21,7 +25,7 @@ describe('buildCreateGameCommand', () => {
     })
 
     expect(command.kind).toBe('add_game')
-    expect(command.payload).toMatchObject({
+    expect(payload(command)).toMatchObject({
       name: 'Test Game',
       description: 'A strategic game',
       status: 'active',
@@ -39,9 +43,9 @@ describe('buildCreateGameCommand', () => {
       status: 'active',
     })
 
-    const payload = command.payload as Record<string, unknown>
-    expect(payload.created_at).toBeDefined()
-    expect(payload.updated_at).toBeDefined()
+    const p = payload(command)
+    expect(p.created_at).toBeDefined()
+    expect(p.updated_at).toBeDefined()
   })
 })
 
@@ -54,7 +58,7 @@ describe('buildCreatePlayerCommand', () => {
     })
 
     expect(command.kind).toBe('add_player')
-    expect(command.payload).toMatchObject({
+    expect(payload(command)).toMatchObject({
       name: 'Alice',
       type: 'state',
       objectives: [],
@@ -69,8 +73,7 @@ describe('buildCreatePlayerCommand', () => {
       description: 'An individual player',
     })
 
-    const payload = command.payload as Record<string, unknown>
-    expect(payload.metadata).toEqual({ description: 'An individual player' })
+    expect(payload(command).metadata).toEqual({ description: 'An individual player' })
   })
 
   it('omits metadata when no description', () => {
@@ -79,8 +82,7 @@ describe('buildCreatePlayerCommand', () => {
       type: 'organization',
     })
 
-    const payload = command.payload as Record<string, unknown>
-    expect(payload.metadata).toBeUndefined()
+    expect(payload(command).metadata).toBeUndefined()
   })
 })
 
@@ -95,7 +97,7 @@ describe('buildCreateNodeCommand', () => {
     })
 
     expect(command.kind).toBe('add_game_node')
-    expect(command.payload).toMatchObject({
+    expect(payload(command)).toMatchObject({
       formalization_id: 'f1',
       label: 'Alice Decides',
       type: 'decision',
@@ -111,8 +113,7 @@ describe('buildCreateNodeCommand', () => {
       actorKind: 'nature',
     })
 
-    const payload = command.payload as Record<string, unknown>
-    expect(payload.actor).toEqual({ kind: 'nature' })
+    expect(payload(command).actor).toEqual({ kind: 'nature' })
   })
 })
 
@@ -126,7 +127,7 @@ describe('buildCreateEdgeCommand', () => {
     })
 
     expect(command.kind).toBe('add_game_edge')
-    expect(command.payload).toMatchObject({
+    expect(payload(command)).toMatchObject({
       formalization_id: 'f1',
       from: 'n1',
       to: 'n2',
@@ -145,7 +146,7 @@ describe('buildCreateFormalizationCommand', () => {
     })
 
     expect(command.kind).toBe('add_formalization')
-    expect(command.payload).toMatchObject({
+    expect(payload(command)).toMatchObject({
       game_id: 'g1',
       kind: 'normal_form',
       purpose: 'explanatory',
@@ -164,7 +165,7 @@ describe('buildCreateFormalizationCommand', () => {
     })
 
     expect(command.kind).toBe('add_formalization')
-    expect(command.payload).toMatchObject({
+    expect(payload(command)).toMatchObject({
       game_id: 'g1',
       kind: 'extensive_form',
       purpose: 'computational',
@@ -184,13 +185,12 @@ describe('buildCreateSourceCommand', () => {
     })
 
     expect(command.kind).toBe('add_source')
-    expect(command.payload).toMatchObject({
+    expect(payload(command)).toMatchObject({
       kind: 'web',
       title: 'Reuters Article',
       url: 'https://reuters.com/article',
     })
-    const payload = command.payload as Record<string, unknown>
-    expect(payload.captured_at).toBeDefined()
+    expect(payload(command).captured_at).toBeDefined()
   })
 })
 
@@ -203,7 +203,7 @@ describe('buildCreateClaimCommand', () => {
     })
 
     expect(command.kind).toBe('add_claim')
-    expect(command.payload).toMatchObject({
+    expect(payload(command)).toMatchObject({
       statement: 'Trade sanctions are likely',
       confidence: 0.7,
       based_on: ['obs1', 'obs2'],
@@ -221,7 +221,7 @@ describe('buildCreateAssumptionCommand', () => {
     })
 
     expect(command.kind).toBe('add_assumption')
-    expect(command.payload).toMatchObject({
+    expect(payload(command)).toMatchObject({
       statement: 'All players are rational',
       type: 'behavioral',
       sensitivity: 'high',

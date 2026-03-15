@@ -19,6 +19,7 @@ import { TerminalNode } from '../graph/nodes/TerminalNode'
 import { GameEdge } from '../graph/edges/GameEdge'
 import { EstimateEditor } from '../../editors/EstimateEditor'
 import type { EstimateValue } from '../../../types/estimates'
+import { EmptyStateNewGame } from '../../shell/EmptyStateNewGame'
 
 const nodeTypes: NodeTypes = {
   decision: DecisionNode,
@@ -33,6 +34,7 @@ const edgeTypes: EdgeTypes = {
 export function TreeView(): ReactNode {
   const canonical = useAppStore((s) => s.canonical)
   const activeFormalizationId = useAppStore((s) => s.viewState.activeFormalizationId)
+  const activeGameId = useAppStore((s) => s.viewState.activeGameId)
   const setInspectedRefs = useAppStore((s) => s.setInspectedRefs)
   const dispatch = useAppStore((s) => s.dispatch)
 
@@ -104,6 +106,11 @@ export function TreeView(): ReactNode {
   }, [])
 
   if (!viewModel.formalization) {
+    const activeGame = activeGameId ? canonical.games[activeGameId] : null
+    if (activeGame && activeGame.formalizations.length === 0) {
+      return <EmptyStateNewGame />
+    }
+
     return (
       <div className="flex-1 flex items-center justify-center text-text-muted">
         <div className="text-center">

@@ -109,13 +109,13 @@ export function buildCreateFormalizationCommand(input: CreateFormalizationInput)
       kind: 'add_formalization',
       payload: {
         game_id: input.gameId,
-        kind: 'normal_form',
+        kind: 'normal_form' as const,
         purpose: input.purpose,
         abstraction_level: input.abstractionLevel,
         assumptions: [],
         strategies: {},
         payoff_cells: [],
-      },
+      } as Omit<import('../../types/formalizations').NormalFormModel, 'id'>,
     }
   }
 
@@ -123,13 +123,13 @@ export function buildCreateFormalizationCommand(input: CreateFormalizationInput)
     kind: 'add_formalization',
     payload: {
       game_id: input.gameId,
-      kind: 'extensive_form',
+      kind: 'extensive_form' as const,
       purpose: input.purpose,
       abstraction_level: input.abstractionLevel,
       assumptions: [],
       root_node_id: '',
       information_sets: [],
-    },
+    } as Omit<import('../../types/formalizations').ExtensiveFormModel, 'id'>,
   }
 }
 

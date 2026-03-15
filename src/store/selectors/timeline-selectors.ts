@@ -72,7 +72,7 @@ function buildLabel(event: ModelEvent, canonical: CanonicalStore): string {
     return cmd.kind
   }
 
-  const entityName = resolveEntityName(canonical, parsed.entityType, cmd.payload)
+  const entityName = resolveEntityName(canonical, parsed.entityType, cmd.payload as Record<string, unknown>)
   const operationLabel = parsed.operation === 'add'
     ? 'Created'
     : parsed.operation === 'update'
