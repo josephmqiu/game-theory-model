@@ -82,7 +82,7 @@ export function CreateFormalizationWizard({ open, onClose }: CreateFormalization
 
   const [kind, setKind] = useState<'normal_form' | 'extensive_form'>('extensive_form')
   const [purpose, setPurpose] = useState<(typeof formalizationPurposes)[number]>('explanatory')
-  const [abstractionLevel, setAbstractionLevel] = useState<(typeof abstractionLevels)[number]>('medium')
+  const [abstractionLevel, setAbstractionLevel] = useState<(typeof abstractionLevels)[number]>('moderate')
   const [rowPlayerId, setRowPlayerId] = useState('')
   const [colPlayerId, setColPlayerId] = useState('')
   const [rowStrategiesText, setRowStrategiesText] = useState('Cooperate, Defect')
@@ -126,7 +126,7 @@ export function CreateFormalizationWizard({ open, onClose }: CreateFormalization
       setActiveFormalization(buildResult.formalizationId)
       setKind('extensive_form')
       setPurpose('explanatory')
-      setAbstractionLevel('medium')
+      setAbstractionLevel('moderate')
       setRowStrategiesText('Cooperate, Defect')
       setColStrategiesText('Cooperate, Defect')
       setErrors([])
@@ -151,7 +151,7 @@ export function CreateFormalizationWizard({ open, onClose }: CreateFormalization
   const handleCancel = useCallback(() => {
     setKind('extensive_form')
     setPurpose('explanatory')
-    setAbstractionLevel('medium')
+    setAbstractionLevel('moderate')
     setRowStrategiesText('Cooperate, Defect')
     setColStrategiesText('Cooperate, Defect')
     setErrors([])

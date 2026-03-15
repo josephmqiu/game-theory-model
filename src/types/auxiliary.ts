@@ -12,7 +12,7 @@ export const policyKinds = ['human', 'ai', 'equilibrium', 'heuristic', 'scripted
 
 export const formalizationPurposes = ['explanatory', 'computational', 'playout'] as const
 
-export const abstractionLevels = ['coarse', 'medium', 'detailed'] as const
+export const abstractionLevels = ['minimal', 'moderate', 'detailed'] as const
 
 export type NormalFormCell = import('zod').infer<typeof import('./schemas').normalFormCellSchema>
 export type InformationSet = import('zod').infer<typeof import('./schemas').informationSetSchema>

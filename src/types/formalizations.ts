@@ -6,6 +6,7 @@ export const formalizationKinds = [
   'coalition',
   'bargaining',
   'evolutionary',
+  'signaling',
 ] as const
 
 export const discountModelTypes = ['exponential', 'quasi_hyperbolic'] as const

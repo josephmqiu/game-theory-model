@@ -180,7 +180,7 @@ describe('selectExtensiveFormViewModel', () => {
       game_id: 'g1',
       kind: 'normal_form',
       purpose: 'explanatory',
-      abstraction_level: 'coarse',
+      abstraction_level: 'minimal',
       assumptions: [],
       strategies: {},
       payoff_cells: [],

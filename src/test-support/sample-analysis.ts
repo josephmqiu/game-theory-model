@@ -58,7 +58,7 @@ export function createSampleCanonicalStore(): CanonicalStore {
         game_id: 'game_1',
         kind: 'normal_form',
         purpose: 'computational',
-        abstraction_level: 'medium',
+        abstraction_level: 'moderate',
         assumptions: ['assumption_1'],
         readiness_cache: {
           overall: 'usable_with_warnings',

@@ -156,7 +156,7 @@ describe('buildCreateFormalizationCommand', () => {
       gameId: 'g1',
       kind: 'normal_form',
       purpose: 'explanatory',
-      abstractionLevel: 'medium',
+      abstractionLevel: 'moderate',
     })
 
     expect(command.kind).toBe('batch')
@@ -168,7 +168,7 @@ describe('buildCreateFormalizationCommand', () => {
       game_id: 'g1',
       kind: 'normal_form',
       purpose: 'explanatory',
-      abstraction_level: 'medium',
+      abstraction_level: 'moderate',
       strategies: {},
       payoff_cells: [],
     })

@@ -355,7 +355,7 @@ const baseFormalization = {
   id: 'formalization_nf',
   game_id: 'game_1',
   purpose: 'computational',
-  abstraction_level: 'medium',
+  abstraction_level: 'moderate',
   assumptions: ['assumption_1'],
   readiness_cache: solverReadiness,
   notes: 'Working model.',

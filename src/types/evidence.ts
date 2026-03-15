@@ -3,12 +3,12 @@ export const sourceKinds = ['web', 'pdf', 'article', 'report', 'transcript', 'ma
 export const sourceQualityRatings = ['low', 'medium', 'high'] as const
 
 export const assumptionTypes = [
-  'structural',
   'behavioral',
-  'payoff',
-  'timing',
-  'belief',
-  'simplification',
+  'capability',
+  'structural',
+  'institutional',
+  'rationality',
+  'information',
 ] as const
 
 export const assumptionSensitivities = ['low', 'medium', 'high', 'critical'] as const

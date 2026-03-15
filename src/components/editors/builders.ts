@@ -122,7 +122,7 @@ export interface CreateFormalizationInput {
   gameId: string
   kind: 'normal_form' | 'extensive_form'
   purpose: 'explanatory' | 'computational' | 'playout'
-  abstractionLevel: 'coarse' | 'medium' | 'detailed'
+  abstractionLevel: 'minimal' | 'moderate' | 'detailed'
   rowPlayerId?: string
   colPlayerId?: string
   rowStrategies?: string[]
@@ -275,7 +275,7 @@ export function buildCreateClaimCommand(input: CreateClaimInput): Command {
 
 export interface CreateAssumptionInput {
   statement: string
-  type: 'structural' | 'behavioral' | 'payoff' | 'timing' | 'belief' | 'simplification'
+  type: 'behavioral' | 'capability' | 'structural' | 'institutional' | 'rationality' | 'information'
   sensitivity: 'low' | 'medium' | 'high' | 'critical'
   confidence: number
 }

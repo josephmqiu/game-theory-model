@@ -34,6 +34,33 @@ export const semanticGameLabels = [
   'custom',
 ] as const
 
+export const canonicalGameTypes = [
+  'chicken_brinkmanship',
+  'prisoners_dilemma',
+  'coordination',
+  'war_of_attrition',
+  'bargaining',
+  'signaling',
+  'bayesian_incomplete_info',
+  'coalition_alliance',
+  'domestic_political',
+  'economic_chokepoint',
+  'bertrand_competition',
+  'hotelling_differentiation',
+  'entry_deterrence',
+  'network_effects_platform',
+] as const
+
+export type CanonicalGameType = (typeof canonicalGameTypes)[number]
+
+export const playerRoles = [
+  'primary',
+  'involuntary',
+  'background',
+  'internal',
+  'gatekeeper',
+] as const
+
 export const gameStatuses = ['active', 'paused', 'resolved', 'stale'] as const
 
 export const actorKinds = ['player', 'nature', 'environment', 'coalition_proxy'] as const

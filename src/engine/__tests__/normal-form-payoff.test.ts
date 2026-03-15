@@ -110,7 +110,7 @@ describe('update_normal_form_payoff command', () => {
       game_id: 'game_1',
       kind: 'extensive_form',
       purpose: 'explanatory',
-      abstraction_level: 'medium',
+      abstraction_level: 'moderate',
       assumptions: [],
       root_node_id: 'game_node_1',
       information_sets: [],

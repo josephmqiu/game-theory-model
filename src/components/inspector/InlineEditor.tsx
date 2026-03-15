@@ -46,7 +46,7 @@ function getFieldDefs(entityType: EntityType): FieldDef[] {
     case 'assumption':
       return [
         { key: 'statement', label: 'Statement', type: 'textarea' },
-        { key: 'type', label: 'Type', type: 'select', options: ['structural', 'behavioral', 'payoff', 'timing', 'belief', 'simplification'] },
+        { key: 'type', label: 'Type', type: 'select', options: ['behavioral', 'capability', 'structural', 'institutional', 'rationality', 'information'] },
         { key: 'sensitivity', label: 'Sensitivity', type: 'select', options: ['low', 'medium', 'high', 'critical'] },
       ]
     case 'claim':
@@ -169,7 +169,7 @@ const updateValidationSchemas: Partial<Record<EntityType, z.ZodType>> = {
   }).strict(),
   assumption: z.object({
     statement: z.string().min(1, 'Statement cannot be empty').optional(),
-    type: z.enum(['structural', 'behavioral', 'payoff', 'timing', 'belief', 'simplification']).optional(),
+    type: z.enum(['behavioral', 'capability', 'structural', 'institutional', 'rationality', 'information']).optional(),
     sensitivity: z.enum(['low', 'medium', 'high', 'critical']).optional(),
   }).strict(),
   claim: z.object({
