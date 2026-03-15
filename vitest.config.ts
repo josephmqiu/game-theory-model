@@ -1,8 +1,3 @@
-import { defineConfig } from 'vitest/config'
-
-export default defineConfig({
-  test: {
-    environment: 'node',
-    include: ['src/**/*.test.ts'],
-  },
-})
+// Test configuration is in vite.config.ts
+// This file is kept for backwards compatibility but defers to vite.config.ts
+export { default } from './vite.config'
