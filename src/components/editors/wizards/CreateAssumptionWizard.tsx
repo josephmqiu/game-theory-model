@@ -21,6 +21,7 @@ interface CreateAssumptionWizardProps {
 
 export function CreateAssumptionWizard({ open, onClose }: CreateAssumptionWizardProps): ReactNode {
   const dispatch = useAppStore((s) => s.dispatch)
+  const canonical = useAppStore((s) => s.canonical)
   const setInspectedRefs = useAppStore((s) => s.setInspectedRefs)
 
   const [statement, setStatement] = useState('')
@@ -44,15 +45,14 @@ export function CreateAssumptionWizard({ open, onClose }: CreateAssumptionWizard
       return
     }
 
+    const keysBefore = new Set(Object.keys(canonical.assumptions))
     const command = buildCreateAssumptionCommand(validation.data)
     const result = dispatch(command)
 
     if (result.status === 'committed') {
-      const assumptionId = Object.keys(result.store.assumptions).find(
-        (id) => result.store.assumptions[id]?.statement === statement,
-      )
-      if (assumptionId) {
-        setInspectedRefs([{ type: 'assumption', id: assumptionId }])
+      const newId = Object.keys(result.store.assumptions).find((id) => !keysBefore.has(id))
+      if (newId) {
+        setInspectedRefs([{ type: 'assumption', id: newId }])
       }
       setStatement('')
       setType('structural')
@@ -63,7 +63,7 @@ export function CreateAssumptionWizard({ open, onClose }: CreateAssumptionWizard
     } else if (result.status === 'rejected') {
       setErrors(result.errors)
     }
-  }, [statement, type, sensitivity, confidence, dispatch, setInspectedRefs, onClose])
+  }, [statement, type, sensitivity, confidence, canonical, dispatch, setInspectedRefs, onClose])
 
   const handleCancel = useCallback(() => {
     setStatement('')

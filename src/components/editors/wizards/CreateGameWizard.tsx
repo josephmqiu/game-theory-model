@@ -22,6 +22,7 @@ interface CreateGameWizardProps {
 
 export function CreateGameWizard({ open, onClose }: CreateGameWizardProps): ReactNode {
   const dispatch = useAppStore((s) => s.dispatch)
+  const canonical = useAppStore((s) => s.canonical)
   const setInspectedRefs = useAppStore((s) => s.setInspectedRefs)
 
   const [name, setName] = useState('')
@@ -42,15 +43,14 @@ export function CreateGameWizard({ open, onClose }: CreateGameWizardProps): Reac
       return
     }
 
+    const keysBefore = new Set(Object.keys(canonical.games))
     const command = buildCreateGameCommand(validation.data)
     const result = dispatch(command)
 
     if (result.status === 'committed') {
-      const gameId = Object.keys(result.store.games).find(
-        (id) => result.store.games[id]?.name === name,
-      )
-      if (gameId) {
-        setInspectedRefs([{ type: 'game', id: gameId }])
+      const newId = Object.keys(result.store.games).find((id) => !keysBefore.has(id))
+      if (newId) {
+        setInspectedRefs([{ type: 'game', id: newId }])
       }
       setName('')
       setDescription('')
@@ -60,7 +60,7 @@ export function CreateGameWizard({ open, onClose }: CreateGameWizardProps): Reac
     } else if (result.status === 'rejected') {
       setErrors(result.errors)
     }
-  }, [name, description, status, dispatch, setInspectedRefs, onClose])
+  }, [name, description, status, canonical, dispatch, setInspectedRefs, onClose])
 
   const handleCancel = useCallback(() => {
     setName('')

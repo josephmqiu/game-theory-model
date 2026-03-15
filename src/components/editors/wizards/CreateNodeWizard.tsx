@@ -53,15 +53,14 @@ export function CreateNodeWizard({ open, onClose }: CreateNodeWizardProps): Reac
       return
     }
 
+    const keysBefore = new Set(Object.keys(canonical.nodes))
     const command = buildCreateNodeCommand(validation.data)
     const result = dispatch(command)
 
     if (result.status === 'committed') {
-      const nodeId = Object.keys(result.store.nodes).find(
-        (id) => result.store.nodes[id]?.label === label,
-      )
-      if (nodeId) {
-        setInspectedRefs([{ type: 'game_node', id: nodeId }])
+      const newId = Object.keys(result.store.nodes).find((id) => !keysBefore.has(id))
+      if (newId) {
+        setInspectedRefs([{ type: 'game_node', id: newId }])
       }
       setLabel('')
       setType('decision')
@@ -73,7 +72,7 @@ export function CreateNodeWizard({ open, onClose }: CreateNodeWizardProps): Reac
     } else if (result.status === 'rejected') {
       setErrors(result.errors)
     }
-  }, [activeFormalizationId, label, type, actorKind, playerId, description, dispatch, setInspectedRefs, onClose])
+  }, [activeFormalizationId, label, type, actorKind, playerId, description, canonical, dispatch, setInspectedRefs, onClose])
 
   const handleCancel = useCallback(() => {
     setLabel('')

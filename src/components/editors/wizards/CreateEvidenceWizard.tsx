@@ -22,6 +22,7 @@ interface CreateEvidenceWizardProps {
 
 export function CreateEvidenceWizard({ open, onClose }: CreateEvidenceWizardProps): ReactNode {
   const dispatch = useAppStore((s) => s.dispatch)
+  const canonical = useAppStore((s) => s.canonical)
   const setInspectedRefs = useAppStore((s) => s.setInspectedRefs)
 
   const [kind, setKind] = useState<(typeof sourceKinds)[number]>('web')
@@ -45,15 +46,14 @@ export function CreateEvidenceWizard({ open, onClose }: CreateEvidenceWizardProp
       return
     }
 
+    const keysBefore = new Set(Object.keys(canonical.sources))
     const command = buildCreateSourceCommand(validation.data)
     const result = dispatch(command)
 
     if (result.status === 'committed') {
-      const sourceId = Object.keys(result.store.sources).find(
-        (id) => result.store.sources[id]?.title === title,
-      )
-      if (sourceId) {
-        setInspectedRefs([{ type: 'source', id: sourceId }])
+      const newId = Object.keys(result.store.sources).find((id) => !keysBefore.has(id))
+      if (newId) {
+        setInspectedRefs([{ type: 'source', id: newId }])
       }
       setKind('web')
       setTitle('')
@@ -65,7 +65,7 @@ export function CreateEvidenceWizard({ open, onClose }: CreateEvidenceWizardProp
     } else if (result.status === 'rejected') {
       setErrors(result.errors)
     }
-  }, [kind, title, url, publisher, notes, dispatch, setInspectedRefs, onClose])
+  }, [kind, title, url, publisher, notes, canonical, dispatch, setInspectedRefs, onClose])
 
   const handleCancel = useCallback(() => {
     setKind('web')

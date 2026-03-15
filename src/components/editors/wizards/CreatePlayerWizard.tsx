@@ -20,6 +20,7 @@ interface CreatePlayerWizardProps {
 
 export function CreatePlayerWizard({ open, onClose }: CreatePlayerWizardProps): ReactNode {
   const dispatch = useAppStore((s) => s.dispatch)
+  const canonical = useAppStore((s) => s.canonical)
   const setInspectedRefs = useAppStore((s) => s.setInspectedRefs)
 
   const [name, setName] = useState('')
@@ -39,15 +40,14 @@ export function CreatePlayerWizard({ open, onClose }: CreatePlayerWizardProps): 
       return
     }
 
+    const keysBefore = new Set(Object.keys(canonical.players))
     const command = buildCreatePlayerCommand(validation.data)
     const result = dispatch(command)
 
     if (result.status === 'committed') {
-      const playerId = Object.keys(result.store.players).find(
-        (id) => result.store.players[id]?.name === name,
-      )
-      if (playerId) {
-        setInspectedRefs([{ type: 'player', id: playerId }])
+      const newId = Object.keys(result.store.players).find((id) => !keysBefore.has(id))
+      if (newId) {
+        setInspectedRefs([{ type: 'player', id: newId }])
       }
       setName('')
       setType('state')
@@ -57,7 +57,7 @@ export function CreatePlayerWizard({ open, onClose }: CreatePlayerWizardProps): 
     } else if (result.status === 'rejected') {
       setErrors(result.errors)
     }
-  }, [name, type, description, dispatch, setInspectedRefs, onClose])
+  }, [name, type, description, canonical, dispatch, setInspectedRefs, onClose])
 
   const handleCancel = useCallback(() => {
     setName('')

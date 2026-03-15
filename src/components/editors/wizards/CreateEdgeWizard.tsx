@@ -49,15 +49,14 @@ export function CreateEdgeWizard({ open, onClose }: CreateEdgeWizardProps): Reac
       return
     }
 
+    const keysBefore = new Set(Object.keys(canonical.edges))
     const command = buildCreateEdgeCommand(validation.data)
     const result = dispatch(command)
 
     if (result.status === 'committed') {
-      const edgeId = Object.keys(result.store.edges).find(
-        (id) => result.store.edges[id]?.label === label && result.store.edges[id]?.from === from,
-      )
-      if (edgeId) {
-        setInspectedRefs([{ type: 'game_edge', id: edgeId }])
+      const newId = Object.keys(result.store.edges).find((id) => !keysBefore.has(id))
+      if (newId) {
+        setInspectedRefs([{ type: 'game_edge', id: newId }])
       }
       setFrom('')
       setTo('')
@@ -67,7 +66,7 @@ export function CreateEdgeWizard({ open, onClose }: CreateEdgeWizardProps): Reac
     } else if (result.status === 'rejected') {
       setErrors(result.errors)
     }
-  }, [activeFormalizationId, from, to, label, dispatch, setInspectedRefs, onClose])
+  }, [activeFormalizationId, from, to, label, canonical, dispatch, setInspectedRefs, onClose])
 
   const handleCancel = useCallback(() => {
     setFrom('')
