@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
+import { z } from 'zod'
 import { Pencil, Check, XIcon } from 'lucide-react'
 
 import { useAppStore } from '../../store'
@@ -56,6 +57,30 @@ function getFieldDefs(entityType: EntityType): FieldDef[] {
       return [
         { key: 'statement', label: 'Statement', type: 'textarea' },
       ]
+    case 'observation':
+      return [
+        { key: 'text', label: 'Text', type: 'textarea' },
+      ]
+    case 'contradiction':
+      return [
+        { key: 'description', label: 'Description', type: 'textarea' },
+        { key: 'resolution_status', label: 'Status', type: 'select', options: ['open', 'partially_resolved', 'resolved', 'deferred'] },
+      ]
+    case 'latent_factor':
+      return [
+        { key: 'name', label: 'Name', type: 'text' },
+        { key: 'description', label: 'Description', type: 'textarea' },
+      ]
+    case 'scenario':
+      return [
+        { key: 'name', label: 'Name', type: 'text' },
+        { key: 'narrative', label: 'Narrative', type: 'textarea' },
+      ]
+    case 'playbook':
+      return [
+        { key: 'name', label: 'Name', type: 'text' },
+        { key: 'notes', label: 'Notes', type: 'textarea' },
+      ]
     default:
       return []
   }
@@ -82,6 +107,16 @@ function getEntityValues(
       return canonical.claims[entityRef.id] ?? null
     case 'inference':
       return canonical.inferences[entityRef.id] ?? null
+    case 'observation':
+      return canonical.observations[entityRef.id] ?? null
+    case 'contradiction':
+      return canonical.contradictions[entityRef.id] ?? null
+    case 'latent_factor':
+      return canonical.latent_factors[entityRef.id] ?? null
+    case 'scenario':
+      return canonical.scenarios[entityRef.id] ?? null
+    case 'playbook':
+      return canonical.playbooks[entityRef.id] ?? null
     case 'formalization':
       return canonical.formalizations[entityRef.id] ?? null
     default:
@@ -89,15 +124,124 @@ function getEntityValues(
   }
 }
 
+// Entity types that support update commands via the command spine
+const UPDATABLE_ENTITY_TYPES: ReadonlySet<EntityType> = new Set([
+  'game',
+  'player',
+  'game_node',
+  'game_edge',
+  'source',
+  'observation',
+  'claim',
+  'inference',
+  'assumption',
+  'contradiction',
+  'latent_factor',
+  'cross_game_link',
+  'scenario',
+  'playbook',
+  'formalization',
+] as const)
+
+// Validation schemas for editable fields per entity type
+const updateValidationSchemas: Partial<Record<EntityType, z.ZodType>> = {
+  game: z.object({
+    name: z.string().min(1, 'Name cannot be empty').optional(),
+    description: z.string().min(1, 'Description cannot be empty').optional(),
+    status: z.enum(['active', 'paused', 'resolved']).optional(),
+  }).strict(),
+  player: z.object({
+    name: z.string().min(1, 'Name cannot be empty').optional(),
+    type: z.enum(['state', 'organization', 'individual', 'coalition', 'market', 'public']).optional(),
+  }).strict(),
+  game_node: z.object({
+    label: z.string().min(1, 'Label cannot be empty').optional(),
+    description: z.string().optional(),
+  }).strict(),
+  game_edge: z.object({
+    label: z.string().min(1, 'Label cannot be empty').optional(),
+  }).strict(),
+  source: z.object({
+    title: z.string().optional(),
+    url: z.string().optional(),
+    publisher: z.string().optional(),
+    notes: z.string().optional(),
+  }).strict(),
+  assumption: z.object({
+    statement: z.string().min(1, 'Statement cannot be empty').optional(),
+    type: z.enum(['structural', 'behavioral', 'payoff', 'timing', 'belief', 'simplification']).optional(),
+    sensitivity: z.enum(['low', 'medium', 'high', 'critical']).optional(),
+  }).strict(),
+  claim: z.object({
+    statement: z.string().min(1, 'Statement cannot be empty').optional(),
+  }).strict(),
+  inference: z.object({
+    statement: z.string().min(1, 'Statement cannot be empty').optional(),
+  }).strict(),
+  observation: z.object({
+    text: z.string().min(1, 'Text cannot be empty').optional(),
+  }).strict(),
+  contradiction: z.object({
+    description: z.string().min(1, 'Description cannot be empty').optional(),
+    resolution_status: z.enum(['open', 'partially_resolved', 'resolved', 'deferred']).optional(),
+  }).strict(),
+  latent_factor: z.object({
+    name: z.string().min(1, 'Name cannot be empty').optional(),
+    description: z.string().optional(),
+  }).strict(),
+  scenario: z.object({
+    name: z.string().min(1, 'Name cannot be empty').optional(),
+    narrative: z.string().min(1, 'Narrative cannot be empty').optional(),
+  }).strict(),
+  playbook: z.object({
+    name: z.string().min(1, 'Name cannot be empty').optional(),
+    notes: z.string().optional(),
+  }).strict(),
+}
+
 function buildUpdateCommand(
   entityType: EntityType,
   id: string,
   changes: Record<string, unknown>,
-): Command {
-  return {
-    kind: `update_${entityType}` as Command['kind'],
-    payload: { id, ...changes },
-  } as Command
+): Command | null {
+  if (!UPDATABLE_ENTITY_TYPES.has(entityType)) {
+    return null
+  }
+
+  switch (entityType) {
+    case 'game':
+      return { kind: 'update_game', payload: { id, ...changes } }
+    case 'player':
+      return { kind: 'update_player', payload: { id, ...changes } }
+    case 'game_node':
+      return { kind: 'update_game_node', payload: { id, ...changes } }
+    case 'game_edge':
+      return { kind: 'update_game_edge', payload: { id, ...changes } }
+    case 'source':
+      return { kind: 'update_source', payload: { id, ...changes } }
+    case 'observation':
+      return { kind: 'update_observation', payload: { id, ...changes } }
+    case 'claim':
+      return { kind: 'update_claim', payload: { id, ...changes } }
+    case 'inference':
+      return { kind: 'update_inference', payload: { id, ...changes } }
+    case 'assumption':
+      return { kind: 'update_assumption', payload: { id, ...changes } }
+    case 'contradiction':
+      return { kind: 'update_contradiction', payload: { id, ...changes } }
+    case 'latent_factor':
+      return { kind: 'update_latent_factor', payload: { id, ...changes } }
+    case 'cross_game_link':
+      return { kind: 'update_cross_game_link', payload: { id, ...changes } }
+    case 'scenario':
+      return { kind: 'update_scenario', payload: { id, ...changes } }
+    case 'playbook':
+      return { kind: 'update_playbook', payload: { id, ...changes } }
+    case 'formalization':
+      return { kind: 'update_formalization', payload: { id, ...changes } }
+    default:
+      return null
+  }
 }
 
 interface InlineEditorProps {
@@ -156,7 +300,22 @@ export function InlineEditor({ entityRef, canonical }: InlineEditorProps): React
       return
     }
 
+    // Validate changes with Zod schema if available
+    const schema = updateValidationSchemas[entityRef.type]
+    if (schema) {
+      const validation = schema.safeParse(changes)
+      if (!validation.success) {
+        setErrors(validation.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`))
+        return
+      }
+    }
+
     const command = buildUpdateCommand(entityRef.type, entityRef.id, changes)
+    if (!command) {
+      setErrors([`Entity type "${entityRef.type}" does not support inline editing`])
+      return
+    }
+
     const result = dispatch(command)
 
     if (result.status === 'committed') {
