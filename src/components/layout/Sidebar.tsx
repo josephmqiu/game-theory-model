@@ -7,6 +7,7 @@ import {
   ChevronDown, ChevronRight,
   Settings, Hexagon,
 } from 'lucide-react'
+import { usePhaseProgress } from '../../hooks/usePhaseProgress'
 import { NavItem } from '../design-system'
 import { useAppStore } from '../../store'
 import type { ViewType } from '../../store'
@@ -27,9 +28,9 @@ function PhaseStatusIcon({ status }: { status?: string }): ReactNode {
 
 export function Sidebar(): ReactNode {
   const activeView = useAppStore((s) => s.viewState.activeView)
-  const phaseStatuses = useAppStore((s) => s.viewState.phaseStatuses)
   const setActiveView = useAppStore((s) => s.setActiveView)
   const [phasesCollapsed, setPhasesCollapsed] = useState(false)
+  const { phases } = usePhaseProgress()
 
   function nav(view: ViewType) {
     setActiveView(view)
@@ -77,7 +78,16 @@ export function Sidebar(): ReactNode {
             {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
               <NavItem
                 key={n}
-                icon={<PhaseStatusIcon status={phaseStatuses[n]} />}
+                icon={<PhaseStatusIcon
+                  status={phases.find((phase) => phase.number === n)?.status === 'active'
+                    ? 'active'
+                    : phases.find((phase) => phase.number === n)?.status === 'complete'
+                      ? 'complete'
+                      : phases.find((phase) => phase.number === n)?.status === 'review_needed'
+                        || phases.find((phase) => phase.number === n)?.status === 'needs_rerun'
+                        ? 'needs_rerun'
+                        : 'pending'}
+                />}
                 label={`P${n} ${PHASE_NAMES[n]}`}
                 active={activeView === `phase_${n}`}
                 onClick={() => nav(`phase_${n}` as ViewType)}

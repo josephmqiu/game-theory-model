@@ -47,6 +47,7 @@ export function WelcomeScreen(): ReactNode {
   const newAnalysis = useAppStore((s) => s.newAnalysis)
   const loadFile = useAppStore((s) => s.loadFile)
   const setActiveView = useAppStore((s) => s.setActiveView)
+  const setManualMode = useAppStore((s) => s.setManualMode)
   const loadFromResult = useAppStore((s) => s.loadFromResult)
   const fileError = useAppStore((s) => s.fileMeta.error)
   const clearFileError = useAppStore((s) => s.clearFileError)
@@ -78,7 +79,8 @@ export function WelcomeScreen(): ReactNode {
 
   function handleNewAnalysis() {
     newAnalysis()
-    setActiveView('board')
+    setManualMode(false)
+    setActiveView('new_analysis')
   }
 
   function handleOpenFile() {
@@ -141,7 +143,7 @@ export function WelcomeScreen(): ReactNode {
         <ActionCard
           icon={<Wifi size={24} />}
           title="CONNECT AI CLIENT"
-          description="Configure an AI provider for assisted analysis."
+          description="View MCP connection guidance and browser-safe transport settings."
           onClick={() => setShowNoAI(true)}
         />
       </div>
@@ -176,8 +178,16 @@ export function WelcomeScreen(): ReactNode {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-bg-card border border-border rounded p-6 w-[480px]">
             <EmptyStateNoAI
-              onSetupGuide={() => setShowNoAI(false)}
-              onContinueWithoutAI={() => setShowNoAI(false)}
+              onSetupGuide={() => {
+                setShowNoAI(false)
+                setActiveView('settings')
+              }}
+              onContinueWithoutAI={() => {
+                setShowNoAI(false)
+                newAnalysis()
+                setManualMode(true)
+                setActiveView('new_analysis')
+              }}
             />
           </div>
         </div>

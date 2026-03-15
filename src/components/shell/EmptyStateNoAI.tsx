@@ -22,7 +22,7 @@ export function EmptyStateNoAI({ onSetupGuide, onContinueWithoutAI }: EmptyState
       </p>
       <div className="flex gap-3">
         <Button variant="secondary" onClick={onSetupGuide}>
-          SETUP GUIDE
+          MCP SETTINGS
         </Button>
         <Button variant="primary" onClick={onContinueWithoutAI}>
           CONTINUE WITHOUT AI

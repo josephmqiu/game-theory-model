@@ -287,6 +287,7 @@ export const playerSchema = baseEntitySchema.extend({
     })
     .optional(),
   role: z.enum(['primary', 'involuntary', 'background', 'internal', 'gatekeeper']).optional(),
+  parent_player_id: z.string().min(1).optional(),
   priority_ordering: z.array(z.object({ objective_index: z.number().int().min(0), priority: z.enum(['absolute', 'tradable']) })).optional(),
   stability_indicator: z.enum(['stable', 'shifting', 'unknown']).optional(),
   non_standard_utility: z.string().nullable().optional(),

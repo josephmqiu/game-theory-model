@@ -1,0 +1,6 @@
+{
+  "name": "game-theory-model-mcp-sidecar",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0"
+}

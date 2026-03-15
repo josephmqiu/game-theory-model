@@ -17,6 +17,8 @@ import { buildInverseIndex, type InverseIndex } from '../engine/inverse-index'
 import { loadAnalysisJson } from '../utils/file-io'
 import { BrowserFileService } from '../platform/browser-file-service'
 import { invalidateDerivedForCommand, resetDerivedState } from './derived'
+import { setConversationActiveAnalysis } from './conversation'
+import { setPipelineActiveAnalysis } from './pipeline'
 
 export type ViewType =
   | 'welcome'
@@ -68,6 +70,7 @@ export interface AppStore {
     activeFormalizationId: string | null
     inspectedRefs: EntityRef[]
     sidebarCollapsed: boolean
+    manualMode: boolean
     inspectorState: {
       inspectedEntity: EntityRef | null
       breadcrumb: string[]
@@ -113,6 +116,7 @@ export interface AppStore {
   setActiveGame: (gameId: string | null) => void
   setActiveFormalization: (formId: string | null) => void
   setInspectedRefs: (refs: EntityRef[]) => void
+  setManualMode: (manualMode: boolean) => void
 }
 
 function createInitialAnalysisId(): string {
@@ -129,6 +133,7 @@ function createInitialState() {
       activeFormalizationId: null as string | null,
       inspectedRefs: [] as EntityRef[],
       sidebarCollapsed: false,
+      manualMode: false,
       inspectorState: { inspectedEntity: null, breadcrumb: [] },
       phaseStatuses: {} as Record<number, 'pending' | 'active' | 'complete' | 'needs_rerun' | 'partial' | 'review_needed'>,
     },
@@ -167,8 +172,12 @@ export interface AppStoreDependencies {
 export function createAppStore(
   { fileService = new BrowserFileService() }: Partial<AppStoreDependencies> = {},
 ) {
+  const initialState = createInitialState()
+  setConversationActiveAnalysis(initialState.eventLog.analysis_id)
+  setPipelineActiveAnalysis(initialState.eventLog.analysis_id)
+
   return createStore<AppStore>((set, get) => ({
-    ...createInitialState(),
+    ...initialState,
 
     dispatch: (command, opts) => {
       const state = get()
@@ -347,6 +356,8 @@ export function createAppStore(
 
     loadFromResult: (result) => {
       resetDerivedState()
+      setConversationActiveAnalysis(result.event_log.analysis_id)
+      setPipelineActiveAnalysis(result.event_log.analysis_id)
       set({
         canonical: result.store,
         eventLog: result.event_log,
@@ -368,6 +379,7 @@ export function createAppStore(
         viewState: {
           ...get().viewState,
           activeView: 'overview',
+          manualMode: false,
         },
       })
     },
@@ -396,9 +408,10 @@ export function createAppStore(
 
     newAnalysis: () => {
       resetDerivedState()
-      set({
-        ...createInitialState(),
-      })
+      const nextState = createInitialState()
+      setConversationActiveAnalysis(nextState.eventLog.analysis_id)
+      setPipelineActiveAnalysis(nextState.eventLog.analysis_id)
+      set(nextState)
     },
 
     clearFileError: () => {
@@ -447,6 +460,15 @@ export function createAppStore(
         viewState: {
           ...state.viewState,
           inspectedRefs: refs,
+        },
+      }))
+    },
+
+    setManualMode: (manualMode) => {
+      set((state) => ({
+        viewState: {
+          ...state.viewState,
+          manualMode,
         },
       }))
     },
