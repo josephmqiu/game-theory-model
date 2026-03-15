@@ -1,0 +1,40 @@
+import { describe, it, expect } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { StoreProvider } from '../../../store'
+import { PlatformProvider } from '../../../platform'
+import { AppLayout } from '../AppLayout'
+
+function renderWithProviders() {
+  return render(
+    <PlatformProvider>
+      <StoreProvider>
+        <AppLayout />
+      </StoreProvider>
+    </PlatformProvider>,
+  )
+}
+
+describe('AppLayout', () => {
+  it('renders sidebar with app navigation', () => {
+    renderWithProviders()
+    expect(screen.getByText('STRATEGIC LENS')).toBeInTheDocument()
+    expect(screen.getByText('WORKFLOW BOARD')).toBeInTheDocument()
+    expect(screen.getByText('PLAYERS')).toBeInTheDocument()
+    expect(screen.getByText('EVIDENCE')).toBeInTheDocument()
+  })
+
+  it('does not show game section when no game selected', () => {
+    renderWithProviders()
+    expect(screen.queryByText('GRAPH')).not.toBeInTheDocument()
+  })
+
+  it('renders status bar with version', () => {
+    renderWithProviders()
+    expect(screen.getByText('v0.1.0')).toBeInTheDocument()
+  })
+
+  it('shows welcome screen by default', () => {
+    renderWithProviders()
+    expect(screen.getByText('Welcome Screen')).toBeInTheDocument()
+  })
+})
