@@ -136,13 +136,30 @@ function getPhase4Check(result: HistoricalGameResult): RevalidationCheck {
     createEntityRef('player', assessment.target_player_id),
   ])
 
+  const triggers = result.baseline_recheck.revalidation_triggers
+  const affectedPhases: number[] = []
+  for (const trigger of triggers) {
+    if (trigger === 'objective_function_changed') {
+      affectedPhases.push(2, 3)
+    } else {
+      affectedPhases.push(3, 4)
+    }
+  }
+
   return createCheck(
-    result.baseline_recheck.revalidation_triggers,
-    [3, 4],
+    triggers,
+    affectedPhases,
     [...gameRefs, ...playerRefs],
     'revalidate',
     'Historical interaction patterns changed the baseline framing and require a rerun.',
   )
+}
+
+const PHASE6_TRIGGER_TARGETS: Record<string, number[]> = {
+  new_game_identified: [3, 4, 6],
+  game_reframed: [3, 6],
+  new_cross_game_link: [6],
+  behavioral_overlay_changes_prediction: [6],
 }
 
 function getPhase6Check(result: FormalizationResult): RevalidationCheck {
@@ -151,15 +168,14 @@ function getPhase6Check(result: FormalizationResult): RevalidationCheck {
     return createCheck([], [], [], 'none', 'Phase 6 introduced no revalidation-worthy formalization shifts.')
   }
 
+  const affectedPhases = triggers.flatMap((t) => PHASE6_TRIGGER_TARGETS[t] ?? [6])
   const recommendation: RevalidationCheck['recommendation'] = triggers.some(
-    (trigger) => trigger === 'new_game_identified' || trigger === 'game_reframed',
-  )
-    ? 'revalidate'
-    : 'monitor'
+    (t) => t === 'new_game_identified' || t === 'game_reframed',
+  ) ? 'revalidate' : 'monitor'
 
   return createCheck(
     triggers,
-    recommendation === 'revalidate' ? [3, 4, 6] : [6],
+    affectedPhases,
     result.revalidation_signals.affected_entities,
     recommendation,
     result.revalidation_signals.description,

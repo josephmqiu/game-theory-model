@@ -112,8 +112,37 @@ describe('revalidation engine', () => {
     const check = engine.checkTriggers(result, 4)
     expect(check.triggers_found).toContain('objective_function_changed')
     expect(check.recommendation).toBe('revalidate')
-    expect(check.affected_phases).toEqual([3, 4])
+    expect(check.affected_phases).toEqual([2, 3])
     expect(check.affected_entities).toContainEqual({ type: 'game', id: 'game_1' })
+  })
+
+  it('routes objective_function_changed from phase 4 to phases 2 and 3', () => {
+    const engine = createEngine()
+    const result: HistoricalGameResult = {
+      phase: 4,
+      status: { status: 'complete', phase: 4, execution_id: 'exec_4', retriable: true },
+      repeated_game_map: [],
+      patterns_found: [],
+      trust_assessment: [],
+      dynamic_inconsistency_risks: [],
+      global_signaling_effects: [],
+      baseline_recheck: {
+        game_still_correct: false,
+        revealed_repeated_not_oneshot: false,
+        hidden_player_found: false,
+        hidden_commitment_problem: false,
+        hidden_type_uncertainty: false,
+        cooperative_equilibria_eliminated: false,
+        objective_function_changed: true,
+        deterrence_compellence_reframed: false,
+        revalidation_needed: true,
+        revalidation_triggers: ['objective_function_changed'],
+      },
+      proposals: [],
+    }
+
+    const check = engine.checkTriggers(result, 4)
+    expect(check.affected_phases).toEqual([2, 3])
   })
 
   it('captures all phase 3 trigger conditions when the baseline framing shifts in multiple ways', () => {
@@ -246,10 +275,54 @@ describe('revalidation engine', () => {
 
     const revalidateCheck = engine.checkTriggers(revalidateResult, 6)
     expect(revalidateCheck.recommendation).toBe('revalidate')
-    expect(revalidateCheck.affected_phases).toEqual([3, 4, 6])
+    expect(revalidateCheck.affected_phases).toEqual([3, 6])
 
     const monitorCheck = engine.checkTriggers(monitorResult, 6)
     expect(monitorCheck.recommendation).toBe('monitor')
     expect(monitorCheck.affected_phases).toEqual([6])
+  })
+
+  it('routes game_reframed from phase 6 to phases 3 and 6', () => {
+    const engine = createEngine()
+    const result: FormalizationResult = {
+      phase: 6,
+      status: {
+        status: 'complete',
+        phase: 6,
+        execution_id: 'phase_execution_6_reframed',
+        retriable: true,
+      },
+      subsections_run: ['6a'],
+      subsection_statuses: [],
+      formal_representations: {
+        status: 'complete',
+        summaries: [],
+        reused_formalization_ids: [],
+        new_game_hypotheses: [],
+        assumption_proposal_ids: [],
+        warnings: [],
+      },
+      payoff_estimation: { status: 'not_applicable', updates: [], warnings: [] },
+      baseline_equilibria: { status: 'not_applicable', analyses: [], warnings: [] },
+      equilibrium_selection: { status: 'not_applicable', selections: [], warnings: [] },
+      bargaining_dynamics: null,
+      communication_analysis: { status: 'not_applicable', classifications: [], warnings: [] },
+      option_value: null,
+      behavioral_overlays: null,
+      cross_game_effects: null,
+      proposals: [],
+      proposal_groups: [],
+      workspace_previews: {},
+      revalidation_signals: {
+        triggers_found: ['game_reframed'],
+        affected_entities: [{ type: 'game', id: 'game_2' }],
+        description: 'Phase 6 reframed a game.',
+      },
+    }
+
+    const check = engine.checkTriggers(result, 6)
+    expect(check.recommendation).toBe('revalidate')
+    expect(check.affected_phases).toEqual([3, 6])
+    expect(check.affected_entities).toContainEqual({ type: 'game', id: 'game_2' })
   })
 })
