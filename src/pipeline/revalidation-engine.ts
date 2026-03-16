@@ -1,6 +1,8 @@
 import type { CanonicalStore } from '../types'
+import { getDerivedStore } from '../store/derived'
 import type {
   ActiveRerunCycle,
+  AssumptionExtractionResult,
   AnalysisState,
   BaselineModelResult,
   FormalizationResult,
@@ -164,6 +166,57 @@ function getPhase6Check(result: FormalizationResult): RevalidationCheck {
   )
 }
 
+function getPhase7Check(result: AssumptionExtractionResult, canonical: CanonicalStore): RevalidationCheck {
+  const derived = getDerivedStore().getState()
+  const triggered = result.assumptions.filter((assumption) => {
+    if (assumption.game_theoretic_vs_empirical !== 'empirical') {
+      return false
+    }
+
+    const canonicalAssumption = canonical.assumptions[assumption.temp_id]
+    if (!canonicalAssumption) {
+      return false
+    }
+
+    const invalidated = Boolean((canonicalAssumption.contradicted_by ?? []).length || (canonicalAssumption.stale_markers ?? []).length)
+    if (!invalidated) {
+      return false
+    }
+
+    if (assumption.sensitivity === 'critical') {
+      return true
+    }
+
+    const affectedFormalizations = assumption.affected_conclusions
+      .filter((ref) => ref.type === 'formalization')
+      .map((ref) => ref.id)
+    return affectedFormalizations.some((formalizationId) =>
+      Object.values(derived.sensitivityByFormalizationAndSolver[formalizationId] ?? {}).some((analysis) =>
+        analysis?.assumption_sensitivities.some((entry) =>
+          entry.assumption_id === assumption.temp_id && entry.impact === 'result_changes',
+        ),
+      ),
+    )
+  })
+
+  if (triggered.length === 0) {
+    return createCheck([], [], [], 'none', 'Phase 7 introduced no invalidated critical empirical assumptions.')
+  }
+
+  const affectedEntities = triggered.flatMap((assumption) => [
+    createEntityRef('assumption', assumption.temp_id),
+    ...assumption.affected_conclusions,
+  ])
+
+  return createCheck(
+    ['critical_empirical_assumption_invalidated'],
+    [7, 8, 9],
+    affectedEntities,
+    'revalidate',
+    'A critical empirical assumption is stale or contradicted and downstream elimination/scenario work must be rerun.',
+  )
+}
+
 export function createRevalidationEngine(
   deps: RevalidationEngineDependencies,
 ): RevalidationEngine {
@@ -180,6 +233,9 @@ export function createRevalidationEngine(
       }
       if (phase === 6) {
         return getPhase6Check(phaseResult as FormalizationResult)
+      }
+      if (phase === 7) {
+        return getPhase7Check(phaseResult as AssumptionExtractionResult, deps.getCanonical())
       }
 
       return createCheck([], [], [], 'none', `Phase ${phase} has no implemented M6.1 trigger checks yet.`)

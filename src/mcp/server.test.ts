@@ -1,6 +1,7 @@
 import { PassThrough } from 'node:stream'
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import { getDerivedStore, resetDerivedState } from '../store/derived'
 import {
   clearConversation,
   getPipelineState,
@@ -38,6 +39,7 @@ describe('MCP server shell', () => {
     resetPipelineStore()
     resetPipelineRuntimeStore()
     resetMcpStore()
+    resetDerivedState()
   })
 
   it('registers all 10 phase tools', () => {
@@ -357,7 +359,7 @@ describe('MCP server shell', () => {
         semantic_labels: ['bargaining', 'signaling'],
         players: ['player_a', 'player_b'],
         status: 'active',
-        formalizations: ['formalization_base'],
+        formalizations: [],
         coupling_links: [],
         key_assumptions: [],
         created_at: new Date().toISOString(),
@@ -382,6 +384,13 @@ describe('MCP server shell', () => {
         payoff_cells: [],
       } as Omit<NormalFormModel, 'id'>,
     })
+    appStore.getState().dispatch({
+      kind: 'attach_formalization_to_game',
+      payload: {
+        game_id: 'game_1',
+        formalization_id: 'formalization_base',
+      },
+    })
 
     const result = await server.callTool<{
       success: boolean
@@ -395,6 +404,185 @@ describe('MCP server shell', () => {
     expect(result.summary).toMatch(/Phase 6/)
     expect(server.tools.get('run_phase_6_formalization')?.inputSchema.safeParse({
       subsections: ['6x'],
+    }).success).toBe(false)
+  })
+
+  it('runs phase 7 assumption extraction once an M6-ready state is seeded', async () => {
+    const { appStore, server } = createRegisteredServer()
+    startPipelineAnalysis({
+      analysisId: appStore.getState().eventLog.analysis_id,
+      description: 'Negotiation with repeated signaling and private information',
+      domain: 'geopolitical',
+      classification: null,
+    })
+    updateAnalysisState((analysisState) => {
+      if (!analysisState) {
+        return analysisState
+      }
+
+      const phase_states = { ...analysisState.phase_states }
+      for (let phase = 1; phase <= 6; phase += 1) {
+        phase_states[phase] = {
+          ...phase_states[phase],
+          status: 'complete',
+        }
+      }
+
+      return {
+        ...analysisState,
+        phase_states,
+      }
+    })
+
+    appStore.getState().dispatch({
+      kind: 'add_player',
+      id: 'player_a',
+      payload: { name: 'State A', type: 'state', objectives: [], constraints: [] },
+    })
+    appStore.getState().dispatch({
+      kind: 'add_player',
+      id: 'player_b',
+      payload: { name: 'State B', type: 'state', objectives: [], constraints: [] },
+    })
+    appStore.getState().dispatch({
+      kind: 'add_claim',
+      id: 'claim_support',
+      payload: { statement: 'Support claim', based_on: [], confidence: 0.8 },
+    })
+    appStore.getState().dispatch({
+      kind: 'add_assumption',
+      id: 'assumption_existing',
+      payload: {
+        statement: 'State B retains coercive capacity.',
+        type: 'capability',
+        sensitivity: 'medium',
+        confidence: 0.6,
+        supported_by: ['claim_support'],
+        game_theoretic_vs_empirical: 'empirical',
+        correlated_cluster_id: null,
+      },
+    })
+    appStore.getState().dispatch({
+      kind: 'add_game',
+      id: 'game_1',
+      payload: {
+        name: 'Baseline game',
+        description: 'Accepted baseline',
+        semantic_labels: ['bargaining'],
+        players: ['player_a', 'player_b'],
+        status: 'active',
+        formalizations: [],
+        coupling_links: [],
+        key_assumptions: [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    })
+    appStore.getState().dispatch({
+      kind: 'add_formalization',
+      id: 'formalization_base',
+      payload: {
+        game_id: 'game_1',
+        kind: 'normal_form',
+        purpose: 'explanatory',
+        abstraction_level: 'minimal',
+        assumptions: ['assumption_existing'],
+        strategies: {
+          player_a: ['Escalate', 'Hold'],
+          player_b: ['Resist', 'Accommodate'],
+        },
+        payoff_cells: [],
+      } as Omit<NormalFormModel, 'id'>,
+    })
+    appStore.getState().dispatch({
+      kind: 'attach_formalization_to_game',
+      payload: {
+        game_id: 'game_1',
+        formalization_id: 'formalization_base',
+      },
+    })
+
+    getPipelineState().phase_results[6] = {
+      phase: 6,
+      status: { status: 'complete', phase: 6, execution_id: 'phase_6', retriable: true },
+      subsections_run: ['6c'],
+      subsection_statuses: [],
+      formal_representations: {
+        status: 'complete',
+        summaries: [{
+          formalization_id: 'formalization_base',
+          game_id: 'game_1',
+          game_name: 'Baseline game',
+          kind: 'normal_form',
+          purpose: 'explanatory',
+          abstraction_level: 'minimal',
+          reused_existing: true,
+          rationale: 'Accepted baseline',
+          assumption_ids: ['assumption_existing'],
+        }],
+        reused_formalization_ids: ['formalization_base'],
+        new_game_hypotheses: [],
+        assumption_proposal_ids: [],
+        warnings: [],
+      },
+      payoff_estimation: { status: 'complete', updates: [], warnings: [] },
+      baseline_equilibria: { status: 'complete', analyses: [], warnings: [] },
+      equilibrium_selection: {
+        status: 'complete',
+        selections: [{
+          formalization_id: 'formalization_base',
+          selected_equilibrium_id: 'eq_1',
+          rationale: 'Selected baseline equilibrium.',
+          alternatives: [],
+        }],
+        warnings: [],
+      },
+      bargaining_dynamics: null,
+      communication_analysis: { status: 'complete', classifications: [], warnings: [] },
+      option_value: null,
+      behavioral_overlays: null,
+      cross_game_effects: null,
+      proposals: [],
+      proposal_groups: [],
+      workspace_previews: {},
+      revalidation_signals: { triggers_found: [], affected_entities: [], description: 'none' },
+    }
+
+    getDerivedStore().setState((state) => ({
+      ...state,
+      sensitivityByFormalizationAndSolver: {
+        ...state.sensitivityByFormalizationAndSolver,
+        formalization_base: {
+          nash: {
+            formalization_id: 'formalization_base',
+            solver: 'nash',
+            solver_result_id: 'solver_1',
+            computed_at: new Date().toISOString(),
+            payoff_sensitivities: [],
+            assumption_sensitivities: [{
+              assumption_id: 'assumption_existing',
+              statement: 'State B retains coercive capacity.',
+              impact: 'result_changes',
+              description: 'Flips the current equilibrium.',
+              affected_payoffs: ['player_a:Escalate|Resist'],
+            }],
+            threshold_analysis: [],
+            overall_robustness: 'fragile',
+          },
+        },
+      },
+    }))
+
+    const result = await server.callTool<{
+      success: boolean
+      summary: string
+      warnings: string[]
+    }>('run_phase_7_assumptions', {})
+
+    expect(result.success).toBe(true)
+    expect(result.summary).toMatch(/Extracted \d+ assumptions across \d+ cluster/)
+    expect(server.tools.get('run_phase_7_assumptions')?.inputSchema.safeParse({
+      extra: true,
     }).success).toBe(false)
   })
 })

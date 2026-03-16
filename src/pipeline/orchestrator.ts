@@ -4,6 +4,7 @@ import type { ModelEvent } from '../engine/events'
 import type { CanonicalStore, CurrentAnalysisFile } from '../types'
 import type { RevalidationEvent } from '../types/evidence'
 import type {
+  AssumptionExtractionResult,
   AnalysisState,
   EvidenceProposal,
   FormalizationResult,
@@ -46,6 +47,8 @@ import { runPhase1Grounding, type Phase1Input } from './phase-1-grounding'
 import { runPhase2Players, type Phase2Input } from './phase-2-players'
 import { runPhase3Baseline, runPhase4History } from './phase-3-4'
 import { runPhase6Formalization } from './phase-6-formalization'
+import { runPhase7Assumptions } from './phase-7-assumptions'
+import { PHASE6_ALL_SUBSECTIONS, PHASE6_SUBSECTION_MESSAGES } from './phase-6-subsections'
 import { classifySituation, createEntityId } from './helpers'
 import { createRevalidationEngine } from './revalidation-engine'
 import { forkPrompt, getActivePrompt } from './prompt-registry'
@@ -665,23 +668,12 @@ export function createPipelineOrchestrator(deps: OrchestratorDependencies): Pipe
         const phase6Input = readPhase6Input(input)
         const subsections = phase6Input.subsections?.length
           ? phase6Input.subsections
-          : ['6a', '6b', '6c', '6d', '6e', '6f', '6g', '6h', '6i']
-        const progressMessages: Record<string, string> = {
-          '6a': '6a: Choosing formal representations...',
-          '6b': '6b: Estimating structured payoffs...',
-          '6c': '6c: Computing baseline equilibrium summaries...',
-          '6d': '6d: Comparing equilibrium selection candidates...',
-          '6e': '6e: Reviewing bargaining dynamics...',
-          '6f': '6f: Classifying strategic communication...',
-          '6g': '6g: Checking the option value of waiting...',
-          '6h': '6h: Documenting adjacent behavioral overlays...',
-          '6i': '6i: Evaluating cross-game effects...',
-        }
+          : PHASE6_ALL_SUBSECTIONS
 
         for (const subsection of subsections) {
           deps.emitConversationMessage({
             role: 'ai',
-            content: progressMessages[subsection] ?? `Running ${subsection}...`,
+            content: PHASE6_SUBSECTION_MESSAGES[subsection] ?? `Running ${subsection}...`,
             message_type: 'finding',
             phase: 6,
           })
@@ -701,6 +693,17 @@ export function createPipelineOrchestrator(deps: OrchestratorDependencies): Pipe
         result = output.status
         proposals = output.proposals
         setPhaseResult(6, output)
+      } else if (phase === 7) {
+        const output = runPhase7Assumptions({
+          canonical,
+          baseRevision,
+          phaseExecution,
+          phaseResults: getPipelineState().phase_results,
+        })
+        phaseOutput = output
+        result = output.status
+        proposals = output.proposals
+        setPhaseResult(7, output)
       } else {
         result = {
           status: 'failed',
@@ -738,6 +741,23 @@ export function createPipelineOrchestrator(deps: OrchestratorDependencies): Pipe
           })
         }
         setPipelineProposalReview(getConversationState().proposal_review)
+      } else if (phase === 7 && phaseOutput) {
+        const phase7Output = phaseOutput as AssumptionExtractionResult
+        if (phase7Output.proposals.length > 0) {
+          registerProposalGroup({
+            phase,
+            content: `Phase 7 complete. Review ${phase7Output.proposals.length} proposal${phase7Output.proposals.length === 1 ? '' : 's'} before continuing.`,
+            proposals: phase7Output.proposals,
+          })
+          setPipelineProposalReview(getConversationState().proposal_review)
+        } else {
+          deps.emitConversationMessage({
+            role: 'ai',
+            content: `Phase 7 complete. Extracted ${phase7Output.assumptions.length} assumptions across ${phase7Output.correlated_clusters.length} correlated cluster${phase7Output.correlated_clusters.length === 1 ? '' : 's'}.`,
+            message_type: 'result',
+            phase,
+          })
+        }
       } else if (proposals.length > 0) {
         registerProposalGroup({
           phase,
@@ -767,7 +787,7 @@ export function createPipelineOrchestrator(deps: OrchestratorDependencies): Pipe
         proposals.length > 0 || result.status === 'partial',
       )
 
-      if (phaseOutput && phase >= 2 && phase <= 6 && result.status !== 'failed') {
+      if (phaseOutput && phase >= 2 && phase <= 7 && result.status !== 'failed') {
         maybeCreateRevalidationEvent(phase, phaseOutput)
       }
 

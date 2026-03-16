@@ -4,6 +4,7 @@ import { useAppStore, usePipelineStore } from '../../../store'
 import type { FormalizationResult } from '../../../types/analysis-pipeline'
 import { MatrixView } from '../matrix/MatrixView'
 import { TreeView } from '../tree/TreeView'
+import { Phase6WorkspacePreview } from './Phase6WorkspacePreview'
 
 function formatTitle(label: string): string {
   return label.replace(/_/g, ' ')
@@ -17,10 +18,40 @@ export function FormalizationPhaseScreen(): ReactNode {
   const setActiveGame = useAppStore((state) => state.setActiveGame)
   const phaseResult = usePipelineStore((state) => state.phase_results[6] as FormalizationResult | undefined)
 
-  const summaries = phaseResult?.formal_representations.summaries ?? []
+  const summaries = useMemo(() => {
+    if (!phaseResult) {
+      return []
+    }
+
+    if (phaseResult.formal_representations.summaries.length > 0) {
+      return phaseResult.formal_representations.summaries
+    }
+
+    return phaseResult.baseline_equilibria.analyses.flatMap((analysis) => {
+      const formalization = canonical.formalizations[analysis.formalization_id]
+      if (!formalization) {
+        return []
+      }
+
+      return [{
+        formalization_id: formalization.id,
+        game_id: analysis.game_id,
+        game_name: canonical.games[analysis.game_id]?.name ?? analysis.game_id,
+        kind: analysis.kind,
+        purpose: formalization.purpose,
+        abstraction_level: formalization.abstraction_level,
+        reused_existing: true,
+        rationale: 'Accepted formalization reused for this focused Phase 6 subsection run.',
+        assumption_ids: [...formalization.assumptions],
+      }]
+    })
+  }, [canonical.formalizations, canonical.games, phaseResult])
   const activeSummary = summaries.find((summary) => summary.formalization_id === activeFormalizationId) ?? summaries[0] ?? null
   const activeFormalization = activeSummary
     ? canonical.formalizations[activeSummary.formalization_id]
+    : null
+  const activePreview = activeSummary
+    ? phaseResult?.workspace_previews[activeSummary.formalization_id] ?? null
     : null
   const activeAnalysis = phaseResult?.baseline_equilibria.analyses.find(
     (analysis) => analysis.formalization_id === activeSummary?.formalization_id,
@@ -132,17 +163,19 @@ export function FormalizationPhaseScreen(): ReactNode {
             {activeSummary ? (
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
                 <div className="rounded-lg border border-border bg-bg-surface p-3">
-                  {activeSummary.kind === 'normal_form' ? (
+                  {activeSummary.kind === 'normal_form' && activeSummary.reused_existing && activeFormalization?.kind === 'normal_form' ? (
                     <MatrixView />
-                  ) : activeSummary.kind === 'extensive_form' ? (
+                  ) : activeSummary.kind === 'extensive_form' && activeSummary.reused_existing && activeFormalization?.kind === 'extensive_form' ? (
                     <TreeView />
+                  ) : activePreview ? (
+                    <Phase6WorkspacePreview canonical={canonical} preview={activePreview} />
                   ) : (
                     <div className="space-y-3">
                       <div className="text-sm font-semibold text-text-primary">
                         {activeSummary.game_name} · {formatTitle(activeSummary.kind)}
                       </div>
                       <p className="text-sm text-text-muted">
-                        This formalization uses the Phase 6 summary cards rather than the matrix/tree editor surface.
+                        No live workspace is available for this formalization in the current pass.
                       </p>
                     </div>
                   )}

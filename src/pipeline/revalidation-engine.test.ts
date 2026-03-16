@@ -227,6 +227,7 @@ describe('revalidation engine', () => {
       cross_game_effects: null,
       proposals: [],
       proposal_groups: [],
+      workspace_previews: {},
       revalidation_signals: {
         triggers_found: ['game_reframed'],
         affected_entities: [{ type: 'game', id: 'game_1' }],

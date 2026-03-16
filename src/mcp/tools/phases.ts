@@ -1,7 +1,12 @@
 import { z } from 'zod'
 
 import type { PhaseToolResult } from '../../types/mcp'
-import type { EvidenceProposal, FormalizationResult, Phase6Subsection } from '../../types/analysis-pipeline'
+import type {
+  AssumptionExtractionResult,
+  EvidenceProposal,
+  FormalizationResult,
+  Phase6Subsection,
+} from '../../types/analysis-pipeline'
 import type { RuntimeToolContext, McpServerLike } from '../context'
 import { getPipelineState } from '../../store/pipeline'
 import { getPipelineRuntimeState } from '../../store/pipeline-runtime'
@@ -44,6 +49,12 @@ const phaseDefinitions = {
       subsections: z.array(z.enum(['6a', '6b', '6c', '6d', '6e', '6f', '6g', '6h', '6i'])).optional(),
     }).strict(),
   },
+  7: {
+    name: 'run_phase_7_assumptions',
+    phase_name: 'Assumption Extraction',
+    description: 'Phase 7: Extract assumptions, classify empirical versus game-theoretic dependencies, rate sensitivity, and identify correlated clusters.',
+    schema: z.object({}).strict(),
+  },
 } as const
 
 function proposalsToResult(proposals: EvidenceProposal[]): PhaseToolResult['proposals'] {
@@ -67,7 +78,7 @@ function entitiesFromProposals(proposals: EvidenceProposal[]): PhaseToolResult['
 }
 
 function successResult(params: {
-  phase: 1 | 2 | 3 | 4 | 6
+  phase: 1 | 2 | 3 | 4 | 6 | 7
   summary: string
   proposals: EvidenceProposal[]
   nextStep?: string
@@ -286,6 +297,10 @@ export function registerPhaseTools(server: McpServerLike, context: RuntimeToolCo
             : 'Review Phase 6 proposal groups, then continue with Phase 7.',
           warnings: [
             ...(phaseResult?.status.gaps ?? []),
+            ...(phaseResult?.formal_representations.warnings ?? []),
+            ...(phaseResult?.payoff_estimation.warnings ?? []),
+            ...(phaseResult?.baseline_equilibria.warnings ?? []),
+            ...(phaseResult?.equilibrium_selection.warnings ?? []),
             ...(phaseResult?.behavioral_overlays?.warnings ?? []),
             ...(phaseResult?.cross_game_effects?.warnings ?? []),
           ],
@@ -296,9 +311,41 @@ export function registerPhaseTools(server: McpServerLike, context: RuntimeToolCo
     },
   })
 
+  server.registerTool({
+    name: phaseDefinitions[7].name,
+    description: phaseDefinitions[7].description,
+    inputSchema: phaseDefinitions[7].schema,
+    async execute(): Promise<PhaseToolResult> {
+      try {
+        await context.orchestrator.runPhase(7)
+        const phaseResult = getPipelineState().phase_results[7] as AssumptionExtractionResult | undefined
+        const criticalWarning = phaseResult?.sensitivity_summary.inference_only_critical
+          ? `${phaseResult.sensitivity_summary.inference_only_critical} critical assumption(s) rely on inference-only support.`
+          : undefined
+
+        return {
+          success: true,
+          phase: 7,
+          phase_name: phaseDefinitions[7].phase_name,
+          summary: phaseResult
+            ? `Phase 7 ${phaseResult.status.status}. Extracted ${phaseResult.assumptions.length} assumptions across ${phaseResult.correlated_clusters.length} cluster(s).`
+            : 'Phase 7 completed.',
+          entities_created: entitiesFromProposals(phaseResult?.proposals ?? []),
+          proposals: proposalsToResult(phaseResult?.proposals ?? []),
+          next_step: 'Review Phase 7 assumption proposals, then continue with Phase 8.',
+          warnings: [
+            ...(phaseResult?.status.gaps ?? []),
+            ...(criticalWarning ? [criticalWarning] : []),
+          ],
+        }
+      } catch (error) {
+        return failureResult(7, phaseDefinitions[7].phase_name, error instanceof Error ? error.message : 'Phase 7 failed.')
+      }
+    },
+  })
+
   const stubPhaseSchema = z.object({}).strict()
   const stubs: Array<{ phase: number; name: string; phase_name: string; description: string }> = [
-    { phase: 7, name: 'run_phase_7_assumptions', phase_name: 'Assumption Extraction', description: 'Phase 7: Assumption extraction.' },
     { phase: 8, name: 'run_phase_8_elimination', phase_name: 'Elimination', description: 'Phase 8: Eliminate implausible outcomes.' },
     { phase: 9, name: 'run_phase_9_scenarios', phase_name: 'Scenario Generation', description: 'Phase 9: Scenario generation.' },
     { phase: 10, name: 'run_phase_10_metacheck', phase_name: 'Meta-check', description: 'Phase 10: Meta-check and adversarial challenge.' },
@@ -310,7 +357,7 @@ export function registerPhaseTools(server: McpServerLike, context: RuntimeToolCo
       description: stub.description,
       inputSchema: stubPhaseSchema,
       execute() {
-        return failureResult(stub.phase, stub.phase_name, `Phase ${stub.phase} is not implemented in this M5 milestone.`)
+        return failureResult(stub.phase, stub.phase_name, `Phase ${stub.phase} is not implemented in this milestone.`)
       },
     })
   }

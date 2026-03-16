@@ -519,6 +519,46 @@ export interface CommunicationAnalysisResult {
   warnings: string[]
 }
 
+export interface Phase6NormalFormWorkspacePreview {
+  kind: 'normal_form'
+  formalization_id: string
+  game_id: string
+  player_ids: string[]
+  row_player_id: string | null
+  col_player_id: string | null
+  row_strategies: string[]
+  col_strategies: string[]
+  cells: Array<{
+    row_strategy: string
+    col_strategy: string
+    payoffs: Record<string, EstimateValue>
+  }>
+}
+
+export interface Phase6ExtensiveFormWorkspacePreview {
+  kind: 'extensive_form'
+  formalization_id: string
+  game_id: string
+  root_node_id: string | null
+  nodes: Array<{
+    id: string
+    type: import('./canonical').GameNode['type']
+    label: string
+    actor_label: string | null
+    terminal_payoffs?: Record<string, EstimateValue>
+  }>
+  edges: Array<{
+    id: string
+    from: string
+    to: string
+    label: string
+  }>
+}
+
+export type Phase6WorkspacePreview =
+  | Phase6NormalFormWorkspacePreview
+  | Phase6ExtensiveFormWorkspacePreview
+
 export interface OptionValueResult {
   status: Phase6SubsectionStatus['status']
   summary: string
@@ -585,7 +625,49 @@ export interface FormalizationResult {
   cross_game_effects: CrossGameEffectsResult | null
   proposals: ModelProposal[]
   proposal_groups: Phase6ProposalGroup[]
+  workspace_previews: Record<string, Phase6WorkspacePreview>
   revalidation_signals: Phase6RevalidationSignals
+}
+
+export interface ProposedAssumptionFull {
+  temp_id: string
+  statement: string
+  type: 'behavioral' | 'capability' | 'structural' | 'institutional' | 'rationality' | 'information'
+  sensitivity: 'critical' | 'high' | 'medium' | 'low'
+  what_if_wrong: string
+  game_theoretic_vs_empirical: 'game_theoretic' | 'empirical'
+  correlated_cluster_id: string | null
+  evidence_quality: 'direct_evidence' | 'inference' | 'assumption_only'
+  evidence_refs: EntityRef[]
+  affected_conclusions: EntityRef[]
+  confidence: EstimateValue
+}
+
+export interface CorrelatedCluster {
+  id: string
+  label: string
+  description: string
+  latent_factor: string
+  assumption_ids: string[]
+  affected_domains: string[]
+}
+
+export interface Phase7SensitivitySummary {
+  critical_count: number
+  high_count: number
+  medium_count: number
+  low_count: number
+  inference_only_critical: number
+  largest_cluster_size: number
+}
+
+export interface AssumptionExtractionResult {
+  phase: 7
+  status: PhaseResult
+  assumptions: ProposedAssumptionFull[]
+  correlated_clusters: CorrelatedCluster[]
+  sensitivity_summary: Phase7SensitivitySummary
+  proposals: ModelProposal[]
 }
 
 export interface RevalidationCheck {
@@ -663,7 +745,9 @@ export interface Phase6RunInput {
   subsections?: Phase6Subsection[]
 }
 
-export type PhaseRunInput = Phase1RunInput | Phase2RunInput | Phase6RunInput
+export interface Phase7RunInput {}
+
+export type PhaseRunInput = Phase1RunInput | Phase2RunInput | Phase6RunInput | Phase7RunInput
 
 export interface PipelinePhaseRunnerContext {
   analysisState: AnalysisState

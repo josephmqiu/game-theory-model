@@ -28,6 +28,7 @@ import type {
   Phase6RunInput,
   Phase6Subsection,
   Phase6SubsectionStatus,
+  Phase6WorkspacePreview,
   PhaseExecution,
   PhaseResult,
 } from '../types/analysis-pipeline'
@@ -50,8 +51,10 @@ import {
   descriptionContains,
 } from './helpers'
 import { normalizeCrossGameEffect } from './cross-game-effects'
-
-const ALL_SUBSECTIONS: Phase6Subsection[] = ['6a', '6b', '6c', '6d', '6e', '6f', '6g', '6h', '6i']
+import {
+  PHASE6_ALL_SUBSECTIONS,
+  PHASE6_SUBSECTION_MESSAGES,
+} from './phase-6-subsections'
 
 interface Phase6RunnerContext {
   canonical: CanonicalStore
@@ -78,6 +81,12 @@ interface PlannedFormalization {
   }
 }
 
+interface Phase6OverlayResult {
+  status: 'ready' | 'failed'
+  store: CanonicalStore | null
+  warnings: string[]
+}
+
 type Phase6FormalizationPayload =
   | Omit<NormalFormModel, 'id'>
   | Omit<ExtensiveFormModel, 'id'>
@@ -95,6 +104,15 @@ interface Phase6WorkingState {
   revalidationEntities: EntityRef[]
   revalidationNotes: string[]
 }
+
+const SUPPORTED_PHASE6_FORMALIZATION_KINDS = new Set<FormalizationRepresentationSummary['kind']>([
+  'normal_form',
+  'extensive_form',
+  'repeated',
+  'bayesian',
+  'signaling',
+  'bargaining',
+])
 
 function createStructuredEstimate(params: {
   representation: EstimateValue['representation']
@@ -163,12 +181,30 @@ function getHistoricalResult(context: Phase6RunnerContext): HistoricalGameResult
 }
 
 function queueStatus(state: Phase6WorkingState, status: Phase6SubsectionStatus): void {
-  state.subsectionStatuses.push(status)
+  state.subsectionStatuses = [...state.subsectionStatuses, status]
 }
 
 function addProposal(state: Phase6WorkingState, subsection: Phase6Subsection, proposal: ModelProposal): void {
-  proposal.framing_id = subsection
-  state.proposalsBySubsection[subsection].push(proposal)
+  state.proposalsBySubsection = {
+    ...state.proposalsBySubsection,
+    [subsection]: [
+      ...state.proposalsBySubsection[subsection],
+      {
+        ...proposal,
+        framing_id: subsection,
+      },
+    ],
+  }
+}
+
+function replaceStatus(
+  state: Phase6WorkingState,
+  subsection: Phase6Subsection,
+  status: Phase6SubsectionStatus,
+): void {
+  state.subsectionStatuses = state.subsectionStatuses.map((entry) =>
+    entry.subsection === subsection ? status : entry,
+  )
 }
 
 function buildAssumptionCommand(id: string, statement: string, type: 'behavioral' | 'capability' | 'structural' | 'institutional' | 'rationality' | 'information'): Command {
@@ -224,28 +260,131 @@ function buildNormalFormPayload(
       [rowPlayerId!]: rowStrategies,
       [colPlayerId!]: colStrategies,
     },
-    payoff_cells: rowStrategies.flatMap((rowStrategy, rowIndex) =>
-      colStrategies.map((colStrategy, colIndex) => ({
-        strategy_profile: {
-          [rowPlayerId!]: rowStrategy,
-          [colPlayerId!]: colStrategy,
-        },
-        payoffs: {
-          [rowPlayerId!]: createStructuredEstimate({
-            representation: 'interval_estimate',
-            min: 1 + rowIndex,
-            max: 3 + colIndex,
-            rationale: 'Structured cardinal band for baseline payoff comparison.',
-          }),
-          [colPlayerId!]: createStructuredEstimate({
-            representation: 'interval_estimate',
-            min: 1 + colIndex,
-            max: 3 + rowIndex,
-            rationale: 'Structured cardinal band for baseline payoff comparison.',
-          }),
-        },
-      })),
-    ),
+    payoff_cells: buildStructuredNormalFormPayoffCells({
+      rowPlayerId: rowPlayerId ?? null,
+      colPlayerId: colPlayerId ?? null,
+      rowStrategies,
+      colStrategies,
+    }),
+  }
+}
+
+function buildStructuredNormalFormPayoffCells(params: {
+  rowPlayerId: string | null
+  colPlayerId: string | null
+  rowStrategies: string[]
+  colStrategies: string[]
+}): NormalFormModel['payoff_cells'] {
+  if (!params.rowPlayerId || !params.colPlayerId) {
+    return []
+  }
+
+  return params.rowStrategies.flatMap((rowStrategy, rowIndex) =>
+    params.colStrategies.map((colStrategy, colIndex) => ({
+      strategy_profile: {
+        [params.rowPlayerId!]: rowStrategy,
+        [params.colPlayerId!]: colStrategy,
+      },
+      payoffs: {
+        [params.rowPlayerId!]: createStructuredEstimate({
+          representation: 'interval_estimate',
+          min: 1 + rowIndex,
+          max: 3 + colIndex,
+          rationale: 'Structured cardinal band for baseline payoff comparison.',
+        }),
+        [params.colPlayerId!]: createStructuredEstimate({
+          representation: 'interval_estimate',
+          min: 1 + colIndex,
+          max: 3 + rowIndex,
+          rationale: 'Structured cardinal band for baseline payoff comparison.',
+        }),
+      },
+    })),
+  )
+}
+
+function buildNormalFormPayoffCellsForExisting(
+  formalization: NormalFormModel,
+): NormalFormModel['payoff_cells'] {
+  const playerIds = Object.keys(formalization.strategies)
+  const rowPlayerId = playerIds[0] ?? null
+  const colPlayerId = playerIds[1] ?? null
+  const rowStrategies = rowPlayerId ? (formalization.strategies[rowPlayerId] ?? []) : []
+  const colStrategies = colPlayerId ? (formalization.strategies[colPlayerId] ?? []) : []
+
+  return buildStructuredNormalFormPayoffCells({
+    rowPlayerId,
+    colPlayerId,
+    rowStrategies,
+    colStrategies,
+  })
+}
+
+function extractExtensiveNodeIds(
+  canonical: CanonicalStore,
+  formalizationId: string,
+): PlannedFormalization['node_ids'] | undefined {
+  const nodes = Object.values(canonical.nodes).filter((node) => node.formalization_id === formalizationId)
+  const formalization = canonical.formalizations[formalizationId]
+  if (!formalization || formalization.kind !== 'extensive_form') {
+    return undefined
+  }
+
+  const terminals = nodes.filter((node) => node.type === 'terminal')
+  if (terminals.length < 2) {
+    return undefined
+  }
+
+  return {
+    root: formalization.root_node_id,
+    accept: terminals[0]!.id,
+    resist: terminals[1]!.id,
+  }
+}
+
+function appendPlannedFormalization(
+  state: Phase6WorkingState,
+  planned: PlannedFormalization,
+): void {
+  state.plannedFormalizations = [...state.plannedFormalizations, planned]
+}
+
+function seedAcceptedFormalizations(
+  context: Phase6RunnerContext,
+  state: Phase6WorkingState,
+): void {
+  if (state.plannedFormalizations.length > 0) {
+    return
+  }
+
+  const game = firstGame(context.canonical)
+  if (!game) {
+    return
+  }
+
+  for (const formalizationId of game.formalizations) {
+    const formalization = context.canonical.formalizations[formalizationId]
+    if (!formalization) {
+      continue
+    }
+    if (!SUPPORTED_PHASE6_FORMALIZATION_KINDS.has(formalization.kind as FormalizationRepresentationSummary['kind'])) {
+      continue
+    }
+
+    appendPlannedFormalization(state, {
+      id: formalization.id,
+      gameId: game.id,
+      gameName: game.name,
+      kind: formalization.kind as PlannedFormalization['kind'],
+      purpose: formalization.purpose,
+      abstraction_level: formalization.abstraction_level,
+      reused_existing: true,
+      rationale: 'Use the accepted formalization as the basis for this Phase 6 subsection run.',
+      assumption_ids: [...formalization.assumptions],
+      node_ids: formalization.kind === 'extensive_form'
+        ? extractExtensiveNodeIds(context.canonical, formalization.id)
+        : undefined,
+    })
   }
 }
 
@@ -568,7 +707,7 @@ function planFormalRepresentations(context: Phase6RunnerContext, state: Phase6Wo
   )
   if (baselineExisting) {
     reusedIds.push(baselineExisting.id)
-    state.plannedFormalizations.push({
+    appendPlannedFormalization(state, {
       id: baselineExisting.id,
       gameId: game.id,
       gameName: game.name,
@@ -578,6 +717,9 @@ function planFormalRepresentations(context: Phase6RunnerContext, state: Phase6Wo
       reused_existing: true,
       rationale: 'Phase 3 baseline formalization already covers the core strategic spine.',
       assumption_ids: [...baselineExisting.assumptions],
+      node_ids: baselineExisting.kind === 'extensive_form'
+        ? extractExtensiveNodeIds(context.canonical, baselineExisting.id)
+        : undefined,
     })
     summaries.push(buildFormalizationSummary(
       baselineExisting,
@@ -690,7 +832,7 @@ function planFormalRepresentations(context: Phase6RunnerContext, state: Phase6Wo
     })
     addProposal(state, '6a', proposal)
     assumptionProposalIds.push(proposal.id)
-    state.plannedFormalizations.push(planned)
+    appendPlannedFormalization(state, planned)
     summaries.push({
       formalization_id: planned.id,
       game_id: planned.gameId,
@@ -736,7 +878,7 @@ function planFormalRepresentations(context: Phase6RunnerContext, state: Phase6Wo
     const existing = gameFormalizations.find((formalization) => formalization.kind === params.kind)
     if (existing) {
       reusedIds.push(existing.id)
-      state.plannedFormalizations.push({
+      appendPlannedFormalization(state, {
         id: existing.id,
         gameId: game.id,
         gameName: game.name,
@@ -746,6 +888,9 @@ function planFormalRepresentations(context: Phase6RunnerContext, state: Phase6Wo
         reused_existing: true,
         rationale: params.rationale,
         assumption_ids: [...existing.assumptions],
+        node_ids: existing.kind === 'extensive_form'
+          ? extractExtensiveNodeIds(context.canonical, existing.id)
+          : undefined,
       })
       summaries.push(buildFormalizationSummary(existing, context.canonical, true, params.rationale))
       return
@@ -792,7 +937,7 @@ function planFormalRepresentations(context: Phase6RunnerContext, state: Phase6Wo
     })
     addProposal(state, '6a', proposal)
     assumptionProposalIds.push(proposal.id)
-    state.plannedFormalizations.push({
+    appendPlannedFormalization(state, {
       id: formalizationId,
       gameId: game.id,
       gameName: game.name,
@@ -841,15 +986,17 @@ function planFormalRepresentations(context: Phase6RunnerContext, state: Phase6Wo
     payload: buildBargainingPayload(game.id, players),
   })
 
-  if (Object.keys(context.canonical.games).length > 1) {
-    newGameHypotheses.push({
-      label: 'Multiple accepted games remain strategically active.',
-      rationale: 'Phase 6 should preserve cross-game interaction rather than collapsing into a single baseline.',
-    })
+  const introducedReframing = state.plannedFormalizations.some((planned) =>
+    !planned.reused_existing
+      && planned.gameId === game.id
+      && (planned.kind === 'repeated' || planned.kind === 'bayesian' || planned.kind === 'signaling'),
+  )
+
+  if (newGameHypotheses.length > 0) {
     state.revalidationTriggers.push('new_game_identified')
-    state.revalidationEntities.push(...Object.keys(context.canonical.games).map((id) => asEntityRef('game', id)))
-    state.revalidationNotes.push('Phase 6 formalization spans multiple accepted games.')
-  } else if (summaries.some((summary) => summary.kind === 'repeated' || summary.kind === 'bayesian' || summary.kind === 'signaling')) {
+    state.revalidationEntities.push(asEntityRef('game', game.id))
+    state.revalidationNotes.push('Phase 6 surfaced a new game hypothesis that changes the analysis frame.')
+  } else if (introducedReframing) {
     state.revalidationTriggers.push('game_reframed')
     state.revalidationEntities.push(asEntityRef('game', game.id))
     state.revalidationNotes.push('Phase 6 introduced a structurally distinct strategic framing beyond the original baseline.')
@@ -888,6 +1035,11 @@ function planPayoffEstimation(context: Phase6RunnerContext, state: Phase6Working
 
   for (const planned of state.plannedFormalizations) {
     if (planned.kind === 'normal_form') {
+      const existingFormalization = context.canonical.formalizations[planned.id]
+      const payoffCells =
+        existingFormalization && existingFormalization.kind === 'normal_form'
+          ? buildNormalFormPayoffCellsForExisting(existingFormalization)
+          : buildNormalFormPayload(planned.id, planned.gameId, firstTwoPlayers(context.canonical.games[planned.gameId]) || []).payoff_cells
       const proposal = buildFormalizationProposal(context, {
         subsection: '6b',
         description: `Populate solver-facing payoff estimates for ${planned.gameName}.`,
@@ -897,7 +1049,7 @@ function planPayoffEstimation(context: Phase6RunnerContext, state: Phase6Working
             kind: 'update_formalization',
             payload: {
               id: planned.id,
-              payoff_cells: buildNormalFormPayload(planned.id, planned.gameId, firstTwoPlayers(context.canonical.games[planned.gameId]) || []).payoff_cells,
+              payoff_cells: payoffCells,
             },
           },
         ],
@@ -912,7 +1064,7 @@ function planPayoffEstimation(context: Phase6RunnerContext, state: Phase6Working
       updates.push({
         formalization_id: planned.id,
         ordinal_first: true,
-        updated_profiles: 4,
+        updated_profiles: payoffCells.length,
         updated_terminal_nodes: 0,
         cardinal_justifications: ['Cardinal interval bands were added because Phase 6 solver summaries require comparable payoff magnitudes.'],
       })
@@ -1007,13 +1159,17 @@ function planPayoffEstimation(context: Phase6RunnerContext, state: Phase6Working
   }
 }
 
-function buildOverlayStore(context: Phase6RunnerContext, state: Phase6WorkingState): CanonicalStore {
+function buildOverlayStore(context: Phase6RunnerContext, state: Phase6WorkingState): Phase6OverlayResult {
   const commands = Object.values(state.proposalsBySubsection).flatMap((proposals) =>
     proposals.flatMap((proposal) => proposal.commands),
   )
 
   if (commands.length === 0) {
-    return context.canonical
+    return {
+      status: 'ready',
+      store: context.canonical,
+      warnings: [],
+    }
   }
 
   const result = dispatch(
@@ -1028,7 +1184,29 @@ function buildOverlayStore(context: Phase6RunnerContext, state: Phase6WorkingSta
     { dryRun: true, source: 'ai_merge' },
   )
 
-  return result.status === 'dry_run' ? result.store : context.canonical
+  if (result.status === 'dry_run') {
+    return {
+      status: 'ready',
+      store: result.store,
+      warnings: [],
+    }
+  }
+
+  if (result.status !== 'rejected') {
+    return {
+      status: 'failed',
+      store: null,
+      warnings: ['Could not build the speculative Phase 6 overlay due to an unexpected dispatch result.'],
+    }
+  }
+
+  return {
+    status: 'failed',
+    store: null,
+    warnings: [
+      `Could not build the speculative Phase 6 overlay: ${result.errors.join(' ')}`,
+    ],
+  }
 }
 
 function summarizeReadiness(readiness: SolverReadiness): string {
@@ -1042,12 +1220,27 @@ function summarizeReadiness(readiness: SolverReadiness): string {
 }
 
 function analyzeFormalizations(
-  overlay: CanonicalStore,
+  overlayResult: Phase6OverlayResult,
   state: Phase6WorkingState,
 ): {
   baseline_equilibria: BaselineEquilibriaResult
   equilibrium_selection: EquilibriumSelectionResult
 } {
+  if (overlayResult.status === 'failed' || !overlayResult.store) {
+    return {
+      baseline_equilibria: {
+        status: 'partial',
+        analyses: [],
+        warnings: overlayResult.warnings,
+      },
+      equilibrium_selection: {
+        status: 'partial',
+        selections: [],
+        warnings: overlayResult.warnings,
+      },
+    }
+  }
+
   if (state.plannedFormalizations.length === 0) {
     return {
       baseline_equilibria: {
@@ -1063,6 +1256,7 @@ function analyzeFormalizations(
     }
   }
 
+  const overlay = overlayResult.store
   const analyses: FormalizationAnalysisSummary[] = []
   const selections: EquilibriumSelectionResult['selections'] = []
 
@@ -1219,14 +1413,27 @@ function analyzeFormalizations(
 }
 
 function buildBargainingDynamics(
-  canonical: CanonicalStore,
+  overlayResult: Phase6OverlayResult,
   state: Phase6WorkingState,
 ): BargainingDynamicsResult | null {
   const bargainingPlan = state.plannedFormalizations.find((planned) => planned.kind === 'bargaining')
-  const bargainingModel = bargainingPlan ? canonical.formalizations[bargainingPlan.id] : null
+  const bargainingModel = bargainingPlan && overlayResult.store
+    ? overlayResult.store.formalizations[bargainingPlan.id]
+    : null
   if (!bargainingPlan && !bargainingModel) {
     queueStatus(state, emptyStatus('6e', 'not_applicable', 'No bargaining-specific frame was selected for this case.'))
     return null
+  }
+
+  if (overlayResult.status === 'failed') {
+    queueStatus(state, emptyStatus('6e', 'partial', 'Bargaining dynamics were identified, but the speculative overlay could not be built.', overlayResult.warnings))
+    return {
+      status: 'partial',
+      applicable: true,
+      summary: 'A bargaining lens is relevant here, but the proposed formalization could not be materialized for deeper review in this pass.',
+      leverage_points: [],
+      warnings: overlayResult.warnings,
+    }
   }
 
   queueStatus(state, emptyStatus('6e', 'complete', 'Bargaining leverage and outside-option dynamics were summarized.'))
@@ -1457,24 +1664,93 @@ function buildCrossGameEffects(
   }
 }
 
-function buildProposalGroups(state: Phase6WorkingState): Phase6ProposalGroup[] {
-  const descriptions: Record<Phase6Subsection, string> = {
-    '6a': '6a: Choosing formal representations...',
-    '6b': '6b: Estimating structured payoffs...',
-    '6c': '6c: Computing baseline equilibrium summaries...',
-    '6d': '6d: Comparing equilibrium selection candidates...',
-    '6e': '6e: Reviewing bargaining dynamics...',
-    '6f': '6f: Classifying strategic communication...',
-    '6g': '6g: Checking the option value of waiting...',
-    '6h': '6h: Documenting adjacent behavioral overlays...',
-    '6i': '6i: Evaluating cross-game effects...',
+function describeActorLabel(
+  canonical: CanonicalStore,
+  node: CanonicalStore['nodes'][string],
+): string | null {
+  if (node.actor.kind === 'player') {
+    return canonical.players[node.actor.player_id]?.name ?? node.actor.player_id
+  }
+  return node.actor.kind
+}
+
+function buildWorkspacePreviews(
+  overlayResult: Phase6OverlayResult,
+  state: Phase6WorkingState,
+): Record<string, Phase6WorkspacePreview> {
+  if (overlayResult.status === 'failed' || !overlayResult.store) {
+    return {}
   }
 
-  return ALL_SUBSECTIONS.flatMap((subsection) =>
+  const overlay = overlayResult.store
+  const previews: Record<string, Phase6WorkspacePreview> = {}
+
+  for (const planned of state.plannedFormalizations) {
+    const formalization = overlay.formalizations[planned.id]
+    if (!formalization) {
+      continue
+    }
+
+    if (formalization.kind === 'normal_form') {
+      const playerIds = Object.keys(formalization.strategies)
+      const rowPlayerId = playerIds[0] ?? null
+      const colPlayerId = playerIds[1] ?? null
+      previews[formalization.id] = {
+        kind: 'normal_form',
+        formalization_id: formalization.id,
+        game_id: formalization.game_id,
+        player_ids: playerIds,
+        row_player_id: rowPlayerId,
+        col_player_id: colPlayerId,
+        row_strategies: rowPlayerId ? [...(formalization.strategies[rowPlayerId] ?? [])] : [],
+        col_strategies: colPlayerId ? [...(formalization.strategies[colPlayerId] ?? [])] : [],
+        cells: formalization.payoff_cells.map((cell) => ({
+          row_strategy: rowPlayerId ? (cell.strategy_profile[rowPlayerId] ?? '') : '',
+          col_strategy: colPlayerId ? (cell.strategy_profile[colPlayerId] ?? '') : '',
+          payoffs: cell.payoffs,
+        })),
+      }
+      continue
+    }
+
+    if (formalization.kind === 'extensive_form') {
+      const nodes = Object.values(overlay.nodes)
+        .filter((node) => node.formalization_id === formalization.id)
+        .map((node) => ({
+          id: node.id,
+          type: node.type,
+          label: node.label,
+          actor_label: describeActorLabel(overlay, node),
+          terminal_payoffs: node.terminal_payoffs,
+        }))
+      const edges = Object.values(overlay.edges)
+        .filter((edge) => edge.formalization_id === formalization.id)
+        .map((edge) => ({
+          id: edge.id,
+          from: edge.from,
+          to: edge.to,
+          label: edge.label,
+        }))
+      previews[formalization.id] = {
+        kind: 'extensive_form',
+        formalization_id: formalization.id,
+        game_id: formalization.game_id,
+        root_node_id: formalization.root_node_id,
+        nodes,
+        edges,
+      }
+    }
+  }
+
+  return previews
+}
+
+function buildProposalGroups(state: Phase6WorkingState): Phase6ProposalGroup[] {
+  return PHASE6_ALL_SUBSECTIONS.flatMap((subsection) =>
     state.proposalsBySubsection[subsection].length > 0
       ? [{
           subsection,
-          content: descriptions[subsection],
+          content: PHASE6_SUBSECTION_MESSAGES[subsection],
           proposals: state.proposalsBySubsection[subsection],
         }]
       : [],
@@ -1498,8 +1774,8 @@ export function runPhase6Formalization(
   context: Phase6RunnerContext,
 ): FormalizationResult {
   const subsections = input?.subsections?.length
-    ? ALL_SUBSECTIONS.filter((subsection) => input.subsections?.includes(subsection))
-    : ALL_SUBSECTIONS
+    ? PHASE6_ALL_SUBSECTIONS.filter((subsection) => input.subsections?.includes(subsection))
+    : PHASE6_ALL_SUBSECTIONS
   const state: Phase6WorkingState = {
     subsections,
     plannedFormalizations: [],
@@ -1510,7 +1786,11 @@ export function runPhase6Formalization(
     revalidationNotes: [],
   }
 
-  const formal_representations = subsections.includes('6a')
+  if (!subsections.includes('6a')) {
+    seedAcceptedFormalizations(context, state)
+  }
+
+  let formal_representations = subsections.includes('6a')
     ? planFormalRepresentations(context, state)
     : {
         status: 'not_applicable' as const,
@@ -1521,7 +1801,7 @@ export function runPhase6Formalization(
         warnings: [],
       }
 
-  const payoff_estimation = subsections.includes('6b')
+  let payoff_estimation = subsections.includes('6b')
     ? planPayoffEstimation(context, state)
     : {
         status: 'not_applicable' as const,
@@ -1530,6 +1810,32 @@ export function runPhase6Formalization(
       }
 
   const overlayStore = buildOverlayStore(context, state)
+  if (overlayStore.status === 'failed') {
+    if (subsections.includes('6a')) {
+      formal_representations = {
+        ...formal_representations,
+        status: 'partial',
+        warnings: [...formal_representations.warnings, ...overlayStore.warnings],
+      }
+      replaceStatus(
+        state,
+        '6a',
+        emptyStatus('6a', 'partial', 'Prepared formal representations, but the speculative overlay could not be built.', overlayStore.warnings),
+      )
+    }
+    if (subsections.includes('6b')) {
+      payoff_estimation = {
+        ...payoff_estimation,
+        status: 'partial',
+        warnings: [...payoff_estimation.warnings, ...overlayStore.warnings],
+      }
+      replaceStatus(
+        state,
+        '6b',
+        emptyStatus('6b', 'partial', 'Generated payoff updates, but the speculative overlay could not be built.', overlayStore.warnings),
+      )
+    }
+  }
   const { baseline_equilibria, equilibrium_selection } =
     subsections.includes('6c') || subsections.includes('6d')
       ? analyzeFormalizations(overlayStore, state)
@@ -1596,6 +1902,7 @@ export function runPhase6Formalization(
 
   const proposal_groups = buildProposalGroups(state)
   const proposals = proposal_groups.flatMap((group) => group.proposals)
+  const workspace_previews = buildWorkspacePreviews(overlayStore, state)
   const partialSubsections = state.subsectionStatuses.filter((entry) => entry.status !== 'complete')
   const phaseStatus: PhaseResult = {
     status: partialSubsections.length > 0 ? 'partial' : 'complete',
@@ -1621,6 +1928,7 @@ export function runPhase6Formalization(
     cross_game_effects,
     proposals,
     proposal_groups,
+    workspace_previews,
     revalidation_signals: {
       triggers_found: [...new Set(state.revalidationTriggers)],
       affected_entities: dedupeEntityRefs(state.revalidationEntities),

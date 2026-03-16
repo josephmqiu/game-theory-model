@@ -1,10 +1,13 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { emptyCanonicalStore, type CanonicalStore } from '../types/canonical'
 import type { AnalysisState, PhaseExecution } from '../types/analysis-pipeline'
+import { getDerivedStore, resetDerivedState } from '../store/derived'
+import * as dispatchModule from '../engine/dispatch'
 import { runPhase1Grounding } from './phase-1-grounding'
 import { runPhase2Players } from './phase-2-players'
 import { runPhase6Formalization } from './phase-6-formalization'
+import { runPhase7Assumptions } from './phase-7-assumptions'
 import { runPhase3Baseline, runPhase4History } from './phase-3-4'
 import { classifySituation, createEntityId, createEstimate } from './helpers'
 
@@ -160,6 +163,121 @@ function createPhase6CanonicalStore(includeSecondGame = false): CanonicalStore {
   return store
 }
 
+function createPhase7CanonicalStore(): CanonicalStore {
+  const store = createPhase6CanonicalStore()
+  const now = new Date().toISOString()
+
+  store.claims.claim_direct = {
+    id: 'claim_direct',
+    statement: 'Operational reporting supports the baseline.',
+    based_on: ['observation_1'],
+    confidence: 0.82,
+  }
+  store.inferences.inference_only = {
+    id: 'inference_only',
+    statement: 'Analyst inference about hidden capacity.',
+    derived_from: ['claim_direct'],
+    confidence: 0.68,
+    rationale: 'Inferred from indirect posture changes.',
+  }
+  store.observations.observation_1 = {
+    id: 'observation_1',
+    source_id: 'source_1',
+    text: 'Observed deployment and sanctions posture.',
+    captured_at: now,
+  }
+  store.sources.source_1 = {
+    id: 'source_1',
+    kind: 'manual',
+    title: 'Direct reporting',
+    captured_at: now,
+    quality_rating: 'high',
+  }
+
+  store.assumptions.assumption_behavioral = {
+    id: 'assumption_behavioral',
+    statement: 'State A still prioritizes domestic signaling over compromise.',
+    type: 'behavioral',
+    sensitivity: 'medium',
+    confidence: 0.62,
+    supported_by: ['claim_direct'],
+    game_theoretic_vs_empirical: 'empirical',
+    correlated_cluster_id: null,
+  }
+  store.assumptions.assumption_capability = {
+    id: 'assumption_capability',
+    statement: 'State B retains enough coercive capacity to sustain pressure.',
+    type: 'capability',
+    sensitivity: 'medium',
+    confidence: 0.58,
+    supported_by: ['inference_only'],
+    game_theoretic_vs_empirical: 'empirical',
+    correlated_cluster_id: null,
+  }
+  store.assumptions.assumption_structural = {
+    id: 'assumption_structural',
+    statement: 'The accepted baseline still captures the strategic action menu.',
+    type: 'structural',
+    sensitivity: 'medium',
+    confidence: 0.64,
+    supported_by: ['claim_direct'],
+    game_theoretic_vs_empirical: 'game_theoretic',
+    correlated_cluster_id: null,
+  }
+  store.assumptions.assumption_institutional = {
+    id: 'assumption_institutional',
+    statement: 'Alliance rules will keep constraining rapid escalation.',
+    type: 'institutional',
+    sensitivity: 'medium',
+    confidence: 0.61,
+    supported_by: ['claim_direct'],
+    game_theoretic_vs_empirical: 'empirical',
+    correlated_cluster_id: null,
+  }
+  store.assumptions.assumption_rationality = {
+    id: 'assumption_rationality',
+    statement: 'Both sides still optimize against regime-survival payoffs.',
+    type: 'rationality',
+    sensitivity: 'medium',
+    confidence: 0.6,
+    supported_by: ['claim_direct'],
+    game_theoretic_vs_empirical: 'game_theoretic',
+    correlated_cluster_id: null,
+  }
+  store.assumptions.assumption_information = {
+    id: 'assumption_information',
+    statement: 'Important military and political constraints remain privately held.',
+    type: 'information',
+    sensitivity: 'medium',
+    confidence: 0.59,
+    game_theoretic_vs_empirical: 'game_theoretic',
+    correlated_cluster_id: null,
+  }
+
+  store.games.game_1!.key_assumptions = ['assumption_behavioral', 'assumption_institutional']
+  const baseline = store.formalizations.formalization_base
+  if (baseline && baseline.kind === 'normal_form') {
+    baseline.assumptions = [
+      'assumption_capability',
+      'assumption_structural',
+      'assumption_rationality',
+      'assumption_information',
+    ]
+  }
+  store.scenarios.scenario_1 = {
+    id: 'scenario_1',
+    name: 'Baseline coercive bargaining',
+    formalization_id: 'formalization_base',
+    path: [],
+    probability_model: 'ordinal_only',
+    key_assumptions: ['assumption_capability', 'assumption_behavioral'],
+    invalidators: [],
+    narrative: 'Baseline scenario',
+  }
+
+  return store
+}
+
 function createPhase4HistoryResult() {
   return {
     phase: 4 as const,
@@ -201,7 +319,8 @@ function createPhase4HistoryResult() {
 
 describe('M5 phase runners', () => {
   beforeEach(() => {
-    // No shared mutable runner state; this keeps test setup explicit.
+    vi.restoreAllMocks()
+    resetDerivedState()
   })
 
   it('builds phase 1 grounding proposals across all seven evidence categories', () => {
@@ -328,6 +447,87 @@ describe('M5 phase runners', () => {
     expect(output.subsection_statuses.find((entry) => entry.subsection === '6i')?.status).toBe('not_applicable')
   })
 
+  it('uses accepted canonical formalizations when 6c runs without 6a', () => {
+    const output = runPhase6Formalization(
+      { subsections: ['6c'] },
+      {
+        canonical: createPhase6CanonicalStore(),
+        analysisState: createAnalysisState('Focused equilibrium review of the accepted baseline'),
+        baseRevision: 0,
+        phaseExecution: createExecution(6),
+        phaseResults: {},
+      },
+    )
+
+    expect(output.formal_representations.status).toBe('not_applicable')
+    expect(output.baseline_equilibria.analyses.length).toBeGreaterThan(0)
+    expect(output.baseline_equilibria.analyses[0]?.formalization_id).toBe('formalization_base')
+  })
+
+  it('preserves accepted normal-form strategy labels when 6b and 6c run without 6a', () => {
+    const canonical = createPhase6CanonicalStore()
+    const baseline = canonical.formalizations.formalization_base
+    if (!baseline || baseline.kind !== 'normal_form') {
+      throw new Error('Expected a normal-form baseline formalization.')
+    }
+
+    baseline.strategies = {
+      player_a: ['Cooperate', 'Defect'],
+      player_b: ['Cooperate', 'Defect'],
+    }
+    baseline.payoff_cells = [
+      {
+        strategy_profile: { player_a: 'Cooperate', player_b: 'Cooperate' },
+        payoffs: {
+          player_a: createEstimate(3, 'baseline'),
+          player_b: createEstimate(3, 'baseline'),
+        },
+      },
+      {
+        strategy_profile: { player_a: 'Cooperate', player_b: 'Defect' },
+        payoffs: {
+          player_a: createEstimate(0, 'baseline'),
+          player_b: createEstimate(5, 'baseline'),
+        },
+      },
+      {
+        strategy_profile: { player_a: 'Defect', player_b: 'Cooperate' },
+        payoffs: {
+          player_a: createEstimate(5, 'baseline'),
+          player_b: createEstimate(0, 'baseline'),
+        },
+      },
+      {
+        strategy_profile: { player_a: 'Defect', player_b: 'Defect' },
+        payoffs: {
+          player_a: createEstimate(1, 'baseline'),
+          player_b: createEstimate(1, 'baseline'),
+        },
+      },
+    ]
+
+    const output = runPhase6Formalization(
+      { subsections: ['6b', '6c'] },
+      {
+        canonical,
+        analysisState: createAnalysisState('Focused payoff and equilibrium refresh of the accepted baseline'),
+        baseRevision: 0,
+        phaseExecution: createExecution(6),
+        phaseResults: {},
+      },
+    )
+
+    const preview = output.workspace_previews.formalization_base
+    expect(preview?.kind).toBe('normal_form')
+    if (!preview || preview.kind !== 'normal_form') {
+      throw new Error('Expected a normal-form workspace preview.')
+    }
+
+    expect(preview.row_strategies).toEqual(['Cooperate', 'Defect'])
+    expect(preview.col_strategies).toEqual(['Cooperate', 'Defect'])
+    expect(output.baseline_equilibria.analyses[0]?.solver_summaries.some((summary) => summary.solver === 'nash')).toBe(true)
+  })
+
   it('creates cross-game-link proposals only when multiple games are active', () => {
     const output = runPhase6Formalization(
       { subsections: ['6i'] },
@@ -342,5 +542,155 @@ describe('M5 phase runners', () => {
 
     expect(output.cross_game_effects?.effects).toHaveLength(1)
     expect(output.proposals.some((proposal) => proposal.proposal_type === 'cross_game_link')).toBe(true)
+  })
+
+  it('does not emit new_game_identified merely because multiple accepted games already exist', () => {
+    const output = runPhase6Formalization(
+      { subsections: ['6a'] },
+      {
+        canonical: createPhase6CanonicalStore(true),
+        analysisState: createAnalysisState('Parallel bargaining and alliance management games'),
+        baseRevision: 0,
+        phaseExecution: createExecution(6),
+        phaseResults: {
+          4: createPhase4HistoryResult(),
+        },
+      },
+    )
+
+    expect(output.revalidation_signals.triggers_found).not.toContain('new_game_identified')
+  })
+
+  it('surfaces speculative overlay failures instead of silently analyzing canonical state', () => {
+    vi.spyOn(dispatchModule, 'dispatch').mockReturnValue({
+      status: 'rejected',
+      reason: 'error',
+      errors: ['synthetic dry-run failure'],
+    })
+
+    const output = runPhase6Formalization(
+      { subsections: ['6a', '6b', '6c'] },
+      {
+        canonical: createPhase6CanonicalStore(),
+        analysisState: createAnalysisState('Negotiation with repeated signaling and private information'),
+        baseRevision: 0,
+        phaseExecution: createExecution(6),
+        phaseResults: {
+          4: createPhase4HistoryResult(),
+        },
+      },
+    )
+
+    expect(output.status.status).toBe('partial')
+    expect(output.formal_representations.warnings[0]).toMatch(/speculative Phase 6 overlay/i)
+    expect(output.baseline_equilibria.status).toBe('partial')
+    expect(output.baseline_equilibria.analyses).toHaveLength(0)
+    expect(output.workspace_previews).toEqual({})
+  })
+
+  it('extracts phase 7 assumptions, flags inference-only critical support, and emits add/update proposals', () => {
+    const canonical = createPhase7CanonicalStore()
+    const phase6 = runPhase6Formalization(
+      { subsections: ['6c'] },
+      {
+        canonical,
+        analysisState: createAnalysisState('Negotiation with repeated signaling and private information'),
+        baseRevision: 0,
+        phaseExecution: createExecution(6),
+        phaseResults: {
+          4: createPhase4HistoryResult(),
+        },
+      },
+    )
+
+    getDerivedStore().setState((state) => ({
+      ...state,
+      sensitivityByFormalizationAndSolver: {
+        ...state.sensitivityByFormalizationAndSolver,
+        formalization_base: {
+          ...(state.sensitivityByFormalizationAndSolver.formalization_base ?? {}),
+          nash: {
+            formalization_id: 'formalization_base',
+            solver: 'nash',
+            solver_result_id: 'solver_1',
+            computed_at: new Date().toISOString(),
+            payoff_sensitivities: [],
+            assumption_sensitivities: [
+              {
+                assumption_id: 'assumption_capability',
+                statement: canonical.assumptions.assumption_capability!.statement,
+                impact: 'result_changes',
+                description: 'Flips the current equilibrium read.',
+                affected_payoffs: ['player_a:Escalate|Resist'],
+              },
+            ],
+            threshold_analysis: [],
+            overall_robustness: 'fragile',
+          },
+        },
+      },
+    }))
+
+    const output = runPhase7Assumptions({
+      canonical,
+      baseRevision: 0,
+      phaseExecution: createExecution(7),
+      phaseResults: {
+        4: createPhase4HistoryResult(),
+        6: phase6,
+      },
+    })
+
+    expect(new Set(output.assumptions.map((assumption) => assumption.type))).toEqual(new Set([
+      'behavioral',
+      'capability',
+      'structural',
+      'institutional',
+      'rationality',
+      'information',
+    ]))
+    expect(output.assumptions.find((assumption) => assumption.temp_id === 'assumption_capability')?.sensitivity).toBe('critical')
+    expect(output.assumptions.find((assumption) => assumption.temp_id === 'assumption_capability')?.evidence_quality).toBe('inference')
+    expect(output.sensitivity_summary.inference_only_critical).toBeGreaterThan(0)
+    expect(output.correlated_clusters.length).toBeGreaterThan(0)
+    expect(output.proposals.some((proposal) => proposal.commands.some((command) => command.kind === 'update_assumption'))).toBe(true)
+    expect(output.proposals.some((proposal) => proposal.commands.some((command) => command.kind === 'add_assumption'))).toBe(true)
+  })
+
+  it('builds deterministic correlated clusters across repeated phase 7 runs', () => {
+    const canonical = createPhase7CanonicalStore()
+    const phase6 = runPhase6Formalization(
+      { subsections: ['6c'] },
+      {
+        canonical,
+        analysisState: createAnalysisState('Negotiation with repeated signaling and private information'),
+        baseRevision: 0,
+        phaseExecution: createExecution(6),
+        phaseResults: {
+          4: createPhase4HistoryResult(),
+        },
+      },
+    )
+
+    const first = runPhase7Assumptions({
+      canonical,
+      baseRevision: 0,
+      phaseExecution: createExecution(7),
+      phaseResults: {
+        4: createPhase4HistoryResult(),
+        6: phase6,
+      },
+    })
+    const second = runPhase7Assumptions({
+      canonical,
+      baseRevision: 0,
+      phaseExecution: createExecution(7),
+      phaseResults: {
+        4: createPhase4HistoryResult(),
+        6: phase6,
+      },
+    })
+
+    expect(first.correlated_clusters).toEqual(second.correlated_clusters)
   })
 })
