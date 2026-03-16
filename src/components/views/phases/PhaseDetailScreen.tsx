@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 
+import { RevalidationPhaseScreen } from './RevalidationPhaseScreen'
+
 const PHASE_NAMES: Record<number, string> = {
   1: 'Situational Grounding', 2: 'Player Identification', 3: 'Baseline Strategic Model',
   4: 'Historical Repeated Game', 5: 'Recursive Revalidation', 6: 'Full Formalization',
@@ -7,6 +9,10 @@ const PHASE_NAMES: Record<number, string> = {
 }
 
 export function PhaseDetailScreen({ phase }: { phase: number }): ReactNode {
+  if (phase === 5) {
+    return <RevalidationPhaseScreen />
+  }
+
   return (
     <div className="flex-1 p-6">
       <div className="flex items-center gap-3 mb-4">

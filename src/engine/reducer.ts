@@ -243,18 +243,25 @@ export function reduceStore(store: CanonicalStore, command: Command): CanonicalS
       return nextStore
     }
     case 'trigger_revalidation': {
-      const { trigger_condition, source_phase, target_phases, entity_refs, description } = command.payload
+      const {
+        trigger_condition,
+        source_phase,
+        target_phases,
+        entity_refs,
+        description,
+        pass_number,
+      } = command.payload
       const id = generateEntityId('revalidation_event')
       const event: import('../types/evidence').RevalidationEvent = {
         id,
-        trigger_condition: trigger_condition as import('../types/evidence').RevalidationTrigger,
+        trigger_condition,
         triggered_at: new Date().toISOString(),
         source_phase,
         target_phases,
         description,
         entity_refs,
         resolution: 'pending' as const,
-        pass_number: 1,
+        pass_number,
       }
       const nextStore = cloneStore(store)
       return {

@@ -10,6 +10,8 @@ interface ConversationAreaProps {
   onAcceptProposal: (proposalId: string) => void
   onRejectProposal: (proposalId: string) => void
   onModifyProposal: (proposalId: string) => void
+  onApproveRevalidation: (eventId: string) => void
+  onDismissRevalidation: (eventId: string) => void
 }
 
 export function ConversationArea({
@@ -17,6 +19,8 @@ export function ConversationArea({
   onAcceptProposal,
   onRejectProposal,
   onModifyProposal,
+  onApproveRevalidation,
+  onDismissRevalidation,
 }: ConversationAreaProps): ReactNode {
   const containerRef = useRef<HTMLDivElement | null>(null)
 
@@ -48,6 +52,8 @@ export function ConversationArea({
               onAcceptProposal={onAcceptProposal}
               onRejectProposal={onRejectProposal}
               onModifyProposal={onModifyProposal}
+              onApproveRevalidation={onApproveRevalidation}
+              onDismissRevalidation={onDismissRevalidation}
             />
           )
       ))}

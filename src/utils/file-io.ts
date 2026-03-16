@@ -1,6 +1,3 @@
-import { access, copyFile, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { constants } from 'node:fs'
-
 import { getCanonicalRevision } from '../engine/event-persistence'
 import { createEventLog } from '../engine/events'
 import { validateStoreInvariants } from '../engine/integrity'
@@ -16,39 +13,13 @@ import {
 } from '../types/file'
 import { analysisFileToStore } from './serialization'
 
-interface FileSystemOps {
+export interface FileSystemOps {
   readFile(path: string): Promise<string>
   writeFile(path: string, contents: string): Promise<void>
   copyFile(source: string, destination: string): Promise<void>
   rename(source: string, destination: string): Promise<void>
   removeFile(path: string): Promise<void>
   fileExists(path: string): Promise<boolean>
-}
-
-const nodeFileSystem: FileSystemOps = {
-  async readFile(path) {
-    return readFile(path, 'utf8')
-  },
-  async writeFile(path, contents) {
-    await writeFile(path, contents, 'utf8')
-  },
-  async copyFile(source, destination) {
-    await copyFile(source, destination)
-  },
-  async rename(source, destination) {
-    await rename(source, destination)
-  },
-  async removeFile(path) {
-    await rm(path, { force: true })
-  },
-  async fileExists(path) {
-    try {
-      await access(path, constants.F_OK)
-      return true
-    } catch {
-      return false
-    }
-  },
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -98,10 +69,6 @@ function structuralChecks(file: AnalysisFile): StructuralIssue[] {
   }
 
   return issues
-}
-
-export async function loadAnalysisFile(filepath: string): Promise<LoadResult> {
-  return loadAnalysisFileWithIo(filepath, nodeFileSystem)
 }
 
 export async function loadAnalysisJson(
@@ -277,10 +244,6 @@ export async function loadAnalysisFileWithIo(
     }
   }
   return result
-}
-
-export async function saveAnalysis(filepath: string, data: AnalysisFile): Promise<void> {
-  await saveAnalysisWithIo(filepath, data, nodeFileSystem)
 }
 
 export async function saveAnalysisWithIo(

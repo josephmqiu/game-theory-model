@@ -27,6 +27,7 @@ import type {
   CentralThesis,
   TailRisk,
 } from '../types'
+import type { RevalidationTrigger } from '../types/evidence'
 import type { EstimateValue } from '../types/estimates'
 import { entityTypes } from '../types/canonical'
 
@@ -127,11 +128,12 @@ export type StructuralCommand =
   | (BaseCommand & {
       kind: 'trigger_revalidation'
       payload: {
-        trigger_condition: string
+        trigger_condition: RevalidationTrigger
         source_phase: number
         target_phases: number[]
         entity_refs: import('../types').EntityRef[]
         description: string
+        pass_number: number
       }
     })
 

@@ -122,7 +122,7 @@ describe('M5 phase runners', () => {
     expect(output.result.coverage_assessment.gaps).toEqual(['intel'])
   })
 
-  it('adds an internal player proposal and revalidation trigger when internal agency is detected', () => {
+  it('adds an internal player proposal when internal agency is detected', () => {
     const output = runPhase2Players(
       { additional_context: 'Cabinet faction has its own independent incentives.' },
       {
@@ -134,8 +134,8 @@ describe('M5 phase runners', () => {
     )
 
     expect(output.proposed_players.some((player) => player.role === 'internal')).toBe(true)
-    expect(output.proposals.some((proposal) =>
-      proposal.commands.some((command) => command.kind === 'trigger_revalidation'),
+    expect(output.proposals.every((proposal) =>
+      proposal.commands.every((command) => command.kind !== 'trigger_revalidation'),
     )).toBe(true)
   })
 
@@ -155,7 +155,7 @@ describe('M5 phase runners', () => {
     )).toBe(true)
   })
 
-  it('builds historical trust/risk proposals and requests revalidation for fragile commitment environments', () => {
+  it('builds historical trust/risk proposals while surfacing a revalidation-worthy baseline recheck', () => {
     const output = runPhase4History({
       canonical: createPlayersCanonicalStore(),
       analysisState: createAnalysisState('Volatile election cycle raises sanctions bargaining risk'),
@@ -167,8 +167,8 @@ describe('M5 phase runners', () => {
     expect(output.trust_assessment).toHaveLength(1)
     expect(output.dynamic_inconsistency_risks[0]?.durability).toBe('fragile')
     expect(output.baseline_recheck.revalidation_needed).toBe(true)
-    expect(output.proposals.some((proposal) =>
-      proposal.commands.some((command) => command.kind === 'trigger_revalidation'),
+    expect(output.proposals.every((proposal) =>
+      proposal.commands.every((command) => command.kind !== 'trigger_revalidation'),
     )).toBe(true)
   })
 })

@@ -207,4 +207,30 @@ describe('command spine dispatch', () => {
 
     expect(generateEntityId('claim')).toMatch(/^claim_[a-f0-9-]+$/)
   })
+
+  it('persists the provided pass number on trigger_revalidation events', () => {
+    const store = createSampleCanonicalStore()
+    const eventLog = createEventLog('/analysis.gta.json')
+
+    const result = dispatch(store, eventLog, {
+      kind: 'trigger_revalidation',
+      payload: {
+        trigger_condition: 'objective_function_changed',
+        source_phase: 4,
+        target_phases: [3, 4],
+        entity_refs: [{ type: 'game', id: 'game_1' }],
+        description: 'Historical evidence changed the baseline framing.',
+        pass_number: 3,
+      },
+    })
+
+    expect(result.status).toBe('committed')
+    if (result.status !== 'committed') {
+      throw new Error('Expected trigger_revalidation to commit.')
+    }
+
+    const createdEvent = Object.values(result.store.revalidation_events)[0]
+    expect(createdEvent?.pass_number).toBe(3)
+    expect(createdEvent?.trigger_condition).toBe('objective_function_changed')
+  })
 })

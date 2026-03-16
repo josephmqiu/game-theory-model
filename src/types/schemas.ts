@@ -764,7 +764,7 @@ export const revalidationEventSchema = baseEntitySchema.extend({
   target_phases: z.array(z.number().int().min(1).max(10)),
   description: z.string(),
   entity_refs: z.array(entityRefSchema),
-  resolution: z.enum(['pending', 'rerun_complete', 'dismissed']),
+  resolution: z.enum(['pending', 'approved', 'rerun_complete', 'dismissed']),
   pass_number: z.number().int().min(1),
 })
 

@@ -14,12 +14,15 @@ import {
 export function OverviewScreen(): ReactNode {
   const manualMode = useAppStore((state) => state.viewState.manualMode)
   const {
+    activeRerunCycle,
     messages,
     connectionStatus,
     sendMessage,
     acceptProposal,
     rejectProposal,
     modifyProposal,
+    approveRevalidation,
+    dismissRevalidation,
     nextPhaseDecision,
     runNextPhase,
   } = useConversation()
@@ -73,9 +76,17 @@ export function OverviewScreen(): ReactNode {
             onAcceptProposal={acceptProposal}
             onRejectProposal={rejectProposal}
             onModifyProposal={modifyProposal}
+            onApproveRevalidation={approveRevalidation}
+            onDismissRevalidation={dismissRevalidation}
           />
         )}
       </div>
+
+      {!manualMode && activeRerunCycle ? (
+        <p className="text-xs text-text-muted">
+          Revalidation pass {activeRerunCycle.pass_number} is queued from Phase {activeRerunCycle.earliest_phase}.
+        </p>
+      ) : null}
 
       {!manualMode ? (
         <ConversationInput

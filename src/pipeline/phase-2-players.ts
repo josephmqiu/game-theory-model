@@ -179,38 +179,6 @@ export function runPhase2Players(
     })
   })
 
-  const internalPlayer = players.find((player) => player.role === 'internal' && player.parent_player_id)
-  const revalidationProposals = internalPlayer
-    ? [
-      buildModelProposal({
-        description: `Trigger revalidation because ${internalPlayer.name} adds independent internal agency`,
-        phase: 2,
-        proposal_type: 'player',
-        phaseExecution: context.phaseExecution,
-        baseRevision: context.baseRevision,
-        commands: [
-          {
-            kind: 'trigger_revalidation',
-            payload: {
-              trigger_condition: 'new_player_discovered',
-              source_phase: 2,
-              target_phases: [3, 4],
-              entity_refs: [asEntityRef('player', internalPlayer.temp_id)],
-              description: `${internalPlayer.name} introduces an internal agency layer that may change the baseline model.`,
-            },
-          },
-        ],
-        entity_previews: [
-          createEntityPreview('revalidation_event', 'add', null, {
-            trigger_condition: 'new_player_discovered',
-            source_phase: 2,
-            target_phases: [3, 4],
-          }),
-        ],
-      }),
-    ]
-    : []
-
   return {
     phase: 2,
     status: {
@@ -221,6 +189,6 @@ export function runPhase2Players(
     } satisfies PhaseResult,
     proposed_players: players,
     information_asymmetry_map: buildInformationMap(players),
-    proposals: [...proposals, ...revalidationProposals],
+    proposals,
   }
 }

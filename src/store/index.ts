@@ -21,6 +21,7 @@ export {
   registerProposalGroup,
   resetConversationStore,
   setConversationActiveAnalysis,
+  updateRevalidationActionStatus,
   updateProposalStatus,
   useConversationStore,
 } from './conversation'
@@ -38,6 +39,16 @@ export {
   upsertPhaseExecution,
   usePipelineStore,
 } from './pipeline'
+export {
+  clearPendingRevalidationApproval,
+  getPipelineRuntimeState,
+  registerPendingRevalidationApproval,
+  resetPipelineRuntimeStore,
+  setActiveRerunCycle,
+  setPipelineRuntimeActiveAnalysis,
+  updatePromptRegistry,
+  usePipelineRuntimeStore,
+} from './pipeline-runtime'
 export {
   getMcpStoreState,
   resetMcpStore,

@@ -7,6 +7,7 @@ import {
   registerProposalGroup,
   resetConversationStore,
   resetMcpStore,
+  resetPipelineRuntimeStore,
   resetPipelineStore,
   setMcpConnectionStatus,
   useAppStore,
@@ -88,6 +89,7 @@ describe('M5 overview shell', () => {
   beforeEach(() => {
     resetConversationStore()
     resetPipelineStore()
+    resetPipelineRuntimeStore()
     resetMcpStore()
   })
 

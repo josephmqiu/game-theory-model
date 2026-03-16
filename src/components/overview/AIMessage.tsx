@@ -3,12 +3,15 @@ import type { ReactNode } from 'react'
 import { useAppStore } from '../../store'
 import type { ConversationMessage } from '../../types/conversation'
 import { InlineProposalGroup } from './InlineProposalGroup'
+import { RevalidationCard } from './RevalidationCard'
 
 interface AIMessageProps {
   message: ConversationMessage
   onAcceptProposal: (proposalId: string) => void
   onRejectProposal: (proposalId: string) => void
   onModifyProposal: (proposalId: string) => void
+  onApproveRevalidation: (eventId: string) => void
+  onDismissRevalidation: (eventId: string) => void
 }
 
 export function AIMessage({
@@ -16,6 +19,8 @@ export function AIMessage({
   onAcceptProposal,
   onRejectProposal,
   onModifyProposal,
+  onApproveRevalidation,
+  onDismissRevalidation,
 }: AIMessageProps): ReactNode {
   const setInspectedRefs = useAppStore((state) => state.setInspectedRefs)
 
@@ -54,6 +59,19 @@ export function AIMessage({
                 onAccept={onAcceptProposal}
                 onReject={onRejectProposal}
                 onModify={onModifyProposal}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {message.structured_content?.revalidation_actions?.length ? (
+          <div className="mt-4 space-y-4">
+            {message.structured_content.revalidation_actions.map((event) => (
+              <RevalidationCard
+                key={event.event_id}
+                event={event}
+                onApprove={() => onApproveRevalidation(event.event_id)}
+                onDismiss={() => onDismissRevalidation(event.event_id)}
               />
             ))}
           </div>

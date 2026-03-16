@@ -4,6 +4,7 @@ import type { PhaseToolResult } from '../../types/mcp'
 import type { EvidenceProposal } from '../../types/analysis-pipeline'
 import type { RuntimeToolContext, McpServerLike } from '../context'
 import { getPipelineState } from '../../store/pipeline'
+import { getPipelineRuntimeState } from '../../store/pipeline-runtime'
 
 const phaseDefinitions = {
   1: {
@@ -179,9 +180,78 @@ export function registerPhaseTools(server: McpServerLike, context: RuntimeToolCo
     },
   })
 
+  server.registerTool({
+    name: 'run_phase_5_revalidation',
+    description: 'Phase 5: review revalidation state, approve queued reruns, or dismiss pending triggers.',
+    inputSchema: z.object({
+      action: z.enum(['status', 'approve', 'dismiss']),
+      event_id: z.string().optional(),
+    }).strict(),
+    async execute(input): Promise<PhaseToolResult> {
+      try {
+        if (input.action === 'status') {
+          if (getPipelineState().analysis_state) {
+            await context.orchestrator.runPhase(5)
+          }
+        } else if (!input.event_id) {
+          return failureResult(5, 'Recursive Revalidation', 'event_id is required for approve and dismiss actions.')
+        } else if (input.action === 'approve') {
+          const outcome = await context.orchestrator.approveRevalidation(input.event_id)
+          if (!outcome) {
+            return failureResult(5, 'Recursive Revalidation', `No pending revalidation event found for ${input.event_id}.`)
+          }
+        } else {
+          context.orchestrator.dismissRevalidation(input.event_id)
+        }
+
+        const pendingEvents = context.orchestrator.getPendingRevalidations()
+        const pipelineRuntime = getPipelineRuntimeState()
+
+        return {
+          success: true,
+          phase: 5,
+          phase_name: 'Recursive Revalidation',
+          summary: input.action === 'status'
+            ? `${pendingEvents.length} revalidation event(s) are pending review.`
+            : input.action === 'approve'
+              ? `Approved revalidation event ${input.event_id}.`
+              : `Dismissed revalidation event ${input.event_id}.`,
+          entities_created: [],
+          proposals: [],
+          next_step: pendingEvents.length > 0
+            ? 'Review remaining revalidation events or continue the queued rerun cycle.'
+            : pipelineRuntime.active_rerun_cycle
+              ? 'Continue the queued rerun cycle.'
+              : 'No pending revalidation events remain.',
+          warnings: [],
+          revalidation: {
+            action: input.action,
+            pending_events: pendingEvents.map((event) => ({
+              id: event.id,
+              trigger_condition: event.trigger_condition,
+              source_phase: event.source_phase,
+              target_phases: event.target_phases,
+              resolution: event.resolution,
+              pass_number: event.pass_number,
+            })),
+            active_rerun_cycle: pipelineRuntime.active_rerun_cycle
+              ? {
+                  event_id: pipelineRuntime.active_rerun_cycle.event_id,
+                  earliest_phase: pipelineRuntime.active_rerun_cycle.earliest_phase,
+                  pass_number: pipelineRuntime.active_rerun_cycle.pass_number,
+                  status: pipelineRuntime.active_rerun_cycle.status,
+                }
+              : null,
+          },
+        }
+      } catch (error) {
+        return failureResult(5, 'Recursive Revalidation', error instanceof Error ? error.message : 'Phase 5 failed.')
+      }
+    },
+  })
+
   const stubPhaseSchema = z.object({}).strict()
   const stubs: Array<{ phase: number; name: string; phase_name: string; description: string }> = [
-    { phase: 5, name: 'run_phase_5_revalidation', phase_name: 'Recursive Revalidation', description: 'Phase 5: Recursive Revalidation.' },
     { phase: 6, name: 'run_phase_6_formalization', phase_name: 'Full Formalization', description: 'Phase 6: Full formal modeling.' },
     { phase: 7, name: 'run_phase_7_assumptions', phase_name: 'Assumption Extraction', description: 'Phase 7: Assumption extraction.' },
     { phase: 8, name: 'run_phase_8_elimination', phase_name: 'Elimination', description: 'Phase 8: Eliminate implausible outcomes.' },

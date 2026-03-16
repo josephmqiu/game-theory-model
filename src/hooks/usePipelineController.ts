@@ -1,14 +1,16 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 
 import { createPipelineOrchestrator } from '../pipeline'
 import { appendConversationMessage } from '../store/conversation'
 import {
   getFirstPendingProposalPhase,
   getPipelineState,
+  getPipelineRuntimeState,
   type PhaseRunInput,
   useAppStore,
   useAppStoreApi,
   useMcpConnectionStatus,
+  usePipelineRuntimeStore,
   usePipelineStore,
 } from '../store'
 import { storeToAnalysisFile } from '../utils/serialization'
@@ -21,7 +23,9 @@ export interface NextPhaseDecision {
   message: string
 }
 
-function findNextPhaseDecision(): NextPhaseDecision {
+function findNextPhaseDecision(params: {
+  pendingRevalidationCount: number
+}): NextPhaseDecision {
   const analysisState = getPipelineState().analysis_state
   if (!analysisState) {
     return {
@@ -41,6 +45,41 @@ function findNextPhaseDecision(): NextPhaseDecision {
       reason: 'review_needed',
       blockingPhase,
       message: `Review Phase ${blockingPhase} proposals before continuing.`,
+    }
+  }
+
+  const activeRerun = getPipelineRuntimeState().active_rerun_cycle
+  if (activeRerun) {
+    const remainingTargets = activeRerun.target_phases.filter(
+      (phase) => analysisState.phase_states[phase]?.status !== 'complete',
+    )
+    if (remainingTargets.length === 0) {
+      return {
+        canRun: false,
+        nextPhase: null,
+        reason: 'review_needed',
+        blockingPhase: 5,
+        message: `Revalidation pass ${activeRerun.pass_number} is finalizing in Phase 5.`,
+      }
+    }
+
+    const nextPhase = Math.min(...remainingTargets)
+    return {
+      canRun: true,
+      nextPhase,
+      reason: 'ready',
+      blockingPhase: null,
+      message: `Revalidation pass ${activeRerun.pass_number} is queued from Phase ${nextPhase}.`,
+    }
+  }
+
+  if (params.pendingRevalidationCount > 0) {
+    return {
+      canRun: false,
+      nextPhase: null,
+      reason: 'review_needed',
+      blockingPhase: 5,
+      message: `Resolve ${params.pendingRevalidationCount} pending revalidation event(s) in Phase 5 before continuing.`,
     }
   }
 
@@ -69,8 +108,13 @@ function findNextPhaseDecision(): NextPhaseDecision {
 export function usePipelineController() {
   const appStore = useAppStoreApi()
   const setManualMode = useAppStore((state) => state.setManualMode)
+  const pendingRevalidationCount = useAppStore((state) =>
+    Object.values(state.canonical.revalidation_events).filter((event) => event.resolution === 'pending').length,
+  )
   const connectionStatus = useMcpConnectionStatus()
   const analysisState = usePipelineStore((state) => state.analysis_state)
+  const promptRegistry = usePipelineRuntimeStore((state) => state.prompt_registry)
+  const activeRerunCycle = usePipelineRuntimeStore((state) => state.active_rerun_cycle)
 
   const orchestrator = useMemo(() => createPipelineOrchestrator({
     getCanonical: () => appStore.getState().canonical,
@@ -81,11 +125,18 @@ export function usePipelineController() {
     getPersistedRevision: () => appStore.getState().eventLog.persisted_revision,
     getActiveAnalysisId: () => appStore.getState().eventLog.analysis_id,
     resetAnalysisSession: () => appStore.getState().resetAnalysisSession(),
-    dispatch: (command) => appStore.getState().dispatch(command),
+    dispatch: (command, opts) => appStore.getState().dispatch(command, opts),
     emitConversationMessage: (message) => {
       appendConversationMessage(message)
     },
   }), [appStore])
+
+  useEffect(() => {
+    if (!activeRerunCycle || !analysisState) {
+      return
+    }
+    orchestrator.reconcileActiveRerunCycle()
+  }, [activeRerunCycle, analysisState?.phase_states, orchestrator])
 
   async function startAnalysis(description: string, options?: { manual?: boolean }) {
     setManualMode(Boolean(options?.manual))
@@ -101,7 +152,7 @@ export function usePipelineController() {
   }
 
   async function runNextPhase() {
-    const decision = findNextPhaseDecision()
+    const decision = findNextPhaseDecision({ pendingRevalidationCount })
     if (!decision.canRun || decision.nextPhase == null) {
       return decision
     }
@@ -116,13 +167,33 @@ export function usePipelineController() {
     return orchestrator.handleSteering(message)
   }
 
+  async function approveRevalidation(eventId: string) {
+    return orchestrator.approveRevalidation(eventId)
+  }
+
+  function dismissRevalidation(eventId: string) {
+    orchestrator.dismissRevalidation(eventId)
+  }
+
+  function forkPromptVersion(
+    phase: number,
+    params?: { name?: string; content?: string; description?: string },
+  ) {
+    return orchestrator.forkPromptVersion(phase, params)
+  }
+
   return {
     analysisState,
+    promptRegistry,
+    activeRerunCycle,
     connectionStatus,
-    nextPhaseDecision: findNextPhaseDecision(),
+    nextPhaseDecision: findNextPhaseDecision({ pendingRevalidationCount }),
     startAnalysis,
     runPhase,
     runNextPhase,
     handleSteering,
+    approveRevalidation,
+    dismissRevalidation,
+    forkPromptVersion,
   }
 }

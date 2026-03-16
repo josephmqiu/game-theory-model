@@ -51,6 +51,23 @@ export interface PhaseToolResult {
   next_step?: string
   warnings: ReadonlyArray<string>
   error?: string
+  revalidation?: {
+    action: 'status' | 'approve' | 'dismiss'
+    pending_events: ReadonlyArray<{
+      id: string
+      trigger_condition: string
+      source_phase: number
+      target_phases: number[]
+      resolution: 'pending' | 'approved' | 'rerun_complete' | 'dismissed'
+      pass_number: number
+    }>
+    active_rerun_cycle?: {
+      event_id: string
+      earliest_phase: number
+      pass_number: number
+      status: string
+    } | null
+  }
 }
 
 export interface ModelQueryResult {

@@ -1,5 +1,16 @@
 import type { EntityRef, EntityType } from './canonical'
 
+export interface RevalidationActionCard {
+  event_id: string
+  trigger_condition: string
+  source_phase: number
+  target_phases: number[]
+  description: string
+  pass_number: number
+  resolution: 'pending' | 'approved' | 'rerun_complete' | 'dismissed'
+  entity_refs: EntityRef[]
+}
+
 export interface EntityPreview {
   entity_type: EntityType
   action: 'add' | 'update' | 'delete'
@@ -25,6 +36,7 @@ export interface ProposalGroup {
 export interface StructuredContent {
   proposals?: ProposalGroup[]
   entity_refs?: EntityRef[]
+  revalidation_actions?: RevalidationActionCard[]
   scenario_cards?: EntityRef[]
   thesis?: EntityRef
   findings_summary?: ReadonlyArray<{

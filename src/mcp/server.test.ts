@@ -6,6 +6,7 @@ import {
   getPipelineState,
   resetConversationStore,
   resetMcpStore,
+  resetPipelineRuntimeStore,
   resetPipelineStore,
 } from '../store'
 import type {
@@ -31,6 +32,7 @@ describe('MCP server shell', () => {
   beforeEach(() => {
     resetConversationStore()
     resetPipelineStore()
+    resetPipelineRuntimeStore()
     resetMcpStore()
   })
 
@@ -237,5 +239,61 @@ describe('MCP server shell', () => {
     expect(result.success).toBe(true)
     expect(result.data.entity_counts.player).toBe(0)
     expect(result.data.phase_statuses).toHaveLength(10)
+  })
+
+  it('supports phase 5 revalidation status and approval actions', async () => {
+    const { appStore, server } = createRegisteredServer()
+    await server.callTool('run_phase_1_grounding', {
+      situation_description: 'State A vs State B sanctions bargaining',
+    })
+
+    appStore.getState().dispatch({
+      kind: 'trigger_revalidation',
+      payload: {
+        trigger_condition: 'objective_function_changed',
+        source_phase: 4,
+        target_phases: [3, 4],
+        entity_refs: [],
+        description: 'Historical evidence changed the baseline framing.',
+        pass_number: 1,
+      },
+    })
+
+    const event = Object.values(appStore.getState().canonical.revalidation_events)[0]
+    if (!event) {
+      throw new Error('Expected a revalidation event to exist.')
+    }
+
+    const status = await server.callTool<{
+      success: boolean
+      revalidation?: { pending_events: Array<{ id: string }> }
+    }>('run_phase_5_revalidation', {
+      action: 'status',
+    })
+
+    expect(status.success).toBe(true)
+    expect(status.revalidation?.pending_events[0]?.id).toBe(event.id)
+
+    const approved = await server.callTool<{
+      success: boolean
+      revalidation?: { active_rerun_cycle?: { event_id: string } | null }
+    }>('run_phase_5_revalidation', {
+      action: 'approve',
+      event_id: event.id,
+    })
+
+    expect(approved.success).toBe(true)
+    expect(approved.revalidation?.active_rerun_cycle?.event_id).toBe(event.id)
+
+    const secondApproval = await server.callTool<{
+      success: boolean
+      error?: string
+    }>('run_phase_5_revalidation', {
+      action: 'approve',
+      event_id: event.id,
+    })
+
+    expect(secondApproval.success).toBe(false)
+    expect(secondApproval.error).toMatch(/No pending revalidation event found/i)
   })
 })

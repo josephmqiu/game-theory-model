@@ -18,9 +18,14 @@ export function useConversation() {
   const manualMode = useAppStore((state) => state.viewState.manualMode)
   const {
     analysisState,
+    activeRerunCycle,
     connectionStatus,
     handleSteering,
     nextPhaseDecision,
+    approveRevalidation: approveRevalidationInternal,
+    dismissRevalidation: dismissRevalidationInternal,
+    forkPromptVersion,
+    promptRegistry,
     startAnalysis,
     runNextPhase: runNextPhaseInternal,
     runPhase,
@@ -117,14 +122,37 @@ export function useConversation() {
     }
   }, [runNextPhaseInternal])
 
+  const approveRevalidation = useCallback(async (eventId: string) => {
+    try {
+      return await approveRevalidationInternal(eventId)
+    } catch (error) {
+      appendConversationMessage({
+        role: 'ai',
+        content: error instanceof Error ? error.message : 'Could not approve the revalidation event.',
+        message_type: 'revalidation',
+        phase: 5,
+      })
+      return null
+    }
+  }, [approveRevalidationInternal])
+
+  const dismissRevalidation = useCallback((eventId: string) => {
+    dismissRevalidationInternal(eventId)
+  }, [dismissRevalidationInternal])
+
   return {
     messages,
+    promptRegistry,
+    activeRerunCycle,
     connectionStatus,
     sendMessage,
     clearConversation: clearConversationState,
     acceptProposal,
     rejectProposal,
     modifyProposal,
+    approveRevalidation,
+    dismissRevalidation,
+    forkPromptVersion,
     nextPhaseDecision,
     runNextPhase,
     runPhase,

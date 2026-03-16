@@ -19,6 +19,7 @@ import { BrowserFileService } from '../platform/browser-file-service'
 import { invalidateDerivedForCommand, resetDerivedState } from './derived'
 import { setConversationActiveAnalysis } from './conversation'
 import { setPipelineActiveAnalysis } from './pipeline'
+import { setPipelineRuntimeActiveAnalysis } from './pipeline-runtime'
 
 export type ViewType =
   | 'welcome'
@@ -191,6 +192,7 @@ export function createAppStore(
   const initialState = createInitialState()
   setConversationActiveAnalysis(initialState.eventLog.analysis_id)
   setPipelineActiveAnalysis(initialState.eventLog.analysis_id)
+  setPipelineRuntimeActiveAnalysis(initialState.eventLog.analysis_id)
 
   return createStore<AppStore>((set, get) => ({
     ...initialState,
@@ -374,6 +376,7 @@ export function createAppStore(
       resetDerivedState()
       setConversationActiveAnalysis(result.event_log.analysis_id)
       setPipelineActiveAnalysis(result.event_log.analysis_id)
+      setPipelineRuntimeActiveAnalysis(result.event_log.analysis_id)
       set({
         canonical: result.store,
         eventLog: result.event_log,
@@ -427,6 +430,7 @@ export function createAppStore(
       const nextState = createInitialState()
       setConversationActiveAnalysis(nextState.eventLog.analysis_id)
       setPipelineActiveAnalysis(nextState.eventLog.analysis_id)
+      setPipelineRuntimeActiveAnalysis(nextState.eventLog.analysis_id)
       set(nextState)
     },
 
@@ -435,6 +439,7 @@ export function createAppStore(
       const nextState = createSessionResetState(get().viewState)
       setConversationActiveAnalysis(nextState.eventLog.analysis_id)
       setPipelineActiveAnalysis(nextState.eventLog.analysis_id)
+      setPipelineRuntimeActiveAnalysis(nextState.eventLog.analysis_id)
       set(nextState)
     },
 

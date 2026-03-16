@@ -408,40 +408,8 @@ function buildPhase4Proposals(params: {
   patterns: ProposedRepeatedGamePattern[]
   trustAssessment: ProposedTrustAssessment[]
   dynamicInconsistencyRisks: ProposedDynamicInconsistencyRisk[]
-  revalidationNeeded: boolean
 }): ModelProposal[] {
-  const { context, dynamicInconsistencyRisks, gameId, patterns, revalidationNeeded, trustAssessment } = params
-  const revalidationProposals = revalidationNeeded
-    ? [
-      buildModelProposal({
-        description: 'Trigger revalidation based on historical repeated-game findings',
-        phase: 4,
-        proposal_type: 'pattern',
-        phaseExecution: context.phaseExecution,
-        baseRevision: context.baseRevision,
-        commands: [
-          {
-            kind: 'trigger_revalidation',
-            payload: {
-              trigger_condition: dynamicInconsistencyRisks[0]!.durability === 'fragile'
-                ? 'objective_function_changed'
-                : 'repeated_dominates_oneshot',
-              source_phase: 4,
-              target_phases: [3, 4],
-              entity_refs: [asEntityRef('game', gameId)],
-              description: 'Historical evidence suggests the baseline should be re-checked as a repeated game.',
-            },
-          },
-        ],
-        entity_previews: [
-          createEntityPreview('revalidation_event', 'add', null, {
-            source_phase: 4,
-            target_phases: [3, 4],
-          }),
-        ],
-      }),
-    ]
-    : []
+  const { context, dynamicInconsistencyRisks, gameId, patterns, trustAssessment } = params
 
   return [
     buildModelProposal({
@@ -530,7 +498,6 @@ function buildPhase4Proposals(params: {
         }),
       ],
     }),
-    ...revalidationProposals,
   ]
 }
 
@@ -619,7 +586,6 @@ export function runPhase4History(context: Phase34RunnerContext): HistoricalGameR
     patterns: patterns_found,
     trustAssessment: trust_assessment,
     dynamicInconsistencyRisks: dynamic_inconsistency_risks,
-    revalidationNeeded,
   })
 
   return {

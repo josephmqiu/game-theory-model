@@ -5,7 +5,7 @@ import type {
   DiffReviewState,
   EntityPreview,
 } from './conversation'
-import type { RevalidationTrigger } from './evidence'
+import type { RevalidationEvent, RevalidationTrigger } from './evidence'
 
 export type PipelinePhaseStatus = 'pending' | 'running' | 'review_needed' | 'complete' | 'needs_rerun' | 'skipped'
 export type PipelineStatus = 'not_started' | 'running' | 'paused' | 'complete' | 'failed'
@@ -58,6 +58,35 @@ export interface PhaseExecution {
   cost_usd: number | null
   status: 'running' | 'complete' | 'failed' | 'cancelled'
   error: string | null
+}
+
+export interface PromptVersion {
+  id: string
+  phase: number
+  name: string
+  content: string
+  parent_id: string | null
+  is_official: boolean
+  created_at: string
+  metadata: {
+    author: 'system' | 'user'
+    description: string
+    tags: string[]
+  }
+}
+
+export interface PromptRegistry {
+  versions: Record<string, PromptVersion>
+  active_versions: Record<number, string>
+  official_versions: Record<number, string>
+}
+
+export interface PromptRunComparison {
+  phase: number
+  left_prompt_version_id: string
+  right_prompt_version_id: string
+  changed: boolean
+  summary: string
 }
 
 export interface PhaseResult {
@@ -376,6 +405,55 @@ export interface HistoricalGameResult {
   proposals: ModelProposal[]
 }
 
+export interface RevalidationCheck {
+  triggers_found: RevalidationTrigger[]
+  affected_phases: number[]
+  affected_entities: EntityRef[]
+  recommendation: 'revalidate' | 'monitor' | 'none'
+  description: string
+}
+
+export interface RevalidationOutcome {
+  event_id: string
+  phases_rerun: number[]
+  entities_marked_stale: EntityRef[]
+  entities_updated: EntityRef[]
+  new_pass_number: number
+  converged: boolean
+}
+
+export interface PendingRevalidationApproval {
+  event_id: string
+  source_phase: number
+  target_phases: number[]
+  affected_entities: EntityRef[]
+  previous_phase_statuses: Partial<Record<number, PipelinePhaseStatus>>
+  created_at: string
+}
+
+export interface ActiveRerunCycle {
+  event_id: string
+  source_phase: number
+  target_phases: number[]
+  earliest_phase: number
+  pass_number: number
+  started_at: string
+  status: 'queued' | 'running' | 'complete'
+}
+
+export interface PipelineRuntimeSnapshot {
+  prompt_registry: PromptRegistry
+  pending_revalidation_approvals: Record<string, PendingRevalidationApproval>
+  active_rerun_cycle: ActiveRerunCycle | null
+}
+
+export interface RevalidationEngine {
+  checkTriggers(phaseResult: unknown, phase: number): RevalidationCheck
+  executeRevalidation(event: RevalidationEvent): Promise<RevalidationOutcome>
+  getRevalidationLog(analysisId: string): RevalidationEvent[]
+  getCurrentPass(): number
+}
+
 export interface SteeringMessage {
   id: string
   content: string
@@ -409,6 +487,15 @@ export interface PipelinePhaseRunnerContext {
 export interface PipelineOrchestrator {
   startAnalysis(description: string, options?: { manual?: boolean }): Promise<AnalysisState>
   runPhase(phase: number, input?: PhaseRunInput): Promise<PhaseResult>
+  approveRevalidation(eventId: string): Promise<RevalidationOutcome | null>
+  dismissRevalidation(eventId: string): void
+  reconcileActiveRerunCycle(): void
+  getPendingRevalidations(): RevalidationEvent[]
+  getPromptRegistry(): PromptRegistry
+  forkPromptVersion(
+    phase: number,
+    params?: { name?: string; content?: string; description?: string },
+  ): PromptVersion
   pause(): void
   resume(): void
   cancelCurrentPhase(): void

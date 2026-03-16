@@ -294,6 +294,38 @@ export function updateProposalStatus(
   })
 }
 
+export function updateRevalidationActionStatus(
+  eventId: string,
+  resolution: 'pending' | 'approved' | 'rerun_complete' | 'dismissed',
+): void {
+  conversationStore.setState((state) => {
+    const messages = state.messages.map((message) => {
+      if (!message.structured_content?.revalidation_actions?.length) {
+        return message
+      }
+
+      return {
+        ...message,
+        structured_content: {
+          ...message.structured_content,
+          revalidation_actions: message.structured_content.revalidation_actions.map((event) =>
+            event.event_id === eventId
+              ? { ...event, resolution }
+              : event,
+          ),
+        },
+      }
+    })
+
+    const nextState = {
+      ...state,
+      messages,
+    }
+    persistCurrentState(nextState)
+    return nextState
+  })
+}
+
 export function getProposalGroups(): ProposalGroup[] {
   return getProposalGroupsFromMessages(conversationStore.getState().messages)
 }
