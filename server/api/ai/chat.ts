@@ -1,3 +1,9 @@
+import {
+  defineEventHandler,
+  readBody,
+  setResponseStatus,
+  setResponseHeaders,
+} from "h3";
 import Anthropic from "@anthropic-ai/sdk";
 
 interface ChatMessage {

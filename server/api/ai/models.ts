@@ -24,6 +24,8 @@ const ANTHROPIC_MODELS: ModelInfo[] = [
   },
 ];
 
+import { defineEventHandler } from "h3";
+
 /**
  * Returns the list of available Anthropic models.
  */

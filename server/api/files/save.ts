@@ -1,3 +1,4 @@
+import { defineEventHandler, readBody, setResponseStatus } from "h3";
 import { writeFile, mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";

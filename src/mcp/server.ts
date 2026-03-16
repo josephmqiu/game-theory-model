@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -17,13 +19,13 @@ import type {
   McpServerLike,
   RuntimeToolContext,
 } from "shared/game-theory/mcp-tools/context";
+import { emptyCanonicalStore } from "shared/game-theory/types/canonical";
 
 const MCP_DEFAULT_PORT = 3100;
 const SERVER_NAME = "game-theory-analyzer";
 const SERVER_VERSION = "0.1.0";
 
 // --- Tool registry bridge ---
-// Converts between the shared McpServerLike interface and the MCP SDK Server
 
 interface ToolEntry {
   name: string;
@@ -55,6 +57,172 @@ function createToolRegistry(): {
   };
 
   return { bridge, tools };
+}
+
+// --- Nitro cache reader ---
+
+function readNitroPort(): number | null {
+  try {
+    const portFile = join(
+      process.env.HOME ?? "",
+      ".game-theory-analyzer",
+      ".port",
+    );
+    const port = parseInt(readFileSync(portFile, "utf-8").trim(), 10);
+    return isNaN(port) ? null : port;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchSyncState(nitroPort: number): Promise<{
+  canonical: ReturnType<RuntimeToolContext["getCanonicalStore"]>;
+  pipelineState: ReturnType<RuntimeToolContext["getPipelineState"]>;
+  runtimeState: ReturnType<RuntimeToolContext["getPipelineRuntimeState"]>;
+}> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${nitroPort}/api/mcp/state`);
+    const data = (await res.json()) as {
+      status: string;
+      state?: {
+        canonical: ReturnType<RuntimeToolContext["getCanonicalStore"]>;
+        pipelineState: ReturnType<RuntimeToolContext["getPipelineState"]>;
+        runtimeState: ReturnType<RuntimeToolContext["getPipelineRuntimeState"]>;
+      };
+    };
+    if (data.status === "ok" && data.state) {
+      return {
+        canonical: data.state.canonical,
+        pipelineState: data.state.pipelineState,
+        runtimeState: data.state.runtimeState,
+      };
+    }
+  } catch {
+    // Nitro not running or unreachable
+  }
+  return {
+    canonical: emptyCanonicalStore(),
+    pipelineState: { analysis_state: null, phase_results: {} },
+    runtimeState: {
+      prompt_registry: {
+        versions: {},
+        active_versions: {},
+        official_versions: {},
+      },
+      active_rerun_cycle: null,
+      pending_revalidation_approvals: {},
+    },
+  };
+}
+
+// --- Context from Nitro cache ---
+
+function createNitroBackedContext(nitroPort: number): RuntimeToolContext {
+  // Cache state, refresh on each tool call
+  let cachedState: Awaited<ReturnType<typeof fetchSyncState>> | null = null;
+
+  async function refreshState() {
+    cachedState = await fetchSyncState(nitroPort);
+    return cachedState;
+  }
+
+  // Eagerly fetch on startup
+  refreshState();
+
+  const emptyStore = emptyCanonicalStore();
+
+  const host = {
+    getCanonical: () => cachedState?.canonical ?? emptyStore,
+    getAnalysisFile: () => null,
+    getPersistedRevision: () => 0,
+    getActiveAnalysisId: () =>
+      (cachedState?.pipelineState?.analysis_state as { id?: string })?.id ?? "",
+    resetAnalysisSession: () => {},
+    dispatch: () => ({
+      status: "rejected" as const,
+      reason: "error" as const,
+      errors: [
+        "MCP cannot dispatch directly. Use the renderer's command spine.",
+      ],
+    }),
+    emitConversationMessage: () => {},
+    getPipelineState: () =>
+      cachedState?.pipelineState ?? {
+        analysis_state: null,
+        phase_results: {},
+      },
+    startPipelineAnalysis: () => {
+      throw new Error("MCP cannot start pipeline analysis directly.");
+    },
+    updateAnalysisState: () => {},
+    setPhaseResult: () => {},
+    upsertPhaseExecution: () => {},
+    setPipelineProposalReview: () => {},
+    addSteeringMessage: () => {},
+    getPipelineRuntimeState: () =>
+      cachedState?.runtimeState ?? {
+        prompt_registry: {
+          versions: {},
+          active_versions: {},
+          official_versions: {},
+        },
+        active_rerun_cycle: null,
+        pending_revalidation_approvals: {},
+      },
+    registerPendingRevalidationApproval: () => {},
+    clearPendingRevalidationApproval: () => {},
+    setActiveRerunCycle: () => {},
+    updatePromptRegistry: () => {},
+    getConversationState: () => ({
+      proposal_review: {
+        proposals: [],
+        active_proposal_index: 0,
+        merge_log: [],
+      },
+    }),
+    registerProposalGroup: () => {},
+    getFirstPendingProposalPhase: () => null,
+    updateRevalidationActionStatus: () => {},
+    getDerivedState: () => ({ sensitivityByFormalizationAndSolver: {} }),
+  } as unknown as RuntimeToolContext["host"];
+
+  const orchestrator = {
+    startAnalysis: async () => {
+      await refreshState();
+    },
+    runPhase: async () => {
+      await refreshState();
+    },
+    approveRevalidation: async () => null,
+    dismissRevalidation: () => {},
+    getPendingRevalidations: () => [],
+  } as unknown as RuntimeToolContext["orchestrator"];
+
+  return {
+    host,
+    server: { registerTool: () => {} },
+    orchestrator,
+    getModel: () => null,
+    getCanonicalStore: () => cachedState?.canonical ?? emptyStore,
+    getAllPhaseStatuses: () => [],
+    getEntities: () => [],
+    getPersistedRevision: () => 0,
+    getPipelineState: () =>
+      cachedState?.pipelineState ?? {
+        analysis_state: null,
+        phase_results: {},
+      },
+    getPipelineRuntimeState: () =>
+      cachedState?.runtimeState ?? {
+        prompt_registry: {
+          versions: {},
+          active_versions: {},
+          official_versions: {},
+        },
+        active_rerun_cycle: null,
+        pending_revalidation_approvals: {},
+      },
+  };
 }
 
 // --- Server setup ---
@@ -117,7 +285,7 @@ function startHttpServer(port: number, context: RuntimeToolContext): void {
   >();
 
   const httpServer = createServer(async (req, res) => {
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Origin", "http://localhost:3000");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
     res.setHeader(
       "Access-Control-Allow-Headers",
@@ -139,13 +307,19 @@ function startHttpServer(port: number, context: RuntimeToolContext): void {
 
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
 
-    // Route to existing session
     if (sessionId && sessions.has(sessionId)) {
       const session = sessions.get(sessionId)!;
       if (req.method === "POST") {
         const chunks: Buffer[] = [];
         for await (const chunk of req) chunks.push(chunk as Buffer);
-        const body = JSON.parse(Buffer.concat(chunks).toString());
+        let body: unknown;
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString());
+        } catch {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Malformed JSON in request body" }));
+          return;
+        }
         await session.transport.handleRequest(req, res, body);
       } else {
         await session.transport.handleRequest(req, res);
@@ -153,7 +327,6 @@ function startHttpServer(port: number, context: RuntimeToolContext): void {
       return;
     }
 
-    // New session -- only POST (initialize) is valid without session ID
     if (req.method === "POST") {
       const mcpServer = new Server(
         { name: SERVER_NAME, version: SERVER_VERSION },
@@ -179,12 +352,18 @@ function startHttpServer(port: number, context: RuntimeToolContext): void {
 
       const chunks: Buffer[] = [];
       for await (const chunk of req) chunks.push(chunk as Buffer);
-      const body = JSON.parse(Buffer.concat(chunks).toString());
+      let body: unknown;
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString());
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Malformed JSON in request body" }));
+        return;
+      }
       await transport.handleRequest(req, res, body);
       return;
     }
 
-    // Invalid: GET/DELETE without valid session ID
     res.writeHead(400, { "Content-Type": "application/json" });
     res.end(
       JSON.stringify({
@@ -195,9 +374,9 @@ function startHttpServer(port: number, context: RuntimeToolContext): void {
     );
   });
 
-  httpServer.listen(port, "0.0.0.0", () => {
+  httpServer.listen(port, "127.0.0.1", () => {
     console.error(
-      `Game Theory MCP server listening on http://0.0.0.0:${port}/mcp`,
+      `Game Theory MCP server listening on http://127.0.0.1:${port}/mcp`,
     );
   });
 }
@@ -227,47 +406,22 @@ function parseArgs(): { stdio: boolean; http: boolean; port: number } {
   return { stdio: true, http: false, port: MCP_DEFAULT_PORT };
 }
 
-// --- Stub context (will be replaced with real PipelineHost integration) ---
-
-function createStubContext(): RuntimeToolContext {
-  // Minimal stub that satisfies the RuntimeToolContext interface.
-  // Real implementation will be wired when PipelineHost is available at runtime.
-  const emptyStore = {} as RuntimeToolContext["host"];
-  const emptyOrchestrator = {
-    startAnalysis: async () => {},
-    runPhase: async () => {},
-    approveRevalidation: async () => null,
-    dismissRevalidation: () => {},
-    getPendingRevalidations: () => [],
-  } as unknown as RuntimeToolContext["orchestrator"];
-
-  return {
-    host: emptyStore,
-    server: { registerTool: () => {} },
-    orchestrator: emptyOrchestrator,
-    getModel: () => null,
-    getCanonicalStore: () =>
-      ({}) as ReturnType<RuntimeToolContext["getCanonicalStore"]>,
-    getAllPhaseStatuses: () => [],
-    getEntities: () => [],
-    getPersistedRevision: () => 0,
-    getPipelineState: () =>
-      ({
-        analysis_state: null,
-        phase_results: {},
-      }) as ReturnType<RuntimeToolContext["getPipelineState"]>,
-    getPipelineRuntimeState: () =>
-      ({
-        active_rerun_cycle: null,
-      }) as ReturnType<RuntimeToolContext["getPipelineRuntimeState"]>,
-  };
-}
-
 // --- Start ---
 
 async function main() {
   const { stdio, http, port } = parseArgs();
-  const context = createStubContext();
+
+  // Try to connect to Nitro's synced cache
+  const nitroPort = readNitroPort();
+  const context = nitroPort
+    ? createNitroBackedContext(nitroPort)
+    : createNitroBackedContext(3000); // Default dev port
+
+  if (nitroPort) {
+    console.error(`MCP server reading state from Nitro on port ${nitroPort}`);
+  } else {
+    console.error(`No .port file found, using default Nitro port 3000`);
+  }
 
   if (stdio && http) {
     const stdioServer = new Server(
@@ -289,9 +443,9 @@ async function main() {
   }
 }
 
-// Prevent uncaught errors from crashing the MCP server process
 process.on("uncaughtException", (err) => {
   console.error("MCP server uncaught exception:", err);
+  process.exit(1);
 });
 process.on("unhandledRejection", (err) => {
   console.error("MCP server unhandled rejection:", err);

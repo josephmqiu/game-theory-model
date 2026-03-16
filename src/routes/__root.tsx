@@ -3,27 +3,28 @@ import {
   Outlet,
   Scripts,
   createRootRoute,
-} from '@tanstack/react-router'
+} from "@tanstack/react-router";
 
-import appCss from '../styles.css?url'
+import appCss from "../styles.css?url";
+import { ErrorBoundary } from "@/components/shell/error-boundary";
 
 export const Route = createRootRoute({
   head: () => ({
     meta: [
       {
-        charSet: 'utf-8',
+        charSet: "utf-8",
       },
       {
-        name: 'viewport',
-        content: 'width=device-width, initial-scale=1',
+        name: "viewport",
+        content: "width=device-width, initial-scale=1",
       },
       {
-        title: 'Game Theory Analyzer',
+        title: "Game Theory Analyzer",
       },
     ],
     links: [
       {
-        rel: 'stylesheet',
+        rel: "stylesheet",
         href: appCss,
       },
     ],
@@ -31,18 +32,22 @@ export const Route = createRootRoute({
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
   shellComponent: RootDocument,
-})
+});
 
 function NotFoundComponent() {
   return (
     <div className="min-h-screen flex items-center justify-center text-muted-foreground">
       <p>Page not found</p>
     </div>
-  )
+  );
 }
 
 function RootComponent() {
-  return <Outlet />
+  return (
+    <ErrorBoundary>
+      <Outlet />
+    </ErrorBoundary>
+  );
 }
 
 function RootDocument({ children }: { children: React.ReactNode }) {
@@ -56,5 +61,5 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <Scripts />
       </body>
     </html>
-  )
+  );
 }

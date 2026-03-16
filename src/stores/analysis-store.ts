@@ -14,6 +14,7 @@ import type { Command } from "shared/game-theory/engine/commands";
 import type { DispatchResult } from "shared/game-theory/engine/dispatch";
 import { dispatch } from "shared/game-theory/engine/dispatch";
 import { applyPatch } from "fast-json-patch";
+import { derivedStore } from "./derived-store";
 
 export interface AnalysisFileMeta {
   filePath: string | null;
@@ -65,6 +66,7 @@ export const analysisStore = createStore<AnalysisStore>((set, get) => ({
 
   dispatch(command, opts) {
     const state = get();
+    const prevCanonical = state.canonical;
     const result = dispatch(state.canonical, state.eventLog, command, opts);
 
     if (result.status === "committed") {
@@ -74,6 +76,9 @@ export const analysisStore = createStore<AnalysisStore>((set, get) => ({
         inverseIndex: result.inverse_index,
         fileMeta: { ...state.fileMeta, dirty: true },
       });
+      derivedStore
+        .getState()
+        .invalidateDerivedForCommand(command, prevCanonical, result.store);
     }
 
     return result;
@@ -101,6 +106,7 @@ export const analysisStore = createStore<AnalysisStore>((set, get) => ({
       inverseIndex: buildInverseIndex(reverted),
       fileMeta: { ...state.fileMeta, dirty: true },
     });
+    derivedStore.getState().resetDerived();
   },
 
   redo() {
@@ -123,10 +129,12 @@ export const analysisStore = createStore<AnalysisStore>((set, get) => ({
       inverseIndex: buildInverseIndex(applied),
       fileMeta: { ...state.fileMeta, dirty: true },
     });
+    derivedStore.getState().resetDerived();
   },
 
   newAnalysis() {
     set(createInitialState());
+    derivedStore.getState().resetDerived();
   },
 
   loadCanonical(canonical, meta) {
@@ -140,6 +148,7 @@ export const analysisStore = createStore<AnalysisStore>((set, get) => ({
         ...meta,
       },
     });
+    derivedStore.getState().resetDerived();
   },
 
   setFileMeta(meta) {

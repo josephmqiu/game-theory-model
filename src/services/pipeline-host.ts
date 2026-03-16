@@ -88,7 +88,8 @@ export function createPipelineHostFromStores(): PipelineHost {
 
     // Derived state
     getDerivedState: () => {
-      const raw = derivedStore.getState().sensitivityByFormalizationAndSolver;
+      const state = derivedStore.getState();
+      const raw = state.sensitivityByFormalizationAndSolver;
       const mapped: Record<
         string,
         | Record<
@@ -124,7 +125,7 @@ export function createPipelineHostFromStores(): PipelineHost {
         for (const [sKey, analysis] of Object.entries(solverMap)) {
           if (!analysis) continue;
           inner[sKey] = {
-            assumption_sensitivities: analysis.sensitivities,
+            assumption_sensitivities: analysis.assumption_sensitivities ?? [],
           };
         }
         mapped[fKey] = inner;
