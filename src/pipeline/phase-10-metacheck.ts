@@ -78,8 +78,10 @@ function countPlayerReferences(canonical: CanonicalStore): Map<string, number> {
   }
 
   for (const formalization of Object.values(canonical.formalizations)) {
-    for (const playerId of Object.keys(formalization.strategies)) {
-      counts.set(playerId, (counts.get(playerId) ?? 0) + 1)
+    if (formalization.kind === 'normal_form') {
+      for (const playerId of Object.keys(formalization.strategies)) {
+        counts.set(playerId, (counts.get(playerId) ?? 0) + 1)
+      }
     }
   }
 
@@ -466,9 +468,11 @@ function answerFT3FeasibleStrategies(
     }
 
     const allStrategies = Object.values(canonical.formalizations).flatMap((f) =>
-      Object.entries(f.strategies).flatMap(([playerId, strategies]) =>
-        strategies.map((s) => `${canonical.players[playerId]?.name ?? playerId}: ${s}`),
-      ),
+      f.kind === 'normal_form'
+        ? Object.entries(f.strategies).flatMap(([playerId, strategies]) =>
+            strategies.map((s: string) => `${canonical.players[playerId]?.name ?? playerId}: ${s}`),
+          )
+        : [],
     )
 
     return {

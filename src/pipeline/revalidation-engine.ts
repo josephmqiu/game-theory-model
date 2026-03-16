@@ -7,6 +7,7 @@ import type {
   BaselineModelResult,
   FormalizationResult,
   HistoricalGameResult,
+  MetaCheckResult,
   PendingRevalidationApproval,
   PlayerIdentificationResult,
   RevalidationCheck,
@@ -233,6 +234,40 @@ function getPhase7Check(result: AssumptionExtractionResult, canonical: Canonical
   )
 }
 
+const PHASE10_TRIGGER_TARGETS: Record<string, number[]> = {
+  model_cannot_explain_fact: [3],
+  objective_function_changed: [2, 3],
+  new_game_identified: [3, 4],
+  critical_empirical_assumption_invalidated: [7, 8, 9],
+}
+
+function getPhase10Check(result: MetaCheckResult): RevalidationCheck {
+  const significantConcerns = result.meta_check_answers.filter(
+    (answer) => answer.concern_level === 'significant' || answer.concern_level === 'critical',
+  )
+  if (significantConcerns.length === 0) {
+    return createCheck([], [], [], 'none', 'Phase 10 meta-check found no significant concerns.')
+  }
+
+  const triggers = significantConcerns
+    .map((answer) => answer.revision_triggered)
+    .filter((trigger): trigger is RevalidationTrigger => trigger != null)
+
+  if (triggers.length === 0) {
+    return createCheck([], [], [], 'monitor', `Phase 10 meta-check flagged ${significantConcerns.length} concern(s) without specific revision triggers.`)
+  }
+
+  const affectedPhases = triggers.flatMap((t) => PHASE10_TRIGGER_TARGETS[t] ?? [])
+
+  return createCheck(
+    triggers,
+    affectedPhases,
+    [],
+    'revalidate',
+    `Phase 10 meta-check triggered revalidation: ${significantConcerns.map((c) => `Q${c.question_number}`).join(', ')}.`,
+  )
+}
+
 export function createRevalidationEngine(
   deps: RevalidationEngineDependencies,
 ): RevalidationEngine {
@@ -253,8 +288,11 @@ export function createRevalidationEngine(
       if (phase === 7) {
         return getPhase7Check(phaseResult as AssumptionExtractionResult, deps.getCanonical())
       }
+      if (phase === 10) {
+        return getPhase10Check(phaseResult as MetaCheckResult)
+      }
 
-      return createCheck([], [], [], 'none', `Phase ${phase} has no implemented M6.1 trigger checks yet.`)
+      return createCheck([], [], [], 'none', `Phase ${phase} has no implemented trigger checks yet.`)
     },
 
     async executeRevalidation(event) {

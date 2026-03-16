@@ -5,6 +5,7 @@ import type {
   BaselineModelResult,
   FormalizationResult,
   HistoricalGameResult,
+  MetaCheckResult,
   PlayerIdentificationResult,
 } from '../types/analysis-pipeline'
 import { createRevalidationEngine } from './revalidation-engine'
@@ -324,5 +325,96 @@ describe('revalidation engine', () => {
     expect(check.recommendation).toBe('revalidate')
     expect(check.affected_phases).toEqual([3, 6])
     expect(check.affected_entities).toContainEqual({ type: 'game', id: 'game_2' })
+  })
+
+  it('triggers revalidation from phase 10 when meta-check finds critical concerns', () => {
+    const engine = createEngine()
+    const result: MetaCheckResult = {
+      phase: 10,
+      status: { status: 'complete', phase: 10, execution_id: 'exec_10', retriable: true },
+      meta_check_answers: Array.from({ length: 10 }, (_, i) => ({
+        question_number: i + 1,
+        question: `Meta-check question ${i + 1}`,
+        answer: i === 2 ? 'The baseline model misses a key player.' : 'No concerns.',
+        concern_level: (i === 2 ? 'critical' : 'none') as 'critical' | 'none',
+        revision_triggered: (i === 2 ? 'model_cannot_explain_fact' : null) as 'model_cannot_explain_fact' | null,
+        evidence_refs: [],
+      })),
+      final_test_answers: Array.from({ length: 6 }, (_, i) => ({
+        question_number: i + 1,
+        question: `Final test ${i + 1}`,
+        answer: 'Answered.',
+        completeness: 'fully_answered' as const,
+        gap_description: null,
+      })),
+      adversarial_result: { challenges: [], overall_assessment: 'defensible' as const },
+      revisions_triggered: ['model_cannot_explain_fact'],
+      analysis_complete: false,
+    }
+
+    const check = engine.checkTriggers(result, 10)
+    expect(check.triggers_found).toContain('model_cannot_explain_fact')
+    expect(check.recommendation).toBe('revalidate')
+    expect(check.affected_phases).toContain(3)
+  })
+
+  it('returns none when phase 10 meta-check has no significant concerns', () => {
+    const engine = createEngine()
+    const result: MetaCheckResult = {
+      phase: 10,
+      status: { status: 'complete', phase: 10, execution_id: 'exec_10', retriable: true },
+      meta_check_answers: Array.from({ length: 10 }, (_, i) => ({
+        question_number: i + 1,
+        question: `Meta-check question ${i + 1}`,
+        answer: 'No concerns.',
+        concern_level: 'none' as const,
+        revision_triggered: null,
+        evidence_refs: [],
+      })),
+      final_test_answers: Array.from({ length: 6 }, (_, i) => ({
+        question_number: i + 1,
+        question: `Final test ${i + 1}`,
+        answer: 'Answered.',
+        completeness: 'fully_answered' as const,
+        gap_description: null,
+      })),
+      adversarial_result: { challenges: [], overall_assessment: 'robust' as const },
+      revisions_triggered: [],
+      analysis_complete: true,
+    }
+
+    const check = engine.checkTriggers(result, 10)
+    expect(check.recommendation).toBe('none')
+    expect(check.triggers_found).toHaveLength(0)
+  })
+
+  it('returns monitor when phase 10 has significant concerns without revision triggers', () => {
+    const engine = createEngine()
+    const result: MetaCheckResult = {
+      phase: 10,
+      status: { status: 'complete', phase: 10, execution_id: 'exec_10', retriable: true },
+      meta_check_answers: Array.from({ length: 10 }, (_, i) => ({
+        question_number: i + 1,
+        question: `Meta-check question ${i + 1}`,
+        answer: i === 4 ? 'Some concern about complexity.' : 'No concerns.',
+        concern_level: (i === 4 ? 'significant' : 'none') as 'significant' | 'none',
+        revision_triggered: null,
+        evidence_refs: [],
+      })),
+      final_test_answers: Array.from({ length: 6 }, (_, i) => ({
+        question_number: i + 1,
+        question: `Final test ${i + 1}`,
+        answer: 'Answered.',
+        completeness: 'fully_answered' as const,
+        gap_description: null,
+      })),
+      adversarial_result: { challenges: [], overall_assessment: 'defensible' as const },
+      revisions_triggered: [],
+      analysis_complete: true,
+    }
+
+    const check = engine.checkTriggers(result, 10)
+    expect(check.recommendation).toBe('monitor')
+    expect(check.triggers_found).toHaveLength(0)
   })
 })

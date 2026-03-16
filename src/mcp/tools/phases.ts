@@ -3,9 +3,12 @@ import { z } from 'zod'
 import type { PhaseToolResult } from '../../types/mcp'
 import type {
   AssumptionExtractionResult,
+  EliminationResult,
   EvidenceProposal,
   FormalizationResult,
+  MetaCheckResult,
   Phase6Subsection,
+  ScenarioGenerationResult,
 } from '../../types/analysis-pipeline'
 import type { RuntimeToolContext, McpServerLike } from '../context'
 import { getPipelineState } from '../../store/pipeline'
@@ -55,6 +58,24 @@ const phaseDefinitions = {
     description: 'Phase 7: Extract assumptions, classify empirical versus game-theoretic dependencies, rate sensitivity, and identify correlated clusters.',
     schema: z.object({}).strict(),
   },
+  8: {
+    name: 'run_phase_8_elimination',
+    phase_name: 'Elimination',
+    description: 'Phase 8: Eliminate implausible outcomes with specific phase citations.',
+    schema: z.object({}).strict(),
+  },
+  9: {
+    name: 'run_phase_9_scenarios',
+    phase_name: 'Scenario Generation',
+    description: 'Phase 9: Generate scenarios, central thesis, and tail risks.',
+    schema: z.object({}).strict(),
+  },
+  10: {
+    name: 'run_phase_10_metacheck',
+    phase_name: 'Meta-check',
+    description: 'Phase 10: Run 10 meta-check questions, 6 final test questions, and adversarial challenge.',
+    schema: z.object({}).strict(),
+  },
 } as const
 
 function proposalsToResult(proposals: EvidenceProposal[]): PhaseToolResult['proposals'] {
@@ -78,11 +99,12 @@ function entitiesFromProposals(proposals: EvidenceProposal[]): PhaseToolResult['
 }
 
 function successResult(params: {
-  phase: 1 | 2 | 3 | 4 | 6 | 7
+  phase: keyof typeof phaseDefinitions
   summary: string
   proposals: EvidenceProposal[]
   nextStep?: string
   warnings?: string[]
+  extras?: Record<string, unknown>
 }): PhaseToolResult {
   const def = phaseDefinitions[params.phase]
   return {
@@ -94,6 +116,7 @@ function successResult(params: {
     proposals: proposalsToResult(params.proposals),
     next_step: params.nextStep,
     warnings: params.warnings ?? [],
+    ...params.extras,
   }
 }
 
@@ -344,21 +367,87 @@ export function registerPhaseTools(server: McpServerLike, context: RuntimeToolCo
     },
   })
 
-  const stubPhaseSchema = z.object({}).strict()
-  const stubs: Array<{ phase: number; name: string; phase_name: string; description: string }> = [
-    { phase: 8, name: 'run_phase_8_elimination', phase_name: 'Elimination', description: 'Phase 8: Eliminate implausible outcomes.' },
-    { phase: 9, name: 'run_phase_9_scenarios', phase_name: 'Scenario Generation', description: 'Phase 9: Scenario generation.' },
-    { phase: 10, name: 'run_phase_10_metacheck', phase_name: 'Meta-check', description: 'Phase 10: Meta-check and adversarial challenge.' },
-  ]
+  // Phase 8
+  server.registerTool({
+    name: phaseDefinitions[8].name,
+    description: phaseDefinitions[8].description,
+    inputSchema: phaseDefinitions[8].schema,
+    async execute(): Promise<PhaseToolResult> {
+      try {
+        await context.orchestrator.runPhase(8)
+        const phaseResult = getPipelineState().phase_results[8] as EliminationResult | undefined
+        if (!phaseResult) {
+          return failureResult(8, phaseDefinitions[8].phase_name, 'Phase 8 produced no result.')
+        }
+        return successResult({
+          phase: 8,
+          summary: `Phase 8 ${phaseResult.status.status}. ${phaseResult.eliminated_outcomes.length} outcome(s) eliminated, ${phaseResult.proposals.length} proposal(s).`,
+          proposals: phaseResult.proposals,
+          nextStep: 'Review Phase 8 elimination proposals, then continue with Phase 9.',
+          warnings: phaseResult.status.gaps ?? [],
+        })
+      } catch (error) {
+        return failureResult(8, phaseDefinitions[8].phase_name, error instanceof Error ? error.message : 'Phase 8 failed.')
+      }
+    },
+  })
 
-  for (const stub of stubs) {
-    server.registerTool({
-      name: stub.name,
-      description: stub.description,
-      inputSchema: stubPhaseSchema,
-      execute() {
-        return failureResult(stub.phase, stub.phase_name, `Phase ${stub.phase} is not implemented in this milestone.`)
-      },
-    })
-  }
+  // Phase 9
+  server.registerTool({
+    name: phaseDefinitions[9].name,
+    description: phaseDefinitions[9].description,
+    inputSchema: phaseDefinitions[9].schema,
+    async execute(): Promise<PhaseToolResult> {
+      try {
+        await context.orchestrator.runPhase(9)
+        const phaseResult = getPipelineState().phase_results[9] as ScenarioGenerationResult | undefined
+        if (!phaseResult) {
+          return failureResult(9, phaseDefinitions[9].phase_name, 'Phase 9 produced no result.')
+        }
+        return successResult({
+          phase: 9,
+          summary: `Phase 9 ${phaseResult.status.status}. ${phaseResult.proposed_scenarios.length} scenario(s), ${phaseResult.tail_risks.length} tail risk(s). Central thesis: "${phaseResult.central_thesis.statement}".`,
+          proposals: phaseResult.proposals,
+          nextStep: 'Review Phase 9 scenario proposals, then continue with Phase 10.',
+          warnings: phaseResult.status.gaps ?? [],
+        })
+      } catch (error) {
+        return failureResult(9, phaseDefinitions[9].phase_name, error instanceof Error ? error.message : 'Phase 9 failed.')
+      }
+    },
+  })
+
+  // Phase 10
+  server.registerTool({
+    name: phaseDefinitions[10].name,
+    description: phaseDefinitions[10].description,
+    inputSchema: phaseDefinitions[10].schema,
+    async execute(): Promise<PhaseToolResult> {
+      try {
+        await context.orchestrator.runPhase(10)
+        const phaseResult = getPipelineState().phase_results[10] as MetaCheckResult | undefined
+        if (!phaseResult) {
+          return failureResult(10, phaseDefinitions[10].phase_name, 'Phase 10 produced no result.')
+        }
+        const proposals: EvidenceProposal[] = 'proposals' in phaseResult
+          ? (phaseResult as { proposals: EvidenceProposal[] }).proposals
+          : []
+        return successResult({
+          phase: 10,
+          summary: phaseResult.analysis_complete
+            ? `Phase 10 complete. Analysis is complete. Overall assessment: ${phaseResult.adversarial_result.overall_assessment}.`
+            : `Phase 10 complete. Analysis is NOT yet complete — review final test gaps and meta-check concerns.`,
+          proposals,
+          warnings: [
+            ...(phaseResult.status.gaps ?? []),
+            ...phaseResult.meta_check_answers
+              .filter((a) => a.concern_level === 'significant' || a.concern_level === 'critical')
+              .map((a) => `Q${a.question_number} (${a.concern_level}): ${a.answer}`),
+          ],
+        })
+      } catch (error) {
+        return failureResult(10, phaseDefinitions[10].phase_name, error instanceof Error ? error.message : 'Phase 10 failed.')
+      }
+    },
+  })
 }

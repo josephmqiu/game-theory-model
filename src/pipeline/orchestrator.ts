@@ -6,8 +6,10 @@ import type { RevalidationEvent } from '../types/evidence'
 import type {
   AssumptionExtractionResult,
   AnalysisState,
+  EliminationResult,
   EvidenceProposal,
   FormalizationResult,
+  MetaCheckResult,
   PendingRevalidationApproval,
   PhaseExecution,
   PhaseResult,
@@ -19,6 +21,7 @@ import type {
   PromptVersion,
   RevalidationCheck,
   RevalidationOutcome,
+  ScenarioGenerationResult,
 } from '../types/analysis-pipeline'
 import type { ConversationMessage, RevalidationActionCard } from '../types/conversation'
 import {
@@ -48,6 +51,9 @@ import { runPhase2Players, type Phase2Input } from './phase-2-players'
 import { runPhase3Baseline, runPhase4History } from './phase-3-4'
 import { runPhase6Formalization } from './phase-6-formalization'
 import { runPhase7Assumptions } from './phase-7-assumptions'
+import { runPhase8Elimination } from './phase-8-elimination'
+import { runPhase9Scenarios } from './phase-9-scenarios'
+import { runPhase10MetaCheck } from './phase-10-metacheck'
 import { PHASE6_ALL_SUBSECTIONS, PHASE6_SUBSECTION_MESSAGES } from './phase-6-subsections'
 import { classifySituation, createEntityId } from './helpers'
 import { createRevalidationEngine } from './revalidation-engine'
@@ -704,6 +710,39 @@ export function createPipelineOrchestrator(deps: OrchestratorDependencies): Pipe
         result = output.status
         proposals = output.proposals
         setPhaseResult(7, output)
+      } else if (phase === 8) {
+        const output = runPhase8Elimination({
+          canonical,
+          baseRevision,
+          phaseExecution,
+          phaseResults: getPipelineState().phase_results,
+        })
+        phaseOutput = output
+        result = output.status
+        proposals = output.proposals
+        setPhaseResult(8, output)
+      } else if (phase === 9) {
+        const output = runPhase9Scenarios({
+          canonical,
+          baseRevision,
+          phaseExecution,
+          phaseResults: getPipelineState().phase_results,
+        })
+        phaseOutput = output
+        result = output.status
+        proposals = output.proposals
+        setPhaseResult(9, output)
+      } else if (phase === 10) {
+        const output = runPhase10MetaCheck({
+          canonical,
+          baseRevision,
+          phaseExecution,
+          phaseResults: getPipelineState().phase_results,
+        })
+        phaseOutput = output
+        result = output.status
+        proposals = 'proposals' in output ? (output as { proposals: typeof proposals }).proposals : []
+        setPhaseResult(10, output)
       } else {
         result = {
           status: 'failed',
@@ -758,6 +797,50 @@ export function createPipelineOrchestrator(deps: OrchestratorDependencies): Pipe
             phase,
           })
         }
+      } else if (phase === 8 && phaseOutput) {
+        const phase8Output = phaseOutput as EliminationResult
+        if (phase8Output.proposals.length > 0) {
+          registerProposalGroup({
+            phase,
+            content: `Phase 8 complete. ${phase8Output.eliminated_outcomes.length} outcome(s) eliminated. Review ${phase8Output.proposals.length} proposal(s).`,
+            proposals: phase8Output.proposals,
+          })
+          setPipelineProposalReview(getConversationState().proposal_review)
+        } else {
+          deps.emitConversationMessage({
+            role: 'ai',
+            content: `Phase 8 complete. No outcomes eliminated in this pass.`,
+            message_type: 'result',
+            phase,
+          })
+        }
+      } else if (phase === 9 && phaseOutput) {
+        const phase9Output = phaseOutput as ScenarioGenerationResult
+        if (phase9Output.proposals.length > 0) {
+          registerProposalGroup({
+            phase,
+            content: `Phase 9 complete. Central thesis: "${phase9Output.central_thesis.statement}". ${phase9Output.proposed_scenarios.length} scenario(s), ${phase9Output.tail_risks.length} tail risk(s). Review ${phase9Output.proposals.length} proposal(s).`,
+            proposals: phase9Output.proposals,
+          })
+          setPipelineProposalReview(getConversationState().proposal_review)
+        } else {
+          deps.emitConversationMessage({
+            role: 'ai',
+            content: `Phase 9 complete with no proposals.`,
+            message_type: 'result',
+            phase,
+          })
+        }
+      } else if (phase === 10 && phaseOutput) {
+        const phase10Output = phaseOutput as MetaCheckResult
+        deps.emitConversationMessage({
+          role: 'ai',
+          content: phase10Output.analysis_complete
+            ? `Phase 10 complete. Analysis is complete. Overall assessment: ${phase10Output.adversarial_result.overall_assessment}.`
+            : `Phase 10 complete. Analysis is NOT yet complete — review final test gaps and meta-check concerns.`,
+          message_type: 'result',
+          phase,
+        })
       } else if (proposals.length > 0) {
         registerProposalGroup({
           phase,
@@ -787,7 +870,7 @@ export function createPipelineOrchestrator(deps: OrchestratorDependencies): Pipe
         proposals.length > 0 || result.status === 'partial',
       )
 
-      if (phaseOutput && phase >= 2 && phase <= 7 && result.status !== 'failed') {
+      if (phaseOutput && phase >= 2 && phase <= 10 && result.status !== 'failed') {
         maybeCreateRevalidationEvent(phase, phaseOutput)
       }
 
