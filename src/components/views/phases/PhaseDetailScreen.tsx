@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 
+import { FormalizationPhaseScreen } from './FormalizationPhaseScreen'
 import { RevalidationPhaseScreen } from './RevalidationPhaseScreen'
 
 const PHASE_NAMES: Record<number, string> = {
@@ -11,6 +12,9 @@ const PHASE_NAMES: Record<number, string> = {
 export function PhaseDetailScreen({ phase }: { phase: number }): ReactNode {
   if (phase === 5) {
     return <RevalidationPhaseScreen />
+  }
+  if (phase === 6) {
+    return <FormalizationPhaseScreen />
   }
 
   return (

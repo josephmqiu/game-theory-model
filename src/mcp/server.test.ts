@@ -8,11 +8,15 @@ import {
   resetMcpStore,
   resetPipelineRuntimeStore,
   resetPipelineStore,
+  startPipelineAnalysis,
+  updateAnalysisState,
 } from '../store'
 import type {
+  FormalizationResult,
   GroundingResult,
   PlayerIdentificationResult,
 } from '../types/analysis-pipeline'
+import type { NormalFormModel } from '../types/formalizations'
 import { createConfiguredMcpServer } from './bootstrap'
 import { startServer, stopServer } from './server'
 import { createStdioTransport } from './transports/stdio'
@@ -295,5 +299,102 @@ describe('MCP server shell', () => {
 
     expect(secondApproval.success).toBe(false)
     expect(secondApproval.error).toMatch(/No pending revalidation event found/i)
+  })
+
+  it('accepts Phase 6 subsection input and returns the structured formalization result summary', async () => {
+    const { appStore, server } = createRegisteredServer()
+    startPipelineAnalysis({
+      analysisId: appStore.getState().eventLog.analysis_id,
+      description: 'Negotiation with repeated signaling and private information',
+      domain: 'geopolitical',
+      classification: null,
+    })
+    updateAnalysisState((analysisState) => {
+      if (!analysisState) {
+        return analysisState
+      }
+
+      const phase_states = { ...analysisState.phase_states }
+      for (let phase = 1; phase <= 5; phase += 1) {
+        phase_states[phase] = {
+          ...phase_states[phase],
+          status: 'complete',
+        }
+      }
+
+      return {
+        ...analysisState,
+        phase_states,
+      }
+    })
+
+    appStore.getState().dispatch({
+      kind: 'add_player',
+      id: 'player_a',
+      payload: {
+        name: 'State A',
+        type: 'state',
+        objectives: [],
+        constraints: [],
+      },
+    })
+    appStore.getState().dispatch({
+      kind: 'add_player',
+      id: 'player_b',
+      payload: {
+        name: 'State B',
+        type: 'state',
+        objectives: [],
+        constraints: [],
+      },
+    })
+    appStore.getState().dispatch({
+      kind: 'add_game',
+      id: 'game_1',
+      payload: {
+        name: 'Baseline game',
+        description: 'Accepted baseline',
+        semantic_labels: ['bargaining', 'signaling'],
+        players: ['player_a', 'player_b'],
+        status: 'active',
+        formalizations: ['formalization_base'],
+        coupling_links: [],
+        key_assumptions: [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        canonical_game_type: 'bargaining',
+        move_order: 'simultaneous',
+      },
+    })
+    appStore.getState().dispatch({
+      kind: 'add_formalization',
+      id: 'formalization_base',
+      payload: {
+        game_id: 'game_1',
+        kind: 'normal_form',
+        purpose: 'explanatory',
+        abstraction_level: 'minimal',
+        assumptions: [],
+        strategies: {
+          player_a: ['Escalate', 'Hold'],
+          player_b: ['Resist', 'Accommodate'],
+        },
+        payoff_cells: [],
+      } as Omit<NormalFormModel, 'id'>,
+    })
+
+    const result = await server.callTool<{
+      success: boolean
+      summary: string
+      warnings: string[]
+    }>('run_phase_6_formalization', {
+      subsections: ['6a', '6b', '6c', '6f'],
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.summary).toMatch(/Phase 6/)
+    expect(server.tools.get('run_phase_6_formalization')?.inputSchema.safeParse({
+      subsections: ['6x'],
+    }).success).toBe(false)
   })
 })

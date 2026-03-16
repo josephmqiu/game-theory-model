@@ -4,6 +4,7 @@ import { emptyCanonicalStore, type CanonicalStore } from '../types/canonical'
 import type { AnalysisState, PhaseExecution } from '../types/analysis-pipeline'
 import { runPhase1Grounding } from './phase-1-grounding'
 import { runPhase2Players } from './phase-2-players'
+import { runPhase6Formalization } from './phase-6-formalization'
 import { runPhase3Baseline, runPhase4History } from './phase-3-4'
 import { classifySituation, createEntityId, createEstimate } from './helpers'
 
@@ -83,6 +84,118 @@ function createPlayersCanonicalStore(): CanonicalStore {
         updated_at: now,
       },
     },
+  }
+}
+
+function createPhase6CanonicalStore(includeSecondGame = false): CanonicalStore {
+  const now = new Date().toISOString()
+  const store = createPlayersCanonicalStore()
+
+  store.games.game_1 = {
+    ...store.games.game_1!,
+    formalizations: ['formalization_base'],
+    canonical_game_type: 'bargaining',
+    move_order: 'simultaneous',
+    semantic_labels: ['bargaining', 'signaling'],
+  }
+  store.formalizations.formalization_base = {
+    id: 'formalization_base',
+    game_id: 'game_1',
+    kind: 'normal_form',
+    purpose: 'explanatory',
+    abstraction_level: 'minimal',
+    assumptions: [],
+    strategies: {
+      player_a: ['Escalate', 'Hold'],
+      player_b: ['Resist', 'Accommodate'],
+    },
+    payoff_cells: [
+      {
+        strategy_profile: { player_a: 'Escalate', player_b: 'Resist' },
+        payoffs: {
+          player_a: createEstimate(1, 'baseline'),
+          player_b: createEstimate(3, 'baseline'),
+        },
+      },
+      {
+        strategy_profile: { player_a: 'Escalate', player_b: 'Accommodate' },
+        payoffs: {
+          player_a: createEstimate(4, 'baseline'),
+          player_b: createEstimate(1, 'baseline'),
+        },
+      },
+      {
+        strategy_profile: { player_a: 'Hold', player_b: 'Resist' },
+        payoffs: {
+          player_a: createEstimate(2, 'baseline'),
+          player_b: createEstimate(2, 'baseline'),
+        },
+      },
+      {
+        strategy_profile: { player_a: 'Hold', player_b: 'Accommodate' },
+        payoffs: {
+          player_a: createEstimate(3, 'baseline'),
+          player_b: createEstimate(2, 'baseline'),
+        },
+      },
+    ],
+  }
+
+  if (includeSecondGame) {
+    store.games.game_2 = {
+      id: 'game_2',
+      name: 'Second theater',
+      description: 'Parallel strategic theater.',
+      semantic_labels: ['coordination'],
+      players: ['player_a', 'player_b'],
+      status: 'active',
+      formalizations: [],
+      coupling_links: [],
+      key_assumptions: [],
+      created_at: now,
+      updated_at: now,
+    }
+  }
+
+  return store
+}
+
+function createPhase4HistoryResult() {
+  return {
+    phase: 4 as const,
+    status: {
+      status: 'complete' as const,
+      phase: 4,
+      execution_id: 'phase_execution_4',
+      retriable: true,
+    },
+    repeated_game_map: [],
+    patterns_found: [
+      {
+        game_id: 'game_1',
+        pattern_type: 'grim_trigger' as const,
+        description: 'Repeated punishment pattern.',
+        instances: [],
+        impact_on_trust: 'lowers trust',
+        impact_on_model: 'supports repeated-game framing',
+      },
+    ],
+    trust_assessment: [],
+    dynamic_inconsistency_risks: [],
+    global_signaling_effects: ['Signals shape beliefs.'],
+    baseline_recheck: {
+      game_still_correct: true,
+      revealed_repeated_not_oneshot: false,
+      hidden_player_found: false,
+      hidden_commitment_problem: false,
+      hidden_type_uncertainty: true,
+      cooperative_equilibria_eliminated: false,
+      objective_function_changed: false,
+      deterrence_compellence_reframed: false,
+      revalidation_needed: false,
+      revalidation_triggers: [],
+    },
+    proposals: [],
   }
 }
 
@@ -170,5 +283,64 @@ describe('M5 phase runners', () => {
     expect(output.proposals.every((proposal) =>
       proposal.commands.every((command) => command.kind !== 'trigger_revalidation'),
     )).toBe(true)
+  })
+
+  it('reuses the accepted baseline formalization and adds complementary Phase 6 representations without mutating canonical state', () => {
+    const canonical = createPhase6CanonicalStore()
+    const originalFormalizations = Object.keys(canonical.formalizations)
+
+    const output = runPhase6Formalization(
+      undefined,
+      {
+        canonical,
+        analysisState: createAnalysisState('Negotiation with repeated signaling and private information'),
+        baseRevision: 0,
+        phaseExecution: createExecution(6),
+        phaseResults: {
+          4: createPhase4HistoryResult(),
+        },
+      },
+    )
+
+    expect(output.formal_representations.reused_formalization_ids).toContain('formalization_base')
+    expect(output.formal_representations.summaries.some((summary) => summary.kind === 'repeated')).toBe(true)
+    expect(output.formal_representations.summaries.some((summary) => summary.kind === 'bayesian')).toBe(true)
+    expect(output.communication_analysis.classifications.length).toBeGreaterThan(0)
+    expect(output.proposals.some((proposal) => proposal.proposal_type === 'formalization')).toBe(true)
+    expect(Object.keys(canonical.formalizations)).toEqual(originalFormalizations)
+    expect(Object.keys(canonical.signal_classifications)).toHaveLength(0)
+  })
+
+  it('returns a partial Phase 6 result when requested subsections lack prerequisites', () => {
+    const output = runPhase6Formalization(
+      { subsections: ['6i'] },
+      {
+        canonical: createPhase6CanonicalStore(false),
+        analysisState: createAnalysisState('Single-game bargaining case'),
+        baseRevision: 0,
+        phaseExecution: createExecution(6),
+        phaseResults: {},
+      },
+    )
+
+    expect(output.status.status).toBe('partial')
+    expect(output.cross_game_effects).toBeNull()
+    expect(output.subsection_statuses.find((entry) => entry.subsection === '6i')?.status).toBe('not_applicable')
+  })
+
+  it('creates cross-game-link proposals only when multiple games are active', () => {
+    const output = runPhase6Formalization(
+      { subsections: ['6i'] },
+      {
+        canonical: createPhase6CanonicalStore(true),
+        analysisState: createAnalysisState('Parallel bargaining and alliance management games'),
+        baseRevision: 0,
+        phaseExecution: createExecution(6),
+        phaseResults: {},
+      },
+    )
+
+    expect(output.cross_game_effects?.effects).toHaveLength(1)
+    expect(output.proposals.some((proposal) => proposal.proposal_type === 'cross_game_link')).toBe(true)
   })
 })

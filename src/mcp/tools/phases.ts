@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 import type { PhaseToolResult } from '../../types/mcp'
-import type { EvidenceProposal } from '../../types/analysis-pipeline'
+import type { EvidenceProposal, FormalizationResult, Phase6Subsection } from '../../types/analysis-pipeline'
 import type { RuntimeToolContext, McpServerLike } from '../context'
 import { getPipelineState } from '../../store/pipeline'
 import { getPipelineRuntimeState } from '../../store/pipeline-runtime'
@@ -36,6 +36,14 @@ const phaseDefinitions = {
     description: 'Phase 4: Map historical interactions, trust, and repeated-game patterns. Requires Phase 3 to be complete.',
     schema: z.object({}).strict(),
   },
+  6: {
+    name: 'run_phase_6_formalization',
+    phase_name: 'Full Formalization',
+    description: 'Phase 6: Run full formalization across subsections 6a-6i, using proposal-driven canonical updates and derived solver summaries.',
+    schema: z.object({
+      subsections: z.array(z.enum(['6a', '6b', '6c', '6d', '6e', '6f', '6g', '6h', '6i'])).optional(),
+    }).strict(),
+  },
 } as const
 
 function proposalsToResult(proposals: EvidenceProposal[]): PhaseToolResult['proposals'] {
@@ -59,7 +67,7 @@ function entitiesFromProposals(proposals: EvidenceProposal[]): PhaseToolResult['
 }
 
 function successResult(params: {
-  phase: 1 | 2 | 3 | 4
+  phase: 1 | 2 | 3 | 4 | 6
   summary: string
   proposals: EvidenceProposal[]
   nextStep?: string
@@ -250,9 +258,46 @@ export function registerPhaseTools(server: McpServerLike, context: RuntimeToolCo
     },
   })
 
+  server.registerTool({
+    name: phaseDefinitions[6].name,
+    description: phaseDefinitions[6].description,
+    inputSchema: phaseDefinitions[6].schema,
+    async execute(input): Promise<PhaseToolResult> {
+      try {
+        await context.orchestrator.runPhase(6, {
+          subsections: input.subsections as Phase6Subsection[] | undefined,
+        })
+        const phaseResult = getPipelineState().phase_results[6] as FormalizationResult | undefined
+        const subsectionSummary = phaseResult?.subsection_statuses
+          .map((entry) => `${entry.subsection} ${entry.status}`)
+          .join(', ')
+
+        return {
+          success: true,
+          phase: 6,
+          phase_name: phaseDefinitions[6].phase_name,
+          summary: phaseResult
+            ? `Phase 6 ${phaseResult.status.status}. ${phaseResult.proposals.length} proposal(s) across ${phaseResult.proposal_groups.length} subsection group(s).`
+            : 'Phase 6 completed.',
+          entities_created: entitiesFromProposals(phaseResult?.proposals ?? []),
+          proposals: proposalsToResult(phaseResult?.proposals ?? []),
+          next_step: subsectionSummary
+            ? `Review Phase 6 proposal groups, then continue with Phase 7. Subsections: ${subsectionSummary}.`
+            : 'Review Phase 6 proposal groups, then continue with Phase 7.',
+          warnings: [
+            ...(phaseResult?.status.gaps ?? []),
+            ...(phaseResult?.behavioral_overlays?.warnings ?? []),
+            ...(phaseResult?.cross_game_effects?.warnings ?? []),
+          ],
+        }
+      } catch (error) {
+        return failureResult(6, phaseDefinitions[6].phase_name, error instanceof Error ? error.message : 'Phase 6 failed.')
+      }
+    },
+  })
+
   const stubPhaseSchema = z.object({}).strict()
   const stubs: Array<{ phase: number; name: string; phase_name: string; description: string }> = [
-    { phase: 6, name: 'run_phase_6_formalization', phase_name: 'Full Formalization', description: 'Phase 6: Full formal modeling.' },
     { phase: 7, name: 'run_phase_7_assumptions', phase_name: 'Assumption Extraction', description: 'Phase 7: Assumption extraction.' },
     { phase: 8, name: 'run_phase_8_elimination', phase_name: 'Elimination', description: 'Phase 8: Eliminate implausible outcomes.' },
     { phase: 9, name: 'run_phase_9_scenarios', phase_name: 'Scenario Generation', description: 'Phase 9: Scenario generation.' },

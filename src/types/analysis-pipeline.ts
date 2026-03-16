@@ -1,11 +1,12 @@
 import type { Command } from '../engine/commands'
-import type { EntityRef } from './canonical'
+import type { EntityRef, SolverKind, SolverReadiness } from './canonical'
 import type { EstimateValue } from './estimates'
 import type {
   DiffReviewState,
   EntityPreview,
 } from './conversation'
 import type { RevalidationEvent, RevalidationTrigger } from './evidence'
+import type { Formalization } from './formalizations'
 
 export type PipelinePhaseStatus = 'pending' | 'running' | 'review_needed' | 'complete' | 'needs_rerun' | 'skipped'
 export type PipelineStatus = 'not_started' | 'running' | 'paused' | 'complete' | 'failed'
@@ -127,6 +128,7 @@ export interface ModelProposal extends EvidenceProposal {
     | 'scenario'
     | 'thesis'
     | 'signal'
+    | 'cross_game_link'
     | 'constraint_table'
     | 'dynamic_risk'
   framing_id?: string
@@ -405,6 +407,187 @@ export interface HistoricalGameResult {
   proposals: ModelProposal[]
 }
 
+export type Phase6Subsection = '6a' | '6b' | '6c' | '6d' | '6e' | '6f' | '6g' | '6h' | '6i'
+
+export type Phase6FormalizationKind =
+  | 'normal_form'
+  | 'extensive_form'
+  | 'repeated'
+  | 'bayesian'
+  | 'signaling'
+  | 'bargaining'
+
+export interface Phase6SubsectionStatus {
+  subsection: Phase6Subsection
+  status: 'complete' | 'partial' | 'not_applicable'
+  summary: string
+  warnings: string[]
+}
+
+export interface FormalizationRepresentationSummary {
+  formalization_id: string
+  game_id: string
+  game_name: string
+  kind: Phase6FormalizationKind
+  purpose: Formalization['purpose']
+  abstraction_level: Formalization['abstraction_level']
+  reused_existing: boolean
+  rationale: string
+  assumption_ids: string[]
+}
+
+export interface FormalRepresentationResult {
+  status: Phase6SubsectionStatus['status']
+  summaries: FormalizationRepresentationSummary[]
+  reused_formalization_ids: string[]
+  new_game_hypotheses: Array<{
+    label: string
+    rationale: string
+  }>
+  assumption_proposal_ids: string[]
+  warnings: string[]
+}
+
+export interface PayoffEstimationSummary {
+  formalization_id: string
+  ordinal_first: boolean
+  updated_profiles: number
+  updated_terminal_nodes: number
+  cardinal_justifications: string[]
+}
+
+export interface PayoffEstimationResult {
+  status: Phase6SubsectionStatus['status']
+  updates: PayoffEstimationSummary[]
+  warnings: string[]
+}
+
+export interface EquilibriumSummary {
+  solver: SolverKind | 'readiness' | 'signaling_classification'
+  status: 'success' | 'partial' | 'failed'
+  summary: string
+  equilibrium_count?: number
+  warnings: string[]
+}
+
+export interface FormalizationAnalysisSummary {
+  formalization_id: string
+  game_id: string
+  kind: Phase6FormalizationKind
+  readiness: SolverReadiness
+  solver_summaries: EquilibriumSummary[]
+  classification: string | null
+}
+
+export interface BaselineEquilibriaResult {
+  status: Phase6SubsectionStatus['status']
+  analyses: FormalizationAnalysisSummary[]
+  warnings: string[]
+}
+
+export interface EquilibriumSelectionEntry {
+  formalization_id: string
+  selected_equilibrium_id: string | null
+  rationale: string
+  alternatives: string[]
+}
+
+export interface EquilibriumSelectionResult {
+  status: Phase6SubsectionStatus['status']
+  selections: EquilibriumSelectionEntry[]
+  warnings: string[]
+}
+
+export interface BargainingDynamicsResult {
+  status: Phase6SubsectionStatus['status']
+  applicable: boolean
+  summary: string
+  leverage_points: string[]
+  warnings: string[]
+}
+
+export interface CommunicationClassificationSummary {
+  id: string
+  player_id: string
+  classification: 'cheap_talk' | 'costly_signal' | 'audience_cost'
+  summary: string
+}
+
+export interface CommunicationAnalysisResult {
+  status: Phase6SubsectionStatus['status']
+  classifications: CommunicationClassificationSummary[]
+  warnings: string[]
+}
+
+export interface OptionValueResult {
+  status: Phase6SubsectionStatus['status']
+  summary: string
+  player_options: Array<{
+    player_id: string
+    option: string
+    value: 'material' | 'modest'
+  }>
+  warnings: string[]
+}
+
+export interface BehavioralOverlaySummary {
+  label: string
+  effect_on_prediction: 'none' | 'shifts_risk' | 'changes_prediction'
+  summary: string
+}
+
+export interface BehavioralOverlayResult {
+  status: Phase6SubsectionStatus['status']
+  label: 'ADJACENT — NOT CORE GAME THEORY'
+  methodology_flags: string[]
+  overlays: BehavioralOverlaySummary[]
+  warnings: string[]
+}
+
+export interface CrossGameEffectSummary {
+  source_game_id: string
+  target_game_id: string
+  effect_type: import('./evidence').CrossGameLink['effect_type']
+  summary: string
+}
+
+export interface CrossGameEffectsResult {
+  status: Phase6SubsectionStatus['status']
+  effects: CrossGameEffectSummary[]
+  warnings: string[]
+}
+
+export interface Phase6RevalidationSignals {
+  triggers_found: RevalidationTrigger[]
+  affected_entities: EntityRef[]
+  description: string
+}
+
+export interface Phase6ProposalGroup {
+  subsection: Phase6Subsection
+  content: string
+  proposals: ModelProposal[]
+}
+
+export interface FormalizationResult {
+  phase: 6
+  status: PhaseResult
+  subsections_run: Phase6Subsection[]
+  subsection_statuses: Phase6SubsectionStatus[]
+  formal_representations: FormalRepresentationResult
+  payoff_estimation: PayoffEstimationResult
+  baseline_equilibria: BaselineEquilibriaResult
+  equilibrium_selection: EquilibriumSelectionResult
+  bargaining_dynamics: BargainingDynamicsResult | null
+  communication_analysis: CommunicationAnalysisResult
+  option_value: OptionValueResult | null
+  behavioral_overlays: BehavioralOverlayResult | null
+  cross_game_effects: CrossGameEffectsResult | null
+  proposals: ModelProposal[]
+  proposal_groups: Phase6ProposalGroup[]
+  revalidation_signals: Phase6RevalidationSignals
+}
+
 export interface RevalidationCheck {
   triggers_found: RevalidationTrigger[]
   affected_phases: number[]
@@ -476,7 +659,11 @@ export interface Phase2RunInput {
   additional_context?: string
 }
 
-export type PhaseRunInput = Phase1RunInput | Phase2RunInput
+export interface Phase6RunInput {
+  subsections?: Phase6Subsection[]
+}
+
+export type PhaseRunInput = Phase1RunInput | Phase2RunInput | Phase6RunInput
 
 export interface PipelinePhaseRunnerContext {
   analysisState: AnalysisState

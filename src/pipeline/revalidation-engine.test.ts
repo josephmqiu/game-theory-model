@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { emptyCanonicalStore } from '../types/canonical'
 import type {
   BaselineModelResult,
+  FormalizationResult,
   HistoricalGameResult,
   PlayerIdentificationResult,
 } from '../types/analysis-pipeline'
@@ -194,5 +195,60 @@ describe('revalidation engine', () => {
       'model_cannot_explain_fact',
     ])
     expect(check.recommendation).toBe('revalidate')
+  })
+
+  it('treats Phase 6 reframing triggers as rerun-worthy and monitor-only triggers as non-rerun signals', () => {
+    const engine = createEngine()
+    const revalidateResult: FormalizationResult = {
+      phase: 6,
+      status: {
+        status: 'complete',
+        phase: 6,
+        execution_id: 'phase_execution_6',
+        retriable: true,
+      },
+      subsections_run: ['6a'],
+      subsection_statuses: [],
+      formal_representations: {
+        status: 'complete',
+        summaries: [],
+        reused_formalization_ids: [],
+        new_game_hypotheses: [],
+        assumption_proposal_ids: [],
+        warnings: [],
+      },
+      payoff_estimation: { status: 'not_applicable', updates: [], warnings: [] },
+      baseline_equilibria: { status: 'not_applicable', analyses: [], warnings: [] },
+      equilibrium_selection: { status: 'not_applicable', selections: [], warnings: [] },
+      bargaining_dynamics: null,
+      communication_analysis: { status: 'not_applicable', classifications: [], warnings: [] },
+      option_value: null,
+      behavioral_overlays: null,
+      cross_game_effects: null,
+      proposals: [],
+      proposal_groups: [],
+      revalidation_signals: {
+        triggers_found: ['game_reframed'],
+        affected_entities: [{ type: 'game', id: 'game_1' }],
+        description: 'Phase 6 reframed the baseline game.',
+      },
+    }
+
+    const monitorResult: FormalizationResult = {
+      ...revalidateResult,
+      revalidation_signals: {
+        triggers_found: ['new_cross_game_link', 'behavioral_overlay_changes_prediction'],
+        affected_entities: [{ type: 'cross_game_link', id: 'link_1' }],
+        description: 'Phase 6 produced monitor-only downstream signals.',
+      },
+    }
+
+    const revalidateCheck = engine.checkTriggers(revalidateResult, 6)
+    expect(revalidateCheck.recommendation).toBe('revalidate')
+    expect(revalidateCheck.affected_phases).toEqual([3, 4, 6])
+
+    const monitorCheck = engine.checkTriggers(monitorResult, 6)
+    expect(monitorCheck.recommendation).toBe('monitor')
+    expect(monitorCheck.affected_phases).toEqual([6])
   })
 })

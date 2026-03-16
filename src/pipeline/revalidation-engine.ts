@@ -3,6 +3,7 @@ import type {
   ActiveRerunCycle,
   AnalysisState,
   BaselineModelResult,
+  FormalizationResult,
   HistoricalGameResult,
   PendingRevalidationApproval,
   PlayerIdentificationResult,
@@ -142,6 +143,27 @@ function getPhase4Check(result: HistoricalGameResult): RevalidationCheck {
   )
 }
 
+function getPhase6Check(result: FormalizationResult): RevalidationCheck {
+  const triggers = [...new Set(result.revalidation_signals.triggers_found)]
+  if (triggers.length === 0) {
+    return createCheck([], [], [], 'none', 'Phase 6 introduced no revalidation-worthy formalization shifts.')
+  }
+
+  const recommendation: RevalidationCheck['recommendation'] = triggers.some(
+    (trigger) => trigger === 'new_game_identified' || trigger === 'game_reframed',
+  )
+    ? 'revalidate'
+    : 'monitor'
+
+  return createCheck(
+    triggers,
+    recommendation === 'revalidate' ? [3, 4, 6] : [6],
+    result.revalidation_signals.affected_entities,
+    recommendation,
+    result.revalidation_signals.description,
+  )
+}
+
 export function createRevalidationEngine(
   deps: RevalidationEngineDependencies,
 ): RevalidationEngine {
@@ -155,6 +177,9 @@ export function createRevalidationEngine(
       }
       if (phase === 4) {
         return getPhase4Check(phaseResult as HistoricalGameResult)
+      }
+      if (phase === 6) {
+        return getPhase6Check(phaseResult as FormalizationResult)
       }
 
       return createCheck([], [], [], 'none', `Phase ${phase} has no implemented M6.1 trigger checks yet.`)
