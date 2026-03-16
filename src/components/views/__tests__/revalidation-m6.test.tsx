@@ -216,4 +216,81 @@ describe('M6 revalidation UI', () => {
       expect(screen.getByTestId('next-phase-decision')).toHaveTextContent('true|3|Revalidation pass 2 is queued from Phase 3.'),
     )
   })
+
+  // --- Convergence indicator tests ---
+
+  function SeedConvergedAnalysis() {
+    const appStore = useAppStoreApi()
+
+    useEffect(() => {
+      startPipelineAnalysis({
+        analysisId: appStore.getState().eventLog.analysis_id,
+        description: 'Converged scenario',
+        domain: 'geopolitical',
+        classification: null,
+      })
+      updateAnalysisState((state) =>
+        state
+          ? { ...state, pass_number: 2, status: 'paused' }
+          : state,
+      )
+    }, [appStore])
+
+    return <PhaseDetailScreen phase={5} />
+  }
+
+  function SeedIteratingAnalysis() {
+    const appStore = useAppStoreApi()
+
+    useEffect(() => {
+      startPipelineAnalysis({
+        analysisId: appStore.getState().eventLog.analysis_id,
+        description: 'Iterating scenario',
+        domain: 'geopolitical',
+        classification: null,
+      })
+      updateAnalysisState((state) =>
+        state
+          ? { ...state, pass_number: 3, status: 'paused' }
+          : state,
+      )
+      appStore.getState().dispatch({
+        kind: 'trigger_revalidation',
+        payload: {
+          trigger_condition: 'new_game_identified',
+          source_phase: 3,
+          target_phases: [3, 4],
+          entity_refs: [],
+          description: 'New game found.',
+          pass_number: 3,
+        },
+      })
+    }, [appStore])
+
+    return <PhaseDetailScreen phase={5} />
+  }
+
+  it('shows "Analysis converged after 2 passes" when pass > 1 and no open revalidation', async () => {
+    render(
+      <Providers>
+        <SeedConvergedAnalysis />
+      </Providers>,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByText(/Analysis converged after 2 passes/i)).toBeInTheDocument(),
+    )
+  })
+
+  it('shows "Still iterating — pass 3" when revalidation events are pending', async () => {
+    render(
+      <Providers>
+        <SeedIteratingAnalysis />
+      </Providers>,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByText(/Still iterating — pass 3/i)).toBeInTheDocument(),
+    )
+  })
 })

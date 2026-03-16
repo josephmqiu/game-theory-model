@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 
 import { Button } from '../../design-system'
 import { usePipelineController } from '../../../hooks/usePipelineController'
-import { useAppStore } from '../../../store'
+import { useAppStore, usePipelineStore } from '../../../store'
 
 export function RevalidationPhaseScreen(): ReactNode {
   const canonical = useAppStore((state) => state.canonical)
@@ -23,6 +23,19 @@ export function RevalidationPhaseScreen(): ReactNode {
       .sort((left, right) => right.triggered_at.localeCompare(left.triggered_at)),
     [canonical.revalidation_events],
   )
+
+  const passNumber = usePipelineStore((state) => state.analysis_state?.pass_number ?? 1)
+  const hasOpenRevalidation = Boolean(activeRerunCycle) || events.some((e) => e.resolution === 'pending')
+
+  const convergenceText = hasOpenRevalidation
+    ? `Still iterating \u2014 pass ${passNumber}`
+    : passNumber > 1
+      ? `Analysis converged after ${passNumber} passes`
+      : 'No revalidation events'
+
+  const convergenceWarning = passNumber >= 4
+    ? 'This may indicate a genuinely complex situation, inadequate information, or a wrong abstraction.'
+    : null
 
   const activePromptId = promptRegistry.active_versions[selectedPhase] ?? promptRegistry.official_versions[selectedPhase]
   const activePrompt = activePromptId ? promptRegistry.versions[activePromptId] : null
@@ -47,9 +60,10 @@ export function RevalidationPhaseScreen(): ReactNode {
           </p>
         </div>
         <div className="rounded-lg border border-border bg-bg-card px-4 py-2 text-sm text-text-primary">
-          {activeRerunCycle
-            ? `Pass ${activeRerunCycle.pass_number} queued from Phase ${activeRerunCycle.earliest_phase}`
-            : 'No rerun cycle queued'}
+          {convergenceText}
+          {convergenceWarning ? (
+            <div className="mt-1 text-xs text-amber-500">{convergenceWarning}</div>
+          ) : null}
         </div>
       </div>
 
