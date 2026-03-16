@@ -39,6 +39,10 @@ export function RevalidationPhaseScreen(): ReactNode {
 
   const activePromptId = promptRegistry.active_versions[selectedPhase] ?? promptRegistry.official_versions[selectedPhase]
   const activePrompt = activePromptId ? promptRegistry.versions[activePromptId] : null
+  const parentPrompt = activePrompt?.parent_id
+    ? promptRegistry.versions[activePrompt.parent_id]
+    : null
+  const contentChanged = parentPrompt && parentPrompt.content !== activePrompt?.content
 
   function handleForkPrompt() {
     const version = forkPromptVersion(selectedPhase, {
@@ -170,6 +174,11 @@ export function RevalidationPhaseScreen(): ReactNode {
               <div className="mt-1 text-xs text-text-muted">
                 {activePrompt.is_official ? 'Official prompt' : 'User fork'} · {activePrompt.id}
               </div>
+              {parentPrompt ? (
+                <div className="mt-1 text-xs text-text-muted">
+                  {contentChanged ? 'Modified from' : 'Identical to'}: {parentPrompt.name}
+                </div>
+              ) : null}
               <div className="mt-2 whitespace-pre-wrap text-sm text-text-primary">{activePrompt.content}</div>
             </div>
 

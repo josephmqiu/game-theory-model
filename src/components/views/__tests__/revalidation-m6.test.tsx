@@ -293,4 +293,21 @@ describe('M6 revalidation UI', () => {
       expect(screen.getByText(/Still iterating — pass 3/i)).toBeInTheDocument(),
     )
   })
+
+  it('shows parent prompt lineage when active prompt is a fork', async () => {
+    render(
+      <Providers>
+        <SeedRevalidationPhaseScreen />
+      </Providers>,
+    )
+
+    await waitFor(() => expect(screen.getByText(/Fork active prompt/i)).toBeInTheDocument())
+    await act(async () => {
+      screen.getByText(/Fork active prompt/i).click()
+    })
+
+    await waitFor(() =>
+      expect(screen.getByText(/Identical to:/i)).toBeInTheDocument(),
+    )
+  })
 })
