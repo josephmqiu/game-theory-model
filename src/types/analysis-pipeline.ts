@@ -1,6 +1,6 @@
 import type { Command } from '../engine/commands'
 import type { EntityRef, SolverKind, SolverReadiness } from './canonical'
-import type { EstimateValue } from './estimates'
+import type { EstimateValue, ForecastEstimate } from './estimates'
 import type {
   DiffReviewState,
   EntityPreview,
@@ -670,6 +670,153 @@ export interface AssumptionExtractionResult {
   proposals: ModelProposal[]
 }
 
+// ── Phase 8: Elimination ──
+
+export interface ProposedEliminatedOutcome {
+  temp_id: string
+  outcome_description: string
+  elimination_reasoning: string
+  citing_phases: { phase: number; finding: string }[]
+  evidence_refs: EntityRef[]
+  surprise_factor: 'high' | 'medium' | 'low'
+  related_scenarios: EntityRef[]
+}
+
+export interface EliminationResult {
+  phase: 8
+  status: PhaseResult
+  eliminated_outcomes: ProposedEliminatedOutcome[]
+  proposals: ModelProposal[]
+}
+
+// ── Phase 9: Scenario Generation ──
+
+export type ForecastBasis = 'equilibrium' | 'discretionary' | 'mixed'
+
+export interface ScenarioCausalStep {
+  phase: string
+  event: string
+  leads_to: string
+}
+
+export interface ScenarioAssumptionRef {
+  assumption_ref: EntityRef
+  sensitivity: 'critical' | 'high' | 'medium' | 'low'
+}
+
+export interface ProposedScenarioFull {
+  temp_id: string
+  name: string
+  narrative: {
+    summary: string
+    causal_chain: ScenarioCausalStep[]
+    full_text: string
+  }
+  probability: ForecastEstimate
+  key_assumptions: ScenarioAssumptionRef[]
+  invalidation_conditions: string[]
+  model_basis: EntityRef[]
+  cross_game_interactions: EntityRef[]
+  forecast_basis: ForecastBasis
+  forecast_basis_explanation: string
+}
+
+export interface ProposedTailRisk {
+  temp_id: string
+  event_description: string
+  probability: ForecastEstimate
+  trigger: string
+  why_unlikely: string
+  consequences: string
+  drift_toward: boolean
+  drift_evidence: string | null
+}
+
+export interface ProposedCentralThesis {
+  statement: string
+  falsification_condition: string
+  evidence_refs: EntityRef[]
+  assumption_refs: EntityRef[]
+  scenario_refs: string[]
+  forecast_basis: ForecastBasis
+}
+
+export interface ScenarioProbabilityCheck {
+  sum: number
+  missing_probability: number
+  warning: string | null
+}
+
+export interface ScenarioGenerationResult {
+  phase: 9
+  status: PhaseResult
+  proposed_scenarios: ProposedScenarioFull[]
+  tail_risks: ProposedTailRisk[]
+  central_thesis: ProposedCentralThesis
+  probability_check: ScenarioProbabilityCheck
+  proposals: ModelProposal[]
+}
+
+// ── Phase 10: Meta-Check ──
+
+export interface MetaCheckAnswer {
+  question_number: number
+  question: string
+  answer: string
+  concern_level: 'none' | 'minor' | 'significant' | 'critical'
+  revision_triggered: RevalidationTrigger | null
+  evidence_refs: EntityRef[]
+}
+
+export interface FinalTestAnswer {
+  question_number: number
+  question: string
+  answer: string
+  completeness: 'fully_answered' | 'partially_answered' | 'cannot_answer'
+  gap_description: string | null
+}
+
+export type ChallengeCategory =
+  | 'framing_choice'
+  | 'omitted_actor'
+  | 'omitted_strategy'
+  | 'omitted_latent_driver'
+  | 'overconfident_payoff'
+  | 'naive_independence'
+  | 'unjustified_equilibrium'
+  | 'linear_scenario'
+  | 'missing_cross_game_effect'
+  | 'evidence_quality'
+  | 'structural_bias'
+
+export interface AdversarialChallenge {
+  id: string
+  category: ChallengeCategory
+  target: EntityRef | null
+  severity: 'critical' | 'high' | 'medium' | 'low'
+  challenge: string
+  evidence_against: EntityRef[]
+  suggested_revision: string
+  affected_conclusions: EntityRef[]
+  response_status: 'unaddressed' | 'accepted' | 'rejected' | 'deferred'
+  analyst_response: string | null
+}
+
+export interface AdversarialResult {
+  challenges: AdversarialChallenge[]
+  overall_assessment: 'robust' | 'defensible' | 'vulnerable' | 'flawed'
+}
+
+export interface MetaCheckResult {
+  phase: 10
+  status: PhaseResult
+  meta_check_answers: MetaCheckAnswer[]
+  final_test_answers: FinalTestAnswer[]
+  adversarial_result: AdversarialResult
+  revisions_triggered: RevalidationTrigger[]
+  analysis_complete: boolean
+}
+
 export interface RevalidationCheck {
   triggers_found: RevalidationTrigger[]
   affected_phases: number[]
@@ -747,7 +894,11 @@ export interface Phase6RunInput {
 
 export interface Phase7RunInput {}
 
-export type PhaseRunInput = Phase1RunInput | Phase2RunInput | Phase6RunInput | Phase7RunInput
+export interface Phase8RunInput {}
+export interface Phase9RunInput {}
+export interface Phase10RunInput {}
+
+export type PhaseRunInput = Phase1RunInput | Phase2RunInput | Phase6RunInput | Phase7RunInput | Phase8RunInput | Phase9RunInput | Phase10RunInput
 
 export interface PipelinePhaseRunnerContext {
   analysisState: AnalysisState
