@@ -1,5 +1,6 @@
 import { defineEventHandler, readBody, setResponseStatus } from "h3";
 import { z } from "zod";
+import { enqueueCommand, waitForCommandResult } from "../../utils/mcp-command-bus";
 
 const runPhaseSchema = z.object({
   phase: z.number().int().min(1).max(10),
@@ -11,6 +12,7 @@ interface PhaseResult {
   phase: number;
   summary: string;
   error?: string;
+  result?: unknown;
 }
 
 /**
@@ -39,12 +41,38 @@ export default defineEventHandler(async (event): Promise<PhaseResult> => {
   const { phase, input } = parsed.data;
 
   try {
-    // TODO: Wire to pipeline orchestrator when available.
-    // For now, return a stub result indicating the phase was requested.
+    const command = enqueueCommand({
+      type: "run_phase",
+      payload: { phase, input },
+      sourceClientId: "api:run-phase",
+    });
+
+    const outcome = await waitForCommandResult(command.id, 30_000);
+    if (!outcome) {
+      setResponseStatus(event, 504);
+      return {
+        success: false,
+        phase,
+        summary: `Phase ${phase} timed out waiting for renderer execution`,
+        error: "No renderer acknowledged the queued command within 30 seconds.",
+      };
+    }
+
+    if (outcome.status === "failed") {
+      setResponseStatus(event, 500);
+      return {
+        success: false,
+        phase,
+        summary: `Phase ${phase} failed`,
+        error: outcome.error ?? "Renderer phase execution failed",
+      };
+    }
+
     return {
       success: true,
       phase,
-      summary: `Phase ${phase} execution requested.${input ? ` Input keys: ${Object.keys(input).join(", ")}` : ""}`,
+      summary: `Phase ${phase} complete.`,
+      result: outcome.result,
     };
   } catch (error) {
     setResponseStatus(event, 500);

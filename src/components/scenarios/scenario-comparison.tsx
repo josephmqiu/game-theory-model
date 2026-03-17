@@ -7,6 +7,7 @@ import { useMemo } from "react";
 import { Layers, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAnalysisStore } from "@/stores/analysis-store";
+import { useUiStore } from "@/stores/ui-store";
 import type { Scenario } from "shared/game-theory/types/evidence";
 
 function probabilityLabel(scenario: Scenario): string | null {
@@ -33,17 +34,28 @@ function confidenceBadge(confidence: number): string {
 interface ScenarioCardProps {
   scenario: Scenario;
   assumptions: ReadonlyArray<string>;
+  onInspect: (scenarioId: string) => void;
 }
 
-function ScenarioCard({ scenario, assumptions }: ScenarioCardProps) {
+function ScenarioCard({ scenario, assumptions, onInspect }: ScenarioCardProps) {
   const prob = probabilityLabel(scenario);
 
   return (
     <div
       className={cn(
         "flex flex-col gap-3 rounded-lg border border-border bg-card p-4",
-        "transition-colors hover:border-primary/30",
+        "transition-colors hover:border-primary/30 cursor-pointer",
       )}
+      role="button"
+      tabIndex={0}
+      onClick={() => onInspect(scenario.id)}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+          return;
+        }
+        event.preventDefault();
+        onInspect(scenario.id);
+      }}
     >
       <div className="flex items-start justify-between gap-2">
         <h4 className="text-sm font-medium text-foreground">{scenario.name}</h4>
@@ -112,6 +124,7 @@ function ScenarioCard({ scenario, assumptions }: ScenarioCardProps) {
 export function ScenarioComparison() {
   const scenarios = useAnalysisStore((s) => s.canonical.scenarios);
   const allAssumptions = useAnalysisStore((s) => s.canonical.assumptions);
+  const setInspectedTarget = useUiStore((s) => s.setInspectedTarget);
 
   const scenarioList = useMemo(() => Object.values(scenarios), [scenarios]);
 
@@ -161,6 +174,9 @@ export function ScenarioComparison() {
             key={scenario.id}
             scenario={scenario}
             assumptions={assumptionLabels[scenario.id] ?? []}
+            onInspect={(scenarioId) =>
+              setInspectedTarget({ entityType: "scenario", entityId: scenarioId })
+            }
           />
         ))}
       </div>

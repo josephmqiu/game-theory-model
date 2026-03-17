@@ -15,8 +15,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as EditorIndexRouteImport } from './routes/editor/index'
 import { Route as EditorTimelineRouteImport } from './routes/editor/timeline'
 import { Route as EditorScenariosRouteImport } from './routes/editor/scenarios'
+import { Route as EditorPlayoutsRouteImport } from './routes/editor/playouts'
 import { Route as EditorPlayersRouteImport } from './routes/editor/players'
+import { Route as EditorGameMapRouteImport } from './routes/editor/game-map'
 import { Route as EditorEvidenceRouteImport } from './routes/editor/evidence'
+import { Route as EditorAssumptionsRouteImport } from './routes/editor/assumptions'
 import { Route as EditorPhasePhaseIdRouteImport } from './routes/editor/phase/$phaseId'
 import { Route as EditorGameGameIdRouteImport } from './routes/editor/game/$gameId'
 
@@ -50,14 +53,29 @@ const EditorScenariosRoute = EditorScenariosRouteImport.update({
   path: '/scenarios',
   getParentRoute: () => EditorRoute,
 } as any)
+const EditorPlayoutsRoute = EditorPlayoutsRouteImport.update({
+  id: '/playouts',
+  path: '/playouts',
+  getParentRoute: () => EditorRoute,
+} as any)
 const EditorPlayersRoute = EditorPlayersRouteImport.update({
   id: '/players',
   path: '/players',
   getParentRoute: () => EditorRoute,
 } as any)
+const EditorGameMapRoute = EditorGameMapRouteImport.update({
+  id: '/game-map',
+  path: '/game-map',
+  getParentRoute: () => EditorRoute,
+} as any)
 const EditorEvidenceRoute = EditorEvidenceRouteImport.update({
   id: '/evidence',
   path: '/evidence',
+  getParentRoute: () => EditorRoute,
+} as any)
+const EditorAssumptionsRoute = EditorAssumptionsRouteImport.update({
+  id: '/assumptions',
+  path: '/assumptions',
   getParentRoute: () => EditorRoute,
 } as any)
 const EditorPhasePhaseIdRoute = EditorPhasePhaseIdRouteImport.update({
@@ -75,8 +93,11 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/editor': typeof EditorRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/editor/assumptions': typeof EditorAssumptionsRoute
   '/editor/evidence': typeof EditorEvidenceRoute
+  '/editor/game-map': typeof EditorGameMapRoute
   '/editor/players': typeof EditorPlayersRoute
+  '/editor/playouts': typeof EditorPlayoutsRoute
   '/editor/scenarios': typeof EditorScenariosRoute
   '/editor/timeline': typeof EditorTimelineRoute
   '/editor/': typeof EditorIndexRoute
@@ -86,8 +107,11 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
+  '/editor/assumptions': typeof EditorAssumptionsRoute
   '/editor/evidence': typeof EditorEvidenceRoute
+  '/editor/game-map': typeof EditorGameMapRoute
   '/editor/players': typeof EditorPlayersRoute
+  '/editor/playouts': typeof EditorPlayoutsRoute
   '/editor/scenarios': typeof EditorScenariosRoute
   '/editor/timeline': typeof EditorTimelineRoute
   '/editor': typeof EditorIndexRoute
@@ -99,8 +123,11 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/editor': typeof EditorRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/editor/assumptions': typeof EditorAssumptionsRoute
   '/editor/evidence': typeof EditorEvidenceRoute
+  '/editor/game-map': typeof EditorGameMapRoute
   '/editor/players': typeof EditorPlayersRoute
+  '/editor/playouts': typeof EditorPlayoutsRoute
   '/editor/scenarios': typeof EditorScenariosRoute
   '/editor/timeline': typeof EditorTimelineRoute
   '/editor/': typeof EditorIndexRoute
@@ -113,8 +140,11 @@ export interface FileRouteTypes {
     | '/'
     | '/editor'
     | '/settings'
+    | '/editor/assumptions'
     | '/editor/evidence'
+    | '/editor/game-map'
     | '/editor/players'
+    | '/editor/playouts'
     | '/editor/scenarios'
     | '/editor/timeline'
     | '/editor/'
@@ -124,8 +154,11 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/settings'
+    | '/editor/assumptions'
     | '/editor/evidence'
+    | '/editor/game-map'
     | '/editor/players'
+    | '/editor/playouts'
     | '/editor/scenarios'
     | '/editor/timeline'
     | '/editor'
@@ -136,8 +169,11 @@ export interface FileRouteTypes {
     | '/'
     | '/editor'
     | '/settings'
+    | '/editor/assumptions'
     | '/editor/evidence'
+    | '/editor/game-map'
     | '/editor/players'
+    | '/editor/playouts'
     | '/editor/scenarios'
     | '/editor/timeline'
     | '/editor/'
@@ -195,6 +231,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EditorScenariosRouteImport
       parentRoute: typeof EditorRoute
     }
+    '/editor/playouts': {
+      id: '/editor/playouts'
+      path: '/playouts'
+      fullPath: '/editor/playouts'
+      preLoaderRoute: typeof EditorPlayoutsRouteImport
+      parentRoute: typeof EditorRoute
+    }
     '/editor/players': {
       id: '/editor/players'
       path: '/players'
@@ -202,11 +245,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EditorPlayersRouteImport
       parentRoute: typeof EditorRoute
     }
+    '/editor/game-map': {
+      id: '/editor/game-map'
+      path: '/game-map'
+      fullPath: '/editor/game-map'
+      preLoaderRoute: typeof EditorGameMapRouteImport
+      parentRoute: typeof EditorRoute
+    }
     '/editor/evidence': {
       id: '/editor/evidence'
       path: '/evidence'
       fullPath: '/editor/evidence'
       preLoaderRoute: typeof EditorEvidenceRouteImport
+      parentRoute: typeof EditorRoute
+    }
+    '/editor/assumptions': {
+      id: '/editor/assumptions'
+      path: '/assumptions'
+      fullPath: '/editor/assumptions'
+      preLoaderRoute: typeof EditorAssumptionsRouteImport
       parentRoute: typeof EditorRoute
     }
     '/editor/phase/$phaseId': {
@@ -227,8 +284,11 @@ declare module '@tanstack/react-router' {
 }
 
 interface EditorRouteChildren {
+  EditorAssumptionsRoute: typeof EditorAssumptionsRoute
   EditorEvidenceRoute: typeof EditorEvidenceRoute
+  EditorGameMapRoute: typeof EditorGameMapRoute
   EditorPlayersRoute: typeof EditorPlayersRoute
+  EditorPlayoutsRoute: typeof EditorPlayoutsRoute
   EditorScenariosRoute: typeof EditorScenariosRoute
   EditorTimelineRoute: typeof EditorTimelineRoute
   EditorIndexRoute: typeof EditorIndexRoute
@@ -237,8 +297,11 @@ interface EditorRouteChildren {
 }
 
 const EditorRouteChildren: EditorRouteChildren = {
+  EditorAssumptionsRoute: EditorAssumptionsRoute,
   EditorEvidenceRoute: EditorEvidenceRoute,
+  EditorGameMapRoute: EditorGameMapRoute,
   EditorPlayersRoute: EditorPlayersRoute,
+  EditorPlayoutsRoute: EditorPlayoutsRoute,
   EditorScenariosRoute: EditorScenariosRoute,
   EditorTimelineRoute: EditorTimelineRoute,
   EditorIndexRoute: EditorIndexRoute,

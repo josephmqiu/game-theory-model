@@ -79,8 +79,9 @@ export const pipelineStore = createStore<PipelineStore>((set, get) => ({
   ...createInitialState(),
 
   startPipelineAnalysis(params) {
+    const analysisId = params.analysisId || crypto.randomUUID();
     const analysisState: PipelineAnalysisState = {
-      id: params.analysisId,
+      id: analysisId,
       event_description: params.description,
       domain: params.domain,
       current_phase: null,

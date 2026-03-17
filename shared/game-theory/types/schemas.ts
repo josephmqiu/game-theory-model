@@ -1029,6 +1029,30 @@ export const analysisFileMetadataSchema = z.object({
       end: z.string().min(1).optional(),
     })
     .optional(),
+  play_sessions: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        scenario_id: z.string().min(1),
+        ai_controlled_players: z.array(z.string().min(1)),
+        branch_label: z.string().min(1),
+        status: z.enum(["active", "completed"]),
+        turns: z.array(
+          z.object({
+            id: z.string().min(1),
+            player_id: z.string().min(1),
+            action: z.string().min(1),
+            reasoning: z.string().min(1).optional(),
+            control_mode: z.enum(["manual", "ai"]).optional(),
+            timestamp: z.string().min(1),
+          }),
+        ),
+        created_at: z.string().min(1),
+        updated_at: z.string().min(1),
+        source_session_id: z.string().min(1).nullable().optional(),
+      }),
+    )
+    .optional(),
 })
 
 export const analysisFileSchema = z.object({

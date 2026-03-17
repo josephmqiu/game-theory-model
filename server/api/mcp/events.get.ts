@@ -9,6 +9,7 @@ import {
   registerSSEClient,
   unregisterSSEClient,
 } from "../../utils/mcp-sync-state";
+import { getPendingCommands } from "../../utils/mcp-command-bus";
 
 export default defineEventHandler((event) => {
   const res = event.node.res;
@@ -29,6 +30,11 @@ export default defineEventHandler((event) => {
   if (state.canonical) {
     res.write(
       `data: ${JSON.stringify({ type: "state:update", version, state })}\n\n`,
+    );
+  }
+  for (const command of getPendingCommands()) {
+    res.write(
+      `data: ${JSON.stringify({ type: "command:queued", command })}\n\n`,
     );
   }
 

@@ -10,6 +10,8 @@ import { useEffect, useRef } from "react";
 import { analysisStore } from "@/stores/analysis-store";
 import { pipelineStore } from "@/stores/pipeline-store";
 import { conversationStore } from "@/stores/conversation-store";
+import { executeAppCommand } from "@/services/app-command-runner";
+import type { AppCommandEnvelope } from "shared/game-theory/types/command-bus";
 import type { SyncState } from "../../server/utils/mcp-sync-state";
 
 const PUSH_DEBOUNCE_MS = 2000;
@@ -40,6 +42,15 @@ function buildSyncState(): Partial<SyncState> {
       proposal_review: conversation.proposal_review,
       proposals_by_id: conversation.proposals_by_id,
     },
+    analysisMeta: {
+      persistedRevision: analysis.eventLog.cursor,
+      fileMeta: {
+        filePath: analysis.fileMeta.filePath,
+        name: analysis.fileMeta.name,
+        description: analysis.fileMeta.description ?? null,
+        metadata: analysis.fileMeta.metadata,
+      },
+    },
   };
 }
 
@@ -61,6 +72,7 @@ export function useMcpSync(): void {
   const clientIdRef = useRef<string | null>(null);
   const pushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipPushUntilRef = useRef(0);
+  const executingCommandsRef = useRef(new Set<string>());
 
   useEffect(() => {
     const baseUrl = getBaseUrl();
@@ -91,15 +103,117 @@ export function useMcpSync(): void {
             // L1 canonical changes from MCP should come as proposed commands
             // (not handled here — MCP writes go through proposal flow)
             if (state.pipelineState) {
-              pipelineStore
-                .getState()
-                .updateAnalysisState(
-                  () =>
-                    state.pipelineState?.analysis_state as ReturnType<
-                      typeof pipelineStore.getState
-                    >["analysis_state"],
-                );
+              pipelineStore.setState((current) => ({
+                ...current,
+                analysis_state:
+                  state.pipelineState?.analysis_state as ReturnType<
+                    typeof pipelineStore.getState
+                  >["analysis_state"],
+                phase_results:
+                  state.pipelineState?.phase_results as ReturnType<
+                    typeof pipelineStore.getState
+                  >["phase_results"],
+              }));
             }
+
+            if (state.runtimeState) {
+              pipelineStore.setState((current) => ({
+                ...current,
+                prompt_registry:
+                  state.runtimeState?.prompt_registry as ReturnType<
+                    typeof pipelineStore.getState
+                  >["prompt_registry"],
+                active_rerun_cycle:
+                  state.runtimeState?.active_rerun_cycle as ReturnType<
+                    typeof pipelineStore.getState
+                  >["active_rerun_cycle"],
+                pending_revalidation_approvals:
+                  state.runtimeState?.pending_revalidation_approvals as ReturnType<
+                    typeof pipelineStore.getState
+                  >["pending_revalidation_approvals"],
+              }));
+            }
+
+            if (state.conversationState) {
+              conversationStore.setState((current) => ({
+                ...current,
+                messages:
+                  state.conversationState?.messages as ReturnType<
+                    typeof conversationStore.getState
+                  >["messages"],
+                proposal_review:
+                  state.conversationState?.proposal_review as ReturnType<
+                    typeof conversationStore.getState
+                  >["proposal_review"],
+                proposals_by_id:
+                  state.conversationState?.proposals_by_id as ReturnType<
+                    typeof conversationStore.getState
+                  >["proposals_by_id"],
+              }));
+            }
+          } else if (data.type === "command:queued") {
+            const command = data.command as AppCommandEnvelope | undefined;
+            if (
+              !command ||
+              command.sourceClientId === clientIdRef.current ||
+              executingCommandsRef.current.has(command.id) ||
+              !clientIdRef.current
+            ) {
+              return;
+            }
+
+            void (async () => {
+              try {
+                const claimResponse = await fetch(
+                  `${getBaseUrl()}/api/mcp/command-claim`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      id: command.id,
+                      ownerClientId: clientIdRef.current,
+                    }),
+                  },
+                );
+                const claimResult = (await claimResponse.json()) as {
+                  status: "claimed" | "busy" | "missing" | "error";
+                };
+
+                if (!claimResponse.ok || claimResult.status !== "claimed") {
+                  return;
+                }
+
+                executingCommandsRef.current.add(command.id);
+                const result = await executeAppCommand(command);
+                await fetch(`${getBaseUrl()}/api/mcp/command-result`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    id: command.id,
+                    status: "completed",
+                    result,
+                    sourceClientId: clientIdRef.current,
+                  }),
+                });
+              } catch (error) {
+                await fetch(`${getBaseUrl()}/api/mcp/command-result`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    id: command.id,
+                    status: "failed",
+                    error:
+                      error instanceof Error
+                        ? error.message
+                        : "Unknown command execution error",
+                    sourceClientId: clientIdRef.current,
+                  }),
+                });
+              } finally {
+                executingCommandsRef.current.delete(command.id);
+                pushStateToServer(clientIdRef.current);
+              }
+            })();
           }
         } catch {
           // Ignore malformed events

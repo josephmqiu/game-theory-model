@@ -4,12 +4,15 @@
 
 import { useAnalysisStore } from "@/stores/analysis-store";
 import { Gamepad2, Users, ArrowRight } from "lucide-react";
+import { useUiStore } from "@/stores/ui-store";
+import { cn } from "@/lib/utils";
 
 export function GameMap() {
   const canonical = useAnalysisStore((s) => s.canonical);
   const games = Object.values(canonical.games);
   const players = canonical.players;
   const crossGameLinks = Object.values(canonical.cross_game_links);
+  const setInspectedTarget = useUiStore((s) => s.setInspectedTarget);
 
   if (games.length === 0) {
     return (
@@ -33,7 +36,22 @@ export function GameMap() {
           return (
             <div
               key={game.id}
-              className="rounded-lg border border-border bg-card p-4"
+              role="button"
+              tabIndex={0}
+              className={cn(
+                "rounded-lg border border-border bg-card p-4 cursor-pointer",
+                "hover:bg-accent/40 transition-colors",
+              )}
+              onClick={() =>
+                setInspectedTarget({ entityType: "game", entityId: game.id })
+              }
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") {
+                  return;
+                }
+                event.preventDefault();
+                setInspectedTarget({ entityType: "game", entityId: game.id });
+              }}
             >
               <div className="flex items-center gap-2 mb-2">
                 <Gamepad2 size={16} className="text-primary" />
@@ -48,7 +66,27 @@ export function GameMap() {
                   {gamePlayers.map((p) => (
                     <span
                       key={p.id}
+                      role="button"
+                      tabIndex={0}
                       className="text-xs px-1.5 py-0.5 rounded bg-secondary"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setInspectedTarget({
+                          entityType: "player",
+                          entityId: p.id,
+                        });
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") {
+                          return;
+                        }
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setInspectedTarget({
+                          entityType: "player",
+                          entityId: p.id,
+                        });
+                      }}
                     >
                       {p.name}
                     </span>
@@ -56,14 +94,34 @@ export function GameMap() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-1">
-                {formalizations.map((f) => (
-                  <span
-                    key={f.id}
-                    className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary"
-                  >
-                    {f.kind}
-                  </span>
-                ))}
+                  {formalizations.map((f) => (
+                    <span
+                      key={f.id}
+                      role="button"
+                      tabIndex={0}
+                      className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setInspectedTarget({
+                          entityType: "formalization",
+                          entityId: f.id,
+                        });
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") {
+                          return;
+                        }
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setInspectedTarget({
+                          entityType: "formalization",
+                          entityId: f.id,
+                        });
+                      }}
+                    >
+                      {f.kind}
+                    </span>
+                  ))}
               </div>
             </div>
           );
@@ -79,7 +137,25 @@ export function GameMap() {
             {crossGameLinks.map((link) => (
               <div
                 key={link.id}
-                className="flex items-center gap-2 rounded border border-border bg-card p-2"
+                role="button"
+                tabIndex={0}
+                className="flex items-center gap-2 rounded border border-border bg-card p-2 cursor-pointer"
+                onClick={() =>
+                  setInspectedTarget({
+                    entityType: "cross_game_link",
+                    entityId: link.id,
+                  })
+                }
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") {
+                    return;
+                  }
+                  event.preventDefault();
+                  setInspectedTarget({
+                    entityType: "cross_game_link",
+                    entityId: link.id,
+                  });
+                }}
               >
                 <span className="text-xs font-mono">
                   {canonical.games[link.source_game_id]?.name ??

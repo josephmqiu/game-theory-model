@@ -87,6 +87,11 @@ export default defineEventHandler(async (event) => {
       success: true,
       filePath: resolve(filePath),
       store: result.store,
+      meta: {
+        name: result.analysis.name,
+        description: result.analysis.description,
+        metadata: result.analysis.metadata,
+      },
       migration: result.migration,
       integrity: result.integrity,
     };

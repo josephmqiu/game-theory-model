@@ -4,8 +4,7 @@
  */
 
 import { createStore, useStore } from "zustand";
-
-export type AIProviderType = "anthropic" | "openai";
+import type { AIProviderType } from "@/types/agent-settings";
 
 export interface AIProviderConfig {
   provider: AIProviderType;
@@ -32,7 +31,7 @@ type AiStore = AiState & AiActions;
 const initialState: AiState = {
   provider: {
     provider: "anthropic",
-    modelId: "claude-sonnet-4-5-20250514",
+    modelId: "claude-sonnet-4-6",
   },
   isStreaming: false,
   streamingPhase: null,

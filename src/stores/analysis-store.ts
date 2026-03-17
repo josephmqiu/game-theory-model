@@ -14,12 +14,14 @@ import type { Command } from "shared/game-theory/engine/commands";
 import type { DispatchResult } from "shared/game-theory/engine/dispatch";
 import { dispatch } from "shared/game-theory/engine/dispatch";
 import { applyPatch } from "fast-json-patch";
+import type { AnalysisFile } from "shared/game-theory/types/file";
 import { derivedStore } from "./derived-store";
 
 export interface AnalysisFileMeta {
   filePath: string | null;
   name: string;
   description?: string;
+  metadata: AnalysisFile["metadata"];
   dirty: boolean;
 }
 
@@ -56,6 +58,7 @@ function createInitialState(): AnalysisState {
     fileMeta: {
       filePath: null,
       name: "Untitled Analysis",
+      metadata: { tags: [] },
       dirty: false,
     },
   };

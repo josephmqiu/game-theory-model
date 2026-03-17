@@ -40,7 +40,11 @@ export default defineEventHandler(async (event) => {
     return {
       success: true,
       store: result.store,
-      meta: result.meta,
+      meta: {
+        name: result.analysis.name,
+        description: result.analysis.description,
+        metadata: result.analysis.metadata,
+      },
       migration: result.migration,
       integrity: result.integrity,
     };

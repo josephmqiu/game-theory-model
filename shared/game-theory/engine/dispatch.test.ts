@@ -217,6 +217,66 @@ describe("command spine dispatch", () => {
     expect(generateEntityId("claim")).toMatch(/^claim_[a-f0-9-]+$/);
   });
 
+  it("supports manual evidence/inference/scenario link patterns and rejects invalid claim bases", () => {
+    const store = createSampleCanonicalStore();
+    const eventLog = createEventLog("/analysis.gta.json");
+
+    const inferenceResult = dispatch(store, eventLog, {
+      kind: "add_inference",
+      id: "inference_manual",
+      payload: {
+        statement: "Manual inference from observed positioning.",
+        derived_from: ["claim_1"],
+        confidence: 0.65,
+        rationale: "The claim implies a stronger commitment signal.",
+      },
+    });
+
+    expect(inferenceResult.status).toBe("committed");
+    if (inferenceResult.status !== "committed") {
+      throw new Error("Expected inference command to commit.");
+    }
+
+    const scenarioResult = dispatch(inferenceResult.store, inferenceResult.event_log, {
+      kind: "add_scenario",
+      id: "scenario_manual",
+      payload: {
+        name: "Manual stress test",
+        formalization_id: "formalization_1",
+        path: [],
+        probability_model: "independent",
+        key_assumptions: ["assumption_1"],
+        invalidators: ["claim_1", "inference_manual", "assumption_1"],
+        narrative: "Scenario manually assembled from linked evidence entities.",
+      },
+    });
+
+    expect(scenarioResult.status).toBe("committed");
+    if (scenarioResult.status !== "committed") {
+      throw new Error("Expected scenario command to commit.");
+    }
+
+    expect(scenarioResult.store.scenarios.scenario_manual).toMatchObject({
+      key_assumptions: ["assumption_1"],
+      invalidators: ["claim_1", "inference_manual", "assumption_1"],
+    });
+
+    const invalidClaim = dispatch(scenarioResult.store, scenarioResult.event_log, {
+      kind: "add_claim",
+      id: "claim_bad_base",
+      payload: {
+        statement: "This should fail because based_on must reference observations.",
+        based_on: ["source_1"],
+        confidence: 0.5,
+      },
+    });
+
+    expect(invalidClaim).toMatchObject({
+      status: "rejected",
+      reason: "invariant_violated",
+    });
+  });
+
   it("persists the provided pass number on trigger_revalidation events", () => {
     const store = createSampleCanonicalStore();
     const eventLog = createEventLog("/analysis.gta.json");

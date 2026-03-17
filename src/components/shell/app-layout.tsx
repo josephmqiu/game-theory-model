@@ -8,20 +8,28 @@ import { TopBar } from "./top-bar";
 import { Sidebar } from "./sidebar";
 import { InspectorPanel } from "./inspector-panel";
 import { StatusBar } from "@/components/shell/status-bar";
-import { useUiStore } from "@/stores/ui-store";
+import { useUiStore, hydrateUiStore } from "@/stores/ui-store";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { useElectronMenu } from "@/hooks/use-electron-menu";
 import { useMcpSync } from "@/hooks/use-mcp-sync";
 import { setupFileEventListeners } from "@/hooks/file-operations";
+import {
+  AiChatMinimizedBar,
+  AiChatPanel,
+} from "@/components/panels/ai-chat-panel";
 
 export function AppLayout() {
   const aiPanelOpen = useUiStore((s) => s.aiPanelOpen);
+  const aiPanelMinimized = useUiStore((s) => s.aiPanelMinimized);
+  const setAiPanelOpen = useUiStore((s) => s.setAiPanelOpen);
+  const toggleAiPanelMinimized = useUiStore((s) => s.toggleAiPanelMinimized);
 
   useKeyboardShortcuts();
   useElectronMenu();
   useMcpSync();
 
   useEffect(() => {
+    void hydrateUiStore();
     return setupFileEventListeners();
   }, []);
 
@@ -32,22 +40,31 @@ export function AppLayout() {
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
 
-        <main className="flex-1 overflow-y-auto p-6">
-          <Outlet />
-        </main>
+        <div className="relative flex-1 overflow-hidden">
+          <main className="h-full overflow-y-auto p-6">
+            <Outlet />
+          </main>
 
-        {aiPanelOpen && (
-          <aside className="w-80 border-l border-border shrink-0 overflow-y-auto flex flex-col">
-            <div className="p-4 flex-1">
-              <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
-                AI Chat
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                AI chat panel — connect an AI provider to begin analysis.
-              </p>
+          {aiPanelOpen && (
+            <div className="pointer-events-none absolute inset-0 z-20">
+              <div className="pointer-events-auto absolute bottom-4 right-4 flex max-h-[calc(100%-2rem)] flex-col items-end gap-3">
+                {aiPanelMinimized ? (
+                  <AiChatMinimizedBar
+                    onExpand={toggleAiPanelMinimized}
+                    onClose={() => setAiPanelOpen(false)}
+                  />
+                ) : (
+                  <div className="h-[32rem] w-[24rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+                    <AiChatPanel
+                      onClose={() => setAiPanelOpen(false)}
+                      onMinimize={toggleAiPanelMinimized}
+                    />
+                  </div>
+                )}
+              </div>
             </div>
-          </aside>
-        )}
+          )}
+        </div>
 
         <InspectorPanel />
       </div>

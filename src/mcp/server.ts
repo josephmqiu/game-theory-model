@@ -11,6 +11,9 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { storeToAnalysisFile } from "shared/game-theory/utils/serialization";
+import { STORE_KEY, type EntityType } from "shared/game-theory/types/canonical";
+import type { ConversationStateSnapshot } from "../../server/utils/mcp-sync-state";
 
 import { registerPhaseTools } from "shared/game-theory/mcp-tools/phases";
 import { registerModelTools } from "shared/game-theory/mcp-tools/model";
@@ -20,6 +23,7 @@ import type {
   RuntimeToolContext,
 } from "shared/game-theory/mcp-tools/context";
 import { emptyCanonicalStore } from "shared/game-theory/types/canonical";
+import type { AppCommandType } from "shared/game-theory/types/command-bus";
 
 const MCP_DEFAULT_PORT = 3100;
 const SERVER_NAME = "game-theory-analyzer";
@@ -68,17 +72,59 @@ function readNitroPort(): number | null {
       ".game-theory-analyzer",
       ".port",
     );
-    const port = parseInt(readFileSync(portFile, "utf-8").trim(), 10);
+    const raw = readFileSync(portFile, "utf-8").trim();
+    const parsed = JSON.parse(raw) as { port?: number };
+    const port = Number(parsed.port);
     return isNaN(port) ? null : port;
   } catch {
     return null;
   }
 }
 
+async function dispatchNitroCommand<T extends AppCommandType>(
+  nitroPort: number,
+  params: {
+    type: T;
+    payload: unknown;
+    timeoutMs?: number;
+  },
+): Promise<unknown> {
+  const response = await fetch(`http://127.0.0.1:${nitroPort}/api/mcp/commands`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      type: params.type,
+      payload: params.payload,
+      waitForResult: true,
+      timeoutMs: params.timeoutMs ?? 30_000,
+      sourceClientId: "mcp-server",
+    }),
+  });
+
+  const result = (await response.json()) as {
+    status: string;
+    command?: { result?: unknown; error?: string | null };
+    error?: string;
+  };
+
+  if (!response.ok || result.status === "failed" || result.status === "timeout") {
+    throw new Error(
+      result.command?.error ?? result.error ?? `Command ${params.type} failed.`,
+    );
+  }
+
+  return result.command?.result ?? null;
+}
+
 async function fetchSyncState(nitroPort: number): Promise<{
   canonical: ReturnType<RuntimeToolContext["getCanonicalStore"]>;
   pipelineState: ReturnType<RuntimeToolContext["getPipelineState"]>;
   runtimeState: ReturnType<RuntimeToolContext["getPipelineRuntimeState"]>;
+  conversationState: ConversationStateSnapshot;
+  analysisMeta: {
+    persistedRevision: number;
+    fileMeta: Record<string, unknown> | null;
+  } | null;
 }> {
   try {
     const res = await fetch(`http://127.0.0.1:${nitroPort}/api/mcp/state`);
@@ -88,6 +134,11 @@ async function fetchSyncState(nitroPort: number): Promise<{
         canonical: ReturnType<RuntimeToolContext["getCanonicalStore"]>;
         pipelineState: ReturnType<RuntimeToolContext["getPipelineState"]>;
         runtimeState: ReturnType<RuntimeToolContext["getPipelineRuntimeState"]>;
+        conversationState: ConversationStateSnapshot;
+        analysisMeta: {
+          persistedRevision: number;
+          fileMeta: Record<string, unknown> | null;
+        } | null;
       };
     };
     if (data.status === "ok" && data.state) {
@@ -95,6 +146,8 @@ async function fetchSyncState(nitroPort: number): Promise<{
         canonical: data.state.canonical,
         pipelineState: data.state.pipelineState,
         runtimeState: data.state.runtimeState,
+        conversationState: data.state.conversationState,
+        analysisMeta: data.state.analysisMeta,
       };
     }
   } catch {
@@ -112,6 +165,16 @@ async function fetchSyncState(nitroPort: number): Promise<{
       active_rerun_cycle: null,
       pending_revalidation_approvals: {},
     },
+    conversationState: {
+      messages: [],
+      proposal_review: {
+        proposals: [],
+        active_proposal_index: 0,
+        merge_log: [],
+      },
+      proposals_by_id: {},
+    },
+    analysisMeta: null,
   };
 }
 
@@ -134,7 +197,7 @@ function createNitroBackedContext(nitroPort: number): RuntimeToolContext {
   const host = {
     getCanonical: () => cachedState?.canonical ?? emptyStore,
     getAnalysisFile: () => null,
-    getPersistedRevision: () => 0,
+    getPersistedRevision: () => cachedState?.analysisMeta?.persistedRevision ?? 0,
     getActiveAnalysisId: () =>
       (cachedState?.pipelineState?.analysis_state as { id?: string })?.id ?? "",
     resetAnalysisSession: () => {},
@@ -174,39 +237,111 @@ function createNitroBackedContext(nitroPort: number): RuntimeToolContext {
     setActiveRerunCycle: () => {},
     updatePromptRegistry: () => {},
     getConversationState: () => ({
-      proposal_review: {
+      proposal_review: cachedState?.conversationState?.proposal_review ?? {
         proposals: [],
         active_proposal_index: 0,
         merge_log: [],
       },
     }),
-    registerProposalGroup: () => {},
+    registerProposalGroup: async (params: {
+      phase: number;
+      content: string;
+      message_type?: "proposal" | "finding" | "result";
+      proposals: unknown[];
+    }) => {
+      await dispatchNitroCommand(nitroPort, {
+        type: "register_proposal_group",
+        payload: {
+          phase: params.phase,
+          content: params.content,
+          messageType: params.message_type,
+          proposals: params.proposals,
+        },
+      });
+      await refreshState();
+    },
     getFirstPendingProposalPhase: () => null,
     updateRevalidationActionStatus: () => {},
     getDerivedState: () => ({ sensitivityByFormalizationAndSolver: {} }),
   } as unknown as RuntimeToolContext["host"];
 
   const orchestrator = {
-    startAnalysis: async () => {
+    startAnalysis: async (description: string, options?: { manual?: boolean }) => {
+      const result = await dispatchNitroCommand(nitroPort, {
+        type: "start_analysis",
+        payload: { description, manual: options?.manual },
+      });
+      await refreshState();
+      return result;
+    },
+    runPhase: async (phase: number, input?: unknown) => {
+      const result = await dispatchNitroCommand(nitroPort, {
+        type: "run_phase",
+        payload: { phase, input },
+      });
+      await refreshState();
+      return result;
+    },
+    approveRevalidation: async (eventId: string) => {
+      const result = await dispatchNitroCommand(nitroPort, {
+        type: "approve_revalidation",
+        payload: { eventId },
+      });
+      await refreshState();
+      return result;
+    },
+    dismissRevalidation: async (eventId: string) => {
+      await dispatchNitroCommand(nitroPort, {
+        type: "dismiss_revalidation",
+        payload: { eventId },
+      });
       await refreshState();
     },
-    runPhase: async () => {
-      await refreshState();
-    },
-    approveRevalidation: async () => null,
-    dismissRevalidation: () => {},
-    getPendingRevalidations: () => [],
+    getPendingRevalidations: () =>
+      Object.values(
+        cachedState?.runtimeState?.pending_revalidation_approvals ?? {},
+      ),
   } as unknown as RuntimeToolContext["orchestrator"];
 
   return {
     host,
     server: { registerTool: () => {} },
     orchestrator,
-    getModel: () => null,
+    executeCommand: (type, payload) =>
+      dispatchNitroCommand(nitroPort, { type, payload }),
+    getModel: () => {
+      if (!cachedState?.analysisMeta?.fileMeta) return null;
+      return storeToAnalysisFile(
+        cachedState.canonical ?? emptyStore,
+        cachedState.analysisMeta.fileMeta as Parameters<
+          typeof storeToAnalysisFile
+        >[1],
+      );
+    },
     getCanonicalStore: () => cachedState?.canonical ?? emptyStore,
-    getAllPhaseStatuses: () => [],
-    getEntities: () => [],
-    getPersistedRevision: () => 0,
+    getAllPhaseStatuses: () => {
+      const phaseStates = cachedState?.pipelineState?.analysis_state?.phase_states;
+      if (!phaseStates || typeof phaseStates !== "object") {
+        return [];
+      }
+
+      return Object.entries(phaseStates).map(([phase, state]) => ({
+        phase: Number(phase),
+        status:
+          (state as { status?: string }).status === "complete"
+            ? "complete"
+            : (state as { status?: string }).status === "review_needed"
+              ? "stale"
+            : (state as { status?: string }).status === "needs_rerun"
+              ? "blocked"
+            : (state as { status?: string }).status === "running"
+              ? "running"
+              : "idle",
+      }));
+    },
+    getEntities: <T,>(type: EntityType) =>
+      Object.values((cachedState?.canonical ?? emptyStore)[STORE_KEY[type]]) as T[],
+    getPersistedRevision: () => cachedState?.analysisMeta?.persistedRevision ?? 0,
     getPipelineState: () =>
       cachedState?.pipelineState ?? {
         analysis_state: null,
@@ -235,7 +370,7 @@ function registerTools(
 
   registerPhaseTools(bridge, context);
   registerModelTools(bridge, context);
-  registerPlayTools(bridge);
+  registerPlayTools(bridge, context);
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: tools.map((t) => ({

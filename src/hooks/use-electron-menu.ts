@@ -7,7 +7,12 @@ import { useEffect } from "react";
 import { analysisStore } from "@/stores/analysis-store";
 import { pipelineStore } from "@/stores/pipeline-store";
 import { conversationStore } from "@/stores/conversation-store";
-import { saveFile, loadFile } from "@/hooks/file-operations";
+import { playStore } from "@/stores/play-store";
+import {
+  saveFile,
+  loadFile,
+  loadFileFromContent,
+} from "@/hooks/file-operations";
 
 function isElectron(): boolean {
   return typeof window !== "undefined" && Boolean(window.electronAPI);
@@ -25,6 +30,7 @@ export function useElectronMenu(): void {
           analysisStore.getState().newAnalysis();
           pipelineStore.getState().resetPipeline();
           conversationStore.getState().resetConversation();
+          playStore.getState().reset();
           break;
         case "open":
           loadFile();
@@ -50,9 +56,9 @@ export function useElectronMenu(): void {
     // Handle file open from OS file association
     const cleanupOpen = api.onOpenFile?.(async (filePath: string) => {
       try {
-        const content = await api.readFile?.(filePath);
-        if (content) {
-          await loadFileFromContent(filePath, content);
+        const file = await api.readFile?.(filePath);
+        if (file) {
+          await loadFileFromContent(file.filePath, file.content);
         }
       } catch (err) {
         console.error("Failed to open file:", err);
@@ -63,9 +69,9 @@ export function useElectronMenu(): void {
     api.getPendingFile?.().then(async (filePath: string | null) => {
       if (filePath) {
         try {
-          const content = await api.readFile?.(filePath);
-          if (content) {
-            await loadFileFromContent(filePath, content);
+          const file = await api.readFile?.(filePath);
+          if (file) {
+            await loadFileFromContent(file.filePath, file.content);
           }
         } catch (err) {
           console.error("Failed to open pending file:", err);
@@ -78,60 +84,4 @@ export function useElectronMenu(): void {
       if (typeof cleanupOpen === "function") cleanupOpen();
     };
   }, []);
-}
-
-async function loadFileFromContent(
-  filePath: string,
-  content: string,
-): Promise<void> {
-  try {
-    const response = await fetch("/api/files/load", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
-    });
-
-    const result = (await response.json()) as {
-      success: boolean;
-      store?: unknown;
-      meta?: { name: string };
-      error?: string;
-    };
-
-    if (result.success && result.store) {
-      analysisStore
-        .getState()
-        .loadCanonical(
-          result.store as ReturnType<
-            typeof analysisStore.getState
-          >["canonical"],
-          {
-            filePath,
-            name: result.meta?.name ?? "Loaded Analysis",
-            dirty: false,
-          },
-        );
-    }
-  } catch (err) {
-    console.error("Failed to parse analysis file:", err);
-  }
-}
-
-// Extend window for Electron IPC
-declare global {
-  interface Window {
-    electronAPI?: {
-      onMenuAction?: (callback: (action: string) => void) => () => void;
-      onOpenFile?: (callback: (path: string) => void) => () => void;
-      getPendingFile?: () => Promise<string | null>;
-      readFile?: (path: string) => Promise<string>;
-      showSaveDialog?: (options: {
-        defaultPath?: string;
-        filters?: Array<{ name: string; extensions: string[] }>;
-      }) => Promise<string | null>;
-      showOpenDialog?: (options: {
-        filters?: Array<{ name: string; extensions: string[] }>;
-      }) => Promise<string | null>;
-    };
-  }
 }

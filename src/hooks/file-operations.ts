@@ -1,16 +1,104 @@
 /**
  * File operations — save/load .gta.json files.
  * All reads go through the /api/files/load endpoint (migration + Zod validation).
- * All writes go through the /api/files/save endpoint (storeToAnalysisFile).
- * Adapted from OpenPencil's file-operations.ts for .gta.json files.
  */
 
 import { analysisStore } from "@/stores/analysis-store";
 import { pipelineStore } from "@/stores/pipeline-store";
 import { conversationStore } from "@/stores/conversation-store";
+import { playStore, type PlaySession } from "@/stores/play-store";
+import { storeToAnalysisFile } from "shared/game-theory/utils/serialization";
+import type { AnalysisFile } from "shared/game-theory/types/file";
+
+interface LoadedAnalysisResponse {
+  success: boolean;
+  store?: unknown;
+  meta?: {
+    name: string;
+    description?: string;
+    metadata?: AnalysisFile["metadata"];
+  };
+  error?: string;
+}
 
 function isElectron(): boolean {
   return typeof window !== "undefined" && Boolean(window.electronAPI);
+}
+
+function buildSerializedAnalysis(): string {
+  const state = analysisStore.getState();
+  const meta = state.fileMeta;
+  const timestamp = new Date().toISOString();
+  const playSessions = Object.values(playStore.getState().sessions);
+  const persistedMetadata: AnalysisFile["metadata"] = {
+    ...(meta.metadata ?? { tags: [] }),
+    tags: meta.metadata?.tags ?? [],
+    play_sessions: serializePlaySessions(playSessions),
+  };
+
+  const analysisFile = storeToAnalysisFile(state.canonical, {
+    name: meta.name,
+    description: meta.description,
+    created_at: timestamp,
+    updated_at: timestamp,
+    metadata: persistedMetadata,
+  });
+
+  return JSON.stringify(analysisFile, null, 2);
+}
+
+function resetWorkspaceState(): void {
+  pipelineStore.getState().resetPipeline();
+  conversationStore.getState().resetConversation();
+  playStore.getState().reset();
+}
+
+function serializePlaySessions(
+  sessions: PlaySession[],
+): NonNullable<AnalysisFile["metadata"]["play_sessions"]> {
+  return sessions.map((session) => ({
+    id: session.id,
+    scenario_id: session.scenarioId,
+    ai_controlled_players: session.aiControlledPlayers,
+    branch_label: session.branchLabel,
+    status: session.status,
+    turns: session.turns.map((turn) => ({
+      id: turn.id,
+      player_id: turn.playerId,
+      action: turn.action,
+      reasoning: turn.reasoning,
+      control_mode: turn.controlMode,
+      timestamp: turn.timestamp,
+    })),
+    created_at: session.createdAt,
+    updated_at: session.updatedAt,
+    source_session_id: session.sourceSessionId ?? null,
+  }));
+}
+
+function deserializePlaySessions(
+  sessions: AnalysisFile["metadata"]["play_sessions"] | undefined,
+): PlaySession[] {
+  return (
+    sessions?.map((session) => ({
+      id: session.id,
+      scenarioId: session.scenario_id,
+      aiControlledPlayers: session.ai_controlled_players,
+      branchLabel: session.branch_label,
+      status: session.status,
+      turns: session.turns.map((turn) => ({
+        id: turn.id,
+        playerId: turn.player_id,
+        action: turn.action,
+        reasoning: turn.reasoning,
+        controlMode: turn.control_mode,
+        timestamp: turn.timestamp,
+      })),
+      createdAt: session.created_at,
+      updatedAt: session.updated_at,
+      sourceSessionId: session.source_session_id ?? null,
+    })) ?? []
+  );
 }
 
 // ── Save ──
@@ -18,62 +106,35 @@ function isElectron(): boolean {
 export async function saveFile(saveAs = false): Promise<void> {
   const state = analysisStore.getState();
   const meta = state.fileMeta;
-
-  let filePath = meta.filePath;
-
-  if (!filePath || saveAs) {
-    if (isElectron()) {
-      filePath =
-        (await window.electronAPI!.showSaveDialog?.({
-          defaultPath: `${meta.name}.gta.json`,
-          filters: [{ name: "Game Theory Analysis", extensions: ["gta.json"] }],
-        })) ?? null;
-    } else {
-      // Browser fallback — download
-      const json = JSON.stringify(state.canonical, null, 2);
-      const blob = new Blob([json], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${meta.name}.gta.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      analysisStore.getState().setFileMeta({ dirty: false });
-      return;
-    }
-
-    if (!filePath) return; // User cancelled
-  }
+  const serialized = buildSerializedAnalysis();
 
   try {
-    const response = await fetch("/api/files/save", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        filePath,
-        store: state.canonical,
-        meta: {
-          name: meta.name,
-          description: meta.description ?? "",
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-      }),
-    });
+    if (isElectron()) {
+      const filePath =
+        !meta.filePath || saveAs
+          ? await window.electronAPI!.saveFile(
+              serialized,
+              `${meta.name}.gta.json`,
+            )
+          : await window.electronAPI!.saveToPath(meta.filePath, serialized);
 
-    const result = (await response.json()) as {
-      success: boolean;
-      error?: string;
-    };
+      if (!filePath) return;
 
-    if (result.success) {
       analysisStore.getState().setFileMeta({
         filePath,
         dirty: false,
       });
-    } else {
-      console.error("Save failed:", result.error);
+      return;
     }
+
+    const blob = new Blob([serialized], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${meta.name}.gta.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    analysisStore.getState().setFileMeta({ dirty: false });
   } catch (err) {
     console.error("Save failed:", err);
   }
@@ -81,37 +142,10 @@ export async function saveFile(saveAs = false): Promise<void> {
 
 // ── Load ──
 
-export async function loadFile(): Promise<void> {
-  let filePath: string | null = null;
-  let content: string | null = null;
-
-  if (isElectron()) {
-    filePath =
-      (await window.electronAPI!.showOpenDialog?.({
-        filters: [{ name: "Game Theory Analysis", extensions: ["gta.json"] }],
-      })) ?? null;
-
-    if (!filePath) return;
-
-    content = (await window.electronAPI!.readFile?.(filePath)) ?? null;
-    if (!content) return;
-  } else {
-    // Browser fallback — file input
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".gta.json";
-
-    const file = await new Promise<File | null>((resolve) => {
-      input.onchange = () => resolve(input.files?.[0] ?? null);
-      input.click();
-    });
-
-    if (!file) return;
-
-    content = await file.text();
-    filePath = file.name;
-  }
-
+export async function loadFileFromContent(
+  filePath: string,
+  content: string,
+): Promise<void> {
   try {
     const response = await fetch("/api/files/load", {
       method: "POST",
@@ -119,14 +153,10 @@ export async function loadFile(): Promise<void> {
       body: JSON.stringify({ content }),
     });
 
-    const result = (await response.json()) as {
-      success: boolean;
-      store?: unknown;
-      meta?: { name: string; description?: string };
-      error?: string;
-    };
+    const result = (await response.json()) as LoadedAnalysisResponse;
 
     if (result.success && result.store) {
+      const metadata = result.meta?.metadata ?? { tags: [] };
       analysisStore
         .getState()
         .loadCanonical(
@@ -137,17 +167,43 @@ export async function loadFile(): Promise<void> {
             filePath,
             name: result.meta?.name ?? "Loaded Analysis",
             description: result.meta?.description,
+            metadata,
             dirty: false,
           },
         );
       pipelineStore.getState().resetPipeline();
       conversationStore.getState().resetConversation();
+      playStore
+        .getState()
+        .replaceSessions(deserializePlaySessions(metadata.play_sessions));
     } else {
       console.error("Load failed:", result.error);
     }
   } catch (err) {
     console.error("Load failed:", err);
   }
+}
+
+export async function loadFile(): Promise<void> {
+  if (isElectron()) {
+    const file = await window.electronAPI!.openFile();
+    if (!file) return;
+    await loadFileFromContent(file.filePath, file.content);
+    return;
+  }
+
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".gta.json";
+
+  const file = await new Promise<File | null>((resolve) => {
+    input.onchange = () => resolve(input.files?.[0] ?? null);
+    input.click();
+  });
+
+  if (!file) return;
+
+  await loadFileFromContent(file.name, await file.text());
 }
 
 // ── Event listeners ──
@@ -164,8 +220,7 @@ export function setupFileEventListeners(): () => void {
   }
   function handleNew() {
     analysisStore.getState().newAnalysis();
-    pipelineStore.getState().resetPipeline();
-    conversationStore.getState().resetConversation();
+    resetWorkspaceState();
   }
 
   window.addEventListener("gta:save", handleSave);

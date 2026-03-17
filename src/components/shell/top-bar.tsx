@@ -10,10 +10,12 @@ import {
   Settings,
   Target,
 } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import { useAnalysisStore, analysisStore } from "@/stores/analysis-store";
 import { useUiStore } from "@/stores/ui-store";
 
 export function TopBar() {
+  const navigate = useNavigate();
   const fileMeta = useAnalysisStore((s) => s.fileMeta);
   const canUndo = useAnalysisStore((s) => s.eventLog.cursor > 0);
   const canRedo = useAnalysisStore(
@@ -99,6 +101,7 @@ export function TopBar() {
         </button>
         <button
           type="button"
+          onClick={() => void navigate({ to: "/settings" })}
           className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
           title="Settings"
         >

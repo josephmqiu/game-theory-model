@@ -1,6 +1,7 @@
 import type { z } from "zod";
 
 import type { CanonicalStore, EntityType } from "../types/canonical";
+import type { AppCommandPayloadMap, AppCommandType } from "../types/command-bus";
 import type {
   PipelineHost,
   PipelineRuntimeSnapshot,
@@ -35,4 +36,8 @@ export interface RuntimeToolContext {
   getPersistedRevision(): number;
   getPipelineState(): PipelineSnapshot;
   getPipelineRuntimeState(): PipelineRuntimeSnapshot;
+  executeCommand?<T extends AppCommandType>(
+    type: T,
+    payload: AppCommandPayloadMap[T],
+  ): Promise<unknown>;
 }

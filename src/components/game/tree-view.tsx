@@ -18,6 +18,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useAnalysisStore } from "@/stores/analysis-store";
+import { useUiStore } from "@/stores/ui-store";
 import type { Formalization } from "shared/game-theory/types/formalizations";
 import type { GameNode, GameEdge } from "shared/game-theory/types";
 
@@ -156,6 +157,7 @@ export function TreeView({ gameId, formalizationId }: TreeViewProps) {
   );
   const allNodes = useAnalysisStore((s) => s.canonical.nodes);
   const allEdges = useAnalysisStore((s) => s.canonical.edges);
+  const setInspectedTarget = useUiStore((s) => s.setInspectedTarget);
 
   const { initialNodes, initialEdges } = useMemo(() => {
     if (!formalization || !isExtensiveForm(formalization)) {
@@ -211,6 +213,12 @@ export function TreeView({ gameId, formalizationId }: TreeViewProps) {
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeClick={(_, node) =>
+          setInspectedTarget({ entityType: "game_node", entityId: node.id })
+        }
+        onEdgeClick={(_, edge) =>
+          setInspectedTarget({ entityType: "game_edge", entityId: edge.id })
+        }
         nodeTypes={nodeTypes}
         fitView
         minZoom={0.1}

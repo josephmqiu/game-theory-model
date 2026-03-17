@@ -22,7 +22,7 @@ const saveSchema = z.object({
   store: z.record(z.unknown()),
   meta: z.object({
     name: z.string(),
-    description: z.string(),
+    description: z.string().optional(),
     created_at: z.string(),
     updated_at: z.string(),
     metadata: z.record(z.unknown()).optional(),

@@ -14,6 +14,12 @@ const syncStateSchema = z.object({
     pipelineState: z.record(z.unknown()).optional(),
     runtimeState: z.record(z.unknown()).optional(),
     conversationState: z.record(z.unknown()).optional(),
+    analysisMeta: z
+      .object({
+        persistedRevision: z.number(),
+        fileMeta: z.record(z.unknown()).nullable().optional(),
+      })
+      .optional(),
   }),
   sourceClientId: z.string().optional(),
 });

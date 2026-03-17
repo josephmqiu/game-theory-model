@@ -7,6 +7,7 @@ import { useMemo } from "react";
 import { BookOpen, Eye, MessageSquare, Lightbulb } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAnalysisStore } from "@/stores/analysis-store";
+import { useUiStore } from "@/stores/ui-store";
 import type {
   Source,
   Observation,
@@ -69,6 +70,7 @@ export function EvidenceNotebook() {
   const observations = useAnalysisStore((s) => s.canonical.observations);
   const claims = useAnalysisStore((s) => s.canonical.claims);
   const inferences = useAnalysisStore((s) => s.canonical.inferences);
+  const setInspectedTarget = useUiStore((s) => s.setInspectedTarget);
 
   const entries: ReadonlyArray<EvidenceEntry> = useMemo(() => {
     const result: EvidenceEntry[] = [];
@@ -114,11 +116,41 @@ export function EvidenceNotebook() {
 
           return (
             <li
+              role="button"
+              tabIndex={0}
               key={`${entry.kind}-${entry.data.id}`}
               className={cn(
                 "flex items-start gap-2 rounded-md border border-border bg-card p-3",
-                "transition-colors hover:bg-accent/50",
+                "transition-colors hover:bg-accent/50 cursor-pointer",
               )}
+              onClick={() =>
+                setInspectedTarget({
+                  entityType: entry.kind === "source"
+                    ? "source"
+                    : entry.kind === "observation"
+                      ? "observation"
+                      : entry.kind === "claim"
+                        ? "claim"
+                        : "inference",
+                  entityId: entry.data.id,
+                })
+              }
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") {
+                  return;
+                }
+                event.preventDefault();
+                setInspectedTarget({
+                  entityType: entry.kind === "source"
+                    ? "source"
+                    : entry.kind === "observation"
+                      ? "observation"
+                      : entry.kind === "claim"
+                        ? "claim"
+                        : "inference",
+                  entityId: entry.data.id,
+                });
+              }}
             >
               <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
 

@@ -26,11 +26,17 @@ export interface ConversationStateSnapshot {
   proposals_by_id: Record<string, unknown>;
 }
 
+export interface AnalysisMetaSnapshot {
+  persistedRevision: number;
+  fileMeta: Record<string, unknown> | null;
+}
+
 export interface SyncState {
   canonical: CanonicalStore | null;
   pipelineState: PipelineStateSnapshot | null;
   runtimeState: PipelineRuntimeSnapshot | null;
   conversationState: ConversationStateSnapshot | null;
+  analysisMeta: AnalysisMetaSnapshot | null;
 }
 
 interface SSEClient {
@@ -43,6 +49,7 @@ let currentState: SyncState = {
   pipelineState: null,
   runtimeState: null,
   conversationState: null,
+  analysisMeta: null,
 };
 let stateVersion = 0;
 
@@ -77,7 +84,7 @@ export function unregisterSSEClient(id: string): void {
   clients.delete(id);
 }
 
-function broadcast(
+export function broadcastEvent(
   payload: Record<string, unknown>,
   excludeClientId?: string,
 ): void {
@@ -90,4 +97,11 @@ function broadcast(
       clients.delete(id);
     }
   }
+}
+
+function broadcast(
+  payload: Record<string, unknown>,
+  excludeClientId?: string,
+): void {
+  broadcastEvent(payload, excludeClientId);
 }

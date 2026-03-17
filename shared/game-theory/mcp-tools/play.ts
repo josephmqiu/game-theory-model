@@ -1,8 +1,11 @@
 import { z } from "zod";
 
-import type { McpServerLike } from "./context";
+import type { McpServerLike, RuntimeToolContext } from "./context";
 
-export function registerPlayTools(server: McpServerLike): void {
+export function registerPlayTools(
+  server: McpServerLike,
+  context: RuntimeToolContext,
+): void {
   server.registerTool({
     name: "start_play_session",
     description: "Start a headless play-out session from a given scenario.",
@@ -10,10 +13,22 @@ export function registerPlayTools(server: McpServerLike): void {
       scenario_id: z.string(),
       ai_controlled_players: z.array(z.string()).optional(),
     }),
-    execute() {
+    async execute(input) {
+      if (!context.executeCommand) {
+        return {
+          success: false,
+          error: "Play-out command execution is unavailable in this runtime.",
+        };
+      }
+
+      const result = await context.executeCommand("start_play_session", {
+        scenarioId: input.scenario_id,
+        aiControlledPlayers: input.ai_controlled_players,
+      });
+
       return {
-        success: false,
-        error: "Play-out sessions are not implemented in M5.",
+        success: true,
+        data: result,
       };
     },
   });
@@ -27,10 +42,24 @@ export function registerPlayTools(server: McpServerLike): void {
       action: z.string(),
       reasoning: z.string().optional(),
     }),
-    execute() {
+    async execute(input) {
+      if (!context.executeCommand) {
+        return {
+          success: false,
+          error: "Play-out command execution is unavailable in this runtime.",
+        };
+      }
+
+      const result = await context.executeCommand("play_turn", {
+        sessionId: input.session_id,
+        playerId: input.player_id,
+        action: input.action,
+        reasoning: input.reasoning,
+      });
+
       return {
-        success: false,
-        error: "Play-out sessions are not implemented in M5.",
+        success: true,
+        data: result,
       };
     },
   });

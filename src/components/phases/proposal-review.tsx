@@ -10,6 +10,7 @@ import {
   conversationStore,
 } from "@/stores/conversation-store";
 import { analysisStore } from "@/stores/analysis-store";
+import { useUiStore } from "@/stores/ui-store";
 import { acceptConversationProposal } from "@/stores/proposal-actions";
 
 interface ProposalReviewProps {
@@ -65,7 +66,7 @@ function ProposalGroupCard({ group }: { group: ProposalGroup }) {
 
       {expanded && (
         <div className="border-t border-border divide-y divide-border">
-          {group.proposals.map((proposal) => (
+            {group.proposals.map((proposal) => (
             <ProposalRow key={proposal.id} proposalId={proposal.id} />
           ))}
         </div>
@@ -77,6 +78,7 @@ function ProposalGroupCard({ group }: { group: ProposalGroup }) {
 function ProposalRow({ proposalId }: { proposalId: string }) {
   const [error, setError] = useState<string | null>(null);
   const proposal = useConversationStore((s) => s.proposals_by_id[proposalId]);
+  const setInspectedTarget = useUiStore((s) => s.setInspectedTarget);
 
   if (!proposal) return null;
 
@@ -116,6 +118,8 @@ function ProposalRow({ proposalId }: { proposalId: string }) {
               {proposal.entity_previews.map((preview, i) => (
                 <span
                   key={`${preview.entity_type}-${i}`}
+                  role={preview.entity_id ? "button" : "status"}
+                  tabIndex={preview.entity_id ? 0 : -1}
                   className={`text-xs px-1.5 py-0.5 rounded ${
                     preview.action === "add"
                       ? "bg-green-500/10 text-green-600"
@@ -123,6 +127,29 @@ function ProposalRow({ proposalId }: { proposalId: string }) {
                         ? "bg-blue-500/10 text-blue-600"
                         : "bg-red-500/10 text-red-600"
                   }`}
+                  onClick={
+                    preview.entity_id
+                      ? () =>
+                          setInspectedTarget({
+                            entityType: preview.entity_type,
+                            entityId: preview.entity_id as string,
+                          })
+                      : undefined
+                  }
+                  onKeyDown={
+                    preview.entity_id
+                      ? (event) => {
+                          if (event.key !== "Enter" && event.key !== " ") {
+                            return;
+                          }
+                          event.preventDefault();
+                          setInspectedTarget({
+                            entityType: preview.entity_type,
+                            entityId: preview.entity_id as string,
+                          });
+                        }
+                      : undefined
+                  }
                 >
                   {preview.action} {preview.entity_type}
                 </span>

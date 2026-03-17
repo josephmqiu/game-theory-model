@@ -277,39 +277,44 @@ export function registerModelTools(
         canonical: context.getCanonicalStore(),
       });
 
-      context.host.registerProposalGroup({
+      const proposal = {
+        id: proposalId,
+        description: input.rationale,
+        phase: input.phase ?? 1,
+        phase_execution_id: `phase_execution_${crypto.randomUUID()}`,
+        base_revision: context.getPersistedRevision(),
+        status: "pending" as const,
+        commands: [command],
+        entity_previews: [
+          createEntityPreview(
+            input.entity_type,
+            input.action === "create"
+              ? "add"
+              : input.action === "update"
+                ? "update"
+                : "delete",
+            input.action === "delete"
+              ? (input.entity_id ?? entityId)
+              : entityId,
+            preview,
+          ),
+        ],
+        conflicts: [],
+      };
+
+      if (!context.executeCommand) {
+        return {
+          success: false,
+          data: null,
+        };
+      }
+
+      void context.executeCommand("register_proposal_group", {
         phase: input.phase ?? 1,
         content: input.rationale,
-        proposals: [
-          {
-            id: proposalId,
-            description: input.rationale,
-            phase: input.phase ?? 1,
-            phase_execution_id: `phase_execution_${crypto.randomUUID()}`,
-            base_revision: context.getPersistedRevision(),
-            status: "pending",
-            commands: [command],
-            entity_previews: [
-              createEntityPreview(
-                input.entity_type,
-                input.action === "create"
-                  ? "add"
-                  : input.action === "update"
-                    ? "update"
-                    : "delete",
-                input.action === "delete"
-                  ? (input.entity_id ?? entityId)
-                  : entityId,
-                preview,
-              ),
-            ],
-            conflicts: [],
-          },
-        ],
+        messageType: "proposal",
+        proposals: [proposal],
       });
-      context.host.setPipelineProposalReview(
-        context.host.getConversationState().proposal_review,
-      );
 
       return {
         success: true,

@@ -8,6 +8,9 @@ import {
   Users,
   Target,
   Clock,
+  Route,
+  FlaskConical,
+  BrainCircuit,
   ChevronRight,
   CheckCircle2,
   Circle,
@@ -15,7 +18,7 @@ import {
 } from "lucide-react";
 import { useUiStore } from "@/stores/ui-store";
 import { usePipelineStore } from "@/stores/pipeline-store";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { PHASES } from "@/constants/phases";
 
 const NAV_ITEMS = [
@@ -49,6 +52,24 @@ const NAV_ITEMS = [
     id: "timeline" as const,
     to: "/editor/timeline",
   },
+  {
+    icon: Route,
+    label: "Game Map",
+    id: "game-map" as const,
+    to: "/editor/game-map",
+  },
+  {
+    icon: BrainCircuit,
+    label: "Assumptions",
+    id: "assumptions" as const,
+    to: "/editor/assumptions",
+  },
+  {
+    icon: FlaskConical,
+    label: "Play-outs",
+    id: "playouts" as const,
+    to: "/editor/playouts",
+  },
 ] as const;
 
 function PhaseStatusIcon({ phase }: { phase: number }) {
@@ -81,11 +102,10 @@ function PhaseStatusIcon({ phase }: { phase: number }) {
 }
 
 export function Sidebar() {
-  const activePanel = useUiStore((s) => s.activePanel);
-  const activePhase = useUiStore((s) => s.activePhase);
-  const setActivePanel = useUiStore((s) => s.setActivePanel);
-  const setActivePhase = useUiStore((s) => s.setActivePhase);
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const activePhaseMatch = pathname.match(/^\/editor\/phase\/(\d+)$/);
+  const activePhase = activePhaseMatch ? Number(activePhaseMatch[1]) : null;
 
   if (collapsed) {
     return null;
@@ -97,13 +117,9 @@ export function Sidebar() {
         {NAV_ITEMS.map(({ icon: Icon, label, id, to }) => (
           <Link
             key={id}
-            to={to}
-            onClick={() => {
-              setActivePanel(id);
-              setActivePhase(null);
-            }}
+            to={to as never}
             className={`w-full flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors ${
-              activePanel === id && activePhase === null
+              (to === "/editor" ? pathname === "/editor" : pathname === to)
                 ? "bg-accent text-accent-foreground"
                 : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
             }`}
@@ -124,10 +140,6 @@ export function Sidebar() {
               key={id}
               to="/editor/phase/$phaseId"
               params={{ phaseId: String(id) }}
-              onClick={() => {
-                setActivePhase(id);
-                setActivePanel("overview");
-              }}
               className={`w-full flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors ${
                 activePhase === id
                   ? "bg-accent text-accent-foreground"

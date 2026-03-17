@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useAnalysisStore } from "@/stores/analysis-store";
+import { ScenarioComparison } from "@/components/scenarios/scenario-comparison";
 
 export const Route = createFileRoute("/editor/scenarios")({
   component: ScenariosPage,
@@ -21,19 +22,7 @@ function ScenariosPage() {
           No scenarios generated yet. Run Phase 9 to generate scenarios.
         </p>
       ) : (
-        <div className="space-y-4">
-          {scenarios.map((scenario) => (
-            <div
-              key={scenario.id}
-              className="rounded-lg border border-border bg-card p-4"
-            >
-              <h3 className="font-medium mb-1">{scenario.name}</h3>
-              <p className="text-sm text-muted-foreground">
-                {scenario.narrative}
-              </p>
-            </div>
-          ))}
-        </div>
+        <ScenarioComparison />
       )}
     </div>
   );
