@@ -7,6 +7,8 @@ export async function* streamAgentChat(
     model?: string;
     enableWebSearch?: boolean;
     maxIterations?: number;
+    canonical?: unknown;
+    eventLogCursor?: number;
   },
   abortSignal?: AbortSignal,
 ): AsyncGenerator<AgentEvent> {

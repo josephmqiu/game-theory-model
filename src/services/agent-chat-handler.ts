@@ -1,4 +1,5 @@
 import { aiStore } from "@/stores/ai-store";
+import { analysisStore } from "@/stores/analysis-store";
 import { streamAgentChat } from "./agent-client";
 
 /**
@@ -43,6 +44,7 @@ export async function sendAgentMessage(
   // 4 & 5. Call SSE client and process events
   try {
     const { provider } = aiStore.getState();
+    const analysisState = analysisStore.getState();
     const stream = streamAgentChat(
       {
         messages: priorMessages,
@@ -50,6 +52,8 @@ export async function sendAgentMessage(
         model: provider.modelId,
         // TODO: expose a web-search toggle in ai-store so callers can control this
         enableWebSearch: options?.enableWebSearch ?? true,
+        canonical: analysisState.canonical,
+        eventLogCursor: analysisState.eventLog.cursor,
       },
       controller.signal,
     );
@@ -82,11 +86,24 @@ export async function sendAgentMessage(
           });
           break;
 
-        case "tool_result":
+        case "tool_result": {
           aiStore
             .getState()
             .updateToolCallResult(event.id, event.result, event.duration_ms);
+
+          // Replay commands to keep client canonical store in sync
+          const resultData = event.result as Record<string, unknown> | null;
+          if (resultData && Array.isArray(resultData._commands)) {
+            for (const command of resultData._commands) {
+              try {
+                analysisStore.getState().dispatch(command);
+              } catch {
+                // Non-fatal — the server already committed, views may be slightly out of sync
+              }
+            }
+          }
           break;
+        }
 
         case "error":
           aiStore.getState().setError(event.content);

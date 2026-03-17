@@ -7,6 +7,19 @@ vi.mock("./agent-client", () => ({
   streamAgentChat: vi.fn(),
 }));
 
+// Stable mock state so dispatch spy is shared across all getState() calls
+const mockAnalysisState = {
+  dispatch: vi.fn(),
+  canonical: {},
+  eventLog: { cursor: 0 },
+};
+
+vi.mock("@/stores/analysis-store", () => ({
+  analysisStore: {
+    getState: () => mockAnalysisState,
+  },
+}));
+
 import { streamAgentChat } from "./agent-client";
 
 // Helper: create an async generator from a list of events
@@ -30,6 +43,7 @@ const resetState = () =>
 beforeEach(() => {
   resetState();
   vi.clearAllMocks();
+  mockAnalysisState.dispatch.mockReset();
 });
 
 describe("sendAgentMessage", () => {
@@ -178,5 +192,38 @@ describe("sendAgentMessage", () => {
 
     expect(aiStore.getState().lastError).toBe("Network failure");
     expect(aiStore.getState().isStreaming).toBe(false);
+  });
+
+  it("replays _commands from tool_result through analysisStore", async () => {
+    const command = {
+      kind: "add_player",
+      id: "player_1",
+      payload: { name: "US" },
+    };
+    vi.mocked(streamAgentChat).mockReturnValue(
+      makeStream([
+        {
+          type: "tool_call",
+          id: "tc1",
+          name: "add_player",
+          input: { name: "US" },
+        },
+        {
+          type: "tool_result",
+          id: "tc1",
+          result: {
+            id: "player_1",
+            kind: "add_player",
+            _commands: [command],
+          },
+          duration_ms: 10,
+        },
+        { type: "done", content: "" },
+      ]),
+    );
+
+    await sendAgentMessage("Add a player");
+
+    expect(mockAnalysisState.dispatch).toHaveBeenCalledWith(command);
   });
 });
