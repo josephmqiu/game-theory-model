@@ -19,9 +19,11 @@ import { runAgentLoop } from "shared/game-theory/agent/loop";
 import {
   DEFAULT_AGENT_LOOP_CONFIG,
   type AgentEvent,
+  type NormalizedMessage,
   type ToolContext,
 } from "shared/game-theory/types/agent";
 import { emptyCanonicalStore } from "shared/game-theory/types/canonical";
+import { streamAnthropicChat } from "shared/game-theory/providers/anthropic-client";
 
 const bodySchema = z.object({
   messages: z
@@ -83,6 +85,23 @@ export default defineEventHandler(async (event) => {
 
   const encoder = new TextEncoder();
 
+  // Accumulated conversation messages — grows each iteration with tool results
+  const conversationMessages: NormalizedMessage[] = body.messages.map(
+    (m) => ({ role: m.role, content: m.content }) as NormalizedMessage,
+  );
+
+  // Per-iteration tracking for tool calls observed from the stream
+  let iterationToolCalls: Array<{
+    id: string;
+    name: string;
+    input: Record<string, unknown>;
+  }> = [];
+
+  // Per-iteration accumulation of tool result messages
+  let iterationToolResults: NormalizedMessage[] = [];
+
+  const abortController = new AbortController();
+
   const stream = new ReadableStream({
     async start(controller) {
       function emit(agentEvent: AgentEvent) {
@@ -103,13 +122,32 @@ export default defineEventHandler(async (event) => {
       try {
         await runAgentLoop(
           {
-            callProvider: async function* (_iteration) {
-              // TODO: Task 13 will wire this to real Anthropic API calls
-              yield {
-                type: "text" as const,
-                content:
-                  "Agent endpoint is working. Provider call not wired yet.",
-              };
+            callProvider: async function* (iteration) {
+              // Reset per-iteration tracking
+              iterationToolCalls = [];
+              iterationToolResults = [];
+
+              // On iteration > 0, the previous iteration's tool calls and results
+              // have already been appended to conversationMessages via onEvent.
+              // conversationMessages is always up-to-date before callProvider is called.
+              const request = adapter.formatRequest(
+                conversationMessages,
+                registry.listAll(),
+                {
+                  system: systemPrompt,
+                  enableWebSearch:
+                    config.enableWebSearch && adapter.capabilities.webSearch,
+                  contextManagement: adapter.capabilities.compaction
+                    ? { enabled: true }
+                    : undefined,
+                },
+              );
+
+              yield* streamAnthropicChat(
+                request,
+                adapter,
+                abortController.signal,
+              );
             },
             executeTool: async (name, input) => {
               const tool = registry.get(name);
@@ -117,10 +155,58 @@ export default defineEventHandler(async (event) => {
                 return { success: false, error: `Unknown tool: ${name}` };
               return tool.execute(input, toolContext);
             },
-            onEvent: emit,
+            onEvent: (agentEvent) => {
+              // Track tool calls so we can reconstruct the assistant message
+              if (agentEvent.type === "tool_call") {
+                iterationToolCalls.push({
+                  id: agentEvent.id,
+                  name: agentEvent.name,
+                  input: agentEvent.input,
+                });
+              }
+
+              // When a tool result arrives, build the tool_result message and
+              // append both the assistant tool_use block and the result to conversation.
+              // The loop emits one tool_result per tool call, in order.
+              if (agentEvent.type === "tool_result") {
+                const toolResultMsg = adapter.formatToolResult(
+                  agentEvent.id,
+                  agentEvent.result as Parameters<
+                    typeof adapter.formatToolResult
+                  >[1],
+                );
+                iterationToolResults.push(toolResultMsg);
+
+                // Once all tool results for this iteration have arrived,
+                // append the assistant turn (all tool_use blocks) and the
+                // tool_result user turn to the conversation.
+                if (iterationToolResults.length === iterationToolCalls.length) {
+                  const assistantMessage: NormalizedMessage = {
+                    role: "assistant",
+                    content: iterationToolCalls.map((tc) => ({
+                      type: "tool_use" as const,
+                      id: tc.id,
+                      name: tc.name,
+                      input: tc.input,
+                    })),
+                  };
+                  const toolResultsMessage: NormalizedMessage = {
+                    role: "user",
+                    content: iterationToolResults.flatMap((m) =>
+                      Array.isArray(m.content) ? m.content : [],
+                    ),
+                  };
+
+                  conversationMessages.push(assistantMessage);
+                  conversationMessages.push(toolResultsMessage);
+                }
+              }
+
+              emit(agentEvent);
+            },
             config,
           },
-          new AbortController().signal,
+          abortController.signal,
         );
       } catch (error) {
         emit({
@@ -133,10 +219,6 @@ export default defineEventHandler(async (event) => {
       }
     },
   });
-
-  // Suppress unused variable warning — adapter and systemPrompt will be used in Task 13
-  void adapter;
-  void systemPrompt;
 
   return new Response(stream);
 });
