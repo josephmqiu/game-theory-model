@@ -155,6 +155,47 @@ describe("runAgentLoop", () => {
     expect(doneEvents.length).toBeGreaterThanOrEqual(1);
   });
 
+  it("aborts on inactivity timeout", async () => {
+    const controller = new AbortController();
+    const emittedEvents: AgentEvent[] = [];
+
+    const config: AgentLoopConfig = {
+      maxIterations: 10,
+      inactivityTimeoutMs: 50,
+      enableWebSearch: false,
+    };
+
+    // callProvider yields nothing, then waits longer than the timeout before returning
+    async function* silentProvider(
+      _iteration: number,
+    ): AsyncGenerator<AgentEvent> {
+      await new Promise<void>((resolve) => setTimeout(resolve, 200));
+      // never yields any events
+    }
+
+    await runAgentLoop(
+      {
+        callProvider: silentProvider,
+        executeTool: vi.fn(async () => ({ success: true, data: "ok" })),
+        onEvent: (event) => emittedEvents.push(event),
+        config,
+      },
+      controller.signal,
+    );
+
+    const errorEvents = emittedEvents.filter(
+      (e) => e.type === "error",
+    ) as Array<{ type: "error"; content: string }>;
+    expect(errorEvents.length).toBeGreaterThanOrEqual(1);
+    const errorContent = errorEvents[0].content.toLowerCase();
+    expect(
+      errorContent.includes("inactivity") || errorContent.includes("timeout"),
+    ).toBe(true);
+
+    const lastEvent = emittedEvents[emittedEvents.length - 1];
+    expect(lastEvent.type).toBe("done");
+  });
+
   it("handles multiple tool calls in one response", async () => {
     const deps = makeMockDeps([
       {

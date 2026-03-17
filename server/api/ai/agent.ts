@@ -151,7 +151,17 @@ export default defineEventHandler(async (event) => {
               const tool = registry.get(name);
               if (!tool)
                 return { success: false, error: `Unknown tool: ${name}` };
-              return tool.execute(input, toolContext);
+              try {
+                return await tool.execute(input, toolContext);
+              } catch (error) {
+                return {
+                  success: false,
+                  error:
+                    error instanceof Error
+                      ? error.message
+                      : "Tool execution failed",
+                };
+              }
             },
             onEvent: (agentEvent) => {
               // Track tool calls so we can reconstruct the assistant message

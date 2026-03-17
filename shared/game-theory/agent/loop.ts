@@ -23,6 +23,7 @@ export async function runAgentLoop(
   const { callProvider, executeTool, onEvent, config } = deps;
 
   let iteration = 0;
+  let lastActivityTime = Date.now();
 
   while (!abortSignal.aborted) {
     if (iteration >= config.maxIterations) {
@@ -43,6 +44,8 @@ export async function runAgentLoop(
         break;
       }
 
+      lastActivityTime = Date.now();
+
       if (event.type === "tool_call") {
         pendingToolCalls.push({
           id: event.id,
@@ -59,6 +62,15 @@ export async function runAgentLoop(
       return;
     }
 
+    if (Date.now() - lastActivityTime > config.inactivityTimeoutMs) {
+      onEvent({
+        type: "error",
+        content: `Agent loop aborted: inactivity timeout (${config.inactivityTimeoutMs}ms exceeded with no activity)`,
+      });
+      onEvent({ type: "done", content: "" });
+      return;
+    }
+
     if (pendingToolCalls.length > 0) {
       for (const toolCall of pendingToolCalls) {
         if (abortSignal.aborted) {
@@ -66,8 +78,20 @@ export async function runAgentLoop(
         }
 
         const startTime = Date.now();
-        const result = await executeTool(toolCall.name, toolCall.input);
+        let result: ToolResult;
+        try {
+          result = await executeTool(toolCall.name, toolCall.input);
+        } catch (error) {
+          result = {
+            success: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Tool execution failed unexpectedly",
+          };
+        }
         const duration_ms = Date.now() - startTime;
+        lastActivityTime = Date.now();
 
         onEvent({
           type: "tool_result",
