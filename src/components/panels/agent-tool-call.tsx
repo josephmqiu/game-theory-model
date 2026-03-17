@@ -20,7 +20,7 @@ interface AgentToolCallProps {
   toolCall: AgentToolCallEntry;
 }
 
-function summarizeToolCall(
+export function summarizeToolCall(
   name: string,
   input: Record<string, unknown>,
 ): string {

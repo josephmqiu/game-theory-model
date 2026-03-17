@@ -228,21 +228,22 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
               <label className="block">
                 <span className="sr-only">AI model</span>
                 <select
-                  value={provider.modelId}
-                  onChange={(event) => {
-                    const next = connectedModels.find(
-                      (model) => model.value === event.target.value,
-                    );
-                    if (!next) return;
+                  value={`${provider.provider}:${provider.modelId}`}
+                  onChange={(e) => {
+                    const [nextProvider, ...rest] = e.target.value.split(":");
+                    const nextModelId = rest.join(":"); // handle model IDs that contain ':'
                     aiStore.getState().setProvider({
-                      provider: next.provider,
-                      modelId: next.value,
+                      provider: nextProvider as AIProviderType,
+                      modelId: nextModelId,
                     });
                   }}
                   className="mt-1 w-full rounded border border-border bg-background px-2 py-1 text-xs text-foreground"
                 >
                   {connectedModels.map((model) => (
-                    <option key={model.value} value={model.value}>
+                    <option
+                      key={`${model.provider}:${model.value}`}
+                      value={`${model.provider}:${model.value}`}
+                    >
                       {PROVIDER_LABELS[model.provider]} / {model.displayName}
                     </option>
                   ))}

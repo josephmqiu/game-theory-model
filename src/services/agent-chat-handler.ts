@@ -6,7 +6,10 @@ import { streamAgentChat } from "./agent-client";
  * drives the SSE stream, and writes all results back through store actions.
  * Errors are surfaced via the store — this function never rejects.
  */
-export async function sendAgentMessage(text: string): Promise<void> {
+export async function sendAgentMessage(
+  text: string,
+  options?: { enableWebSearch?: boolean },
+): Promise<void> {
   // 1. Append user message
   aiStore.getState().appendAgentMessage({
     role: "user",
@@ -34,11 +37,7 @@ export async function sendAgentMessage(text: string): Promise<void> {
   const allMessages = aiStore.getState().agentMessages;
   const priorMessages = allMessages
     .slice(0, allMessages.length - 1) // drop the empty placeholder
-    .filter(
-      (msg): msg is typeof msg & { role: "user" | "assistant" } =>
-        (msg.role === "user" || msg.role === "assistant") &&
-        msg.content.trim().length > 0,
-    )
+    .filter((msg) => msg.content.trim().length > 0)
     .map((msg) => ({ role: msg.role, content: msg.content }));
 
   // 4 & 5. Call SSE client and process events
@@ -49,7 +48,8 @@ export async function sendAgentMessage(text: string): Promise<void> {
         messages: priorMessages,
         provider: provider.provider,
         model: provider.modelId,
-        enableWebSearch: true,
+        // TODO: expose a web-search toggle in ai-store so callers can control this
+        enableWebSearch: options?.enableWebSearch ?? true,
       },
       controller.signal,
     );
