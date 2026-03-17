@@ -2,6 +2,7 @@
  * Sidebar — navigation + phase status.
  */
 
+import { useState } from "react";
 import {
   BarChart3,
   FileText,
@@ -15,11 +16,14 @@ import {
   CheckCircle2,
   Circle,
   Loader2,
+  ChevronDown,
 } from "lucide-react";
 import { useUiStore } from "@/stores/ui-store";
 import { usePipelineStore } from "@/stores/pipeline-store";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { PHASES } from "@/constants/phases";
+import { usePhaseProgress } from "@/hooks/use-phase-progress";
+import { PhaseProgressPanel } from "@/components/panels/phase-progress";
 
 const NAV_ITEMS = [
   {
@@ -103,9 +107,13 @@ function PhaseStatusIcon({ phase }: { phase: number }) {
 
 export function Sidebar() {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
   const activePhaseMatch = pathname.match(/^\/editor\/phase\/(\d+)$/);
   const activePhase = activePhaseMatch ? Number(activePhaseMatch[1]) : null;
+  const [coverageOpen, setCoverageOpen] = useState(false);
+  const phases = usePhaseProgress();
 
   if (collapsed) {
     return null;
@@ -152,6 +160,26 @@ export function Sidebar() {
             </Link>
           ))}
         </div>
+      </div>
+
+      <div className="px-2 mt-4 pb-4">
+        <button
+          type="button"
+          onClick={() => setCoverageOpen((prev) => !prev)}
+          className="flex w-full items-center gap-1 px-2 mb-1 text-left"
+          aria-expanded={coverageOpen}
+        >
+          <h3 className="flex-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            Coverage
+          </h3>
+          <ChevronDown
+            size={12}
+            className={`text-muted-foreground/60 transition-transform ${coverageOpen ? "rotate-180" : ""}`}
+          />
+        </button>
+        {coverageOpen && (
+          <PhaseProgressPanel phases={phases} className="mt-1" />
+        )}
       </div>
     </aside>
   );
