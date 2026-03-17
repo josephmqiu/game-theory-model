@@ -1,29 +1,33 @@
 /**
  * AI chat panel.
- * Message list with user/AI bubbles, input box, and send button.
- * Reads from conversation store, sends messages via /api/ai/chat.
+ * Message list with user/AI bubbles, input box, send/stop button.
+ * Reads from ai-store agentMessages, sends messages via sendAgentMessage.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import {
   Bot,
+  ChevronDown,
   ChevronUp,
   MessageSquare,
   Minus,
   Send,
+  Square,
   User,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { sendChatCommand } from "@/services/app-command-runner";
-import { useConversationStore } from "@/stores/conversation-store";
-import { conversationStore } from "@/stores/conversation-store";
+import { sendAgentMessage } from "@/services/agent-chat-handler";
 import { aiStore, useAiStore } from "@/stores/ai-store";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
-import type { ConversationMessage } from "shared/game-theory/types/conversation";
+import { AgentToolCall } from "@/components/panels/agent-tool-call";
+import type { AgentChatMessage } from "@/stores/ai-store";
 import type { AIProviderType } from "@/types/agent-settings";
 
-function MessageBubble({ message }: { message: ConversationMessage }) {
+// Kept for pipeline conversation rendering (different store).
+import type { ConversationMessage } from "shared/game-theory/types/conversation";
+
+export function MessageBubble({ message }: { message: ConversationMessage }) {
   const isUser = message.role === "user";
 
   return (
@@ -56,6 +60,97 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
           <span className="mt-1 block text-[10px] opacity-70">
             Phase {message.phase}
           </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface ThinkingBlockProps {
+  thinking: string;
+}
+
+function ThinkingBlock({ thinking }: ThinkingBlockProps) {
+  const [open, setOpen] = useState(false);
+
+  if (!thinking) return null;
+
+  return (
+    <div className="rounded-md border border-border bg-background/60">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent/50 transition-colors rounded-md"
+        aria-expanded={open}
+      >
+        {open ? (
+          <ChevronDown className="h-3 w-3 text-muted-foreground" />
+        ) : (
+          <ChevronUp className="h-3 w-3 text-muted-foreground" />
+        )}
+        <span className="font-medium text-muted-foreground">Thinking</span>
+      </button>
+      {open && (
+        <div className="border-t border-border px-2.5 pb-2.5 pt-2">
+          <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+            {thinking}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentMessageBubble({ message }: { message: AgentChatMessage }) {
+  const isUser = message.role === "user";
+
+  if (isUser) {
+    return (
+      <div className="flex flex-row-reverse gap-2">
+        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+          <User className="h-3.5 w-3.5" />
+        </div>
+        <div className="max-w-[80%] rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground">
+          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Assistant message
+  const hasThinking = message.thinking.length > 0;
+  const hasToolCalls = message.toolCalls.length > 0;
+  const hasContent = message.content.length > 0;
+
+  return (
+    <div className="flex flex-row gap-2">
+      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+        <Bot className="h-3.5 w-3.5" />
+      </div>
+
+      <div className="min-w-0 flex-1 space-y-2">
+        {hasThinking && <ThinkingBlock thinking={message.thinking} />}
+
+        {hasToolCalls && (
+          <div className="space-y-1">
+            {message.toolCalls.map((tc) => (
+              <AgentToolCall key={tc.id} toolCall={tc} />
+            ))}
+          </div>
+        )}
+
+        {(hasContent || message.isStreaming) && (
+          <div className="max-w-[85%] rounded-lg bg-muted px-3 py-2 text-sm text-foreground">
+            <p
+              className={cn(
+                "whitespace-pre-wrap break-words",
+                message.isStreaming &&
+                  "after:animate-pulse after:content-['▌']",
+              )}
+            >
+              {message.content}
+            </p>
+          </div>
         )}
       </div>
     </div>
@@ -112,15 +207,13 @@ export function AiChatMinimizedBar({
 }
 
 export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
-  const messages = useConversationStore((s) => s.messages);
+  const agentMessages = useAiStore((s) => s.agentMessages);
+  const isStreaming = useAiStore((s) => s.isStreaming);
   const provider = useAiStore((s) => s.provider);
   const lastError = useAiStore((s) => s.lastError);
   const settingsHydrated = useAgentSettingsStore((s) => s.hydrated);
   const connectedProviders = useAgentSettingsStore((s) => s.providers);
   const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
-  const [streamedAssistant, setStreamedAssistant] = useState("");
-  const [thinkingMessages, setThinkingMessages] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = useCallback(() => {
@@ -134,15 +227,16 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages.length, sending, streamedAssistant, thinkingMessages.length, scrollToBottom]);
+  }, [agentMessages.length, isStreaming, scrollToBottom]);
 
   const connectedModels = useMemo(
     () =>
-      (Object.keys(connectedProviders) as AIProviderType[]).flatMap((providerType) =>
-        connectedProviders[providerType].models.map((model) => ({
-          ...model,
-          providerLabel: connectedProviders[providerType].displayName,
-        })),
+      (Object.keys(connectedProviders) as AIProviderType[]).flatMap(
+        (providerType) =>
+          connectedProviders[providerType].models.map((model) => ({
+            ...model,
+            providerLabel: connectedProviders[providerType].displayName,
+          })),
       ),
     [connectedProviders],
   );
@@ -151,13 +245,16 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
   const currentProviderReady =
     selectedProviderState.isConnected &&
     selectedProviderState.validated &&
-    selectedProviderState.models.some((model) => model.value === provider.modelId);
+    selectedProviderState.models.some(
+      (model) => model.value === provider.modelId,
+    );
 
   useEffect(() => {
     if (!settingsHydrated || connectedModels.length === 0) return;
     const currentModel = connectedModels.find(
       (model) =>
-        model.value === provider.modelId && model.provider === provider.provider,
+        model.value === provider.modelId &&
+        model.provider === provider.provider,
     );
     if (!currentModel) {
       const firstModel = connectedModels[0];
@@ -176,76 +273,18 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
 
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
-    if (!trimmed || sending || !currentProviderReady) return;
-
-    conversationStore.getState().appendMessage({
-      role: "user",
-      content: trimmed,
-    });
+    if (!trimmed || isStreaming || !currentProviderReady) return;
 
     setInput("");
-    setSending(true);
-    setStreamedAssistant("");
-    setThinkingMessages([]);
-    aiStore.getState().setStreaming(true);
-    aiStore.getState().setError(null);
     scrollToBottom();
 
-    try {
-      const priorMessages = conversationStore
-        .getState()
-        .messages.filter((m) => m.role === "user" || m.role === "ai")
-        .map((m) => ({
-          role: m.role === "ai" ? ("assistant" as const) : ("user" as const),
-          content: m.content,
-        }));
+    await sendAgentMessage(trimmed);
+    scrollToBottom();
+  }, [input, isStreaming, currentProviderReady, scrollToBottom]);
 
-      await sendChatCommand(
-        {
-          system: "You are a game theory analysis assistant.",
-          messages: priorMessages,
-          provider: provider.provider,
-          model: provider.modelId,
-        },
-        {
-          onChunk(parsed, snapshot) {
-            if (parsed.type === "text") {
-              setStreamedAssistant(snapshot.content);
-            } else if (parsed.type === "thinking") {
-              setThinkingMessages(snapshot.thinking);
-            }
-            if (parsed.type !== "ping") {
-              scrollToBottom();
-            }
-          },
-        },
-      );
-    } catch (error) {
-      aiStore.getState().setError(
-        error instanceof Error ? error.message : "An unexpected error occurred",
-      );
-      conversationStore.getState().appendMessage({
-        role: "ai",
-        content:
-          error instanceof Error
-            ? `Error: ${error.message}`
-            : "An unexpected error occurred",
-      });
-    } finally {
-      setSending(false);
-      setStreamedAssistant("");
-      setThinkingMessages([]);
-      aiStore.getState().setStreaming(false);
-      scrollToBottom();
-    }
-  }, [
-    currentProviderReady,
-    input,
-    provider.modelId,
-    provider.provider,
-    sending,
-    scrollToBottom,
-  ]);
+  const handleStop = useCallback(() => {
+    aiStore.getState().stopStreaming();
+  }, []);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -329,7 +368,7 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
         aria-label="Chat messages"
         className="flex-1 space-y-3 overflow-y-auto px-4 py-4"
       >
-        {messages.length === 0 ? (
+        {agentMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
             <Bot className="h-8 w-8 opacity-50" />
             <p className="px-8 text-center text-xs">
@@ -338,43 +377,14 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
             </p>
           </div>
         ) : (
-          messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)
-        )}
-        {sending && thinkingMessages.length > 0 && (
-          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Bot className="h-4 w-4" />
-              <span className="text-xs font-medium uppercase tracking-wide">
-                Thinking
-              </span>
-            </div>
-            <div className="mt-2 space-y-1">
-              {thinkingMessages.map((message, index) => (
-                <p key={`${message}-${index}`} className="text-xs text-muted-foreground">
-                  {message}
-                </p>
-              ))}
-            </div>
-          </div>
-        )}
-        {sending && streamedAssistant && (
-          <div className="flex gap-2">
-            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <Bot className="h-3.5 w-3.5" />
-            </div>
-            <div className="max-w-[80%] rounded-lg bg-muted px-3 py-2 text-sm text-foreground">
-              <p className="whitespace-pre-wrap break-words">{streamedAssistant}</p>
-            </div>
-          </div>
+          agentMessages.map((msg) => (
+            <AgentMessageBubble key={msg.id} message={msg} />
+          ))
         )}
       </div>
 
       <div className="border-t border-border p-3">
-        {lastError && (
-          <p className="mb-2 text-xs text-red-500">
-            {lastError}
-          </p>
-        )}
+        {lastError && <p className="mb-2 text-xs text-red-500">{lastError}</p>}
         {!currentProviderReady && settingsHydrated && (
           <p className="mb-2 text-xs text-muted-foreground">
             Connect and validate a provider in Settings before sending chat.
@@ -387,7 +397,7 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask about the analysis..."
-            disabled={sending || !currentProviderReady}
+            disabled={isStreaming || !currentProviderReady}
             rows={1}
             className={cn(
               "flex-1 resize-none rounded-md border border-border bg-background px-3 py-2",
@@ -396,20 +406,35 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
               "disabled:cursor-not-allowed disabled:opacity-50",
             )}
           />
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={!input.trim() || sending || !currentProviderReady}
-            aria-label={sending ? "Sending message" : "Send message"}
-            className={cn(
-              "flex h-9 w-9 shrink-0 items-center justify-center rounded-md",
-              "bg-primary text-primary-foreground",
-              "transition-opacity hover:opacity-90",
-              "disabled:cursor-not-allowed disabled:opacity-50",
-            )}
-          >
-            <Send className="h-4 w-4" />
-          </button>
+          {isStreaming ? (
+            <button
+              type="button"
+              onClick={handleStop}
+              aria-label="Stop streaming"
+              className={cn(
+                "flex h-9 w-9 shrink-0 items-center justify-center rounded-md",
+                "bg-primary text-primary-foreground",
+                "transition-opacity hover:opacity-90",
+              )}
+            >
+              <Square className="h-4 w-4" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={!input.trim() || !currentProviderReady}
+              aria-label="Send message"
+              className={cn(
+                "flex h-9 w-9 shrink-0 items-center justify-center rounded-md",
+                "bg-primary text-primary-foreground",
+                "transition-opacity hover:opacity-90",
+                "disabled:cursor-not-allowed disabled:opacity-50",
+              )}
+            >
+              <Send className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
     </div>
