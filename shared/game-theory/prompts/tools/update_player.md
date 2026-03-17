@@ -1,0 +1,1 @@
+Update fields on an existing player by ID. Only fields explicitly provided are changed; all others remain as-is. Use this to revise type, role, name, objectives, constraints, or information state as new evidence emerges. Revising players mid-analysis is expected — player objective functions often shift when historical analysis (Phase 4) reveals new information.

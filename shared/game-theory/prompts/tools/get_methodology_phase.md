@@ -1,0 +1,1 @@
+Returns the full methodology text for a given analysis phase (1–10). Use this when you need to recall the specific guidance, questions, and analytical steps for a phase before executing it. Each phase file includes purpose, sub-steps, and the tools relevant to that phase. Call this at the start of a new phase to orient the analysis.

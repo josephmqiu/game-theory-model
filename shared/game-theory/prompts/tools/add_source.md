@@ -1,0 +1,1 @@
+Register an information source (article, report, dataset, etc.) with a quality rating. Sources are the foundation of the evidence chain — every observation must trace back to a source. Include URL when available. Quality ratings: high (primary source, verified), medium (secondary reporting), low (unverified or opinion).

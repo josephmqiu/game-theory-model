@@ -1,0 +1,1 @@
+Register a strategic game that captures a specific interaction between players. Games represent the core tension being analyzed — each game has a name, a type (e.g. chicken, prisoner's dilemma, bargaining), and a set of participating players. Start with the minimal sufficient game from Phase 3; add additional games only when they change the equilibrium prediction.

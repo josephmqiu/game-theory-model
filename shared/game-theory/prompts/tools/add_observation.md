@@ -1,0 +1,1 @@
+Record a specific, concrete fact observed from a source. Observations are the atomic units of evidence — they capture what was actually seen or reported, without interpretation. Always link an observation to its source via source_id. Keep observations narrow and specific; save interpretation for claims and inferences.

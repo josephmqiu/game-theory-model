@@ -1,0 +1,1 @@
+Retrieve a single entity from the canonical store by its ID and type. Use this to read the current state of a specific player, game, formalization, assumption, scenario, or other entity before updating or referencing it. Prefer this over listing all entities when you already know the ID of the entity you need.

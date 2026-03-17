@@ -1,0 +1,1 @@
+Create a directed relationship between two entities showing how one derives from or relates to the other. Supported relations: supports, contradicts, extends, qualifies, depends_on. Use derivations to make the evidence graph explicit — they expose the logical structure connecting observations, claims, inferences, and game-theoretic conclusions.

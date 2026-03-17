@@ -1,0 +1,1 @@
+List all entities of a given type in the canonical store (e.g. all players, all games, all assumptions). Returns IDs and key fields for each entity. Use this to get an overview of what has been recorded so far, to find entity IDs for subsequent updates, or to check coverage before running the Phase 5 or Phase 10 checkpoints.

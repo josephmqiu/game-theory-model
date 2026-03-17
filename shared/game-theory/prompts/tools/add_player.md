@@ -1,0 +1,1 @@
+Add a player (state, organization, coalition, market, or individual) to the analysis. Players are the key actors whose strategic interactions are modelled. Specify the player's type and role (primary, involuntary, background, gatekeeper, or internal). Optionally include initial objectives and constraints to anchor the objective function analysis required in Phase 2.

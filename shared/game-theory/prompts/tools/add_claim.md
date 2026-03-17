@@ -1,0 +1,1 @@
+Assert an analytical claim grounded in one or more observations. Claims go one step beyond raw observations — they state something about the situation that is supported by evidence but requires judgment. Include a confidence value (0–1) and list the observation or inference IDs it is based on. Claims are the building blocks for inferences.
