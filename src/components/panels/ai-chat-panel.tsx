@@ -4,23 +4,17 @@
  * Reads from ai-store agentMessages, sends messages via sendAgentMessage.
  */
 
-import { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import {
-  Bot,
-  ChevronUp,
-  MessageSquare,
-  Minus,
-  Send,
-  Square,
-  User,
-  X,
-} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Bot, Send, Square, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { sendAgentMessage } from "@/services/agent-chat-handler";
 import { aiStore, useAiStore } from "@/stores/ai-store";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
 import { AgentMessageBubble } from "@/components/panels/agent-message-bubble";
-import type { AIProviderType } from "@/types/agent-settings";
+import {
+  useConnectedModels,
+  useModelAutoFallback,
+} from "@/hooks/use-model-auto-fallback";
 
 // Kept for pipeline conversation rendering (different store).
 import type { ConversationMessage } from "shared/game-theory/types/conversation";
@@ -64,56 +58,7 @@ export function MessageBubble({ message }: { message: ConversationMessage }) {
   );
 }
 
-const PROVIDER_LABELS = {
-  anthropic: "Anthropic",
-  openai: "OpenAI",
-  opencode: "OpenCode",
-  copilot: "Copilot",
-} as const;
-
-interface AiChatPanelProps {
-  onClose?: () => void;
-  onMinimize?: () => void;
-}
-
-interface AiChatMinimizedBarProps {
-  onExpand: () => void;
-  onClose: () => void;
-}
-
-export function AiChatMinimizedBar({
-  onExpand,
-  onClose,
-}: AiChatMinimizedBarProps) {
-  const provider = useAiStore((s) => s.provider);
-
-  return (
-    <div className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-2 shadow-lg">
-      <button
-        type="button"
-        onClick={onExpand}
-        className="flex items-center gap-2 rounded-full text-sm text-foreground transition-colors hover:text-primary"
-      >
-        <MessageSquare className="h-4 w-4 text-primary" />
-        <span>AI Panel</span>
-        <span className="text-xs text-muted-foreground">
-          {PROVIDER_LABELS[provider.provider]} / {provider.modelId}
-        </span>
-        <ChevronUp className="h-4 w-4 text-muted-foreground" />
-      </button>
-      <button
-        type="button"
-        onClick={onClose}
-        className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-        aria-label="Close AI panel"
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
-    </div>
-  );
-}
-
-export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
+export function AiChatPanel() {
   const agentMessages = useAiStore((s) => s.agentMessages);
   const isStreaming = useAiStore((s) => s.isStreaming);
   const provider = useAiStore((s) => s.provider);
@@ -145,17 +90,8 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
     scrollToBottom,
   ]);
 
-  const connectedModels = useMemo(
-    () =>
-      (Object.keys(connectedProviders) as AIProviderType[]).flatMap(
-        (providerType) =>
-          connectedProviders[providerType].models.map((model) => ({
-            ...model,
-            providerLabel: connectedProviders[providerType].displayName,
-          })),
-      ),
-    [connectedProviders],
-  );
+  useConnectedModels();
+  useModelAutoFallback();
 
   const selectedProviderState = connectedProviders[provider.provider];
   const currentProviderReady =
@@ -164,28 +100,6 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
     selectedProviderState.models.some(
       (model) => model.value === provider.modelId,
     );
-
-  useEffect(() => {
-    if (!settingsHydrated || connectedModels.length === 0) return;
-    const currentModel = connectedModels.find(
-      (model) =>
-        model.value === provider.modelId &&
-        model.provider === provider.provider,
-    );
-    if (!currentModel) {
-      const firstModel = connectedModels[0];
-      if (!firstModel) return;
-      if (
-        firstModel.provider !== provider.provider ||
-        firstModel.value !== provider.modelId
-      ) {
-        aiStore.getState().setProvider({
-          provider: firstModel.provider,
-          modelId: firstModel.value,
-        });
-      }
-    }
-  }, [connectedModels, provider.modelId, provider.provider, settingsHydrated]);
 
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
@@ -216,67 +130,12 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
   return (
     <div className="flex h-full flex-col bg-card">
       <div className="flex items-center gap-3 border-b border-border px-4 py-3">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <Bot className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">
-              AI Analysis Copilot
-            </p>
-            {connectedModels.length > 0 ? (
-              <label className="block">
-                <span className="sr-only">AI model</span>
-                <select
-                  value={`${provider.provider}:${provider.modelId}`}
-                  onChange={(e) => {
-                    const [nextProvider, ...rest] = e.target.value.split(":");
-                    const nextModelId = rest.join(":"); // handle model IDs that contain ':'
-                    aiStore.getState().setProvider({
-                      provider: nextProvider as AIProviderType,
-                      modelId: nextModelId,
-                    });
-                  }}
-                  className="mt-1 w-full rounded border border-border bg-background px-2 py-1 text-xs text-foreground"
-                >
-                  {connectedModels.map((model) => (
-                    <option
-                      key={`${model.provider}:${model.value}`}
-                      value={`${model.provider}:${model.value}`}
-                    >
-                      {PROVIDER_LABELS[model.provider]} / {model.displayName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : (
-              <p className="truncate text-xs text-muted-foreground">
-                {PROVIDER_LABELS[provider.provider]} / {provider.modelId}
-              </p>
-            )}
-          </div>
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <Bot className="h-4 w-4" />
         </div>
-
-        {onMinimize && (
-          <button
-            type="button"
-            onClick={onMinimize}
-            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-            aria-label="Minimize AI panel"
-          >
-            <Minus className="h-4 w-4" />
-          </button>
-        )}
-        {onClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-            aria-label="Close AI panel"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        )}
+        <p className="text-sm font-medium text-foreground">
+          AI Analysis Copilot
+        </p>
       </div>
 
       <div
