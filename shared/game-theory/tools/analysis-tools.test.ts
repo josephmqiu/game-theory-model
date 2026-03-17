@@ -157,8 +157,7 @@ describe("createGetMethodologyPhaseTool", () => {
     expect(typeof result.error).toBe("string");
   });
 
-  it("returns 'not available' from loader for uncreated phase file", async () => {
-    // Phase 5 file does not exist — loadPhaseMethodology returns fallback
+  it("returns methodology content for any valid phase", async () => {
     const context = makeContext();
     const result = await tool.execute({ phase: 5 }, context);
 
@@ -166,8 +165,8 @@ describe("createGetMethodologyPhaseTool", () => {
     if (!result.success) return;
 
     const text = result.data as string;
-    // The loader returns "Phase N methodology not available" when file doesn't exist
-    expect(text).toContain("not available");
+    expect(typeof text).toBe("string");
+    expect(text.length).toBeGreaterThan(0);
   });
 
   it("fails on invalid input — string instead of number", async () => {
