@@ -5,8 +5,9 @@ export async function* streamAnthropicChat(
   request: Record<string, unknown>,
   adapter: ProviderAdapter,
   abortSignal?: AbortSignal,
+  apiKey?: string,
 ): AsyncGenerator<AgentEvent> {
-  const client = new Anthropic();
+  const client = new Anthropic(apiKey ? { apiKey } : undefined);
 
   const stream = client.messages.stream(
     request as Parameters<typeof client.messages.stream>[0],

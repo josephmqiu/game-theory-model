@@ -6,7 +6,10 @@ import {
   loadToolDescription,
 } from "shared/game-theory/prompts/loader";
 import { createToolRegistry } from "shared/game-theory/tools/registry";
-import type { ToolDefinition } from "shared/game-theory/types/agent";
+import type {
+  ToolDefinition,
+  ProviderAdapter,
+} from "shared/game-theory/types/agent";
 import { createEvidenceTools } from "shared/game-theory/tools/evidence-tools";
 import { createPlayerTools } from "shared/game-theory/tools/player-tools";
 import { createGameTools } from "shared/game-theory/tools/game-tools";
@@ -25,13 +28,28 @@ import {
   DEFAULT_AGENT_LOOP_CONFIG,
   type AgentEvent,
   type NormalizedMessage,
-  type ToolContext,
 } from "shared/game-theory/types/agent";
-import {
-  emptyCanonicalStore,
-  type CanonicalStore,
-} from "shared/game-theory/types/canonical";
+import { type CanonicalStore } from "shared/game-theory/types/canonical";
 import { streamAnthropicChat } from "shared/game-theory/providers/anthropic-client";
+import { createAgentToolContext } from "shared/game-theory/agent/tool-context";
+import { buildClaudeAgentEnv } from "../../utils/resolve-claude-agent-env";
+
+type StreamingClient = (
+  request: Record<string, unknown>,
+  adapter: ProviderAdapter,
+  abortSignal?: AbortSignal,
+  apiKey?: string,
+) => AsyncGenerator<AgentEvent>;
+
+function getStreamingClient(provider: string): StreamingClient | null {
+  switch (provider) {
+    case "anthropic":
+      return streamAnthropicChat;
+    // case "openai": return streamOpenAIChat  // TODO: implement OpenAI streaming client
+    default:
+      return null;
+  }
+}
 
 const bodySchema = z.object({
   messages: z
@@ -47,6 +65,7 @@ const bodySchema = z.object({
   enableWebSearch: z.boolean().default(true),
   maxIterations: z.number().int().min(1).max(500).optional(),
   canonical: z.record(z.unknown()).optional(),
+  eventLogCursor: z.number().int().min(0).optional(),
 });
 
 function registerToolsWithDescriptions(
@@ -98,23 +117,22 @@ export default defineEventHandler(async (event) => {
     ...(body.maxIterations ? { maxIterations: body.maxIterations } : {}),
   };
 
-  // Build ToolContext — placeholder for now (Phase 3 will wire to real stores)
-  // Use canonical from body if provided, otherwise empty
-  const toolContext: ToolContext = {
-    canonical: body.canonical
-      ? (body.canonical as unknown as CanonicalStore)
-      : emptyCanonicalStore(),
-    dispatch: () => {
-      throw new Error("Dispatch not wired — use Phase 3 to connect");
-    },
-    getAnalysisState: () => null,
-    getDerivedState: () => ({
-      readinessReportsByFormalization: {},
-      solverResultsByFormalization: {},
-      sensitivityByFormalizationAndSolver: {},
-      dirtyFormalizations: {},
-    }),
-  };
+  // Build a real ToolContext backed by a server-side working copy of the canonical
+  // store. Each dispatch updates the local copy so subsequent tool calls in the
+  // same agent session see the results of earlier ones. Dispatched commands are
+  // tracked per tool execution and attached to tool_result events so the client
+  // can replay them through its own command spine (P3-T2).
+  const {
+    context: toolContext,
+    getLastDispatchedCommands,
+    clearLastDispatchedCommands,
+  } = createAgentToolContext({
+    canonical: body.canonical as unknown as CanonicalStore | undefined,
+    eventLogCursor: body.eventLogCursor,
+  });
+
+  const agentEnv = buildClaudeAgentEnv();
+  const anthropicApiKey = agentEnv.ANTHROPIC_API_KEY as string | undefined;
 
   const encoder = new TextEncoder();
 
@@ -156,12 +174,12 @@ export default defineEventHandler(async (event) => {
         await runAgentLoop(
           {
             callProvider: async function* (_iteration) {
-              // Provider routing — only Anthropic is wired with a real streaming client
-              if (body.provider !== "anthropic") {
+              // Resolve streaming client for the requested provider
+              const streamClient = getStreamingClient(body.provider);
+              if (!streamClient) {
                 yield {
                   type: "text" as const,
-                  content:
-                    "Only Anthropic provider is currently supported for the agent loop. OpenAI support coming soon.",
+                  content: `Provider "${body.provider}" does not yet have a streaming client for the agent loop. Available: anthropic.`,
                 };
                 yield { type: "done" as const, content: "" };
                 return;
@@ -185,18 +203,33 @@ export default defineEventHandler(async (event) => {
                   : undefined,
               });
 
-              yield* streamAnthropicChat(
+              yield* streamClient(
                 request,
                 adapter,
                 abortController.signal,
+                anthropicApiKey,
               );
             },
             executeTool: async (name, input) => {
+              clearLastDispatchedCommands();
               const tool = registry.get(name);
               if (!tool)
                 return { success: false, error: `Unknown tool: ${name}` };
               try {
-                return await tool.execute(input, toolContext);
+                const result = await tool.execute(input, toolContext);
+                // Attach dispatched commands to successful results so the client
+                // can replay them through its own command spine (P3-T2).
+                if (result.success) {
+                  const commands = getLastDispatchedCommands();
+                  return {
+                    success: true,
+                    data: {
+                      ...(result.data as Record<string, unknown>),
+                      ...(commands.length > 0 ? { _commands: commands } : {}),
+                    },
+                  };
+                }
+                return result;
               } catch (error) {
                 return {
                   success: false,
