@@ -10,7 +10,6 @@ import {
   conversationStore,
 } from "@/stores/conversation-store";
 import { analysisStore } from "@/stores/analysis-store";
-import { useUiStore } from "@/stores/ui-store";
 import { acceptConversationProposal } from "@/stores/proposal-actions";
 
 interface ProposalReviewProps {
@@ -81,8 +80,6 @@ function ProposalGroupCard({ group }: { group: ProposalGroup }) {
 function ProposalRow({ proposalId }: { proposalId: string }) {
   const [error, setError] = useState<string | null>(null);
   const proposal = useConversationStore((s) => s.proposals_by_id[proposalId]);
-  const setInspectedTarget = useUiStore((s) => s.setInspectedTarget);
-
   if (!proposal) return null;
 
   const isPending = proposal.status === "pending";
@@ -130,29 +127,6 @@ function ProposalRow({ proposalId }: { proposalId: string }) {
                         ? "bg-blue-500/10 text-blue-600"
                         : "bg-red-500/10 text-red-600"
                   }`}
-                  onClick={
-                    preview.entity_id
-                      ? () =>
-                          setInspectedTarget({
-                            entityType: preview.entity_type,
-                            entityId: preview.entity_id as string,
-                          })
-                      : undefined
-                  }
-                  onKeyDown={
-                    preview.entity_id
-                      ? (event) => {
-                          if (event.key !== "Enter" && event.key !== " ") {
-                            return;
-                          }
-                          event.preventDefault();
-                          setInspectedTarget({
-                            entityType: preview.entity_type,
-                            entityId: preview.entity_id as string,
-                          });
-                        }
-                      : undefined
-                  }
                 >
                   {preview.action} {preview.entity_type}
                 </span>

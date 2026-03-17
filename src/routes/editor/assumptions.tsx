@@ -9,7 +9,6 @@ export const Route = createFileRoute("/editor/assumptions")({
 
 function AssumptionsPage() {
   const manualMode = useUiStore((s) => s.manualMode);
-  const setInspectedTarget = useUiStore((s) => s.setInspectedTarget);
   const assumptionsRecord = useAnalysisStore((s) => s.canonical.assumptions);
   const assumptions = useMemo(
     () => Object.values(assumptionsRecord),
@@ -91,25 +90,7 @@ function AssumptionsPage() {
           {assumptions.map((assumption) => (
             <article
               key={assumption.id}
-              role="button"
-              tabIndex={0}
-              className="rounded-xl border border-border bg-card p-4 cursor-pointer transition-colors hover:bg-accent/50"
-              onClick={() =>
-                setInspectedTarget({
-                  entityType: "assumption",
-                  entityId: assumption.id,
-                })
-              }
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") {
-                  return;
-                }
-                event.preventDefault();
-                setInspectedTarget({
-                  entityType: "assumption",
-                  entityId: assumption.id,
-                });
-              }}
+              className="rounded-xl border border-border bg-card p-4"
             >
               {editingAssumptionId === assumption.id ? (
                 <div className="space-y-3">

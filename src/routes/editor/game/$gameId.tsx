@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useAnalysisStore } from "@/stores/analysis-store";
-import { useUiStore } from "@/stores/ui-store";
 import { MatrixView } from "@/components/game/matrix-view";
 import { TreeView } from "@/components/game/tree-view";
 
@@ -12,8 +11,6 @@ function GameDetailPage() {
   const { gameId } = Route.useParams();
   const canonical = useAnalysisStore((s) => s.canonical);
   const game = canonical.games[gameId];
-  const setInspectedTarget = useUiStore((s) => s.setInspectedTarget);
-
   if (!game) {
     return (
       <div className="max-w-4xl mx-auto">
@@ -53,19 +50,7 @@ function GameDetailPage() {
             {players.map((p) => (
               <span
                 key={p.id}
-                role="button"
-                tabIndex={0}
                 className="text-xs px-2 py-1 rounded-full bg-secondary"
-                onClick={() =>
-                  setInspectedTarget({ entityType: "player", entityId: p.id })
-                }
-                onKeyDown={(event) => {
-                  if (event.key !== "Enter" && event.key !== " ") {
-                    return;
-                  }
-                  event.preventDefault();
-                  setInspectedTarget({ entityType: "player", entityId: p.id });
-                }}
               >
                 {p.name}
               </span>
@@ -88,25 +73,7 @@ function GameDetailPage() {
             {formalizations.map((f) => (
               <div
                 key={f.id}
-                role="button"
-                tabIndex={0}
-                className="rounded-lg border border-border bg-card p-4 cursor-pointer transition-colors hover:bg-accent/50"
-                onClick={() =>
-                  setInspectedTarget({
-                    entityType: "formalization",
-                    entityId: f.id,
-                  })
-                }
-                onKeyDown={(event) => {
-                  if (event.key !== "Enter" && event.key !== " ") {
-                    return;
-                  }
-                  event.preventDefault();
-                  setInspectedTarget({
-                    entityType: "formalization",
-                    entityId: f.id,
-                  });
-                }}
+                className="rounded-lg border border-border bg-card p-4"
               >
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-xs px-2 py-0.5 rounded-full bg-secondary">

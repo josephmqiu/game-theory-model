@@ -7,7 +7,6 @@ import { useMemo } from "react";
 import { Layers, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAnalysisStore } from "@/stores/analysis-store";
-import { useUiStore } from "@/stores/ui-store";
 import type { Scenario } from "shared/game-theory/types/evidence";
 
 function probabilityLabel(scenario: Scenario): string | null {
@@ -124,8 +123,6 @@ function ScenarioCard({ scenario, assumptions, onInspect }: ScenarioCardProps) {
 export function ScenarioComparison() {
   const scenarios = useAnalysisStore((s) => s.canonical.scenarios);
   const allAssumptions = useAnalysisStore((s) => s.canonical.assumptions);
-  const setInspectedTarget = useUiStore((s) => s.setInspectedTarget);
-
   const scenarioList = useMemo(() => Object.values(scenarios), [scenarios]);
 
   const assumptionLabels = useMemo(() => {
@@ -174,9 +171,7 @@ export function ScenarioComparison() {
             key={scenario.id}
             scenario={scenario}
             assumptions={assumptionLabels[scenario.id] ?? []}
-            onInspect={(scenarioId) =>
-              setInspectedTarget({ entityType: "scenario", entityId: scenarioId })
-            }
+            onInspect={() => {}}
           />
         ))}
       </div>

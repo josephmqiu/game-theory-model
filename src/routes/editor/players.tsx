@@ -10,7 +10,6 @@ export const Route = createFileRoute("/editor/players")({
 function PlayersPage() {
   const canonical = useAnalysisStore((s) => s.canonical);
   const manualMode = useUiStore((s) => s.manualMode);
-  const setInspectedTarget = useUiStore((s) => s.setInspectedTarget);
   const players = Object.values(canonical.players);
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
@@ -75,19 +74,7 @@ function PlayersPage() {
           {players.map((player) => (
             <div
               key={player.id}
-              role="button"
-              tabIndex={0}
-              className="rounded-lg border border-border bg-card p-4 cursor-pointer transition-colors hover:bg-accent/50"
-              onClick={() =>
-                setInspectedTarget({ entityType: "player", entityId: player.id })
-              }
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") {
-                  return;
-                }
-                event.preventDefault();
-                setInspectedTarget({ entityType: "player", entityId: player.id });
-              }}
+              className="rounded-lg border border-border bg-card p-4"
             >
               {editingPlayerId === player.id ? (
                 <div className="space-y-3">
@@ -111,7 +98,9 @@ function PlayersPage() {
                   </select>
                   <textarea
                     value={draftDescription}
-                    onChange={(event) => setDraftDescription(event.target.value)}
+                    onChange={(event) =>
+                      setDraftDescription(event.target.value)
+                    }
                     rows={3}
                     className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                   />

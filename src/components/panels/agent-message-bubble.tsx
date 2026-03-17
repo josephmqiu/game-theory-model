@@ -47,8 +47,23 @@ function ThinkingBlock({ thinking }: ThinkingBlockProps) {
   );
 }
 
+const COMPACTION_PREFIX = "\u27F3 Context compacted";
+
 export function AgentMessageBubble({ message }: { message: AgentChatMessage }) {
   const isUser = message.role === "user";
+  const isCompaction =
+    message.role === "assistant" &&
+    message.content.startsWith(COMPACTION_PREFIX);
+
+  if (isCompaction) {
+    return (
+      <div className="flex justify-center py-1">
+        <span className="text-[11px] text-muted-foreground/60 italic">
+          {message.content}
+        </span>
+      </div>
+    );
+  }
 
   if (isUser) {
     return (

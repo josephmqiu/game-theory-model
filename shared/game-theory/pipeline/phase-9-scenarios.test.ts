@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { emptyCanonicalStore, type CanonicalStore } from "../types/canonical";
 import type { AnalysisState, PhaseExecution } from "../types/analysis-pipeline";
+import { scenarioSchema, canonicalStoreSchema } from "../types/schemas";
+import { reduce } from "../engine/reducer";
 import { getDerivedStore, resetDerivedState } from "../store/derived"; // TODO: store import — needs PipelineHost
 import { runPhase6Formalization } from "./phase-6-formalization";
 import { runPhase7Assumptions } from "./phase-7-assumptions";
@@ -535,6 +537,88 @@ describe("Phase 9 scenario generation runner", () => {
     );
     expect(thesisProposals.length).toBe(1);
     expect(thesisProposals[0]!.proposal_type).toBe("thesis");
+  });
+
+  it("scenario proposal commands produce schema-valid entities when dispatched", () => {
+    const canonical = createCanonicalStore();
+    const { phase6, phase7, phase8 } = runPriorPhases(canonical);
+
+    const result = runPhase9Scenarios({
+      canonical,
+      baseRevision: 0,
+      phaseExecution: createExecution(9),
+      phaseResults: {
+        6: phase6,
+        7: phase7,
+        8: phase8,
+      },
+    });
+
+    const scenarioProposals = result.proposals.filter((p) =>
+      p.commands.some((c) => c.kind === "add_scenario"),
+    );
+    expect(scenarioProposals.length).toBeGreaterThan(0);
+
+    for (const proposal of scenarioProposals) {
+      const batchCommand = {
+        kind: "batch" as const,
+        label: proposal.description,
+        commands: proposal.commands,
+      };
+
+      // Test through the reducer + schema validation (same as dispatch)
+      const reduceResult = reduce(canonical, batchCommand);
+      expect(reduceResult.newStore).toBeDefined();
+
+      // Also validate each scenario entity individually
+      for (const command of proposal.commands) {
+        if (command.kind !== "add_scenario") continue;
+        const addCmd = command as {
+          kind: string;
+          id: string;
+          payload: Record<string, unknown>;
+        };
+        const entity = { ...addCmd.payload, id: addCmd.id };
+        const parseResult = scenarioSchema.safeParse(entity);
+        if (!parseResult.success) {
+          // Log exact validation errors for debugging
+          for (const issue of parseResult.error.issues) {
+            console.error(
+              `Scenario schema error: path=${issue.path.join(".")}, message=${issue.message}, received=${JSON.stringify((issue as { received?: unknown }).received)}`,
+            );
+          }
+        }
+        expect(parseResult.success).toBe(true);
+      }
+    }
+
+    // Also validate thesis proposals
+    const thesisProposals = result.proposals.filter((p) =>
+      p.commands.some((c) => c.kind === "add_central_thesis"),
+    );
+    for (const proposal of thesisProposals) {
+      const batchCommand = {
+        kind: "batch" as const,
+        label: proposal.description,
+        // Thesis may reference scenario IDs that don't exist yet in canonical,
+        // so we dispatch scenario proposals first
+        commands: proposal.commands,
+      };
+
+      // We need the scenarios in the store first for the thesis refs
+      let storeWithScenarios = canonical;
+      for (const scenarioProposal of scenarioProposals) {
+        const scenarioBatch = {
+          kind: "batch" as const,
+          label: scenarioProposal.description,
+          commands: scenarioProposal.commands,
+        };
+        storeWithScenarios = reduce(storeWithScenarios, scenarioBatch).newStore;
+      }
+
+      const reduceResult = reduce(storeWithScenarios, batchCommand);
+      expect(reduceResult.newStore).toBeDefined();
+    }
   });
 
   it("returns partial result when Phase 6 data is missing", () => {

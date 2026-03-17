@@ -6,7 +6,6 @@ import { PHASE_NAMES } from "@/constants/phases";
 import { executeAppCommand } from "@/services/app-command-runner";
 import { ProposalReview } from "@/components/phases/proposal-review";
 import { useAnalysisStore } from "@/stores/analysis-store";
-import { useUiStore } from "@/stores/ui-store";
 
 export const Route = createFileRoute("/editor/phase/$phaseId")({
   component: PhaseDetailPage,
@@ -102,7 +101,6 @@ function PhaseDetailPage() {
     };
   }, [messages.length, proposalGroups, revalidationEvents]);
 
-  const setInspectedTarget = useUiStore((s) => s.setInspectedTarget);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const workflow =
@@ -248,26 +246,7 @@ function PhaseDetailPage() {
                 key={revalidationEvent.id}
                 role="button"
                 tabIndex={0}
-                className="rounded-lg border border-border bg-card p-4 transition-colors hover:bg-accent/50 cursor-pointer"
-                onClick={() =>
-                  setInspectedTarget({
-                    entityType: "revalidation_event",
-                    entityId: revalidationEvent.id,
-                  })
-                }
-                onKeyDown={(keyboardEvent) => {
-                  if (
-                    keyboardEvent.key !== "Enter" &&
-                    keyboardEvent.key !== " "
-                  ) {
-                    return;
-                  }
-                  keyboardEvent.preventDefault();
-                  setInspectedTarget({
-                    entityType: "revalidation_event",
-                    entityId: revalidationEvent.id,
-                  });
-                }}
+                className="rounded-lg border border-border bg-card p-4"
               >
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -343,27 +322,7 @@ function PhaseDetailPage() {
                   <article
                     key={revalidationEvent.id}
                     role="button"
-                    tabIndex={0}
-                    className="rounded-lg border border-border bg-card p-4 transition-colors hover:bg-accent/50 cursor-pointer"
-                    onClick={() =>
-                      setInspectedTarget({
-                        entityType: "revalidation_event",
-                        entityId: revalidationEvent.id,
-                      })
-                    }
-                    onKeyDown={(keyboardEvent) => {
-                      if (
-                        keyboardEvent.key !== "Enter" &&
-                        keyboardEvent.key !== " "
-                      ) {
-                        return;
-                      }
-                      keyboardEvent.preventDefault();
-                      setInspectedTarget({
-                        entityType: "revalidation_event",
-                        entityId: revalidationEvent.id,
-                      });
-                    }}
+                    className="rounded-lg border border-border bg-card p-4"
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div>
@@ -416,19 +375,12 @@ function PhaseDetailPage() {
                 {msg.structured_content?.entity_refs?.length ? (
                   <div className="mb-2 flex flex-wrap gap-1">
                     {msg.structured_content.entity_refs.map((entityRef) => (
-                      <button
-                        type="button"
+                      <span
                         key={`${entityRef.type}-${entityRef.id}`}
-                        onClick={() =>
-                          setInspectedTarget({
-                            entityType: entityRef.type,
-                            entityId: entityRef.id,
-                          })
-                        }
-                        className="text-xs rounded-full bg-secondary px-2 py-0.5 text-muted-foreground hover:bg-accent"
+                        className="text-xs rounded-full bg-secondary px-2 py-0.5 text-muted-foreground"
                       >
                         {entityRef.type}
-                      </button>
+                      </span>
                     ))}
                   </div>
                 ) : null}

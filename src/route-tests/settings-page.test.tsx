@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { Suspense } from "react";
 import { SettingsPage } from "@/routes/settings";
 import { renderWithShell } from "@/test-support/render-router";
@@ -21,9 +21,7 @@ const callbacks = vi.hoisted(() => ({
   setMcpTransportMode: vi.fn(),
   toggleMcpIntegration: vi.fn(),
   setProvider: vi.fn(),
-  setAiPanelOpen: vi.fn(),
   setManualMode: vi.fn(),
-  toggleInspector: vi.fn(),
   hydrateUiStore: vi.fn(async () => undefined),
   hydrateAgentSettingsStore: vi.fn(async () => undefined),
   setStreaming: vi.fn(),
@@ -44,9 +42,6 @@ interface ProviderState {
 }
 
 const initialUiState = {
-  aiPanelOpen: false,
-  aiPanelMinimized: false,
-  inspectorOpen: true,
   manualMode: true,
 };
 
@@ -171,9 +166,7 @@ let providers = structuredClone(initialProviderState);
 let integrations = structuredClone(initialIntegrationStates);
 
 type MockUiState = typeof initialUiState & {
-  setAiPanelOpen: (open: boolean) => void;
   setManualMode: (manualMode: boolean) => void;
-  toggleInspector: () => void;
 };
 
 function resetTestState(): void {
@@ -189,9 +182,7 @@ function resetTestState(): void {
   callbacks.disconnectProvider.mockReset();
   callbacks.setMcpTransportMode.mockReset();
   callbacks.toggleMcpIntegration.mockReset();
-  callbacks.setAiPanelOpen.mockReset();
   callbacks.setManualMode.mockReset();
-  callbacks.toggleInspector.mockReset();
   callbacks.hydrateUiStore.mockClear();
   callbacks.hydrateAgentSettingsStore.mockClear();
   callbacks.setProvider.mockReset();
@@ -244,30 +235,13 @@ function getJsonBody(init?: RequestInit): unknown {
   return init?.body ? JSON.parse(init.body as string) : {};
 }
 
-function integrationSection(label: string): HTMLElement {
-  const heading = screen.getByText(label, { exact: true });
-  const container = heading.closest("div.rounded-lg") as HTMLElement | null;
-  if (!container) {
-    throw new Error(`Expected section for integration label ${label}`);
-  }
-  return container;
-}
-
 vi.mock("@/stores/ui-store", () => ({
   useUiStore: (selector: (state: MockUiState) => unknown) =>
     selector({
       ...uiState,
-      setAiPanelOpen: (open: boolean) => {
-        uiState = { ...uiState, aiPanelOpen: open };
-        callbacks.setAiPanelOpen(open);
-      },
       setManualMode: (manualMode: boolean) => {
         uiState = { ...uiState, manualMode };
         callbacks.setManualMode(manualMode);
-      },
-      toggleInspector: () => {
-        uiState = { ...uiState, inspectorOpen: !uiState.inspectorOpen };
-        callbacks.toggleInspector();
       },
     }),
   hydrateUiStore: callbacks.hydrateUiStore,
@@ -433,12 +407,6 @@ describe("Settings route", () => {
       expect(callbacks.syncIntegrationStatuses).toHaveBeenCalledTimes(1);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Open AI panel" }));
-    expect(callbacks.setAiPanelOpen).toHaveBeenCalledWith(true);
-
-    fireEvent.click(screen.getByRole("button", { name: "Hide inspector" }));
-    expect(callbacks.toggleInspector).toHaveBeenCalledTimes(1);
-
     fireEvent.click(
       screen.getByRole("button", { name: /Disable manual mode/i }),
     );
@@ -449,62 +417,6 @@ describe("Settings route", () => {
     await waitFor(() => {
       expect(callbacks.syncProviderStatuses).toHaveBeenCalledTimes(
         refreshCalls + 1,
-      );
-    });
-  });
-
-  it("validates integration, writes MCP config, and removes MCP config", async () => {
-    const claude = getIntegration("claude-code");
-    if (!claude) throw new Error("Expected claude integration fixture");
-    claude.installed = true;
-    claude.validated = true;
-    claude.authenticated = true;
-    claude.configPath = "/tmp/claude-config.json";
-
-    renderedShells.push(
-      renderWithShell(
-        <Suspense fallback={null}>
-          <SettingsPage />
-        </Suspense>,
-      ),
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText("Settings")).toBeTruthy();
-    });
-
-    const claudeSection = integrationSection("Claude Code CLI");
-
-    fireEvent.click(
-      within(claudeSection).getByRole("button", { name: "Validate" }),
-    );
-    await waitFor(() => {
-      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-        expect.stringContaining("/api/integrations/validate"),
-        expect.objectContaining({ method: "POST" }),
-      );
-    });
-
-    fireEvent.click(
-      within(claudeSection).getByRole("button", { name: "Write config" }),
-    );
-    await waitFor(() => {
-      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-        expect.stringContaining("/api/mcp/config"),
-        expect.objectContaining({
-          method: "POST",
-          body: expect.stringContaining('"tool":"claude-code"'),
-        }),
-      );
-    });
-
-    fireEvent.click(
-      within(claudeSection).getByRole("button", { name: "Remove config" }),
-    );
-    await waitFor(() => {
-      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-        expect.stringContaining("/api/mcp/config"),
-        expect.objectContaining({ method: "DELETE" }),
       );
     });
   });

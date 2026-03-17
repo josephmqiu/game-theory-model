@@ -132,13 +132,9 @@ describe("integrity and cascade behavior", () => {
     if (deleteEdge.status !== "committed") {
       throw new Error("Expected delete_game_edge to commit.");
     }
-    expect(
-      deleteEdge.store.scenarios.scenario_1.stale_markers?.some(
-        (marker) =>
-          marker.caused_by.type === "game_edge" &&
-          marker.caused_by.id === "game_edge_1",
-      ),
-    ).toBe(true);
+    // scenario.path is descriptive text, not entity refs — no stale marker
+    // from the deleted edge, but the scenario itself should still exist
+    expect(deleteEdge.store.scenarios.scenario_1).toBeDefined();
   });
 
   it("cascade-deletes contradictions that reference a deleted claim", () => {
@@ -207,19 +203,15 @@ describe("integrity and cascade behavior", () => {
     expect(result.store.nodes.game_node_1).toBeUndefined();
     expect(result.store.edges.game_edge_1).toBeUndefined();
     expect(result.store.scenarios.scenario_2).toBeDefined();
-    expect(
-      result.store.scenarios.scenario_2.stale_markers?.some(
-        (marker) =>
-          marker.caused_by.type === "game_edge" &&
-          marker.caused_by.id === "game_edge_1",
-      ),
-    ).toBe(true);
   });
 
   it("rejects unrelated dangling refs even when a stale marker explains a different missing dependency", () => {
     const store = createSampleCanonicalStore();
-    store.scenarios.scenario_1.path = ["game_edge_missing"];
-    store.scenarios.scenario_1.key_assumptions = ["assumption_missing"];
+    // Use key_assumptions (entity refs) instead of path (descriptive text)
+    store.scenarios.scenario_1.key_assumptions = [
+      "assumption_missing",
+      "assumption_other_missing",
+    ];
     store.scenarios.scenario_1.stale_markers = [
       {
         reason: "Key assumption was removed",
@@ -230,8 +222,9 @@ describe("integrity and cascade behavior", () => {
 
     const result = validateStoreInvariants(store);
 
+    // The stale marker explains assumption_missing, but assumption_other_missing is still dangling
     expect(
-      result.errors.some((error) => error.includes("game_edge_missing")),
+      result.errors.some((error) => error.includes("assumption_other_missing")),
     ).toBe(true);
   });
 

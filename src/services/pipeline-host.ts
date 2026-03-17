@@ -11,8 +11,6 @@ import { pipelineStore } from "@/stores/pipeline-store";
 import { conversationStore } from "@/stores/conversation-store";
 import { derivedStore } from "@/stores/derived-store";
 import { playStore } from "@/stores/play-store";
-import { acceptConversationProposal } from "@/stores/proposal-actions";
-
 export function createPipelineHostFromStores(): PipelineHost {
   return {
     // L1 canonical access
@@ -149,15 +147,34 @@ export function createPipelineHostFromStores(): PipelineHost {
         const proposal = state.proposals_by_id[proposalId];
         if (!proposal || proposal.status !== "pending") continue;
 
-        const result = acceptConversationProposal({
-          proposalId,
-          canonical: analysisStore.getState().canonical,
-          currentPersistedRevision: analysisStore.getState().eventLog.cursor,
-          dispatch: analysisStore.getState().dispatch,
-        });
+        // In auto-accept mode, dispatch directly without base_revision to
+        // avoid rebase validation failures when multiple proposals from the
+        // same phase are accepted sequentially.
+        const result = analysisStore.getState().dispatch(
+          {
+            kind: "batch",
+            label: proposal.description,
+            commands: proposal.commands,
+          },
+          { source: "ai_merge" },
+        );
 
-        if (result.status === "accepted") {
+        if (result.status === "committed") {
+          conversationStore
+            .getState()
+            .updateProposalStatus(proposalId, "accepted", "accepted");
           accepted += 1;
+        } else if (result.status === "rejected") {
+          conversationStore
+            .getState()
+            .updateProposalStatus(proposalId, "conflict", "modified", {
+              conflicts: [
+                {
+                  kind: "validation" as const,
+                  message: result.errors[0] ?? "Proposal failed auto-accept.",
+                },
+              ],
+            });
         }
       }
 
