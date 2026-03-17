@@ -11,10 +11,7 @@ import { sendAgentMessage } from "@/services/agent-chat-handler";
 import { aiStore, useAiStore } from "@/stores/ai-store";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
 import { AgentMessageBubble } from "@/components/panels/agent-message-bubble";
-import {
-  useConnectedModels,
-  useModelAutoFallback,
-} from "@/hooks/use-model-auto-fallback";
+import { useModelAutoFallback } from "@/hooks/use-model-auto-fallback";
 
 // Kept for pipeline conversation rendering (different store).
 import type { ConversationMessage } from "shared/game-theory/types/conversation";
@@ -90,7 +87,6 @@ export function AiChatPanel() {
     scrollToBottom,
   ]);
 
-  useConnectedModels();
   useModelAutoFallback();
 
   const selectedProviderState = connectedProviders[provider.provider];
