@@ -35,20 +35,9 @@ export function buildAppMenu(): void {
       label: 'File',
       submenu: [
         {
-          label: 'New',
+          label: 'New Analysis',
           accelerator: 'CmdOrCtrl+N',
           click: () => sendMenuAction('new'),
-        },
-        {
-          label: 'Open\u2026',
-          accelerator: 'CmdOrCtrl+O',
-          click: () => sendMenuAction('open'),
-        },
-        { type: 'separator' },
-        {
-          label: 'Save',
-          accelerator: 'CmdOrCtrl+S',
-          click: () => sendMenuAction('save'),
         },
         ...(!isMac
           ? [{ type: 'separator' as const }, { role: 'quit' as const }]
@@ -60,16 +49,8 @@ export function buildAppMenu(): void {
     {
       label: 'Edit',
       submenu: [
-        {
-          label: 'Undo',
-          accelerator: 'CmdOrCtrl+Z',
-          click: () => sendMenuAction('undo'),
-        },
-        {
-          label: 'Redo',
-          accelerator: 'CmdOrCtrl+Shift+Z',
-          click: () => sendMenuAction('redo'),
-        },
+        { role: 'undo' },
+        { role: 'redo' },
         { type: 'separator' },
         { role: 'cut' },
         { role: 'copy' },
