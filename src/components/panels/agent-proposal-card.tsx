@@ -115,7 +115,7 @@ export function AgentProposalCard({
   const isResolved = cardState !== "pending";
 
   function handleAccept() {
-    if (isResolved) return;
+    if (isResolved || proposal.status !== "pending") return;
 
     // Replay _commands from the tool result if present
     const result = toolCall.result as
@@ -137,7 +137,7 @@ export function AgentProposalCard({
   }
 
   function handleRejectSubmit() {
-    if (isResolved) return;
+    if (isResolved || proposal.status !== "pending") return;
     setCardState("rejected");
     setShowRejectInput(false);
     onReject(proposal, rejectionReason.trim());

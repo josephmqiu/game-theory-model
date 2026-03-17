@@ -11,6 +11,9 @@ export async function sendAgentMessage(
   text: string,
   options?: { enableWebSearch?: boolean },
 ): Promise<void> {
+  // Tracks replayed command IDs for this send cycle to prevent duplicates on retry/reconnect
+  const replayedCommands = new Set<string>();
+
   // 1. Append user message
   aiStore.getState().appendAgentMessage({
     role: "user",
@@ -91,10 +94,15 @@ export async function sendAgentMessage(
             .getState()
             .updateToolCallResult(event.id, event.result, event.duration_ms);
 
-          // Replay commands to keep client canonical store in sync
+          // Replay commands to keep client canonical store in sync.
+          // Deduplicate by kind:id to prevent duplicate entities on reconnect/retry.
           const resultData = event.result as Record<string, unknown> | null;
           if (resultData && Array.isArray(resultData._commands)) {
             for (const command of resultData._commands) {
+              const cmdObj = command as { kind?: string; id?: string };
+              const key = `${cmdObj.kind ?? "unknown"}:${cmdObj.id ?? "unknown"}`;
+              if (replayedCommands.has(key)) continue;
+              replayedCommands.add(key);
               try {
                 analysisStore.getState().dispatch(command);
               } catch {

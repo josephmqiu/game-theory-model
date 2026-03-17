@@ -14,7 +14,11 @@ interface PhaseProgressProps {
 
 export function PhaseProgressPanel({ phases, className }: PhaseProgressProps) {
   return (
-    <div className={cn("space-y-1", className)}>
+    <div
+      role="list"
+      aria-label="Analysis phase progress"
+      className={cn("space-y-1", className)}
+    >
       {phases.map((phase) => (
         <PhaseRow key={phase.phase} phase={phase} />
       ))}
@@ -29,7 +33,7 @@ function PhaseRow({ phase }: { phase: PhaseProgress }) {
     .join(", ");
 
   return (
-    <div className="flex items-start gap-2 px-2 py-1">
+    <div role="listitem" className="flex items-start gap-2 px-2 py-1">
       <div
         aria-hidden="true"
         className={cn(

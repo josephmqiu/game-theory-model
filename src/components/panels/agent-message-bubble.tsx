@@ -88,10 +88,10 @@ export function AgentMessageBubble({ message }: { message: AgentChatMessage }) {
                     // Acceptance is handled inside the card (command dispatch).
                     // Nothing extra needed here.
                   }}
-                  onReject={(_proposal: ProposalData, reason: string) => {
+                  onReject={(proposalData: ProposalData, reason: string) => {
                     const text = reason
-                      ? `Proposal rejected: ${reason}`
-                      : "Proposal rejected.";
+                      ? `Proposal ${proposalData.proposal_id} rejected: ${reason}`
+                      : `Proposal ${proposalData.proposal_id} rejected.`;
                     void sendAgentMessage(text);
                   }}
                 />

@@ -104,11 +104,23 @@ export function buildPhaseProgress(
 
 /**
  * Builds PhaseProgress for all 10 phases from the canonical store.
+ *
+ * Phase 10 is a meta-check — it has no dedicated entities.
+ * It's considered "has_entities" when all prior phases have entities.
  */
 export function buildAllPhaseProgress(
   canonical: Record<string, Record<string, unknown>>,
 ): PhaseProgress[] {
-  return Array.from({ length: 10 }, (_, i) =>
+  const phases = Array.from({ length: 10 }, (_, i) =>
     buildPhaseProgress(i + 1, canonical),
   );
+
+  // Apply Phase 10 heuristic: has_entities = true only when phases 1-9 all have entities
+  const priorPhasesComplete = phases.slice(0, 9).every((p) => p.has_entities);
+  const phase10 = phases[9];
+  if (phase10) {
+    phases[9] = { ...phase10, has_entities: priorPhasesComplete };
+  }
+
+  return phases;
 }

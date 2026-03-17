@@ -29,7 +29,10 @@ import {
   type AgentEvent,
   type NormalizedMessage,
 } from "shared/game-theory/types/agent";
-import { type CanonicalStore } from "shared/game-theory/types/canonical";
+import {
+  type CanonicalStore,
+  emptyCanonicalStore,
+} from "shared/game-theory/types/canonical";
 import { streamAnthropicChat } from "shared/game-theory/providers/anthropic-client";
 import { createAgentToolContext } from "shared/game-theory/agent/tool-context";
 import { buildClaudeAgentEnv } from "../../utils/resolve-claude-agent-env";
@@ -67,6 +70,17 @@ const bodySchema = z.object({
   canonical: z.record(z.unknown()).optional(),
   eventLogCursor: z.number().int().min(0).optional(),
 });
+
+/**
+ * Pragmatic structural check — verifies the object has the expected canonical
+ * store collections before trusting it. Not a full Zod schema validation (too
+ * expensive for a large store) but enough to catch garbage data.
+ */
+function isCanonicalStoreLike(obj: unknown): boolean {
+  if (!obj || typeof obj !== "object") return false;
+  const requiredKeys = ["games", "players", "formalizations", "sources"];
+  return requiredKeys.every((key) => key in (obj as Record<string, unknown>));
+}
 
 function registerToolsWithDescriptions(
   registry: ReturnType<typeof createToolRegistry>,
@@ -127,7 +141,10 @@ export default defineEventHandler(async (event) => {
     getLastDispatchedCommands,
     clearLastDispatchedCommands,
   } = createAgentToolContext({
-    canonical: body.canonical as unknown as CanonicalStore | undefined,
+    canonical:
+      body.canonical && isCanonicalStoreLike(body.canonical)
+        ? (body.canonical as unknown as CanonicalStore)
+        : emptyCanonicalStore(),
     eventLogCursor: body.eventLogCursor,
   });
 
@@ -254,12 +271,18 @@ export default defineEventHandler(async (event) => {
               // append both the assistant tool_use block and the result to conversation.
               // The loop emits one tool_result per tool call, in order.
               if (agentEvent.type === "tool_result") {
-                const toolResultMsg = adapter.formatToolResult(
-                  agentEvent.id,
-                  agentEvent.result as Parameters<
-                    typeof adapter.formatToolResult
-                  >[1],
-                );
+                // Strip _commands before sending to provider — saves tokens and avoids
+                // leaking internal command structures into the provider conversation history.
+                const resultForProvider = {
+                  ...((agentEvent.result as Record<string, unknown> | null) ??
+                    {}),
+                };
+                delete resultForProvider._commands;
+
+                const toolResultMsg = adapter.formatToolResult(agentEvent.id, {
+                  success: true,
+                  data: resultForProvider,
+                } as Parameters<typeof adapter.formatToolResult>[1]);
                 iterationToolResults.push(toolResultMsg);
 
                 // Once all tool results for this iteration have arrived,
