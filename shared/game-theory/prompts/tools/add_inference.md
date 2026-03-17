@@ -1,1 +1,4 @@
-Record a higher-order analytical conclusion derived from one or more claims. Inferences require explicit reasoning: always provide a rationale explaining the logical or game-theoretic step from the supporting claims to the inference. Include a confidence value (0–1) to reflect uncertainty in the reasoning chain. Inferences are where game-theoretic logic is applied to the factual record.
+Draw a higher-level strategic inference from one or more claims, applying game-theoretic logic to reach an analytical conclusion.
+Inputs: `statement` (required), `derived_from` (required array of claim IDs), `confidence` (0–1), `rationale` (required — explain the logical or game-theoretic step from the supporting claims to this conclusion).
+All claim IDs in `derived_from` must reference claims you have already created.
+Inferences inform game modeling — "Recession risk reduces the government's outside option, weakening its bargaining leverage" is an inference that should feed directly into payoff reasoning.

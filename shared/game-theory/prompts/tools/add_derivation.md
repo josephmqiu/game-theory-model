@@ -1,1 +1,4 @@
-Create a directed relationship between two entities showing how one derives from or relates to the other. Supported relations: supports, contradicts, extends, qualifies, depends_on. Use derivations to make the evidence graph explicit — they expose the logical structure connecting observations, claims, inferences, and game-theoretic conclusions.
+Create a directed link in the evidence chain between two existing entities to make the logical structure of the analysis explicit.
+Inputs: `from_ref` (source entity ID), `to_ref` (target entity ID), `relation` (supports/infers/contradicts).
+Both entity IDs must already exist in the canonical store before a derivation can be created between them.
+Use "contradicts" to flag conflicting evidence rather than suppressing it — surfacing contradictions is essential for sensitivity analysis.

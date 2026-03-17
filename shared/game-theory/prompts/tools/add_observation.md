@@ -1,1 +1,4 @@
-Record a specific, concrete fact observed from a source. Observations are the atomic units of evidence — they capture what was actually seen or reported, without interpretation. Always link an observation to its source via source_id. Keep observations narrow and specific; save interpretation for claims and inferences.
+Record a specific data point extracted from a source — a fact, number, quote, or reported event.
+Inputs: `source_id` (required — must reference an existing source), `text` (the specific observation, stated precisely).
+The `source_id` must match a source you previously created with add_source; the tool will fail if the source does not exist.
+Be specific rather than general — "GDP fell 3.2% in Q2 2025" is a valid observation; "the economy declined" is not specific enough to support a claim.

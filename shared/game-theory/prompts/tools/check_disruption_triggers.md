@@ -1,1 +1,4 @@
-Evaluate the current analysis state against the Phase 5 disruption trigger table to determine whether any earlier phase needs to be re-run. Returns a list of triggered conditions and the phases they require looping back to. Call this explicitly at the Phase 5 checkpoint and whenever a significant new finding emerges mid-analysis. Do not skip this — the recursive loop is the primary quality control mechanism of the methodology.
+Evaluate the current analysis against the disruption trigger table to determine whether earlier phase conclusions need to be revisited.
+No inputs required; returns a list of triggered revalidation conditions and the phases they require looping back to.
+Call this explicitly at the Phase 5 checkpoint and after any significant model change — new historical findings, major payoff revisions, or player additions.
+Do not skip this check: the recursive loop it enforces is the primary quality-control mechanism of the methodology, and skipping it risks building later phases on invalidated foundations.

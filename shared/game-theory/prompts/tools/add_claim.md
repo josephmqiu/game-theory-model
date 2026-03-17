@@ -1,1 +1,4 @@
-Assert an analytical claim grounded in one or more observations. Claims go one step beyond raw observations — they state something about the situation that is supported by evidence but requires judgment. Include a confidence value (0–1) and list the observation or inference IDs it is based on. Claims are the building blocks for inferences.
+State a factual claim derived from one or more observations, representing one interpretive step beyond raw evidence.
+Inputs: `statement` (required — what you're claiming), `based_on` (required array of observation IDs), `confidence` (0–1, default 0.7).
+All observation IDs in `based_on` must reference observations you have already created; claims built on nonexistent observations will fail referential integrity checks.
+Claims interpret observations rather than restate them — "The 3.2% GDP decline signals recession risk" is a claim; "GDP fell 3.2%" is the observation it rests on.

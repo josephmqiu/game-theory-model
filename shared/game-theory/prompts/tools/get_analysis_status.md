@@ -1,1 +1,4 @@
-Returns the current analysis status including entity counts per phase, coverage warnings, and solver-ready formalizations. Use this at Phase 10 (meta-check) to verify that all phases have adequate entity coverage before finalizing. Coverage warnings surface structural gaps — e.g. players without sources, or games without formalizations — that should be resolved before producing final scenarios.
+Returns the current state of the analysis: entity counts per phase, coverage warnings, and solver-readiness indicators for formalizations.
+No inputs required.
+Call this before advancing to each new phase to verify adequate coverage, and after a compaction event to re-orient before continuing.
+Coverage warnings surface structural gaps — players without sources, games without formalizations, scenarios that don't sum to 100% — that should be resolved before producing final outputs.

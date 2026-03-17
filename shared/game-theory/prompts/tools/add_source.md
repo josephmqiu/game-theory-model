@@ -1,1 +1,4 @@
-Register an information source (article, report, dataset, etc.) with a quality rating. Sources are the foundation of the evidence chain — every observation must trace back to a source. Include URL when available. Quality ratings: high (primary source, verified), medium (secondary reporting), low (unverified or opinion).
+Register an information source (article, report, dataset, or statement) as the starting point of an evidence chain.
+Inputs: `title` (required string), `quality_rating` (high/medium/low — high for primary sources, medium for secondary reporting, low for unverified or opinion), `url` (include when available), `notes` (context about the source or its limitations).
+Every observation must trace back to a source — create a source before creating observations.
+Do not conflate source quality with relevance; a low-quality source is still worth registering if it shapes actor beliefs or public discourse.
