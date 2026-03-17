@@ -1,10 +1,9 @@
 import type {
   AgentEvent,
-  ContextManagementConfig,
+  FormatRequestParams,
   NormalizedContentBlock,
   NormalizedMessage,
   ProviderAdapter,
-  ToolDefinition,
   ToolResult,
 } from "../types/agent";
 
@@ -112,28 +111,28 @@ function mapMessage(msg: NormalizedMessage): OpenAIMessage {
 
 // ── Stream chunk parsing ──
 
-function parseChunk(chunk: unknown): AgentEvent | null {
-  if (!chunk || typeof chunk !== "object") return null;
+function parseChunk(chunk: unknown): AgentEvent[] {
+  if (!chunk || typeof chunk !== "object") return [];
 
   const event = chunk as Record<string, unknown>;
 
   // Check for choices array (standard streaming response)
   const choices = event.choices as Array<Record<string, unknown>> | undefined;
-  if (!Array.isArray(choices) || choices.length === 0) return null;
+  if (!Array.isArray(choices) || choices.length === 0) return [];
 
   const choice = choices[0];
   const finishReason = choice.finish_reason as string | undefined;
 
   if (finishReason === "stop") {
-    return { type: "done", content: "" };
+    return [{ type: "done", content: "" }];
   }
 
   const delta = choice.delta as Record<string, unknown> | undefined;
-  if (!delta) return null;
+  if (!delta) return [];
 
   // Text content
   if (typeof delta.content === "string") {
-    return { type: "text", content: delta.content };
+    return [{ type: "text", content: delta.content }];
   }
 
   // Tool calls — only emit when we have both name and complete arguments
@@ -141,6 +140,7 @@ function parseChunk(chunk: unknown): AgentEvent | null {
     | Array<Record<string, unknown>>
     | undefined;
   if (Array.isArray(toolCalls)) {
+    const events: AgentEvent[] = [];
     for (const toolCall of toolCalls) {
       const fn = toolCall.function as Record<string, unknown> | undefined;
       if (!fn) continue;
@@ -157,17 +157,18 @@ function parseChunk(chunk: unknown): AgentEvent | null {
           continue;
         }
 
-        return {
+        events.push({
           type: "tool_call",
           id: (toolCall.id as string) ?? "",
           name,
           input: parsedInput,
-        };
+        });
       }
     }
+    return events;
   }
 
-  return null;
+  return [];
 }
 
 // ── Factory ──
@@ -182,17 +183,13 @@ export function createOpenAIAdapter(): ProviderAdapter {
       compaction: true,
     },
 
-    formatRequest(
-      messages: NormalizedMessage[],
-      tools: ToolDefinition[],
-      options?: Record<string, unknown>,
-    ): Record<string, unknown> {
-      const system = (options?.system as string) ?? "";
-      const enableWebSearch = (options?.enableWebSearch as boolean) ?? false;
-      const contextManagement = options?.contextManagement as
-        | ContextManagementConfig
-        | undefined;
-
+    formatRequest({
+      system,
+      messages,
+      tools,
+      contextManagement,
+      enableWebSearch = false,
+    }: FormatRequestParams): Record<string, unknown> {
       const openaiTools: OpenAITool[] = mapToolDefinitions(tools);
 
       if (enableWebSearch) {
@@ -219,7 +216,7 @@ export function createOpenAIAdapter(): ProviderAdapter {
       return request;
     },
 
-    parseStreamChunk(chunk: unknown): AgentEvent | null {
+    parseStreamChunk(chunk: unknown): AgentEvent[] {
       return parseChunk(chunk);
     },
 

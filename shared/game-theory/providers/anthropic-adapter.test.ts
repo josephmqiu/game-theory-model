@@ -29,8 +29,10 @@ describe("createAnthropicAdapter", () => {
   it("formatRequest includes system, messages, tools with input_schema", () => {
     const adapter = createAnthropicAdapter();
     const tools = [makeToolDef("get_players")];
-    const request = adapter.formatRequest(sampleMessages, tools, {
+    const request = adapter.formatRequest({
       system: "You are a helpful assistant.",
+      messages: sampleMessages,
+      tools,
     }) as Record<string, unknown>;
 
     expect(request.system).toBe("You are a helpful assistant.");
@@ -47,7 +49,10 @@ describe("createAnthropicAdapter", () => {
 
   it("formatRequest adds web_search tool when enableWebSearch is true", () => {
     const adapter = createAnthropicAdapter();
-    const request = adapter.formatRequest(sampleMessages, [], {
+    const request = adapter.formatRequest({
+      system: "",
+      messages: sampleMessages,
+      tools: [],
       enableWebSearch: true,
     }) as Record<string, unknown>;
 
@@ -59,7 +64,10 @@ describe("createAnthropicAdapter", () => {
 
   it("formatRequest does NOT add web_search when enableWebSearch is false", () => {
     const adapter = createAnthropicAdapter();
-    const request = adapter.formatRequest(sampleMessages, [], {
+    const request = adapter.formatRequest({
+      system: "",
+      messages: sampleMessages,
+      tools: [],
       enableWebSearch: false,
     }) as Record<string, unknown>;
 
@@ -69,7 +77,10 @@ describe("createAnthropicAdapter", () => {
 
   it("formatRequest adds context_management when enabled", () => {
     const adapter = createAnthropicAdapter();
-    const request = adapter.formatRequest(sampleMessages, [], {
+    const request = adapter.formatRequest({
+      system: "",
+      messages: sampleMessages,
+      tools: [],
       contextManagement: { enabled: true },
     }) as Record<string, unknown>;
 
@@ -80,7 +91,10 @@ describe("createAnthropicAdapter", () => {
 
   it("formatRequest does NOT add context_management when disabled", () => {
     const adapter = createAnthropicAdapter();
-    const request = adapter.formatRequest(sampleMessages, [], {
+    const request = adapter.formatRequest({
+      system: "",
+      messages: sampleMessages,
+      tools: [],
       contextManagement: { enabled: false },
     }) as Record<string, unknown>;
 
@@ -119,29 +133,31 @@ describe("createAnthropicAdapter", () => {
 
   it("parseStreamChunk handles text_delta → text event", () => {
     const adapter = createAnthropicAdapter();
-    const event = adapter.parseStreamChunk({
+    const events = adapter.parseStreamChunk({
       type: "content_block_delta",
       index: 0,
       delta: { type: "text_delta", text: "Hello world" },
     });
 
-    expect(event).toEqual({ type: "text", content: "Hello world" });
+    expect(events).toEqual([{ type: "text", content: "Hello world" }]);
   });
 
   it("parseStreamChunk handles thinking_delta → thinking event", () => {
     const adapter = createAnthropicAdapter();
-    const event = adapter.parseStreamChunk({
+    const events = adapter.parseStreamChunk({
       type: "content_block_delta",
       index: 0,
       delta: { type: "thinking_delta", thinking: "I am reasoning..." },
     });
 
-    expect(event).toEqual({ type: "thinking", content: "I am reasoning..." });
+    expect(events).toEqual([
+      { type: "thinking", content: "I am reasoning..." },
+    ]);
   });
 
   it("parseStreamChunk handles content_block_start with tool_use → tool_call event", () => {
     const adapter = createAnthropicAdapter();
-    const event = adapter.parseStreamChunk({
+    const events = adapter.parseStreamChunk({
       type: "content_block_start",
       index: 1,
       content_block: {
@@ -152,38 +168,40 @@ describe("createAnthropicAdapter", () => {
       },
     });
 
-    expect(event).toEqual({
-      type: "tool_call",
-      id: "toolu_01",
-      name: "get_players",
-      input: {},
-    });
+    expect(events).toEqual([
+      {
+        type: "tool_call",
+        id: "toolu_01",
+        name: "get_players",
+        input: {},
+      },
+    ]);
   });
 
   it("parseStreamChunk handles message_stop → done event", () => {
     const adapter = createAnthropicAdapter();
-    const event = adapter.parseStreamChunk({ type: "message_stop" });
+    const events = adapter.parseStreamChunk({ type: "message_stop" });
 
-    expect(event).toEqual({ type: "done", content: "" });
+    expect(events).toEqual([{ type: "done", content: "" }]);
   });
 
-  it("parseStreamChunk returns null for input_json_delta", () => {
+  it("parseStreamChunk returns empty array for input_json_delta", () => {
     const adapter = createAnthropicAdapter();
-    const event = adapter.parseStreamChunk({
+    const events = adapter.parseStreamChunk({
       type: "content_block_delta",
       index: 1,
       delta: { type: "input_json_delta", partial_json: '{"key":' },
     });
 
-    expect(event).toBeNull();
+    expect(events).toEqual([]);
   });
 
-  it("parseStreamChunk returns null for unknown event types", () => {
+  it("parseStreamChunk returns empty array for unknown event types", () => {
     const adapter = createAnthropicAdapter();
-    expect(adapter.parseStreamChunk({ type: "message_start" })).toBeNull();
-    expect(adapter.parseStreamChunk({ type: "ping" })).toBeNull();
-    expect(adapter.parseStreamChunk(null)).toBeNull();
-    expect(adapter.parseStreamChunk("raw string")).toBeNull();
+    expect(adapter.parseStreamChunk({ type: "message_start" })).toEqual([]);
+    expect(adapter.parseStreamChunk({ type: "ping" })).toEqual([]);
+    expect(adapter.parseStreamChunk(null)).toEqual([]);
+    expect(adapter.parseStreamChunk("raw string")).toEqual([]);
   });
 
   it("formatRequest maps tool_result NormalizedMessage to role user", () => {
@@ -197,10 +215,11 @@ describe("createAnthropicAdapter", () => {
       },
     ];
 
-    const request = adapter.formatRequest(messages, []) as Record<
-      string,
-      unknown
-    >;
+    const request = adapter.formatRequest({
+      system: "",
+      messages,
+      tools: [],
+    }) as Record<string, unknown>;
     const formattedMessages = request.messages as Array<
       Record<string, unknown>
     >;
@@ -210,10 +229,11 @@ describe("createAnthropicAdapter", () => {
 
   it("formatRequest sets model and max_tokens", () => {
     const adapter = createAnthropicAdapter();
-    const request = adapter.formatRequest(sampleMessages, []) as Record<
-      string,
-      unknown
-    >;
+    const request = adapter.formatRequest({
+      system: "",
+      messages: sampleMessages,
+      tools: [],
+    }) as Record<string, unknown>;
 
     expect(request.model).toBe("claude-sonnet-4-6");
     expect(request.max_tokens).toBe(16384);

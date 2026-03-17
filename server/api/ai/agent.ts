@@ -130,18 +130,16 @@ export default defineEventHandler(async (event) => {
               // On iteration > 0, the previous iteration's tool calls and results
               // have already been appended to conversationMessages via onEvent.
               // conversationMessages is always up-to-date before callProvider is called.
-              const request = adapter.formatRequest(
-                conversationMessages,
-                registry.listAll(),
-                {
-                  system: systemPrompt,
-                  enableWebSearch:
-                    config.enableWebSearch && adapter.capabilities.webSearch,
-                  contextManagement: adapter.capabilities.compaction
-                    ? { enabled: true }
-                    : undefined,
-                },
-              );
+              const request = adapter.formatRequest({
+                system: systemPrompt,
+                messages: conversationMessages,
+                tools: registry.listAll(),
+                enableWebSearch:
+                  config.enableWebSearch && adapter.capabilities.webSearch,
+                contextManagement: adapter.capabilities.compaction
+                  ? { enabled: true }
+                  : undefined,
+              });
 
               yield* streamAnthropicChat(
                 request,

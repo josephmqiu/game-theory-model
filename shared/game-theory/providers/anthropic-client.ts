@@ -20,8 +20,7 @@ export async function* streamAnthropicChat(
       break;
     }
 
-    const agentEvent = adapter.parseStreamChunk(event);
-    if (agentEvent !== null) {
+    for (const agentEvent of adapter.parseStreamChunk(event)) {
       yield agentEvent;
     }
   }

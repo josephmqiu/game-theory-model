@@ -109,15 +109,19 @@ export interface ProviderCapabilities {
   compaction: boolean;
 }
 
+export interface FormatRequestParams {
+  system: string;
+  messages: NormalizedMessage[];
+  tools: ToolDefinition[];
+  contextManagement?: ContextManagementConfig;
+  enableWebSearch?: boolean;
+}
+
 export interface ProviderAdapter {
   name: string;
   capabilities: ProviderCapabilities;
-  formatRequest: (
-    messages: NormalizedMessage[],
-    tools: ToolDefinition[],
-    options?: Record<string, unknown>,
-  ) => Record<string, unknown>;
-  parseStreamChunk: (chunk: unknown) => AgentEvent | null;
+  formatRequest: (params: FormatRequestParams) => Record<string, unknown>;
+  parseStreamChunk: (chunk: unknown) => AgentEvent[];
   formatToolResult: (
     toolUseId: string,
     result: ToolResult,

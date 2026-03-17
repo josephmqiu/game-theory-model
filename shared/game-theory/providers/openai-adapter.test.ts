@@ -29,8 +29,10 @@ describe("createOpenAIAdapter", () => {
   it("formatRequest maps tools to function format", () => {
     const adapter = createOpenAIAdapter();
     const tools = [makeToolDef("get_players")];
-    const request = adapter.formatRequest(sampleMessages, tools, {
+    const request = adapter.formatRequest({
       system: "You are a helpful assistant.",
+      messages: sampleMessages,
+      tools,
     }) as Record<string, unknown>;
 
     expect(request.model).toBe("gpt-4.1");
@@ -49,7 +51,10 @@ describe("createOpenAIAdapter", () => {
 
   it("formatRequest adds web_search_preview when enableWebSearch is true", () => {
     const adapter = createOpenAIAdapter();
-    const request = adapter.formatRequest(sampleMessages, [], {
+    const request = adapter.formatRequest({
+      system: "",
+      messages: sampleMessages,
+      tools: [],
       enableWebSearch: true,
     }) as Record<string, unknown>;
 
@@ -60,7 +65,10 @@ describe("createOpenAIAdapter", () => {
 
   it("formatRequest does NOT add web_search_preview when enableWebSearch is false", () => {
     const adapter = createOpenAIAdapter();
-    const request = adapter.formatRequest(sampleMessages, [], {
+    const request = adapter.formatRequest({
+      system: "",
+      messages: sampleMessages,
+      tools: [],
       enableWebSearch: false,
     }) as Record<string, unknown>;
 
@@ -70,8 +78,10 @@ describe("createOpenAIAdapter", () => {
 
   it("formatRequest adds system prompt as first message", () => {
     const adapter = createOpenAIAdapter();
-    const request = adapter.formatRequest(sampleMessages, [], {
+    const request = adapter.formatRequest({
       system: "You are a game theory expert.",
+      messages: sampleMessages,
+      tools: [],
     }) as Record<string, unknown>;
 
     const messages = request.messages as Array<Record<string, unknown>>;
@@ -82,10 +92,11 @@ describe("createOpenAIAdapter", () => {
 
   it("formatRequest does not add system message when system is empty", () => {
     const adapter = createOpenAIAdapter();
-    const request = adapter.formatRequest(sampleMessages, []) as Record<
-      string,
-      unknown
-    >;
+    const request = adapter.formatRequest({
+      system: "",
+      messages: sampleMessages,
+      tools: [],
+    }) as Record<string, unknown>;
 
     const messages = request.messages as Array<Record<string, unknown>>;
     expect(messages[0].role).toBe("user");
@@ -93,7 +104,10 @@ describe("createOpenAIAdapter", () => {
 
   it("formatRequest adds context_management when enabled", () => {
     const adapter = createOpenAIAdapter();
-    const request = adapter.formatRequest(sampleMessages, [], {
+    const request = adapter.formatRequest({
+      system: "",
+      messages: sampleMessages,
+      tools: [],
       contextManagement: { enabled: true },
     }) as Record<string, unknown>;
 
@@ -102,7 +116,10 @@ describe("createOpenAIAdapter", () => {
 
   it("formatRequest does NOT add context_management when disabled", () => {
     const adapter = createOpenAIAdapter();
-    const request = adapter.formatRequest(sampleMessages, [], {
+    const request = adapter.formatRequest({
+      system: "",
+      messages: sampleMessages,
+      tools: [],
       contextManagement: { enabled: false },
     }) as Record<string, unknown>;
 
@@ -141,7 +158,7 @@ describe("createOpenAIAdapter", () => {
 
   it("parseStreamChunk handles text content → text event", () => {
     const adapter = createOpenAIAdapter();
-    const event = adapter.parseStreamChunk({
+    const events = adapter.parseStreamChunk({
       choices: [
         {
           delta: { content: "Hello world" },
@@ -150,12 +167,12 @@ describe("createOpenAIAdapter", () => {
       ],
     });
 
-    expect(event).toEqual({ type: "text", content: "Hello world" });
+    expect(events).toEqual([{ type: "text", content: "Hello world" }]);
   });
 
   it("parseStreamChunk handles finish_reason stop → done event", () => {
     const adapter = createOpenAIAdapter();
-    const event = adapter.parseStreamChunk({
+    const events = adapter.parseStreamChunk({
       choices: [
         {
           delta: {},
@@ -164,12 +181,12 @@ describe("createOpenAIAdapter", () => {
       ],
     });
 
-    expect(event).toEqual({ type: "done", content: "" });
+    expect(events).toEqual([{ type: "done", content: "" }]);
   });
 
   it("parseStreamChunk handles complete tool_call → tool_call event", () => {
     const adapter = createOpenAIAdapter();
-    const event = adapter.parseStreamChunk({
+    const events = adapter.parseStreamChunk({
       choices: [
         {
           delta: {
@@ -188,17 +205,19 @@ describe("createOpenAIAdapter", () => {
       ],
     });
 
-    expect(event).toEqual({
-      type: "tool_call",
-      id: "call_abc",
-      name: "get_players",
-      input: { value: "test" },
-    });
+    expect(events).toEqual([
+      {
+        type: "tool_call",
+        id: "call_abc",
+        name: "get_players",
+        input: { value: "test" },
+      },
+    ]);
   });
 
-  it("parseStreamChunk returns null for partial tool_call with no name", () => {
+  it("parseStreamChunk returns empty array for partial tool_call with no name", () => {
     const adapter = createOpenAIAdapter();
-    const event = adapter.parseStreamChunk({
+    const events = adapter.parseStreamChunk({
       choices: [
         {
           delta: {
@@ -216,14 +235,14 @@ describe("createOpenAIAdapter", () => {
       ],
     });
 
-    expect(event).toBeNull();
+    expect(events).toEqual([]);
   });
 
-  it("parseStreamChunk returns null for unknown chunks", () => {
+  it("parseStreamChunk returns empty array for unknown chunks", () => {
     const adapter = createOpenAIAdapter();
-    expect(adapter.parseStreamChunk(null)).toBeNull();
-    expect(adapter.parseStreamChunk("raw string")).toBeNull();
-    expect(adapter.parseStreamChunk({})).toBeNull();
-    expect(adapter.parseStreamChunk({ choices: [] })).toBeNull();
+    expect(adapter.parseStreamChunk(null)).toEqual([]);
+    expect(adapter.parseStreamChunk("raw string")).toEqual([]);
+    expect(adapter.parseStreamChunk({})).toEqual([]);
+    expect(adapter.parseStreamChunk({ choices: [] })).toEqual([]);
   });
 });

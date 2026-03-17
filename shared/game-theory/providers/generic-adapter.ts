@@ -1,37 +1,37 @@
 import type {
   AgentEvent,
+  FormatRequestParams,
   NormalizedMessage,
   ProviderAdapter,
-  ToolDefinition,
   ToolResult,
 } from "../types/agent";
 
 // ── Stream chunk parsing ──
 
-function parseChunk(chunk: unknown): AgentEvent | null {
-  if (!chunk || typeof chunk !== "object") return null;
+function parseChunk(chunk: unknown): AgentEvent[] {
+  if (!chunk || typeof chunk !== "object") return [];
 
   const event = chunk as Record<string, unknown>;
 
   // Try to extract text content from any common chunk shape
   if (typeof event.content === "string") {
-    return { type: "text", content: event.content };
+    return [{ type: "text", content: event.content }];
   }
 
   if (typeof event.text === "string") {
-    return { type: "text", content: event.text };
+    return [{ type: "text", content: event.text }];
   }
 
   const delta = event.delta as Record<string, unknown> | undefined;
   if (delta && typeof delta.content === "string") {
-    return { type: "text", content: delta.content };
+    return [{ type: "text", content: delta.content }];
   }
 
   if (delta && typeof delta.text === "string") {
-    return { type: "text", content: delta.text };
+    return [{ type: "text", content: delta.text }];
   }
 
-  return null;
+  return [];
 }
 
 // ── Factory ──
@@ -46,13 +46,10 @@ export function createGenericAdapter(providerName: string): ProviderAdapter {
       compaction: false,
     },
 
-    formatRequest(
-      messages: NormalizedMessage[],
-      _tools: ToolDefinition[],
-      options?: Record<string, unknown>,
-    ): Record<string, unknown> {
-      const system = (options?.system as string) ?? "";
-
+    formatRequest({
+      system,
+      messages,
+    }: FormatRequestParams): Record<string, unknown> {
       const mappedMessages = messages.map((msg) => ({
         role: msg.role,
         content:
@@ -68,7 +65,7 @@ export function createGenericAdapter(providerName: string): ProviderAdapter {
       };
     },
 
-    parseStreamChunk(chunk: unknown): AgentEvent | null {
+    parseStreamChunk(chunk: unknown): AgentEvent[] {
       return parseChunk(chunk);
     },
 

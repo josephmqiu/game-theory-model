@@ -1,10 +1,9 @@
 import type {
   AgentEvent,
-  ContextManagementConfig,
+  FormatRequestParams,
   NormalizedContentBlock,
   NormalizedMessage,
   ProviderAdapter,
-  ToolDefinition,
   ToolResult,
 } from "../types/agent";
 
@@ -107,16 +106,16 @@ function mapMessage(msg: NormalizedMessage): AnthropicMessage {
 
 // ── Stream chunk parsing ──
 
-function parseChunk(chunk: unknown): AgentEvent | null {
-  if (!chunk || typeof chunk !== "object") return null;
+function parseChunk(chunk: unknown): AgentEvent[] {
+  if (!chunk || typeof chunk !== "object") return [];
 
   const event = chunk as Record<string, unknown>;
   const eventType = event.type as string | undefined;
 
-  if (!eventType) return null;
+  if (!eventType) return [];
 
   if (eventType === "message_stop") {
-    return { type: "done", content: "" };
+    return [{ type: "done", content: "" }];
   }
 
   if (eventType === "content_block_start") {
@@ -124,37 +123,39 @@ function parseChunk(chunk: unknown): AgentEvent | null {
       | Record<string, unknown>
       | undefined;
     if (contentBlock?.type === "tool_use") {
-      return {
-        type: "tool_call",
-        id: (contentBlock.id as string) ?? "",
-        name: (contentBlock.name as string) ?? "",
-        input: (contentBlock.input as Record<string, unknown>) ?? {},
-      };
+      return [
+        {
+          type: "tool_call",
+          id: (contentBlock.id as string) ?? "",
+          name: (contentBlock.name as string) ?? "",
+          input: (contentBlock.input as Record<string, unknown>) ?? {},
+        },
+      ];
     }
-    return null;
+    return [];
   }
 
   if (eventType === "content_block_delta") {
     const delta = event.delta as Record<string, unknown> | undefined;
-    if (!delta) return null;
+    if (!delta) return [];
 
     const deltaType = delta.type as string | undefined;
 
     if (deltaType === "text_delta") {
-      return { type: "text", content: (delta.text as string) ?? "" };
+      return [{ type: "text", content: (delta.text as string) ?? "" }];
     }
 
     if (deltaType === "thinking_delta") {
-      return { type: "thinking", content: (delta.thinking as string) ?? "" };
+      return [{ type: "thinking", content: (delta.thinking as string) ?? "" }];
     }
 
     if (deltaType === "input_json_delta") {
       // Tool input is accumulated by the caller; nothing to emit
-      return null;
+      return [];
     }
   }
 
-  return null;
+  return [];
 }
 
 // ── Factory ──
@@ -169,17 +170,13 @@ export function createAnthropicAdapter(): ProviderAdapter {
       compaction: true,
     },
 
-    formatRequest(
-      messages: NormalizedMessage[],
-      tools: ToolDefinition[],
-      options?: Record<string, unknown>,
-    ): Record<string, unknown> {
-      const system = (options?.system as string) ?? "";
-      const enableWebSearch = (options?.enableWebSearch as boolean) ?? false;
-      const contextManagement = options?.contextManagement as
-        | ContextManagementConfig
-        | undefined;
-
+    formatRequest({
+      system,
+      messages,
+      tools,
+      contextManagement,
+      enableWebSearch = false,
+    }: FormatRequestParams): Record<string, unknown> {
       const anthropicTools: Array<AnthropicTool | AnthropicWebSearchTool> =
         mapToolDefinitions(tools);
 
@@ -205,7 +202,7 @@ export function createAnthropicAdapter(): ProviderAdapter {
       return request;
     },
 
-    parseStreamChunk(chunk: unknown): AgentEvent | null {
+    parseStreamChunk(chunk: unknown): AgentEvent[] {
       return parseChunk(chunk);
     },
 
