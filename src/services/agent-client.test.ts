@@ -129,7 +129,7 @@ describe("streamAgentChat", () => {
 
     await expect(
       collectEvents(streamAgentChat({ messages: [], provider: "anthropic" })),
-    ).rejects.toThrow("Agent request failed: 500");
+    ).rejects.toThrow("Server error (500).");
   });
 
   it("handles SSE data split across chunks", async () => {

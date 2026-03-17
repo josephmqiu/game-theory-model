@@ -302,7 +302,27 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
       </div>
 
       <div className="border-t border-border p-3">
-        {lastError && <p className="mb-2 text-xs text-red-500">{lastError}</p>}
+        {lastError && (
+          <div className="mb-2 flex items-center gap-2">
+            <p className="flex-1 text-xs text-red-500">{lastError}</p>
+            <button
+              type="button"
+              onClick={() => {
+                aiStore.getState().setError(null);
+                const messages = aiStore.getState().agentMessages;
+                const lastUserMsg = [...messages]
+                  .reverse()
+                  .find((m) => m.role === "user");
+                if (lastUserMsg) {
+                  void sendAgentMessage(lastUserMsg.content);
+                }
+              }}
+              className="shrink-0 rounded px-2 py-1 text-xs text-primary hover:bg-primary/10"
+            >
+              Try again
+            </button>
+          </div>
+        )}
         {!currentProviderReady && settingsHydrated && (
           <p className="mb-2 text-xs text-muted-foreground">
             Connect and validate a provider in Settings before sending chat.

@@ -97,21 +97,14 @@ function registerToolsWithDescriptions(
   }
 }
 
-export default defineEventHandler(async (event) => {
-  const body = bodySchema.parse(await readBody(event));
+let cachedRegistry: ReturnType<typeof createToolRegistry> | null = null;
+let cachedSystemPrompt: string | null = null;
 
-  setResponseHeaders(event, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-  });
-
-  const adapter = createProviderAdapter(body.provider);
-  const systemPrompt = loadSystemPrompt();
-
-  // Build tool registry with ALL tools, loading .md descriptions where available
+function getToolRegistry(): ReturnType<typeof createToolRegistry> {
+  if (cachedRegistry && process.env.NODE_ENV === "production")
+    return cachedRegistry;
   const registry = createToolRegistry();
-  registerToolsWithDescriptions(registry, [
+  const allTools = [
     ...createEvidenceTools(),
     ...createPlayerTools(),
     ...createGameTools(),
@@ -123,7 +116,31 @@ export default defineEventHandler(async (event) => {
     ...createReadTools(),
     createGetAnalysisStatusTool(),
     createGetMethodologyPhaseTool(),
-  ]);
+  ];
+  registerToolsWithDescriptions(registry, allTools);
+  cachedRegistry = registry;
+  return registry;
+}
+
+function getSystemPrompt(): string {
+  if (cachedSystemPrompt && process.env.NODE_ENV === "production")
+    return cachedSystemPrompt;
+  cachedSystemPrompt = loadSystemPrompt();
+  return cachedSystemPrompt;
+}
+
+export default defineEventHandler(async (event) => {
+  const body = bodySchema.parse(await readBody(event));
+
+  setResponseHeaders(event, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+
+  const adapter = createProviderAdapter(body.provider);
+  const systemPrompt = getSystemPrompt();
+  const registry = getToolRegistry();
 
   const config = {
     ...DEFAULT_AGENT_LOOP_CONFIG,
