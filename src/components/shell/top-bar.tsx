@@ -1,18 +1,17 @@
 /**
- * Top bar — app title, undo/redo, save, AI toggle.
+ * Top bar — app title, undo/redo, save, model selector.
  */
 
-import {
-  Undo2,
-  Redo2,
-  Save,
-  MessageSquare,
-  Settings,
-  Target,
-} from "lucide-react";
+import { Undo2, Redo2, Save, Settings, Target } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useAnalysisStore, analysisStore } from "@/stores/analysis-store";
-import { useUiStore } from "@/stores/ui-store";
+import {
+  PROVIDER_LABELS,
+  useConnectedModels,
+  useModelAutoFallback,
+} from "@/hooks/use-model-auto-fallback";
+import { aiStore, useAiStore } from "@/stores/ai-store";
+import type { AIProviderType } from "@/types/agent-settings";
 
 export function TopBar() {
   const navigate = useNavigate();
@@ -21,8 +20,9 @@ export function TopBar() {
   const canRedo = useAnalysisStore(
     (s) => s.eventLog.cursor < s.eventLog.events.length,
   );
-  const aiPanelOpen = useUiStore((s) => s.aiPanelOpen);
-  const toggleAiPanel = useUiStore((s) => s.toggleAiPanel);
+  const provider = useAiStore((s) => s.provider);
+  const connectedModels = useConnectedModels();
+  useModelAutoFallback();
 
   function handleUndo() {
     analysisStore.getState().undo();
@@ -45,7 +45,7 @@ export function TopBar() {
 
   return (
     <header className="h-10 flex items-center justify-between border-b border-border px-4 shrink-0 app-region-drag">
-      <div className="flex items-center gap-2 app-region-no-drag">
+      <div className="flex items-center gap-2 app-region-no-drag electron-traffic-light-pad">
         <Target size={16} className="text-primary" />
         <span className="text-sm font-medium">
           {fileMeta.name}
@@ -87,18 +87,32 @@ export function TopBar() {
 
         <div className="w-px h-4 bg-border mx-1" />
 
-        <button
-          type="button"
-          onClick={toggleAiPanel}
-          className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
-            aiPanelOpen
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-          }`}
-        >
-          <MessageSquare size={14} />
-          AI
-        </button>
+        {connectedModels.length > 0 ? (
+          <select
+            value={`${provider.provider}:${provider.modelId}`}
+            onChange={(e) => {
+              const [nextProvider, ...rest] = e.target.value.split(":");
+              const nextModelId = rest.join(":");
+              aiStore.getState().setProvider({
+                provider: nextProvider as AIProviderType,
+                modelId: nextModelId,
+              });
+            }}
+            className="rounded border border-border bg-background px-2 py-1 text-xs text-foreground"
+            aria-label="AI model"
+          >
+            {connectedModels.map((model) => (
+              <option
+                key={`${model.provider}:${model.value}`}
+                value={`${model.provider}:${model.value}`}
+              >
+                {PROVIDER_LABELS[model.provider]} / {model.displayName}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="text-xs text-muted-foreground">No AI connected</span>
+        )}
         <button
           type="button"
           onClick={() => void navigate({ to: "/settings" })}
