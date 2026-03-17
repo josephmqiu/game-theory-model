@@ -26,7 +26,10 @@ function summarizeToolCall(
 ): string {
   if ("name" in input) return `${input.name}`;
   if ("title" in input) return `${input.title}`;
-  if ("statement" in input) return `${String(input.statement).slice(0, 60)}...`;
+  if ("statement" in input) {
+    const s = String(input.statement);
+    return s.length > 60 ? `${s.slice(0, 60)}...` : s;
+  }
   if ("id" in input) return `id: ${input.id}`;
   return Object.keys(input).slice(0, 3).join(", ");
 }

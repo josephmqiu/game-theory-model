@@ -7,7 +7,6 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import {
   Bot,
-  ChevronDown,
   ChevronUp,
   MessageSquare,
   Minus,
@@ -20,8 +19,7 @@ import { cn } from "@/lib/utils";
 import { sendAgentMessage } from "@/services/agent-chat-handler";
 import { aiStore, useAiStore } from "@/stores/ai-store";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
-import { AgentToolCall } from "@/components/panels/agent-tool-call";
-import type { AgentChatMessage } from "@/stores/ai-store";
+import { AgentMessageBubble } from "@/components/panels/agent-message-bubble";
 import type { AIProviderType } from "@/types/agent-settings";
 
 // Kept for pipeline conversation rendering (different store).
@@ -60,97 +58,6 @@ export function MessageBubble({ message }: { message: ConversationMessage }) {
           <span className="mt-1 block text-[10px] opacity-70">
             Phase {message.phase}
           </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-interface ThinkingBlockProps {
-  thinking: string;
-}
-
-function ThinkingBlock({ thinking }: ThinkingBlockProps) {
-  const [open, setOpen] = useState(false);
-
-  if (!thinking) return null;
-
-  return (
-    <div className="rounded-md border border-border bg-background/60">
-      <button
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent/50 transition-colors rounded-md"
-        aria-expanded={open}
-      >
-        {open ? (
-          <ChevronDown className="h-3 w-3 text-muted-foreground" />
-        ) : (
-          <ChevronUp className="h-3 w-3 text-muted-foreground" />
-        )}
-        <span className="font-medium text-muted-foreground">Thinking</span>
-      </button>
-      {open && (
-        <div className="border-t border-border px-2.5 pb-2.5 pt-2">
-          <p className="whitespace-pre-wrap text-xs text-muted-foreground">
-            {thinking}
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AgentMessageBubble({ message }: { message: AgentChatMessage }) {
-  const isUser = message.role === "user";
-
-  if (isUser) {
-    return (
-      <div className="flex flex-row-reverse gap-2">
-        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-          <User className="h-3.5 w-3.5" />
-        </div>
-        <div className="max-w-[80%] rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground">
-          <p className="whitespace-pre-wrap break-words">{message.content}</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Assistant message
-  const hasThinking = message.thinking.length > 0;
-  const hasToolCalls = message.toolCalls.length > 0;
-  const hasContent = message.content.length > 0;
-
-  return (
-    <div className="flex flex-row gap-2">
-      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-        <Bot className="h-3.5 w-3.5" />
-      </div>
-
-      <div className="min-w-0 flex-1 space-y-2">
-        {hasThinking && <ThinkingBlock thinking={message.thinking} />}
-
-        {hasToolCalls && (
-          <div className="space-y-1">
-            {message.toolCalls.map((tc) => (
-              <AgentToolCall key={tc.id} toolCall={tc} />
-            ))}
-          </div>
-        )}
-
-        {(hasContent || message.isStreaming) && (
-          <div className="max-w-[85%] rounded-lg bg-muted px-3 py-2 text-sm text-foreground">
-            <p
-              className={cn(
-                "whitespace-pre-wrap break-words",
-                message.isStreaming &&
-                  "after:animate-pulse after:content-['▌']",
-              )}
-            >
-              {message.content}
-            </p>
-          </div>
         )}
       </div>
     </div>
@@ -218,16 +125,25 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
-      scrollRef.current?.scrollTo({
-        top: scrollRef.current.scrollHeight,
-        behavior: "smooth",
-      });
+      const el = scrollRef.current;
+      if (!el || typeof el.scrollTo !== "function") return;
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     });
   }, []);
 
+  const lastMessageContentLength =
+    agentMessages.length > 0
+      ? agentMessages[agentMessages.length - 1].content.length
+      : 0;
+
   useEffect(() => {
     scrollToBottom();
-  }, [agentMessages.length, isStreaming, scrollToBottom]);
+  }, [
+    agentMessages.length,
+    isStreaming,
+    lastMessageContentLength,
+    scrollToBottom,
+  ]);
 
   const connectedModels = useMemo(
     () =>
@@ -273,14 +189,15 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
 
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
-    if (!trimmed || isStreaming || !currentProviderReady) return;
+    if (!trimmed || aiStore.getState().isStreaming || !currentProviderReady)
+      return;
 
     setInput("");
     scrollToBottom();
 
     await sendAgentMessage(trimmed);
     scrollToBottom();
-  }, [input, isStreaming, currentProviderReady, scrollToBottom]);
+  }, [input, currentProviderReady, scrollToBottom]);
 
   const handleStop = useCallback(() => {
     aiStore.getState().stopStreaming();

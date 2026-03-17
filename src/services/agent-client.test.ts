@@ -132,6 +132,29 @@ describe("streamAgentChat", () => {
     ).rejects.toThrow("Agent request failed: 500");
   });
 
+  it("handles SSE data split across chunks", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"type":"te'));
+        controller.enqueue(encoder.encode('xt","content":"hi"}\n\n'));
+        controller.enqueue(
+          encoder.encode('data: {"type":"done","content":""}\n\n'),
+        );
+        controller.close();
+      },
+    });
+    vi.mocked(fetch).mockResolvedValue(new Response(stream, { status: 200 }));
+
+    const collected = await collectEvents(
+      streamAgentChat({ messages: [], provider: "anthropic" }),
+    );
+
+    expect(collected).toHaveLength(2);
+    expect(collected[0]).toEqual({ type: "text", content: "hi" });
+    expect(collected[1]).toEqual({ type: "done", content: "" });
+  });
+
   it("handles abort signal without throwing", async () => {
     const controller = new AbortController();
 
