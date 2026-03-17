@@ -32,4 +32,10 @@ describe("loadToolDescription", () => {
     const result = loadToolDescription("nonexistent-tool");
     expect(result).toBe("Tool: nonexistent-tool");
   });
+
+  it("loads add_source.md and returns content that is not the fallback", () => {
+    const result = loadToolDescription("add_source");
+    expect(result).not.toBe("Tool: add_source");
+    expect(result.length).toBeGreaterThan(0);
+  });
 });

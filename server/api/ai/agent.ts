@@ -1,8 +1,12 @@
 import { defineEventHandler, readBody, setResponseHeaders } from "h3";
 import { z } from "zod";
 import { createProviderAdapter } from "shared/game-theory/providers/adapter-factory";
-import { loadSystemPrompt } from "shared/game-theory/prompts/loader";
+import {
+  loadSystemPrompt,
+  loadToolDescription,
+} from "shared/game-theory/prompts/loader";
 import { createToolRegistry } from "shared/game-theory/tools/registry";
+import type { ToolDefinition } from "shared/game-theory/types/agent";
 import { createEvidenceTools } from "shared/game-theory/tools/evidence-tools";
 import { createPlayerTools } from "shared/game-theory/tools/player-tools";
 import { createGameTools } from "shared/game-theory/tools/game-tools";
@@ -41,6 +45,21 @@ const bodySchema = z.object({
   canonical: z.record(z.unknown()).optional(),
 });
 
+function registerToolsWithDescriptions(
+  registry: ReturnType<typeof createToolRegistry>,
+  tools: ToolDefinition[],
+): void {
+  for (const tool of tools) {
+    const mdDescription = loadToolDescription(tool.name);
+    const fallback = `Tool: ${tool.name}`;
+    registry.register(
+      mdDescription !== fallback
+        ? { ...tool, description: mdDescription }
+        : tool,
+    );
+  }
+}
+
 export default defineEventHandler(async (event) => {
   const body = bodySchema.parse(await readBody(event));
 
@@ -53,18 +72,20 @@ export default defineEventHandler(async (event) => {
   const adapter = createProviderAdapter(body.provider);
   const systemPrompt = loadSystemPrompt();
 
-  // Build tool registry with ALL tools
+  // Build tool registry with ALL tools, loading .md descriptions where available
   const registry = createToolRegistry();
-  for (const tool of createEvidenceTools()) registry.register(tool);
-  for (const tool of createPlayerTools()) registry.register(tool);
-  for (const tool of createGameTools()) registry.register(tool);
-  for (const tool of createHistoryTools()) registry.register(tool);
-  for (const tool of createAssumptionTools()) registry.register(tool);
-  for (const tool of createScenarioTools()) registry.register(tool);
-  for (const tool of createWorkflowTools()) registry.register(tool);
-  for (const tool of createReadTools()) registry.register(tool);
-  registry.register(createGetAnalysisStatusTool());
-  registry.register(createGetMethodologyPhaseTool());
+  registerToolsWithDescriptions(registry, [
+    ...createEvidenceTools(),
+    ...createPlayerTools(),
+    ...createGameTools(),
+    ...createHistoryTools(),
+    ...createAssumptionTools(),
+    ...createScenarioTools(),
+    ...createWorkflowTools(),
+    ...createReadTools(),
+    createGetAnalysisStatusTool(),
+    createGetMethodologyPhaseTool(),
+  ]);
 
   const config = {
     ...DEFAULT_AGENT_LOOP_CONFIG,
