@@ -39,8 +39,8 @@ const ru: TranslationKeys = {
   'shapes.moreShapeTools': 'Ещё инструменты фигур',
 
   // ── Top Bar ──
-  'topbar.hideLayers': 'Скрыть слои',
-  'topbar.showLayers': 'Показать слои',
+  'topbar.hideLayers': 'Hide outline',
+  'topbar.showLayers': 'Show outline',
   'topbar.new': 'Новый',
   'topbar.open': 'Открыть',
   'topbar.save': 'Сохранить',
@@ -57,9 +57,9 @@ const ru: TranslationKeys = {
   'topbar.agentStatus': '{{agents}} агент{{agentSuffix}} · {{mcp}} MCP',
 
   // ── Right Panel ──
-  'rightPanel.design': 'Дизайн',
+  'rightPanel.design': 'Details',
   'rightPanel.code': 'Код',
-  'rightPanel.noSelection': 'Выберите элемент',
+  'rightPanel.noSelection': 'Select an item',
 
   // ── Pages ──
   'pages.title': 'Страницы',
@@ -105,9 +105,9 @@ const ru: TranslationKeys = {
     'Не удалось проверить или загрузить обновление.',
 
   // ── Layers ──
-  'layers.title': 'Слои',
+  'layers.title': 'Outline',
   'layers.empty':
-    'Слоёв пока нет. Используйте панель инструментов для рисования фигур.',
+    'No items yet. Use the toolbar to start building.',
 
   // ── Layer Context Menu ──
   'layerMenu.groupSelection': 'Сгруппировать выделение',
@@ -281,28 +281,28 @@ const ru: TranslationKeys = {
   // ── AI Chat ──
   'ai.newChat': 'Новый чат',
   'ai.collapse': 'Свернуть',
-  'ai.tryExample': 'Попробуйте пример для дизайна...',
+  'ai.tryExample': 'Try a workspace prompt...',
   'ai.tipSelectElements':
-    'Совет: Выделите элементы на холсте перед чатом для контекста.',
+    'Tip: Select items in the workspace before chatting for context.',
   'ai.generating': 'Генерация...',
-  'ai.designWithAgent': 'Дизайн с агентом...',
+  'ai.designWithAgent': 'Ask an agent about this workspace...',
   'ai.attachImage': 'Прикрепить изображение',
   'ai.stopGenerating': 'Остановить генерацию',
   'ai.sendMessage': 'Отправить сообщение',
   'ai.loadingModels': 'Загрузка моделей...',
   'ai.noModelsConnected': 'Нет подключённых моделей',
-  'ai.quickAction.loginScreen': 'Создать экран входа для мобильного',
+  'ai.quickAction.loginScreen': 'Summarize this workspace',
   'ai.quickAction.loginScreenPrompt':
-    'Design a modern mobile login screen with email input, password input, login button, and social login options',
-  'ai.quickAction.foodApp': 'Главная страница приложения еды',
+    'Summarize the current workspace and the main items visible in the document context.',
+  'ai.quickAction.foodApp': 'Describe the selection',
   'ai.quickAction.foodAppPrompt':
-    'Generate a well-designed food mobile app homepage',
-  'ai.quickAction.bottomNav': 'Создать нижнюю панель навигации',
+    'Describe the currently selected items and any important structure you notice.',
+  'ai.quickAction.bottomNav': 'Suggest next steps',
   'ai.quickAction.bottomNavPrompt':
-    'Design a mobile app bottom navigation bar with 5 tabs: Home, Search, Add, Messages, Profile',
-  'ai.quickAction.colorPalette': 'Предложить цветовую палитру для приложения',
+    'Based on the current workspace, suggest three concrete next steps.',
+  'ai.quickAction.colorPalette': 'Explain available agents',
   'ai.quickAction.colorPalettePrompt':
-    'Suggest a modern color palette for a pet care app',
+    'Explain which connected agents and MCP tools are available right now and how they could help in this workspace.',
 
   // ── Code Panel ──
   'code.reactTailwind': 'React + Tailwind',
@@ -390,12 +390,12 @@ const ru: TranslationKeys = {
   'figma.comingSoon': 'Скоро',
 
   // ── Landing Page ──
-  'landing.open': 'Open',
-  'landing.pencil': 'Pencil',
+  'landing.open': 'Game Theory ',
+  'landing.pencil': 'Analyzer',
   'landing.tagline':
-    'Векторный дизайн-инструмент с открытым исходным кодом. Design as Code.',
-  'landing.newDesign': 'Новый дизайн',
-  'landing.shortcutHint': 'Нажмите {{key1}} + {{key2}} для создания нового дизайна',
+    'Strategic analysis workspace.',
+  'landing.newDesign': 'Open Workspace',
+  'landing.shortcutHint': 'Press {{key1}} + {{key2}} to open a new workspace',
 
   // ── 404 ──
   'notFound.message': 'Страница не найдена',

@@ -37,8 +37,8 @@ const en = {
   'shapes.moreShapeTools': 'More shape tools',
 
   // ── Top Bar ──
-  'topbar.hideLayers': 'Hide layers',
-  'topbar.showLayers': 'Show layers',
+  'topbar.hideLayers': 'Hide outline',
+  'topbar.showLayers': 'Show outline',
   'topbar.new': 'New',
   'topbar.open': 'Open',
   'topbar.save': 'Save',
@@ -55,9 +55,9 @@ const en = {
   'topbar.agentStatus': '{{agents}} agent{{agentSuffix}} · {{mcp}} MCP',
 
   // ── Right Panel ──
-  'rightPanel.design': 'Design',
+  'rightPanel.design': 'Details',
   'rightPanel.code': 'Code',
-  'rightPanel.noSelection': 'Select an element',
+  'rightPanel.noSelection': 'Select an item',
 
   // ── Pages ──
   'pages.title': 'Pages',
@@ -102,8 +102,8 @@ const en = {
   'updater.subtitle.error': 'Unable to check or download the update.',
 
   // ── Layers ──
-  'layers.title': 'Layers',
-  'layers.empty': 'No layers yet. Use the toolbar to draw shapes.',
+  'layers.title': 'Outline',
+  'layers.empty': 'No items yet. Use the toolbar to start building.',
 
   // ── Layer Context Menu ──
   'layerMenu.groupSelection': 'Group Selection',
@@ -277,28 +277,28 @@ const en = {
   // ── AI Chat ──
   'ai.newChat': 'New chat',
   'ai.collapse': 'Collapse',
-  'ai.tryExample': 'Try an example to design...',
+  'ai.tryExample': 'Try a workspace prompt...',
   'ai.tipSelectElements':
-    'Tip: Select elements on canvas before chatting for context.',
+    'Tip: Select items in the workspace before chatting for context.',
   'ai.generating': 'Generating...',
-  'ai.designWithAgent': 'Design with Agent...',
+  'ai.designWithAgent': 'Ask an agent about this workspace...',
   'ai.attachImage': 'Attach image',
   'ai.stopGenerating': 'Stop generating',
   'ai.sendMessage': 'Send message',
   'ai.loadingModels': 'Loading models...',
   'ai.noModelsConnected': 'No models connected',
-  'ai.quickAction.loginScreen': 'Design a mobile login screen',
+  'ai.quickAction.loginScreen': 'Summarize this workspace',
   'ai.quickAction.loginScreenPrompt':
-    'Design a modern mobile login screen with email input, password input, login button, and social login options',
-  'ai.quickAction.foodApp': 'Food app homepage',
+    'Summarize the current workspace and the main items visible in the document context.',
+  'ai.quickAction.foodApp': 'Describe the selection',
   'ai.quickAction.foodAppPrompt':
-    'Generate a well-designed food mobile app homepage',
-  'ai.quickAction.bottomNav': 'Design a bottom navigation bar',
+    'Describe the currently selected items and any important structure you notice.',
+  'ai.quickAction.bottomNav': 'Suggest next steps',
   'ai.quickAction.bottomNavPrompt':
-    'Design a mobile app bottom navigation bar with 5 tabs: Home, Search, Add, Messages, Profile',
-  'ai.quickAction.colorPalette': 'Suggest a color palette for my app',
+    'Based on the current workspace, suggest three concrete next steps.',
+  'ai.quickAction.colorPalette': 'Explain available agents',
   'ai.quickAction.colorPalettePrompt':
-    'Suggest a modern color palette for a pet care app',
+    'Explain which connected agents and MCP tools are available right now and how they could help in this workspace.',
 
   // ── Code Panel ──
   'code.reactTailwind': 'React + Tailwind',
@@ -386,11 +386,11 @@ const en = {
   'figma.comingSoon': 'Coming soon',
 
   // ── Landing Page ──
-  'landing.open': 'Open',
-  'landing.pencil': 'Pencil',
-  'landing.tagline': 'Open-source vector design tool. Design as Code.',
-  'landing.newDesign': 'New Design',
-  'landing.shortcutHint': 'Press {{key1}} + {{key2}} to create a new design',
+  'landing.open': 'Game Theory ',
+  'landing.pencil': 'Analyzer',
+  'landing.tagline': 'Strategic analysis workspace.',
+  'landing.newDesign': 'Open Workspace',
+  'landing.shortcutHint': 'Press {{key1}} + {{key2}} to open a new workspace',
 
   // ── 404 ──
   'notFound.message': 'Page not found',

@@ -39,8 +39,8 @@ const fr: TranslationKeys = {
   'shapes.moreShapeTools': 'Plus d\u2019outils de forme',
 
   // ── Top Bar ──
-  'topbar.hideLayers': 'Masquer les calques',
-  'topbar.showLayers': 'Afficher les calques',
+  'topbar.hideLayers': 'Hide outline',
+  'topbar.showLayers': 'Show outline',
   'topbar.new': 'Nouveau',
   'topbar.open': 'Ouvrir',
   'topbar.save': 'Enregistrer',
@@ -57,9 +57,9 @@ const fr: TranslationKeys = {
   'topbar.agentStatus': '{{agents}} agent{{agentSuffix}} · {{mcp}} MCP',
 
   // ── Right Panel ──
-  'rightPanel.design': 'Design',
+  'rightPanel.design': 'Details',
   'rightPanel.code': 'Code',
-  'rightPanel.noSelection': 'Sélectionnez un élément',
+  'rightPanel.noSelection': 'Select an item',
 
   // ── Pages ──
   'pages.title': 'Pages',
@@ -105,9 +105,9 @@ const fr: TranslationKeys = {
     'Impossible de vérifier ou de télécharger la mise à jour.',
 
   // ── Layers ──
-  'layers.title': 'Calques',
+  'layers.title': 'Outline',
   'layers.empty':
-    'Aucun calque pour le moment. Utilisez la barre d\u2019outils pour dessiner des formes.',
+    'No items yet. Use the toolbar to start building.',
 
   // ── Layer Context Menu ──
   'layerMenu.groupSelection': 'Grouper la sélection',
@@ -282,29 +282,29 @@ const fr: TranslationKeys = {
   // ── AI Chat ──
   'ai.newChat': 'Nouvelle conversation',
   'ai.collapse': 'Réduire',
-  'ai.tryExample': 'Essayez un exemple de design...',
+  'ai.tryExample': 'Try a workspace prompt...',
   'ai.tipSelectElements':
-    'Astuce : sélectionnez des éléments sur le canevas avant de discuter pour fournir du contexte.',
+    'Tip: Select items in the workspace before chatting for context.',
   'ai.generating': 'Génération...',
-  'ai.designWithAgent': 'Concevoir avec un agent...',
+  'ai.designWithAgent': 'Ask an agent about this workspace...',
   'ai.attachImage': 'Joindre une image',
   'ai.stopGenerating': 'Arrêter la génération',
   'ai.sendMessage': 'Envoyer le message',
   'ai.loadingModels': 'Chargement des modèles...',
   'ai.noModelsConnected': 'Aucun modèle connecté',
-  'ai.quickAction.loginScreen': 'Concevoir un écran de connexion mobile',
+  'ai.quickAction.loginScreen': 'Summarize this workspace',
   'ai.quickAction.loginScreenPrompt':
-    'Concevez un écran de connexion mobile moderne avec un champ e-mail, un champ mot de passe, un bouton de connexion et des options de connexion sociale',
-  'ai.quickAction.foodApp': 'Page d\'accueil appli cuisine',
+    'Summarize the current workspace and the main items visible in the document context.',
+  'ai.quickAction.foodApp': 'Describe the selection',
   'ai.quickAction.foodAppPrompt':
-    'Generate a well-designed food mobile app homepage',
-  'ai.quickAction.bottomNav': 'Concevoir une barre de navigation inférieure',
+    'Describe the currently selected items and any important structure you notice.',
+  'ai.quickAction.bottomNav': 'Suggest next steps',
   'ai.quickAction.bottomNavPrompt':
-    'Concevez une barre de navigation inférieure pour application mobile avec 5 onglets : Accueil, Recherche, Ajouter, Messages, Profil',
+    'Based on the current workspace, suggest three concrete next steps.',
   'ai.quickAction.colorPalette':
-    'Suggérer une palette de couleurs pour mon application',
+    'Explain available agents',
   'ai.quickAction.colorPalettePrompt':
-    'Suggérez une palette de couleurs moderne pour une application de soins pour animaux',
+    'Explain which connected agents and MCP tools are available right now and how they could help in this workspace.',
 
   // ── Code Panel ──
   'code.reactTailwind': 'React + Tailwind',
@@ -394,13 +394,13 @@ const fr: TranslationKeys = {
   'figma.comingSoon': 'Bientôt disponible',
 
   // ── Landing Page ──
-  'landing.open': 'Open',
-  'landing.pencil': 'Pencil',
+  'landing.open': 'Game Theory ',
+  'landing.pencil': 'Analyzer',
   'landing.tagline':
-    'Outil de design vectoriel open source. Design as Code.',
-  'landing.newDesign': 'Nouveau design',
+    'Strategic analysis workspace.',
+  'landing.newDesign': 'Open Workspace',
   'landing.shortcutHint':
-    'Appuyez sur {{key1}} + {{key2}} pour créer un nouveau design',
+    'Press {{key1}} + {{key2}} to open a new workspace',
 
   // ── 404 ──
   'notFound.message': 'Page introuvable',

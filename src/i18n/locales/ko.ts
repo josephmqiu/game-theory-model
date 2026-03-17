@@ -39,8 +39,8 @@ const ko: TranslationKeys = {
   'shapes.moreShapeTools': '더 많은 도형 도구',
 
   // ── Top Bar ──
-  'topbar.hideLayers': '레이어 숨기기',
-  'topbar.showLayers': '레이어 표시',
+  'topbar.hideLayers': 'Hide outline',
+  'topbar.showLayers': 'Show outline',
   'topbar.new': '새로 만들기',
   'topbar.open': '열기',
   'topbar.save': '저장',
@@ -57,9 +57,9 @@ const ko: TranslationKeys = {
   'topbar.agentStatus': '에이전트 {{agents}}개{{agentSuffix}} · MCP {{mcp}}개',
 
   // ── Right Panel ──
-  'rightPanel.design': '디자인',
+  'rightPanel.design': 'Details',
   'rightPanel.code': '코드',
-  'rightPanel.noSelection': '요소를 선택하세요',
+  'rightPanel.noSelection': 'Select an item',
 
   // ── Pages ──
   'pages.title': '페이지',
@@ -104,8 +104,8 @@ const ko: TranslationKeys = {
   'updater.subtitle.error': '업데이트를 확인하거나 다운로드할 수 없습니다.',
 
   // ── Layers ──
-  'layers.title': '레이어',
-  'layers.empty': '레이어가 없습니다. 툴바에서 도형을 그려보세요.',
+  'layers.title': 'Outline',
+  'layers.empty': 'No items yet. Use the toolbar to start building.',
 
   // ── Layer Context Menu ──
   'layerMenu.groupSelection': '선택 항목 그룹화',
@@ -279,28 +279,28 @@ const ko: TranslationKeys = {
   // ── AI Chat ──
   'ai.newChat': '새 대화',
   'ai.collapse': '접기',
-  'ai.tryExample': '예시로 디자인 해보세요...',
+  'ai.tryExample': 'Try a workspace prompt...',
   'ai.tipSelectElements':
-    '팁: 대화 전에 캔버스에서 요소를 선택하면 컨텍스트를 제공할 수 있습니다.',
+    'Tip: Select items in the workspace before chatting for context.',
   'ai.generating': '생성 중...',
-  'ai.designWithAgent': '에이전트로 디자인...',
+  'ai.designWithAgent': 'Ask an agent about this workspace...',
   'ai.attachImage': '이미지 첨부',
   'ai.stopGenerating': '생성 중지',
   'ai.sendMessage': '메시지 보내기',
   'ai.loadingModels': '모델 로딩 중...',
   'ai.noModelsConnected': '연결된 모델 없음',
-  'ai.quickAction.loginScreen': '모바일 로그인 화면 디자인',
+  'ai.quickAction.loginScreen': 'Summarize this workspace',
   'ai.quickAction.loginScreenPrompt':
-    '이메일 입력, 비밀번호 입력, 로그인 버튼, 소셜 로그인 옵션이 있는 모던 모바일 로그인 화면을 디자인해 주세요',
-  'ai.quickAction.foodApp': '음식 앱 홈페이지',
+    'Summarize the current workspace and the main items visible in the document context.',
+  'ai.quickAction.foodApp': 'Describe the selection',
   'ai.quickAction.foodAppPrompt':
-    'Generate a well-designed food mobile app homepage',
-  'ai.quickAction.bottomNav': '하단 네비게이션 바 디자인',
+    'Describe the currently selected items and any important structure you notice.',
+  'ai.quickAction.bottomNav': 'Suggest next steps',
   'ai.quickAction.bottomNavPrompt':
-    '홈, 검색, 추가, 메시지, 프로필 5개 탭이 있는 모바일 앱 하단 네비게이션 바를 디자인해 주세요',
-  'ai.quickAction.colorPalette': '앱에 맞는 색상 팔레트 추천',
+    'Based on the current workspace, suggest three concrete next steps.',
+  'ai.quickAction.colorPalette': 'Explain available agents',
   'ai.quickAction.colorPalettePrompt':
-    '반려동물 관리 앱에 어울리는 모던한 색상 팔레트를 추천해 주세요',
+    'Explain which connected agents and MCP tools are available right now and how they could help in this workspace.',
 
   // ── Code Panel ──
   'code.reactTailwind': 'React + Tailwind',
@@ -388,11 +388,11 @@ const ko: TranslationKeys = {
   'figma.comingSoon': '출시 예정',
 
   // ── Landing Page ──
-  'landing.open': 'Open',
-  'landing.pencil': 'Pencil',
-  'landing.tagline': '오픈소스 벡터 디자인 도구. Design as Code.',
-  'landing.newDesign': '새 디자인',
-  'landing.shortcutHint': '{{key1}} + {{key2}} 키를 눌러 새 디자인을 만드세요',
+  'landing.open': 'Game Theory ',
+  'landing.pencil': 'Analyzer',
+  'landing.tagline': 'Strategic analysis workspace.',
+  'landing.newDesign': 'Open Workspace',
+  'landing.shortcutHint': 'Press {{key1}} + {{key2}} to open a new workspace',
 
   // ── 404 ──
   'notFound.message': '페이지를 찾을 수 없습니다',

@@ -58,7 +58,7 @@ export async function saveDocumentAs(
       suggestedName: suggestedName || 'untitled.op',
       types: [
         {
-          description: 'OpenPencil File',
+          description: 'Game Theory Analyzer File',
           accept: { 'application/json': ['.op'] },
         },
       ],
@@ -87,7 +87,7 @@ export async function openDocumentFS(): Promise<{
     ).showOpenFilePicker({
       types: [
         {
-          description: 'OpenPencil File',
+          description: 'Game Theory Analyzer File',
           accept: { 'application/json': ['.op', '.pen', '.json'] },
         },
       ],

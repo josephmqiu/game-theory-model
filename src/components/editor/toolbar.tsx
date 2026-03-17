@@ -6,8 +6,6 @@ import {
   Hand,
   Undo2,
   Redo2,
-  Braces,
-  LayoutGrid,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import ToolButton from './tool-button'
@@ -17,7 +15,6 @@ import { useDocumentStore, generateId } from '@/stores/document-store'
 import { parseSvgToNodes } from '@/utils/svg-parser'
 import { getCanvasSize } from '@/canvas/skia-engine-ref'
 import { useHistoryStore } from '@/stores/history-store'
-import { useUIKitStore } from '@/stores/uikit-store'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -31,10 +28,6 @@ export default function Toolbar() {
   const { t } = useTranslation()
   const canUndo = useHistoryStore((s) => s.undoStack.length > 0)
   const canRedo = useHistoryStore((s) => s.redoStack.length > 0)
-  const variablesPanelOpen = useCanvasStore((s) => s.variablesPanelOpen)
-  const toggleVariablesPanel = useCanvasStore((s) => s.toggleVariablesPanel)
-  const browserOpen = useUIKitStore((s) => s.browserOpen)
-  const toggleBrowser = useUIKitStore((s) => s.toggleBrowser)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [iconPickerOpen, setIconPickerOpen] = useState(false)
 
@@ -222,56 +215,6 @@ export default function Toolbar() {
       </Tooltip>
 
       <Separator className="my-1 w-8" />
-
-      {/* Variables */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={toggleVariablesPanel}
-            aria-label={t('toolbar.variables')}
-            aria-pressed={variablesPanelOpen}
-            className={`inline-flex items-center justify-center h-8 min-w-8 px-1.5 rounded-lg transition-colors [&_svg]:size-5 [&_svg]:shrink-0 ${
-              variablesPanelOpen
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-            }`}
-          >
-            <Braces size={20} strokeWidth={1.5} />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right">
-          {t('toolbar.variables')}
-          <kbd className="ml-1.5 inline-flex h-4 items-center rounded border border-border/50 bg-muted px-1 font-mono text-[10px] text-muted-foreground">
-            {'\u2318\u21e7'}V
-          </kbd>
-        </TooltipContent>
-      </Tooltip>
-
-      {/* UIKit Browser */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={toggleBrowser}
-            aria-label={t('toolbar.uikitBrowser')}
-            aria-pressed={browserOpen}
-            className={`inline-flex items-center justify-center h-8 min-w-8 px-1.5 rounded-lg transition-colors [&_svg]:size-5 [&_svg]:shrink-0 ${
-              browserOpen
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-            }`}
-          >
-            <LayoutGrid size={20} strokeWidth={1.5} />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right">
-          {t('toolbar.uikitBrowser')}
-          <kbd className="ml-1.5 inline-flex h-4 items-center rounded border border-border/50 bg-muted px-1 font-mono text-[10px] text-muted-foreground">
-            {'\u2318\u21e7'}K
-          </kbd>
-        </TooltipContent>
-      </Tooltip>
 
       {/* Hidden file input + icon picker dialog */}
       <input

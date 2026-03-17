@@ -6,6 +6,7 @@ function sendMenuAction(action: string): void {
 }
 
 export function buildAppMenu(): void {
+  app.setName('Game Theory Analyzer')
   const isMac = process.platform === 'darwin'
 
   const template: Electron.MenuItemConstructorOptions[] = [
@@ -48,12 +49,6 @@ export function buildAppMenu(): void {
           label: 'Save',
           accelerator: 'CmdOrCtrl+S',
           click: () => sendMenuAction('save'),
-        },
-        { type: 'separator' },
-        {
-          label: 'Import Figma\u2026',
-          accelerator: 'CmdOrCtrl+Shift+F',
-          click: () => sendMenuAction('import-figma'),
         },
         ...(!isMac
           ? [{ type: 'separator' as const }, { role: 'quit' as const }]

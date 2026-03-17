@@ -165,10 +165,11 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
     const { layerPanelOpen, variablesPanelOpen } = get()
     persistPrefs({ layerPanelOpen, variablesPanelOpen, codePanelOpen: open })
   },
-  setRightPanelTab: (tab) => {
-    set({ rightPanelTab: tab })
+  setRightPanelTab: (_tab) => {
+    const nextTab: RightPanelTab = 'design'
+    set({ rightPanelTab: nextTab })
     const { layerPanelOpen, variablesPanelOpen, codePanelOpen } = get()
-    persistPrefs({ layerPanelOpen, variablesPanelOpen, codePanelOpen, rightPanelTab: tab })
+    persistPrefs({ layerPanelOpen, variablesPanelOpen, codePanelOpen, rightPanelTab: nextTab })
   },
   setFigmaImportDialogOpen: (open) => set({ figmaImportDialogOpen: open, ...(!open && { pendingFigmaFile: null }) }),
   setPendingFigmaFile: (file) => set({ pendingFigmaFile: file }),
@@ -182,7 +183,9 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
       if (typeof data.layerPanelOpen === 'boolean') set({ layerPanelOpen: data.layerPanelOpen })
       if (typeof data.variablesPanelOpen === 'boolean') set({ variablesPanelOpen: data.variablesPanelOpen })
       if (typeof data.codePanelOpen === 'boolean') set({ codePanelOpen: data.codePanelOpen })
-      if (data.rightPanelTab === 'design' || data.rightPanelTab === 'code') set({ rightPanelTab: data.rightPanelTab })
+      if (data.rightPanelTab === 'design' || data.rightPanelTab === 'code') {
+        set({ rightPanelTab: 'design' })
+      }
     } catch { /* ignore */ }
   },
 }))

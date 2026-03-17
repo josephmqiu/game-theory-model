@@ -39,8 +39,8 @@ const hi: TranslationKeys = {
   'shapes.moreShapeTools': 'और आकार उपकरण',
 
   // ── Top Bar ──
-  'topbar.hideLayers': 'लेयर छिपाएँ',
-  'topbar.showLayers': 'लेयर दिखाएँ',
+  'topbar.hideLayers': 'Hide outline',
+  'topbar.showLayers': 'Show outline',
   'topbar.new': 'नया',
   'topbar.open': 'खोलें',
   'topbar.save': 'सहेजें',
@@ -57,9 +57,9 @@ const hi: TranslationKeys = {
   'topbar.agentStatus': '{{agents}} एजेंट{{agentSuffix}} · {{mcp}} MCP',
 
   // ── Right Panel ──
-  'rightPanel.design': 'डिज़ाइन',
+  'rightPanel.design': 'Details',
   'rightPanel.code': 'कोड',
-  'rightPanel.noSelection': 'एक तत्व चुनें',
+  'rightPanel.noSelection': 'Select an item',
 
   // ── Pages ──
   'pages.title': 'पेज',
@@ -104,8 +104,8 @@ const hi: TranslationKeys = {
   'updater.subtitle.error': 'अपडेट की जाँच या डाउनलोड नहीं हो सका।',
 
   // ── Layers ──
-  'layers.title': 'लेयर',
-  'layers.empty': 'अभी कोई लेयर नहीं है। आकार बनाने के लिए टूलबार का उपयोग करें।',
+  'layers.title': 'Outline',
+  'layers.empty': 'No items yet. Use the toolbar to start building.',
 
   // ── Layer Context Menu ──
   'layerMenu.groupSelection': 'चयन को ग्रुप करें',
@@ -279,28 +279,28 @@ const hi: TranslationKeys = {
   // ── AI Chat ──
   'ai.newChat': 'नई चैट',
   'ai.collapse': 'संक्षिप्त करें',
-  'ai.tryExample': 'डिज़ाइन करने के लिए एक उदाहरण आज़माएँ...',
+  'ai.tryExample': 'Try a workspace prompt...',
   'ai.tipSelectElements':
-    'सुझाव: संदर्भ के लिए चैट से पहले कैनवस पर तत्वों का चयन करें।',
+    'Tip: Select items in the workspace before chatting for context.',
   'ai.generating': 'जनरेट हो रहा है...',
-  'ai.designWithAgent': 'एजेंट के साथ डिज़ाइन करें...',
+  'ai.designWithAgent': 'Ask an agent about this workspace...',
   'ai.attachImage': 'इमेज संलग्न करें',
   'ai.stopGenerating': 'जनरेशन रोकें',
   'ai.sendMessage': 'संदेश भेजें',
   'ai.loadingModels': 'मॉडल लोड हो रहे हैं...',
   'ai.noModelsConnected': 'कोई मॉडल कनेक्ट नहीं है',
-  'ai.quickAction.loginScreen': 'मोबाइल लॉगिन स्क्रीन डिज़ाइन करें',
+  'ai.quickAction.loginScreen': 'Summarize this workspace',
   'ai.quickAction.loginScreenPrompt':
-    'ईमेल इनपुट, पासवर्ड इनपुट, लॉगिन बटन और सोशल लॉगिन विकल्पों के साथ एक आधुनिक मोबाइल लॉगिन स्क्रीन डिज़ाइन करें',
-  'ai.quickAction.foodApp': 'फ़ूड ऐप होमपेज',
+    'Summarize the current workspace and the main items visible in the document context.',
+  'ai.quickAction.foodApp': 'Describe the selection',
   'ai.quickAction.foodAppPrompt':
-    'Generate a well-designed food mobile app homepage',
-  'ai.quickAction.bottomNav': 'बॉटम नेविगेशन बार डिज़ाइन करें',
+    'Describe the currently selected items and any important structure you notice.',
+  'ai.quickAction.bottomNav': 'Suggest next steps',
   'ai.quickAction.bottomNavPrompt':
-    '5 टैब के साथ एक मोबाइल ऐप बॉटम नेविगेशन बार डिज़ाइन करें: होम, खोजें, जोड़ें, संदेश, प्रोफ़ाइल',
-  'ai.quickAction.colorPalette': 'मेरे ऐप के लिए कलर पैलेट सुझाएँ',
+    'Based on the current workspace, suggest three concrete next steps.',
+  'ai.quickAction.colorPalette': 'Explain available agents',
   'ai.quickAction.colorPalettePrompt':
-    'एक पेट केयर ऐप के लिए आधुनिक कलर पैलेट सुझाएँ',
+    'Explain which connected agents and MCP tools are available right now and how they could help in this workspace.',
 
   // ── Code Panel ──
   'code.reactTailwind': 'React + Tailwind',
@@ -388,11 +388,11 @@ const hi: TranslationKeys = {
   'figma.comingSoon': 'जल्द आ रहा है',
 
   // ── Landing Page ──
-  'landing.open': 'Open',
-  'landing.pencil': 'Pencil',
-  'landing.tagline': 'ओपन-सोर्स वेक्टर डिज़ाइन टूल। डिज़ाइन ऐज़ कोड।',
-  'landing.newDesign': 'नया डिज़ाइन',
-  'landing.shortcutHint': 'नया डिज़ाइन बनाने के लिए {{key1}} + {{key2}} दबाएँ',
+  'landing.open': 'Game Theory ',
+  'landing.pencil': 'Analyzer',
+  'landing.tagline': 'Strategic analysis workspace.',
+  'landing.newDesign': 'Open Workspace',
+  'landing.shortcutHint': 'Press {{key1}} + {{key2}} to open a new workspace',
 
   // ── 404 ──
   'notFound.message': 'पेज नहीं मिला',

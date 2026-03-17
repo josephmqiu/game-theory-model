@@ -39,8 +39,8 @@ const id: TranslationKeys = {
   'shapes.moreShapeTools': 'Alat bentuk lainnya',
 
   // ── Top Bar ──
-  'topbar.hideLayers': 'Sembunyikan layer',
-  'topbar.showLayers': 'Tampilkan layer',
+  'topbar.hideLayers': 'Hide outline',
+  'topbar.showLayers': 'Show outline',
   'topbar.new': 'Baru',
   'topbar.open': 'Buka',
   'topbar.save': 'Simpan',
@@ -57,9 +57,9 @@ const id: TranslationKeys = {
   'topbar.agentStatus': '{{agents}} agent{{agentSuffix}} · {{mcp}} MCP',
 
   // ── Right Panel ──
-  'rightPanel.design': 'Desain',
+  'rightPanel.design': 'Details',
   'rightPanel.code': 'Kode',
-  'rightPanel.noSelection': 'Pilih sebuah elemen',
+  'rightPanel.noSelection': 'Select an item',
 
   // ── Pages ──
   'pages.title': 'Halaman',
@@ -104,8 +104,8 @@ const id: TranslationKeys = {
   'updater.subtitle.error': 'Tidak dapat memeriksa atau mengunduh pembaruan.',
 
   // ── Layers ──
-  'layers.title': 'Layer',
-  'layers.empty': 'Belum ada layer. Gunakan toolbar untuk menggambar bentuk.',
+  'layers.title': 'Outline',
+  'layers.empty': 'No items yet. Use the toolbar to start building.',
 
   // ── Layer Context Menu ──
   'layerMenu.groupSelection': 'Kelompokkan Pilihan',
@@ -279,28 +279,28 @@ const id: TranslationKeys = {
   // ── AI Chat ──
   'ai.newChat': 'Chat baru',
   'ai.collapse': 'Ciutkan',
-  'ai.tryExample': 'Coba contoh untuk mendesain...',
+  'ai.tryExample': 'Try a workspace prompt...',
   'ai.tipSelectElements':
-    'Tips: Pilih elemen di canvas sebelum chat untuk memberikan konteks.',
+    'Tip: Select items in the workspace before chatting for context.',
   'ai.generating': 'Membuat...',
-  'ai.designWithAgent': 'Desain dengan Agent...',
+  'ai.designWithAgent': 'Ask an agent about this workspace...',
   'ai.attachImage': 'Lampirkan gambar',
   'ai.stopGenerating': 'Hentikan pembuatan',
   'ai.sendMessage': 'Kirim pesan',
   'ai.loadingModels': 'Memuat model...',
   'ai.noModelsConnected': 'Tidak ada model terhubung',
-  'ai.quickAction.loginScreen': 'Desain layar login mobile',
+  'ai.quickAction.loginScreen': 'Summarize this workspace',
   'ai.quickAction.loginScreenPrompt':
-    'Desain layar login mobile modern dengan input email, input kata sandi, tombol login, dan opsi login sosial',
-  'ai.quickAction.foodApp': 'Beranda aplikasi makanan',
+    'Summarize the current workspace and the main items visible in the document context.',
+  'ai.quickAction.foodApp': 'Describe the selection',
   'ai.quickAction.foodAppPrompt':
-    'Generate a well-designed food mobile app homepage',
-  'ai.quickAction.bottomNav': 'Desain bilah navigasi bawah',
+    'Describe the currently selected items and any important structure you notice.',
+  'ai.quickAction.bottomNav': 'Suggest next steps',
   'ai.quickAction.bottomNavPrompt':
-    'Desain bilah navigasi bawah aplikasi mobile dengan 5 tab: Beranda, Cari, Tambah, Pesan, Profil',
-  'ai.quickAction.colorPalette': 'Sarankan palet warna untuk aplikasi saya',
+    'Based on the current workspace, suggest three concrete next steps.',
+  'ai.quickAction.colorPalette': 'Explain available agents',
   'ai.quickAction.colorPalettePrompt':
-    'Sarankan palet warna modern untuk aplikasi perawatan hewan peliharaan',
+    'Explain which connected agents and MCP tools are available right now and how they could help in this workspace.',
 
   // ── Code Panel ──
   'code.reactTailwind': 'React + Tailwind',
@@ -388,11 +388,11 @@ const id: TranslationKeys = {
   'figma.comingSoon': 'Segera hadir',
 
   // ── Landing Page ──
-  'landing.open': 'Open',
-  'landing.pencil': 'Pencil',
-  'landing.tagline': 'Alat desain vektor open-source. Desain sebagai Kode.',
-  'landing.newDesign': 'Desain Baru',
-  'landing.shortcutHint': 'Tekan {{key1}} + {{key2}} untuk membuat desain baru',
+  'landing.open': 'Game Theory ',
+  'landing.pencil': 'Analyzer',
+  'landing.tagline': 'Strategic analysis workspace.',
+  'landing.newDesign': 'Open Workspace',
+  'landing.shortcutHint': 'Press {{key1}} + {{key2}} to open a new workspace',
 
   // ── 404 ──
   'notFound.message': 'Halaman tidak ditemukan',

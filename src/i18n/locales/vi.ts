@@ -39,8 +39,8 @@ const vi: TranslationKeys = {
   'shapes.moreShapeTools': 'Thêm công cụ hình dạng',
 
   // ── Top Bar ──
-  'topbar.hideLayers': 'Ẩn lớp',
-  'topbar.showLayers': 'Hiện lớp',
+  'topbar.hideLayers': 'Hide outline',
+  'topbar.showLayers': 'Show outline',
   'topbar.new': 'Tạo mới',
   'topbar.open': 'Mở',
   'topbar.save': 'Lưu',
@@ -57,9 +57,9 @@ const vi: TranslationKeys = {
   'topbar.agentStatus': '{{agents}} agent{{agentSuffix}} · {{mcp}} MCP',
 
   // ── Right Panel ──
-  'rightPanel.design': 'Thiết kế',
+  'rightPanel.design': 'Details',
   'rightPanel.code': 'Mã',
-  'rightPanel.noSelection': 'Chọn một phần tử',
+  'rightPanel.noSelection': 'Select an item',
 
   // ── Pages ──
   'pages.title': 'Trang',
@@ -104,8 +104,8 @@ const vi: TranslationKeys = {
   'updater.subtitle.error': 'Không thể kiểm tra hoặc tải bản cập nhật.',
 
   // ── Layers ──
-  'layers.title': 'Lớp',
-  'layers.empty': 'Chưa có lớp nào. Sử dụng thanh công cụ để vẽ hình.',
+  'layers.title': 'Outline',
+  'layers.empty': 'No items yet. Use the toolbar to start building.',
 
   // ── Layer Context Menu ──
   'layerMenu.groupSelection': 'Nhóm các đối tượng đã chọn',
@@ -279,28 +279,28 @@ const vi: TranslationKeys = {
   // ── AI Chat ──
   'ai.newChat': 'Cuộc trò chuyện mới',
   'ai.collapse': 'Thu gọn',
-  'ai.tryExample': 'Thử một ví dụ để thiết kế...',
+  'ai.tryExample': 'Try a workspace prompt...',
   'ai.tipSelectElements':
-    'Mẹo: Chọn các phần tử trên canvas trước khi trò chuyện để cung cấp ngữ cảnh.',
+    'Tip: Select items in the workspace before chatting for context.',
   'ai.generating': 'Đang tạo...',
-  'ai.designWithAgent': 'Thiết kế với Agent...',
+  'ai.designWithAgent': 'Ask an agent about this workspace...',
   'ai.attachImage': 'Đính kèm hình ảnh',
   'ai.stopGenerating': 'Dừng tạo',
   'ai.sendMessage': 'Gửi tin nhắn',
   'ai.loadingModels': 'Đang tải mô hình...',
   'ai.noModelsConnected': 'Chưa kết nối mô hình nào',
-  'ai.quickAction.loginScreen': 'Thiết kế màn hình đăng nhập di động',
+  'ai.quickAction.loginScreen': 'Summarize this workspace',
   'ai.quickAction.loginScreenPrompt':
-    'Thiết kế màn hình đăng nhập di động hiện đại với ô nhập email, ô nhập mật khẩu, nút đăng nhập và các tuỳ chọn đăng nhập bằng mạng xã hội',
-  'ai.quickAction.foodApp': 'Trang chủ ứng dụng ẩm thực',
+    'Summarize the current workspace and the main items visible in the document context.',
+  'ai.quickAction.foodApp': 'Describe the selection',
   'ai.quickAction.foodAppPrompt':
-    'Generate a well-designed food mobile app homepage',
-  'ai.quickAction.bottomNav': 'Thiết kế thanh điều hướng dưới cùng',
+    'Describe the currently selected items and any important structure you notice.',
+  'ai.quickAction.bottomNav': 'Suggest next steps',
   'ai.quickAction.bottomNavPrompt':
-    'Thiết kế thanh điều hướng dưới cùng cho ứng dụng di động với 5 tab: Trang chủ, Tìm kiếm, Thêm, Tin nhắn, Hồ sơ',
-  'ai.quickAction.colorPalette': 'Gợi ý bảng màu cho ứng dụng',
+    'Based on the current workspace, suggest three concrete next steps.',
+  'ai.quickAction.colorPalette': 'Explain available agents',
   'ai.quickAction.colorPalettePrompt':
-    'Gợi ý bảng màu hiện đại cho ứng dụng chăm sóc thú cưng',
+    'Explain which connected agents and MCP tools are available right now and how they could help in this workspace.',
 
   // ── Code Panel ──
   'code.reactTailwind': 'React + Tailwind',
@@ -388,11 +388,11 @@ const vi: TranslationKeys = {
   'figma.comingSoon': 'Sắp ra mắt',
 
   // ── Landing Page ──
-  'landing.open': 'Open',
-  'landing.pencil': 'Pencil',
-  'landing.tagline': 'Công cụ thiết kế vector mã nguồn mở. Thiết kế dưới dạng mã.',
-  'landing.newDesign': 'Thiết kế mới',
-  'landing.shortcutHint': 'Nhấn {{key1}} + {{key2}} để tạo thiết kế mới',
+  'landing.open': 'Game Theory ',
+  'landing.pencil': 'Analyzer',
+  'landing.tagline': 'Strategic analysis workspace.',
+  'landing.newDesign': 'Open Workspace',
+  'landing.shortcutHint': 'Press {{key1}} + {{key2}} to open a new workspace',
 
   // ── 404 ──
   'notFound.message': 'Không tìm thấy trang',

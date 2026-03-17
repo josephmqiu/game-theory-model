@@ -17,7 +17,6 @@ import ClaudeLogo from '@/components/icons/claude-logo'
 import OpenAILogo from '@/components/icons/openai-logo'
 import OpenCodeLogo from '@/components/icons/opencode-logo'
 import CopilotLogo from '@/components/icons/copilot-logo'
-import FigmaLogo from '@/components/icons/figma-logo'
 import LanguageSelector from '@/components/shared/language-selector'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -361,22 +360,6 @@ export default function TopBar() {
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">{t('topbar.save')}</TooltipContent>
-        </Tooltip>
-
-        <div className="w-px h-3.5 bg-border/60 mx-1" />
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-muted-foreground"
-              onClick={() => useCanvasStore.getState().setFigmaImportDialogOpen(true)}
-            >
-              <FigmaLogo className="w-3.5 h-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{t('topbar.importFigma')}</TooltipContent>
         </Tooltip>
       </div>
 

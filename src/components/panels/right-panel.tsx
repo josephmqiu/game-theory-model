@@ -1,10 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { cn } from '@/lib/utils'
-import { useCanvasStore } from '@/stores/canvas-store'
-import type { RightPanelTab } from '@/stores/canvas-store'
 import PropertyPanel from './property-panel'
-import CodePanel from './code-panel'
 
 const MIN_WIDTH = 256   // 16rem (w-64)
 const MAX_WIDTH = 640   // 40rem
@@ -12,8 +8,6 @@ const DEFAULT_WIDTH = 256
 
 export default function RightPanel() {
   const { t } = useTranslation()
-  const activeTab = useCanvasStore((s) => s.rightPanelTab)
-  const setTab = useCanvasStore((s) => s.setRightPanelTab)
   const [width, setWidth] = useState(DEFAULT_WIDTH)
   const isDragging = useRef(false)
   const startX = useRef(0)
@@ -47,11 +41,6 @@ export default function RightPanel() {
     document.addEventListener('mouseup', handleMouseUp)
   }, [width])
 
-  const tabs: { key: RightPanelTab; label: string }[] = [
-    { key: 'design', label: t('rightPanel.design') },
-    { key: 'code', label: t('rightPanel.code') },
-  ]
-
   return (
     <div className="bg-card border-l border-border flex flex-col shrink-0 relative" style={{ width }}>
       {/* Resize handle */}
@@ -60,31 +49,13 @@ export default function RightPanel() {
         onMouseDown={handleMouseDown}
       />
 
-      {/* Tab bar */}
-      <div className="h-8 flex items-center px-2 border-b border-border shrink-0 gap-1">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setTab(tab.key)}
-            className={cn(
-              'text-[11px] font-medium px-2 py-0.5 rounded transition-colors',
-              activeTab === tab.key
-                ? 'bg-secondary text-foreground'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
+      {/* Single details header */}
+      <div className="h-8 flex items-center px-3 border-b border-border shrink-0">
+        <span className="text-[11px] font-medium text-foreground">{t('rightPanel.design')}</span>
       </div>
 
       {/* Content */}
-      {activeTab === 'design' ? (
-        <PropertyPanel embedded />
-      ) : (
-        <CodePanel />
-      )}
+      <PropertyPanel embedded />
     </div>
   )
 }

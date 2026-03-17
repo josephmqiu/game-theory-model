@@ -39,8 +39,8 @@ const tr: TranslationKeys = {
   'shapes.moreShapeTools': 'Diğer şekil araçları',
 
   // ── Top Bar ──
-  'topbar.hideLayers': 'Katmanları gizle',
-  'topbar.showLayers': 'Katmanları göster',
+  'topbar.hideLayers': 'Hide outline',
+  'topbar.showLayers': 'Show outline',
   'topbar.new': 'Yeni',
   'topbar.open': 'Aç',
   'topbar.save': 'Kaydet',
@@ -57,9 +57,9 @@ const tr: TranslationKeys = {
   'topbar.agentStatus': '{{agents}} ajan{{agentSuffix}} · {{mcp}} MCP',
 
   // ── Right Panel ──
-  'rightPanel.design': 'Tasarım',
+  'rightPanel.design': 'Details',
   'rightPanel.code': 'Kod',
-  'rightPanel.noSelection': 'Bir öğe seçin',
+  'rightPanel.noSelection': 'Select an item',
 
   // ── Pages ──
   'pages.title': 'Sayfalar',
@@ -104,8 +104,8 @@ const tr: TranslationKeys = {
   'updater.subtitle.error': 'Güncelleme kontrol edilemedi veya indirilemedi.',
 
   // ── Layers ──
-  'layers.title': 'Katmanlar',
-  'layers.empty': 'Henüz katman yok. Şekil çizmek için araç çubuğunu kullanın.',
+  'layers.title': 'Outline',
+  'layers.empty': 'No items yet. Use the toolbar to start building.',
 
   // ── Layer Context Menu ──
   'layerMenu.groupSelection': 'Seçimi Grupla',
@@ -279,28 +279,28 @@ const tr: TranslationKeys = {
   // ── AI Chat ──
   'ai.newChat': 'Yeni sohbet',
   'ai.collapse': 'Daralt',
-  'ai.tryExample': 'Tasarlamak için bir örnek deneyin...',
+  'ai.tryExample': 'Try a workspace prompt...',
   'ai.tipSelectElements':
-    'İpucu: Bağlam için sohbet etmeden önce tuvaldeki ögeleri seçin.',
+    'Tip: Select items in the workspace before chatting for context.',
   'ai.generating': 'Oluşturuluyor...',
-  'ai.designWithAgent': 'Ajanla Tasarla...',
+  'ai.designWithAgent': 'Ask an agent about this workspace...',
   'ai.attachImage': 'Görsel ekle',
   'ai.stopGenerating': 'Oluşturmayı durdur',
   'ai.sendMessage': 'Mesaj gönder',
   'ai.loadingModels': 'Modeller yükleniyor...',
   'ai.noModelsConnected': 'Bağlı model yok',
-  'ai.quickAction.loginScreen': 'Mobil giriş ekranı tasarla',
+  'ai.quickAction.loginScreen': 'Summarize this workspace',
   'ai.quickAction.loginScreenPrompt':
-    'E-posta girişi, şifre girişi, giriş butonu ve sosyal giriş seçenekleri ile modern bir mobil giriş ekranı tasarla',
-  'ai.quickAction.foodApp': 'Yemek uygulaması ana sayfası',
+    'Summarize the current workspace and the main items visible in the document context.',
+  'ai.quickAction.foodApp': 'Describe the selection',
   'ai.quickAction.foodAppPrompt':
-    'Generate a well-designed food mobile app homepage',
-  'ai.quickAction.bottomNav': 'Alt gezinme çubuğu tasarla',
+    'Describe the currently selected items and any important structure you notice.',
+  'ai.quickAction.bottomNav': 'Suggest next steps',
   'ai.quickAction.bottomNavPrompt':
-    '5 sekmeli bir mobil uygulama alt gezinme çubuğu tasarla: Ana Sayfa, Ara, Ekle, Mesajlar, Profil',
-  'ai.quickAction.colorPalette': 'Uygulamam için renk paleti öner',
+    'Based on the current workspace, suggest three concrete next steps.',
+  'ai.quickAction.colorPalette': 'Explain available agents',
   'ai.quickAction.colorPalettePrompt':
-    'Evcil hayvan bakım uygulaması için modern bir renk paleti öner',
+    'Explain which connected agents and MCP tools are available right now and how they could help in this workspace.',
 
   // ── Code Panel ──
   'code.reactTailwind': 'React + Tailwind',
@@ -388,11 +388,11 @@ const tr: TranslationKeys = {
   'figma.comingSoon': 'Yakında',
 
   // ── Landing Page ──
-  'landing.open': 'Open',
-  'landing.pencil': 'Pencil',
-  'landing.tagline': 'Açık kaynaklı vektör tasarım aracı. Kod olarak Tasarım.',
-  'landing.newDesign': 'Yeni Tasarım',
-  'landing.shortcutHint': 'Yeni tasarım oluşturmak için {{key1}} + {{key2}} tuşlarına basın',
+  'landing.open': 'Game Theory ',
+  'landing.pencil': 'Analyzer',
+  'landing.tagline': 'Strategic analysis workspace.',
+  'landing.newDesign': 'Open Workspace',
+  'landing.shortcutHint': 'Press {{key1}} + {{key2}} to open a new workspace',
 
   // ── 404 ──
   'notFound.message': 'Sayfa bulunamadı',

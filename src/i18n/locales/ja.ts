@@ -39,8 +39,8 @@ const ja: TranslationKeys = {
   'shapes.moreShapeTools': 'その他のシェイプツール',
 
   // ── Top Bar ──
-  'topbar.hideLayers': 'レイヤーを非表示',
-  'topbar.showLayers': 'レイヤーを表示',
+  'topbar.hideLayers': 'Hide outline',
+  'topbar.showLayers': 'Show outline',
   'topbar.new': '新規',
   'topbar.open': '開く',
   'topbar.save': '保存',
@@ -57,9 +57,9 @@ const ja: TranslationKeys = {
   'topbar.agentStatus': '{{agents}} Agent{{agentSuffix}} · {{mcp}} MCP',
 
   // ── Right Panel ──
-  'rightPanel.design': 'デザイン',
+  'rightPanel.design': 'Details',
   'rightPanel.code': 'コード',
-  'rightPanel.noSelection': '要素を選択してください',
+  'rightPanel.noSelection': 'Select an item',
 
   // ── Pages ──
   'pages.title': 'ページ',
@@ -107,9 +107,9 @@ const ja: TranslationKeys = {
     'アップデートの確認またはダウンロードができませんでした。',
 
   // ── Layers ──
-  'layers.title': 'レイヤー',
+  'layers.title': 'Outline',
   'layers.empty':
-    'レイヤーがありません。ツールバーからシェイプを描画してください。',
+    'No items yet. Use the toolbar to start building.',
 
   // ── Layer Context Menu ──
   'layerMenu.groupSelection': '選択をグループ化',
@@ -283,28 +283,28 @@ const ja: TranslationKeys = {
   // ── AI Chat ──
   'ai.newChat': '新しいチャット',
   'ai.collapse': '折りたたむ',
-  'ai.tryExample': 'サンプルを試してデザイン...',
+  'ai.tryExample': 'Try a workspace prompt...',
   'ai.tipSelectElements':
-    'ヒント：チャットの前にキャンバス上の要素を選択するとコンテキストが提供されます。',
+    'Tip: Select items in the workspace before chatting for context.',
   'ai.generating': '生成中...',
-  'ai.designWithAgent': 'Agent でデザイン...',
+  'ai.designWithAgent': 'Ask an agent about this workspace...',
   'ai.attachImage': '画像を添付',
   'ai.stopGenerating': '生成を停止',
   'ai.sendMessage': 'メッセージを送信',
   'ai.loadingModels': 'モデルを読み込み中...',
   'ai.noModelsConnected': 'モデルが接続されていません',
-  'ai.quickAction.loginScreen': 'モバイルログイン画面をデザイン',
+  'ai.quickAction.loginScreen': 'Summarize this workspace',
   'ai.quickAction.loginScreenPrompt':
-    'メール入力、パスワード入力、ログインボタン、ソーシャルログインオプションを含む、モダンなモバイルログイン画面をデザインしてください',
-  'ai.quickAction.foodApp': 'フードアプリのホームページ',
+    'Summarize the current workspace and the main items visible in the document context.',
+  'ai.quickAction.foodApp': 'Describe the selection',
   'ai.quickAction.foodAppPrompt':
-    'Generate a well-designed food mobile app homepage',
-  'ai.quickAction.bottomNav': 'ボトムナビゲーションバーをデザイン',
+    'Describe the currently selected items and any important structure you notice.',
+  'ai.quickAction.bottomNav': 'Suggest next steps',
   'ai.quickAction.bottomNavPrompt':
-    'ホーム、検索、追加、メッセージ、プロフィールの 5 つのタブを含むモバイルアプリのボトムナビゲーションバーをデザインしてください',
-  'ai.quickAction.colorPalette': 'アプリのカラーパレットを提案',
+    'Based on the current workspace, suggest three concrete next steps.',
+  'ai.quickAction.colorPalette': 'Explain available agents',
   'ai.quickAction.colorPalettePrompt':
-    'ペットケアアプリ向けのモダンなカラーパレットを提案してください',
+    'Explain which connected agents and MCP tools are available right now and how they could help in this workspace.',
 
   // ── Code Panel ──
   'code.reactTailwind': 'React + Tailwind',
@@ -392,13 +392,13 @@ const ja: TranslationKeys = {
   'figma.comingSoon': '近日公開',
 
   // ── Landing Page ──
-  'landing.open': 'Open',
-  'landing.pencil': 'Pencil',
+  'landing.open': 'Game Theory ',
+  'landing.pencil': 'Analyzer',
   'landing.tagline':
-    'オープンソースのベクターデザインツール。Design as Code。',
-  'landing.newDesign': '新規デザイン',
+    'Strategic analysis workspace.',
+  'landing.newDesign': 'Open Workspace',
   'landing.shortcutHint':
-    '{{key1}} + {{key2}} を押して新規デザインを作成',
+    'Press {{key1}} + {{key2}} to open a new workspace',
 
   // ── 404 ──
   'notFound.message': 'ページが見つかりません',

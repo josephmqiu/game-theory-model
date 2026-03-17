@@ -39,8 +39,8 @@ const pt: TranslationKeys = {
   'shapes.moreShapeTools': 'Mais ferramentas de forma',
 
   // ── Top Bar ──
-  'topbar.hideLayers': 'Ocultar camadas',
-  'topbar.showLayers': 'Mostrar camadas',
+  'topbar.hideLayers': 'Hide outline',
+  'topbar.showLayers': 'Show outline',
   'topbar.new': 'Novo',
   'topbar.open': 'Abrir',
   'topbar.save': 'Salvar',
@@ -57,9 +57,9 @@ const pt: TranslationKeys = {
   'topbar.agentStatus': '{{agents}} agente{{agentSuffix}} · {{mcp}} MCP',
 
   // ── Right Panel ──
-  'rightPanel.design': 'Design',
+  'rightPanel.design': 'Details',
   'rightPanel.code': 'Código',
-  'rightPanel.noSelection': 'Selecione um elemento',
+  'rightPanel.noSelection': 'Select an item',
 
   // ── Pages ──
   'pages.title': 'Páginas',
@@ -105,9 +105,9 @@ const pt: TranslationKeys = {
     'Não foi possível verificar ou baixar a atualização.',
 
   // ── Layers ──
-  'layers.title': 'Camadas',
+  'layers.title': 'Outline',
   'layers.empty':
-    'Nenhuma camada ainda. Use a barra de ferramentas para desenhar formas.',
+    'No items yet. Use the toolbar to start building.',
 
   // ── Layer Context Menu ──
   'layerMenu.groupSelection': 'Agrupar seleção',
@@ -281,28 +281,28 @@ const pt: TranslationKeys = {
   // ── AI Chat ──
   'ai.newChat': 'Novo chat',
   'ai.collapse': 'Recolher',
-  'ai.tryExample': 'Experimente um exemplo para criar...',
+  'ai.tryExample': 'Try a workspace prompt...',
   'ai.tipSelectElements':
-    'Dica: Selecione elementos no canvas antes de conversar para dar contexto.',
+    'Tip: Select items in the workspace before chatting for context.',
   'ai.generating': 'Gerando...',
-  'ai.designWithAgent': 'Criar com Agente...',
+  'ai.designWithAgent': 'Ask an agent about this workspace...',
   'ai.attachImage': 'Anexar imagem',
   'ai.stopGenerating': 'Parar geração',
   'ai.sendMessage': 'Enviar mensagem',
   'ai.loadingModels': 'Carregando modelos...',
   'ai.noModelsConnected': 'Nenhum modelo conectado',
-  'ai.quickAction.loginScreen': 'Criar uma tela de login mobile',
+  'ai.quickAction.loginScreen': 'Summarize this workspace',
   'ai.quickAction.loginScreenPrompt':
-    'Design a modern mobile login screen with email input, password input, login button, and social login options',
-  'ai.quickAction.foodApp': 'Página inicial de app de comida',
+    'Summarize the current workspace and the main items visible in the document context.',
+  'ai.quickAction.foodApp': 'Describe the selection',
   'ai.quickAction.foodAppPrompt':
-    'Generate a well-designed food mobile app homepage',
-  'ai.quickAction.bottomNav': 'Criar uma barra de navegação inferior',
+    'Describe the currently selected items and any important structure you notice.',
+  'ai.quickAction.bottomNav': 'Suggest next steps',
   'ai.quickAction.bottomNavPrompt':
-    'Design a mobile app bottom navigation bar with 5 tabs: Home, Search, Add, Messages, Profile',
-  'ai.quickAction.colorPalette': 'Sugerir uma paleta de cores para meu app',
+    'Based on the current workspace, suggest three concrete next steps.',
+  'ai.quickAction.colorPalette': 'Explain available agents',
   'ai.quickAction.colorPalettePrompt':
-    'Suggest a modern color palette for a pet care app',
+    'Explain which connected agents and MCP tools are available right now and how they could help in this workspace.',
 
   // ── Code Panel ──
   'code.reactTailwind': 'React + Tailwind',
@@ -390,12 +390,12 @@ const pt: TranslationKeys = {
   'figma.comingSoon': 'Em breve',
 
   // ── Landing Page ──
-  'landing.open': 'Open',
-  'landing.pencil': 'Pencil',
+  'landing.open': 'Game Theory ',
+  'landing.pencil': 'Analyzer',
   'landing.tagline':
-    'Ferramenta de design vetorial de código aberto. Design as Code.',
-  'landing.newDesign': 'Novo Design',
-  'landing.shortcutHint': 'Pressione {{key1}} + {{key2}} para criar um novo design',
+    'Strategic analysis workspace.',
+  'landing.newDesign': 'Open Workspace',
+  'landing.shortcutHint': 'Press {{key1}} + {{key2}} to open a new workspace',
 
   // ── 404 ──
   'notFound.message': 'Página não encontrada',

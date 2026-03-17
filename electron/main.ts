@@ -48,6 +48,7 @@ let mainWindow: BrowserWindow | null = null
 let nitroProcess: ChildProcess | null = null
 let serverPort = 0
 let pendingFilePath: string | null = null
+const APP_NAME = 'Game Theory Analyzer'
 
 const isDev = !app.isPackaged
 // Settings stored in platform-standard app data dir (Electron-managed):
@@ -357,7 +358,7 @@ function createWindow(): void {
     height: WINDOW_HEIGHT,
     minWidth: WINDOW_MIN_WIDTH,
     minHeight: WINDOW_MIN_HEIGHT,
-    title: 'OpenPencil',
+    title: APP_NAME,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
     ...(isWinOrLinux
       ? {
@@ -461,8 +462,8 @@ function setupIPC(): void {
   ipcMain.handle('dialog:openFile', async () => {
     if (!mainWindow) return null
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: 'Open .op file',
-      filters: [{ name: 'OpenPencil Files', extensions: ['op', 'pen'] }],
+      title: 'Open Workspace File',
+      filters: [{ name: 'Game Theory Analyzer Files', extensions: ['op', 'pen'] }],
       properties: ['openFile'],
     })
     if (result.canceled || result.filePaths.length === 0) return null
@@ -476,9 +477,9 @@ function setupIPC(): void {
     async (_event, payload: { content: string; defaultPath?: string }) => {
       if (!mainWindow) return null
       const result = await dialog.showSaveDialog(mainWindow, {
-        title: 'Save .op file',
+        title: 'Save Workspace File',
         defaultPath: payload.defaultPath,
-        filters: [{ name: 'OpenPencil Files', extensions: ['op'] }],
+        filters: [{ name: 'Game Theory Analyzer Files', extensions: ['op'] }],
       })
       if (result.canceled || !result.filePath) return null
       await writeFile(result.filePath, payload.content, 'utf-8')
@@ -651,6 +652,7 @@ app.on('ready', async () => {
   await initLogger(app.getPath('userData'))
   fixPath()
   await loadPrefs()
+  app.setName(APP_NAME)
   setupIPC()
   buildAppMenu()
 
@@ -662,7 +664,7 @@ app.on('ready', async () => {
     } catch (err) {
       log.error(`Failed to start Nitro server: ${err}`)
       dialog.showErrorBox(
-        'OpenPencil',
+        APP_NAME,
         `Failed to start the application server.\n\n${err instanceof Error ? err.message : String(err)}\n\nThe application will now quit.`,
       )
       app.quit()

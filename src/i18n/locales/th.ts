@@ -39,8 +39,8 @@ const th: TranslationKeys = {
   'shapes.moreShapeTools': 'เครื่องมือรูปทรงเพิ่มเติม',
 
   // ── Top Bar ──
-  'topbar.hideLayers': 'ซ่อนเลเยอร์',
-  'topbar.showLayers': 'แสดงเลเยอร์',
+  'topbar.hideLayers': 'Hide outline',
+  'topbar.showLayers': 'Show outline',
   'topbar.new': 'ใหม่',
   'topbar.open': 'เปิด',
   'topbar.save': 'บันทึก',
@@ -57,9 +57,9 @@ const th: TranslationKeys = {
   'topbar.agentStatus': '{{agents}} เอเจนต์{{agentSuffix}} · {{mcp}} MCP',
 
   // ── Right Panel ──
-  'rightPanel.design': 'ออกแบบ',
+  'rightPanel.design': 'Details',
   'rightPanel.code': 'โค้ด',
-  'rightPanel.noSelection': 'เลือกองค์ประกอบ',
+  'rightPanel.noSelection': 'Select an item',
 
   // ── Pages ──
   'pages.title': 'หน้า',
@@ -104,8 +104,8 @@ const th: TranslationKeys = {
   'updater.subtitle.error': 'ไม่สามารถตรวจสอบหรือดาวน์โหลดอัปเดตได้',
 
   // ── Layers ──
-  'layers.title': 'เลเยอร์',
-  'layers.empty': 'ยังไม่มีเลเยอร์ ใช้แถบเครื่องมือเพื่อวาดรูปทรง',
+  'layers.title': 'Outline',
+  'layers.empty': 'No items yet. Use the toolbar to start building.',
 
   // ── Layer Context Menu ──
   'layerMenu.groupSelection': 'จัดกลุ่มที่เลือก',
@@ -279,28 +279,28 @@ const th: TranslationKeys = {
   // ── AI Chat ──
   'ai.newChat': 'แชทใหม่',
   'ai.collapse': 'ย่อ',
-  'ai.tryExample': 'ลองตัวอย่างเพื่อออกแบบ...',
+  'ai.tryExample': 'Try a workspace prompt...',
   'ai.tipSelectElements':
-    'เคล็ดลับ: เลือกองค์ประกอบบนแคนวาสก่อนแชทเพื่อให้บริบท',
+    'Tip: Select items in the workspace before chatting for context.',
   'ai.generating': 'กำลังสร้าง...',
-  'ai.designWithAgent': 'ออกแบบด้วยเอเจนต์...',
+  'ai.designWithAgent': 'Ask an agent about this workspace...',
   'ai.attachImage': 'แนบรูปภาพ',
   'ai.stopGenerating': 'หยุดการสร้าง',
   'ai.sendMessage': 'ส่งข้อความ',
   'ai.loadingModels': 'กำลังโหลดโมเดล...',
   'ai.noModelsConnected': 'ไม่มีโมเดลที่เชื่อมต่อ',
-  'ai.quickAction.loginScreen': 'ออกแบบหน้าจอเข้าสู่ระบบมือถือ',
+  'ai.quickAction.loginScreen': 'Summarize this workspace',
   'ai.quickAction.loginScreenPrompt':
-    'ออกแบบหน้าจอเข้าสู่ระบบมือถือที่ทันสมัย พร้อมช่องกรอกอีเมล รหัสผ่าน ปุ่มเข้าสู่ระบบ และตัวเลือกเข้าสู่ระบบผ่านโซเชียล',
-  'ai.quickAction.foodApp': 'หน้าแรกแอปอาหาร',
+    'Summarize the current workspace and the main items visible in the document context.',
+  'ai.quickAction.foodApp': 'Describe the selection',
   'ai.quickAction.foodAppPrompt':
-    'Generate a well-designed food mobile app homepage',
-  'ai.quickAction.bottomNav': 'ออกแบบแถบนำทางด้านล่าง',
+    'Describe the currently selected items and any important structure you notice.',
+  'ai.quickAction.bottomNav': 'Suggest next steps',
   'ai.quickAction.bottomNavPrompt':
-    'ออกแบบแถบนำทางด้านล่างของแอปมือถือ 5 แท็บ: หน้าแรก, ค้นหา, เพิ่ม, ข้อความ, โปรไฟล์',
-  'ai.quickAction.colorPalette': 'แนะนำจานสีสำหรับแอปของฉัน',
+    'Based on the current workspace, suggest three concrete next steps.',
+  'ai.quickAction.colorPalette': 'Explain available agents',
   'ai.quickAction.colorPalettePrompt':
-    'แนะนำจานสีที่ทันสมัยสำหรับแอปดูแลสัตว์เลี้ยง',
+    'Explain which connected agents and MCP tools are available right now and how they could help in this workspace.',
 
   // ── Code Panel ──
   'code.reactTailwind': 'React + Tailwind',
@@ -388,11 +388,11 @@ const th: TranslationKeys = {
   'figma.comingSoon': 'เร็ว ๆ นี้',
 
   // ── Landing Page ──
-  'landing.open': 'Open',
-  'landing.pencil': 'Pencil',
-  'landing.tagline': 'เครื่องมือออกแบบเวกเตอร์โอเพนซอร์ส ออกแบบเป็นโค้ด',
-  'landing.newDesign': 'ดีไซน์ใหม่',
-  'landing.shortcutHint': 'กด {{key1}} + {{key2}} เพื่อสร้างดีไซน์ใหม่',
+  'landing.open': 'Game Theory ',
+  'landing.pencil': 'Analyzer',
+  'landing.tagline': 'Strategic analysis workspace.',
+  'landing.newDesign': 'Open Workspace',
+  'landing.shortcutHint': 'Press {{key1}} + {{key2}} to open a new workspace',
 
   // ── 404 ──
   'notFound.message': 'ไม่พบหน้านี้',

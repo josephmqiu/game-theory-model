@@ -39,8 +39,8 @@ const es: TranslationKeys = {
   'shapes.moreShapeTools': 'Más herramientas de forma',
 
   // ── Top Bar ──
-  'topbar.hideLayers': 'Ocultar capas',
-  'topbar.showLayers': 'Mostrar capas',
+  'topbar.hideLayers': 'Hide outline',
+  'topbar.showLayers': 'Show outline',
   'topbar.new': 'Nuevo',
   'topbar.open': 'Abrir',
   'topbar.save': 'Guardar',
@@ -57,9 +57,9 @@ const es: TranslationKeys = {
   'topbar.agentStatus': '{{agents}} agente{{agentSuffix}} · {{mcp}} MCP',
 
   // ── Right Panel ──
-  'rightPanel.design': 'Diseño',
+  'rightPanel.design': 'Details',
   'rightPanel.code': 'Código',
-  'rightPanel.noSelection': 'Selecciona un elemento',
+  'rightPanel.noSelection': 'Select an item',
 
   // ── Pages ──
   'pages.title': 'Páginas',
@@ -105,9 +105,9 @@ const es: TranslationKeys = {
     'No se pudo comprobar o descargar la actualización.',
 
   // ── Layers ──
-  'layers.title': 'Capas',
+  'layers.title': 'Outline',
   'layers.empty':
-    'Aún no hay capas. Use la barra de herramientas para dibujar formas.',
+    'No items yet. Use the toolbar to start building.',
 
   // ── Layer Context Menu ──
   'layerMenu.groupSelection': 'Agrupar selección',
@@ -282,31 +282,31 @@ const es: TranslationKeys = {
   // ── AI Chat ──
   'ai.newChat': 'Nueva conversación',
   'ai.collapse': 'Contraer',
-  'ai.tryExample': 'Pruebe un ejemplo para diseñar...',
+  'ai.tryExample': 'Try a workspace prompt...',
   'ai.tipSelectElements':
-    'Consejo: seleccione elementos en el lienzo antes de chatear para dar contexto.',
+    'Tip: Select items in the workspace before chatting for context.',
   'ai.generating': 'Generando...',
-  'ai.designWithAgent': 'Diseñar con agente...',
+  'ai.designWithAgent': 'Ask an agent about this workspace...',
   'ai.attachImage': 'Adjuntar imagen',
   'ai.stopGenerating': 'Detener generación',
   'ai.sendMessage': 'Enviar mensaje',
   'ai.loadingModels': 'Cargando modelos...',
   'ai.noModelsConnected': 'Sin modelos conectados',
   'ai.quickAction.loginScreen':
-    'Diseñar una pantalla de inicio de sesión móvil',
+    'Summarize this workspace',
   'ai.quickAction.loginScreenPrompt':
-    'Diseña una pantalla de inicio de sesión móvil moderna con campo de correo electrónico, campo de contraseña, botón de inicio de sesión y opciones de inicio de sesión social',
-  'ai.quickAction.foodApp': 'Inicio de app de comida',
+    'Summarize the current workspace and the main items visible in the document context.',
+  'ai.quickAction.foodApp': 'Describe the selection',
   'ai.quickAction.foodAppPrompt':
-    'Generate a well-designed food mobile app homepage',
+    'Describe the currently selected items and any important structure you notice.',
   'ai.quickAction.bottomNav':
-    'Diseñar una barra de navegación inferior',
+    'Suggest next steps',
   'ai.quickAction.bottomNavPrompt':
-    'Diseña una barra de navegación inferior para aplicación móvil con 5 pestañas: Inicio, Buscar, Agregar, Mensajes, Perfil',
+    'Based on the current workspace, suggest three concrete next steps.',
   'ai.quickAction.colorPalette':
-    'Sugerir una paleta de colores para mi aplicación',
+    'Explain available agents',
   'ai.quickAction.colorPalettePrompt':
-    'Sugiere una paleta de colores moderna para una aplicación de cuidado de mascotas',
+    'Explain which connected agents and MCP tools are available right now and how they could help in this workspace.',
 
   // ── Code Panel ──
   'code.reactTailwind': 'React + Tailwind',
@@ -396,13 +396,13 @@ const es: TranslationKeys = {
   'figma.comingSoon': 'Próximamente',
 
   // ── Landing Page ──
-  'landing.open': 'Open',
-  'landing.pencil': 'Pencil',
+  'landing.open': 'Game Theory ',
+  'landing.pencil': 'Analyzer',
   'landing.tagline':
-    'Herramienta de diseño vectorial de código abierto. Design as Code.',
-  'landing.newDesign': 'Nuevo diseño',
+    'Strategic analysis workspace.',
+  'landing.newDesign': 'Open Workspace',
   'landing.shortcutHint':
-    'Presione {{key1}} + {{key2}} para crear un nuevo diseño',
+    'Press {{key1}} + {{key2}} to open a new workspace',
 
   // ── 404 ──
   'notFound.message': 'Página no encontrada',

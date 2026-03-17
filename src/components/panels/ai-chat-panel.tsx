@@ -30,19 +30,19 @@ const PROVIDER_ICON: Record<AIProviderType, typeof ClaudeLogo> = {
 const QUICK_ACTIONS = [
   {
     labelKey: 'ai.quickAction.loginScreen',
-    prompt: 'Design a modern mobile login screen with email input, password input, login button, and social login options',
+    prompt: 'Summarize the current workspace and the main items visible in the document context.',
   },
   {
     labelKey: 'ai.quickAction.foodApp',
-    prompt: 'Generate a well-designed food mobile app homepage',
+    prompt: 'Describe the currently selected items and any important structure you notice.',
   },
   {
     labelKey: 'ai.quickAction.bottomNav',
-    prompt: 'Design a mobile app bottom navigation bar with 5 tabs: Home, Search, Add, Messages, Profile',
+    prompt: 'Based on the current workspace, suggest three concrete next steps.',
   },
   {
     labelKey: 'ai.quickAction.colorPalette',
-    prompt: 'Suggest a modern color palette for a pet care app',
+    prompt: 'Explain which connected agents and MCP tools are available right now and how they could help in this workspace.',
   },
 ]
 

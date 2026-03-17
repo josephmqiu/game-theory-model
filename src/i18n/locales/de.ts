@@ -39,8 +39,8 @@ const de: TranslationKeys = {
   'shapes.moreShapeTools': 'Weitere Formwerkzeuge',
 
   // ── Top Bar ──
-  'topbar.hideLayers': 'Ebenen ausblenden',
-  'topbar.showLayers': 'Ebenen einblenden',
+  'topbar.hideLayers': 'Hide outline',
+  'topbar.showLayers': 'Show outline',
   'topbar.new': 'Neu',
   'topbar.open': 'Öffnen',
   'topbar.save': 'Speichern',
@@ -57,9 +57,9 @@ const de: TranslationKeys = {
   'topbar.agentStatus': '{{agents}} Agent{{agentSuffix}} · {{mcp}} MCP',
 
   // ── Right Panel ──
-  'rightPanel.design': 'Design',
+  'rightPanel.design': 'Details',
   'rightPanel.code': 'Code',
-  'rightPanel.noSelection': 'Element auswählen',
+  'rightPanel.noSelection': 'Select an item',
 
   // ── Pages ──
   'pages.title': 'Seiten',
@@ -105,9 +105,9 @@ const de: TranslationKeys = {
     'Das Update konnte nicht geprüft oder heruntergeladen werden.',
 
   // ── Layers ──
-  'layers.title': 'Ebenen',
+  'layers.title': 'Outline',
   'layers.empty':
-    'Noch keine Ebenen. Verwende die Werkzeugleiste, um Formen zu zeichnen.',
+    'No items yet. Use the toolbar to start building.',
 
   // ── Layer Context Menu ──
   'layerMenu.groupSelection': 'Auswahl gruppieren',
@@ -281,28 +281,28 @@ const de: TranslationKeys = {
   // ── AI Chat ──
   'ai.newChat': 'Neuer Chat',
   'ai.collapse': 'Einklappen',
-  'ai.tryExample': 'Probiere ein Beispiel zum Gestalten...',
+  'ai.tryExample': 'Try a workspace prompt...',
   'ai.tipSelectElements':
-    'Tipp: Wähle Elemente auf der Arbeitsfläche aus, bevor du chattest, um Kontext zu geben.',
+    'Tip: Select items in the workspace before chatting for context.',
   'ai.generating': 'Generiere...',
-  'ai.designWithAgent': 'Mit Agent gestalten...',
+  'ai.designWithAgent': 'Ask an agent about this workspace...',
   'ai.attachImage': 'Bild anhängen',
   'ai.stopGenerating': 'Generierung stoppen',
   'ai.sendMessage': 'Nachricht senden',
   'ai.loadingModels': 'Modelle werden geladen...',
   'ai.noModelsConnected': 'Keine Modelle verbunden',
-  'ai.quickAction.loginScreen': 'Einen mobilen Anmeldebildschirm gestalten',
+  'ai.quickAction.loginScreen': 'Summarize this workspace',
   'ai.quickAction.loginScreenPrompt':
-    'Design a modern mobile login screen with email input, password input, login button, and social login options',
-  'ai.quickAction.foodApp': 'Food-App Startseite',
+    'Summarize the current workspace and the main items visible in the document context.',
+  'ai.quickAction.foodApp': 'Describe the selection',
   'ai.quickAction.foodAppPrompt':
-    'Generate a well-designed food mobile app homepage',
-  'ai.quickAction.bottomNav': 'Eine untere Navigationsleiste gestalten',
+    'Describe the currently selected items and any important structure you notice.',
+  'ai.quickAction.bottomNav': 'Suggest next steps',
   'ai.quickAction.bottomNavPrompt':
-    'Design a mobile app bottom navigation bar with 5 tabs: Home, Search, Add, Messages, Profile',
-  'ai.quickAction.colorPalette': 'Eine Farbpalette für meine App vorschlagen',
+    'Based on the current workspace, suggest three concrete next steps.',
+  'ai.quickAction.colorPalette': 'Explain available agents',
   'ai.quickAction.colorPalettePrompt':
-    'Suggest a modern color palette for a pet care app',
+    'Explain which connected agents and MCP tools are available right now and how they could help in this workspace.',
 
   // ── Code Panel ──
   'code.reactTailwind': 'React + Tailwind',
@@ -390,12 +390,12 @@ const de: TranslationKeys = {
   'figma.comingSoon': 'Demnächst',
 
   // ── Landing Page ──
-  'landing.open': 'Open',
-  'landing.pencil': 'Pencil',
+  'landing.open': 'Game Theory ',
+  'landing.pencil': 'Analyzer',
   'landing.tagline':
-    'Open-Source-Vektordesign-Werkzeug. Design as Code.',
-  'landing.newDesign': 'Neues Design',
-  'landing.shortcutHint': 'Drücke {{key1}} + {{key2}} für ein neues Design',
+    'Strategic analysis workspace.',
+  'landing.newDesign': 'Open Workspace',
+  'landing.shortcutHint': 'Press {{key1}} + {{key2}} to open a new workspace',
 
   // ── 404 ──
   'notFound.message': 'Seite nicht gefunden',

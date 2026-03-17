@@ -39,8 +39,8 @@ const zhTW: TranslationKeys = {
   'shapes.moreShapeTools': '更多形狀工具',
 
   // ── Top Bar ──
-  'topbar.hideLayers': '隱藏圖層',
-  'topbar.showLayers': '顯示圖層',
+  'topbar.hideLayers': 'Hide outline',
+  'topbar.showLayers': 'Show outline',
   'topbar.new': '新增',
   'topbar.open': '開啟',
   'topbar.save': '儲存',
@@ -57,9 +57,9 @@ const zhTW: TranslationKeys = {
   'topbar.agentStatus': '{{agents}} 個 Agent{{agentSuffix}} · {{mcp}} 個 MCP',
 
   // ── Right Panel ──
-  'rightPanel.design': '設計',
+  'rightPanel.design': 'Details',
   'rightPanel.code': '程式碼',
-  'rightPanel.noSelection': '選擇一個元素',
+  'rightPanel.noSelection': 'Select an item',
 
   // ── Pages ──
   'pages.title': '頁面',
@@ -101,8 +101,8 @@ const zhTW: TranslationKeys = {
   'updater.subtitle.error': '無法檢查或下載更新。',
 
   // ── Layers ──
-  'layers.title': '圖層',
-  'layers.empty': '尚無圖層。使用工具列繪製形狀。',
+  'layers.title': 'Outline',
+  'layers.empty': 'No items yet. Use the toolbar to start building.',
 
   // ── Layer Context Menu ──
   'layerMenu.groupSelection': '群組選取項目',
@@ -274,27 +274,27 @@ const zhTW: TranslationKeys = {
   // ── AI Chat ──
   'ai.newChat': '新對話',
   'ai.collapse': '收合',
-  'ai.tryExample': '試試範例來設計...',
-  'ai.tipSelectElements': '提示：在對話前選取畫布上的元素以提供上下文。',
+  'ai.tryExample': 'Try a workspace prompt...',
+  'ai.tipSelectElements': 'Tip: Select items in the workspace before chatting for context.',
   'ai.generating': '產生中...',
-  'ai.designWithAgent': '用 Agent 設計...',
+  'ai.designWithAgent': 'Ask an agent about this workspace...',
   'ai.attachImage': '附加圖片',
   'ai.stopGenerating': '停止產生',
   'ai.sendMessage': '傳送訊息',
   'ai.loadingModels': '正在載入模型...',
   'ai.noModelsConnected': '尚未連線模型',
-  'ai.quickAction.loginScreen': '設計行動裝置登入頁面',
+  'ai.quickAction.loginScreen': 'Summarize this workspace',
   'ai.quickAction.loginScreenPrompt':
-    '設計一個現代的行動裝置登入頁面，包含電子郵件輸入框、密碼輸入框、登入按鈕和社群登入選項',
-  'ai.quickAction.foodApp': '美食App首頁',
+    'Summarize the current workspace and the main items visible in the document context.',
+  'ai.quickAction.foodApp': 'Describe the selection',
   'ai.quickAction.foodAppPrompt':
-    'Generate a well-designed food mobile app homepage',
-  'ai.quickAction.bottomNav': '設計底部導覽列',
+    'Describe the currently selected items and any important structure you notice.',
+  'ai.quickAction.bottomNav': 'Suggest next steps',
   'ai.quickAction.bottomNavPrompt':
-    '設計一個包含 5 個標籤的行動應用程式底部導覽列：首頁、搜尋、新增、訊息、個人',
-  'ai.quickAction.colorPalette': '為我的應用程式推薦配色方案',
+    'Based on the current workspace, suggest three concrete next steps.',
+  'ai.quickAction.colorPalette': 'Explain available agents',
   'ai.quickAction.colorPalettePrompt':
-    '為一個寵物照護應用程式推薦一套現代配色方案',
+    'Explain which connected agents and MCP tools are available right now and how they could help in this workspace.',
 
   // ── Code Panel ──
   'code.reactTailwind': 'React + Tailwind',
@@ -379,11 +379,11 @@ const zhTW: TranslationKeys = {
   'figma.comingSoon': '即將推出',
 
   // ── Landing Page ──
-  'landing.open': 'Open',
-  'landing.pencil': 'Pencil',
-  'landing.tagline': '開源向量設計工具。設計即程式碼。',
-  'landing.newDesign': '新建設計',
-  'landing.shortcutHint': '按 {{key1}} + {{key2}} 建立新設計',
+  'landing.open': 'Game Theory ',
+  'landing.pencil': 'Analyzer',
+  'landing.tagline': 'Strategic analysis workspace.',
+  'landing.newDesign': 'Open Workspace',
+  'landing.shortcutHint': 'Press {{key1}} + {{key2}} to open a new workspace',
 
   // ── 404 ──
   'notFound.message': '找不到頁面',

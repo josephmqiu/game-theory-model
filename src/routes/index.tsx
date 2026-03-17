@@ -6,12 +6,13 @@ import { PenTool, Plus } from 'lucide-react'
 export const Route = createFileRoute('/')({
   component: LandingPage,
   head: () => ({
-    meta: [{ title: 'OpenPencil - Design as Code' }],
+    meta: [{ title: 'Game Theory Analyzer' }],
   }),
 })
 
 function LandingPage() {
   const { t } = useTranslation()
+
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center text-foreground">
       <div className="text-center mb-12">

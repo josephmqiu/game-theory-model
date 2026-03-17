@@ -123,10 +123,6 @@ export function useElectronMenu() {
           break
         }
 
-        case 'import-figma':
-          useCanvasStore.getState().setFigmaImportDialogOpen(true)
-          break
-
         case 'undo': {
           const currentDoc = useDocumentStore.getState().document
           const prev = useHistoryStore.getState().undo(currentDoc)

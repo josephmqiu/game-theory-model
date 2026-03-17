@@ -79,7 +79,7 @@ export function parseStepBlocks(text: string, isStreaming?: boolean): ParsedStep
     const statusMatch = partial.match(/status="([^"]+)"/i)
     const contentStart = partial.indexOf('>')
     parsed.push({
-      title: (titleMatch?.[1] ?? 'Design').trim() || 'Design',
+      title: (titleMatch?.[1] ?? 'Response').trim() || 'Response',
       status: (statusMatch?.[1] as ParsedStep['status']) ?? undefined,
       content:
         contentStart >= 0
