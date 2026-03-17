@@ -22,7 +22,10 @@ export interface UpdaterState {
 export interface ElectronAPI {
   isElectron: true
   openFile: () => Promise<{ filePath: string; content: string } | null>
-  saveFile: (content: string, defaultPath?: string) => Promise<string | null>
+  saveFile: (
+    content: string,
+    defaultPath?: string,
+  ) => Promise<string | null>
   saveToPath: (filePath: string, content: string) => Promise<string>
   onMenuAction: (callback: (action: string) => void) => () => void
   onOpenFile: (callback: (filePath: string) => void) => () => void

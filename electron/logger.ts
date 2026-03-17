@@ -3,6 +3,13 @@
  *
  * Writes to `{userData}/logs/main.log` with daily rotation.
  * Keeps the last 7 days of logs, auto-cleans on init.
+ *
+ * Usage:
+ *   import { initLogger, log } from './logger'
+ *   await initLogger()    // call once at startup
+ *   log.info('message')
+ *   log.error('message')
+ *   log.warn('message')
  */
 
 import { appendFile, readdir, unlink, mkdir, stat } from 'node:fs/promises'
@@ -19,12 +26,13 @@ function timestamp(): string {
 }
 
 function todayStamp(): string {
-  return new Date().toISOString().slice(0, 10)
+  return new Date().toISOString().slice(0, 10) // YYYY-MM-DD
 }
 
 async function writeLine(level: string, msg: string): Promise<void> {
   if (!initialized) return
   const line = `${timestamp()} [${level}] ${msg}\n`
+  // Also forward to console for dev mode
   if (level === 'ERROR') {
     process.stderr.write(line)
   } else {
@@ -58,6 +66,9 @@ async function cleanOldLogs(): Promise<void> {
   }
 }
 
+/**
+ * Initialize the logger. Must be called after `app.getPath('userData')` is available.
+ */
 export async function initLogger(userDataPath: string): Promise<void> {
   logDir = join(userDataPath, 'logs')
   logFilePath = join(logDir, `main-${todayStamp()}.log`)
@@ -67,10 +78,12 @@ export async function initLogger(userDataPath: string): Promise<void> {
     // ignore
   }
   initialized = true
-  await writeLine('INFO', '--- Game Theory Analyzer started ---')
+  await writeLine('INFO', '--- OpenPencil started ---')
+  // Clean old logs in background
   cleanOldLogs()
 }
 
+/** Get the log directory path (for displaying to users). */
 export function getLogDir(): string {
   return logDir
 }

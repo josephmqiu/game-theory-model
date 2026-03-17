@@ -1,6 +1,6 @@
-appId: dev.gametheory.app
-productName: Game Theory Analyzer
-copyright: Copyright (c) 2026
+appId: dev.openpencil.app
+productName: OpenPencil
+copyright: Copyright (c) 2024-2026 OpenPencil contributors
 
 directories:
   output: dist-electron
@@ -19,7 +19,7 @@ extraResources:
     to: mcp-server.cjs
 
 mac:
-  category: public.app-category.productivity
+  category: public.app-category.graphics-design
   icon: build/icon.icns
   artifactName: "${productName}-${version}-${arch}-mac.${ext}"
   target:
@@ -27,6 +27,7 @@ mac:
     - zip
   hardenedRuntime: true
   gatekeeperAssess: false
+  notarize: true
 
 dmg:
   title: "${productName} ${version}"
@@ -48,17 +49,29 @@ nsis:
 
 linux:
   icon: build/icon.png
-  category: Science
+  category: Graphics
   artifactName: "${productName}-${version}-${arch}-linux.${ext}"
+  desktop:
+    entry: |
+      [Desktop Entry]
+      Name=OpenPencil
+      Exec=AppRun --no-sandbox %U
+      Terminal=false
+      Type=Application
+      Icon=openpencil
+      StartupWMClass=openpencil
+      Categories=Graphics;
+      MimeType=application/x-openpencil;
   target:
     - AppImage
     - deb
 
 fileAssociations:
-  - ext: gta.json
-    name: Game Theory Analysis
-    description: Game Theory Analysis File
-    mimeType: application/x-game-theory-analysis
+  - ext: op
+    name: OpenPencil Document
+    description: OpenPencil Design File
+    mimeType: application/x-openpencil
     role: Editor
+    icon: build/icon
 
 asar: true

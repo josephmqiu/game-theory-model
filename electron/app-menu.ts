@@ -34,7 +34,7 @@ export function buildAppMenu(): void {
       label: 'File',
       submenu: [
         {
-          label: 'New Analysis',
+          label: 'New',
           accelerator: 'CmdOrCtrl+N',
           click: () => sendMenuAction('new'),
         },
@@ -49,10 +49,11 @@ export function buildAppMenu(): void {
           accelerator: 'CmdOrCtrl+S',
           click: () => sendMenuAction('save'),
         },
+        { type: 'separator' },
         {
-          label: 'Save As\u2026',
-          accelerator: 'CmdOrCtrl+Shift+S',
-          click: () => sendMenuAction('save-as'),
+          label: 'Import Figma\u2026',
+          accelerator: 'CmdOrCtrl+Shift+F',
+          click: () => sendMenuAction('import-figma'),
         },
         ...(!isMac
           ? [{ type: 'separator' as const }, { role: 'quit' as const }]
@@ -60,7 +61,7 @@ export function buildAppMenu(): void {
       ],
     },
 
-    // Edit menu
+    // Edit menu (role-based for native text input support)
     {
       label: 'Edit',
       submenu: [
@@ -80,27 +81,6 @@ export function buildAppMenu(): void {
         { role: 'paste' },
         ...(isMac ? [{ role: 'pasteAndMatchStyle' as const }] : []),
         { role: 'selectAll' },
-      ],
-    },
-
-    // Analysis menu (game-theory specific)
-    {
-      label: 'Analysis',
-      submenu: [
-        {
-          label: 'Run Phase 1: Grounding',
-          click: () => sendMenuAction('run-phase-1'),
-        },
-        {
-          label: 'Run All Phases',
-          click: () => sendMenuAction('run-all-phases'),
-        },
-        { type: 'separator' },
-        {
-          label: 'Toggle AI Panel',
-          accelerator: 'CmdOrCtrl+Shift+A',
-          click: () => sendMenuAction('toggle-ai-panel'),
-        },
       ],
     },
 

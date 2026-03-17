@@ -3,11 +3,11 @@
  */
 
 // GitHub publish target — used by auto-updater feed URL
-export const GITHUB_OWNER = ''
-export const GITHUB_REPO = 'game-theory-model'
+export const GITHUB_OWNER = 'ZSeven-W'
+export const GITHUB_REPO = 'openpencil'
 
 // Port file for MCP sync discovery
-export const PORT_FILE_DIR_NAME = '.game-theory-analyzer'
+export const PORT_FILE_DIR_NAME = '.openpencil'
 export const PORT_FILE_NAME = '.port'
 
 // Dev server

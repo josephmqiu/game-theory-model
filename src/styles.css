@@ -107,12 +107,22 @@ code {
     monospace;
 }
 
-/* Thin scrollbars */
+/* Syntax highlighting for code panel */
+.syn-keyword { color: #c792ea; }
+.syn-string { color: #c3e88d; }
+.syn-tag { color: #f07178; }
+.syn-attr { color: #ffcb6b; }
+.syn-comment { color: #546e7a; font-style: italic; }
+.syn-number { color: #f78c6c; }
+.syn-bracket { color: #89ddff; }
+
+/* Thin scrollbars — standard property (Firefox, Edge, Chrome 121+) */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
 
+/* Thin scrollbars — WebKit fallback (older Chrome/Electron) */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -131,3 +141,4 @@ code {
 /* Electron window drag regions */
 .app-region-drag { -webkit-app-region: drag; }
 .app-region-no-drag { -webkit-app-region: no-drag; }
+

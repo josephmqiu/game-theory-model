@@ -1,30 +1,33 @@
+import { useEffect } from 'react'
 import {
   HeadContent,
   Outlet,
   Scripts,
   createRootRoute,
-} from "@tanstack/react-router";
+} from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 
-import appCss from "../styles.css?url";
-import { ErrorBoundary } from "@/components/shell/error-boundary";
+import '@/i18n'
+import { detectLanguagePostHydration } from '@/i18n'
+import appCss from '../styles.css?url'
 
 export const Route = createRootRoute({
   head: () => ({
     meta: [
       {
-        charSet: "utf-8",
+        charSet: 'utf-8',
       },
       {
-        name: "viewport",
-        content: "width=device-width, initial-scale=1",
+        name: 'viewport',
+        content: 'width=device-width, initial-scale=1',
       },
       {
-        title: "Game Theory Analyzer",
+        title: 'OpenPencil',
       },
     ],
     links: [
       {
-        rel: "stylesheet",
+        rel: 'stylesheet',
         href: appCss,
       },
     ],
@@ -32,27 +35,30 @@ export const Route = createRootRoute({
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
   shellComponent: RootDocument,
-});
+})
 
 function NotFoundComponent() {
+  const { t } = useTranslation()
   return (
     <div className="min-h-screen flex items-center justify-center text-muted-foreground">
-      <p>Page not found</p>
+      <p>{t('notFound.message')}</p>
     </div>
-  );
+  )
 }
 
 function RootComponent() {
-  return (
-    <ErrorBoundary>
-      <Outlet />
-    </ErrorBoundary>
-  );
+  return <Outlet />
 }
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  const { i18n } = useTranslation()
+
+  useEffect(() => {
+    detectLanguagePostHydration()
+  }, [])
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={i18n.language} suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
@@ -61,5 +67,5 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <Scripts />
       </body>
     </html>
-  );
+  )
 }

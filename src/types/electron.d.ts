@@ -1,4 +1,4 @@
-export type UpdaterStatus =
+type UpdaterStatus =
   | 'disabled'
   | 'idle'
   | 'checking'
@@ -8,7 +8,7 @@ export type UpdaterStatus =
   | 'not-available'
   | 'error'
 
-export interface UpdaterState {
+interface UpdaterState {
   status: UpdaterStatus
   currentVersion: string
   latestVersion?: string
@@ -17,10 +17,13 @@ export interface UpdaterState {
   error?: string
 }
 
-export interface ElectronAPI {
+interface ElectronAPI {
   isElectron: true
   openFile: () => Promise<{ filePath: string; content: string } | null>
-  saveFile: (content: string, defaultPath?: string) => Promise<string | null>
+  saveFile: (
+    content: string,
+    defaultPath?: string,
+  ) => Promise<string | null>
   saveToPath: (filePath: string, content: string) => Promise<string>
   onMenuAction: (callback: (action: string) => void) => () => void
   onOpenFile: (callback: (filePath: string) => void) => () => void
@@ -41,8 +44,6 @@ export interface ElectronAPI {
   }
 }
 
-declare global {
-  interface Window {
-    electronAPI?: ElectronAPI
-  }
+interface Window {
+  electronAPI?: ElectronAPI
 }

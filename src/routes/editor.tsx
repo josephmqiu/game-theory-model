@@ -1,14 +1,17 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { AppLayout } from "@/components/shell/app-layout";
+import { createFileRoute } from '@tanstack/react-router'
+import EditorLayout from '@/components/editor/editor-layout'
+import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 
-export const Route = createFileRoute("/editor")({
-  component: EditorLayout,
+export const Route = createFileRoute('/editor')({
+  component: EditorPage,
   ssr: false,
   head: () => ({
-    meta: [{ title: "Editor — Game Theory Analyzer" }],
+    meta: [{ title: 'OpenPencil Editor' }],
   }),
-});
+})
 
-function EditorLayout() {
-  return <AppLayout />;
+function EditorPage() {
+  useKeyboardShortcuts()
+
+  return <EditorLayout />
 }

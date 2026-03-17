@@ -1,64 +1,44 @@
-/**
- * GET /api/mcp/events — SSE stream for live state updates.
- * Clients (renderer, MCP) subscribe to receive state changes.
- */
+import { defineEventHandler } from 'h3'
+import { randomUUID } from 'node:crypto'
+import type { ServerResponse } from 'node:http'
+import { registerSSEClient, unregisterSSEClient, getSyncDocument } from '../../utils/mcp-sync-state'
 
-import { defineEventHandler } from "h3";
-import {
-  getSyncState,
-  registerSSEClient,
-  unregisterSSEClient,
-} from "../../utils/mcp-sync-state";
-import { getPendingCommands } from "../../utils/mcp-command-bus";
-
+/** GET /api/mcp/events — SSE stream for renderer to subscribe to live document changes. */
 export default defineEventHandler((event) => {
-  const res = event.node.res;
-  const clientId = crypto.randomUUID();
+  const clientId = randomUUID()
 
+  // Write headers directly on the raw Node.js response for h3 v2 compatibility.
+  // h3 v2 no longer supports `_handled = true` to keep connections open.
+  const res = event.node!.res! as ServerResponse
   res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-    "Access-Control-Allow-Origin": "http://localhost:3000",
-  });
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  })
 
-  // Send client ID
-  res.write(`data: ${JSON.stringify({ type: "client:id", clientId })}\n\n`);
+  // Send client ID so renderer can use it as sourceClientId when pushing back
+  res.write(`data: ${JSON.stringify({ type: 'client:id', clientId })}\n\n`)
 
-  // Send current state snapshot
-  const { state, version } = getSyncState();
-  if (state.canonical) {
-    res.write(
-      `data: ${JSON.stringify({ type: "state:update", version, state })}\n\n`,
-    );
-  }
-  for (const command of getPendingCommands()) {
-    res.write(
-      `data: ${JSON.stringify({ type: "command:queued", command })}\n\n`,
-    );
+  // Send current document as initial state (if any)
+  const { doc, version } = getSyncDocument()
+  if (doc) {
+    res.write(`data: ${JSON.stringify({ type: 'document:init', version, document: doc })}\n\n`)
   }
 
-  registerSSEClient(clientId, res);
+  registerSSEClient(clientId, res)
 
-  // Heartbeat every 30 seconds
+  // Keep-alive heartbeat
   const heartbeat = setInterval(() => {
-    try {
-      if (!res.closed) {
-        res.write(`: heartbeat\n\n`);
-      }
-    } catch {
-      clearInterval(heartbeat);
-    }
-  }, 30_000);
+    if (!res.closed) res.write(': heartbeat\n\n')
+  }, 30_000)
 
-  // Clean up on close
-  res.on("close", () => {
-    clearInterval(heartbeat);
-    unregisterSSEClient(clientId);
-  });
+  res.on('close', () => {
+    clearInterval(heartbeat)
+    unregisterSSEClient(clientId)
+  })
 
-  // Return a promise that resolves on close to keep the connection open
+  // Return a promise that resolves on close to prevent h3 from ending the response
   return new Promise<void>((resolve) => {
-    res.on("close", resolve);
-  });
-});
+    res.on('close', resolve)
+  })
+})

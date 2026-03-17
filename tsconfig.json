@@ -1,15 +1,6 @@
 {
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": [
-    "legacy/**",
-    "openpencil-example/**",
-    "node_modules/**",
-    "electron/**",
-    "electron-dist/**",
-    "dist/**",
-    "server/**",
-    "scripts/**"
-  ],
+  "exclude": ["legacy", "node_modules", ".output", "dist", "electron-dist", "dist-electron"],
   "compilerOptions": {
     "target": "ES2022",
     "jsx": "react-jsx",
@@ -30,12 +21,9 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
-
-    /* Path aliases */
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
-      "shared/*": ["./shared/*"]
+      "@/*": ["./src/*"]
     }
   }
 }

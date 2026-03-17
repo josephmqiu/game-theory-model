@@ -1,123 +1,146 @@
-import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { spawn } from 'node:child_process'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
-type ThinkingMode = "adaptive" | "disabled" | "enabled";
-type ThinkingEffort = "low" | "medium" | "high" | "max";
+type ThinkingMode = 'adaptive' | 'disabled' | 'enabled'
+type ThinkingEffort = 'low' | 'medium' | 'high' | 'max'
 
 interface CodexExecOptions {
-  model?: string;
-  systemPrompt?: string;
-  thinkingMode?: ThinkingMode;
-  thinkingBudgetTokens?: number;
-  effort?: ThinkingEffort;
-  timeoutMs?: number;
+  model?: string
+  systemPrompt?: string
+  thinkingMode?: ThinkingMode
+  thinkingBudgetTokens?: number
+  effort?: ThinkingEffort
+  timeoutMs?: number
+  /** Paths to temporary image files to reference in the prompt */
+  imageFiles?: string[]
 }
 
 interface CodexCliResult {
-  text?: string;
-  error?: string;
+  text?: string
+  error?: string
 }
 
-const DEFAULT_CODEX_TIMEOUT_MS = 15 * 60 * 1000;
-const CODEX_ENV_ALLOWLIST = new Set([
-  "PATH",
-  "HOME",
-  "TERM",
-  "LANG",
-  "SHELL",
-  "TMPDIR",
-  "SYSTEMROOT",
-  "COMSPEC",
-  "USERPROFILE",
-  "APPDATA",
-  "LOCALAPPDATA",
-  "PATHEXT",
-  "SYSTEMDRIVE",
-  "TEMP",
-  "TMP",
-  "HOMEDRIVE",
-  "HOMEPATH",
-]);
+const DEFAULT_CODEX_TIMEOUT_MS = 15 * 60 * 1000
 
-function filterCodexEnv(
+/**
+ * Allowlist-based env filter for Codex CLI subprocess.
+ * Only passes through safe system vars and provider-specific prefixes.
+ * Prevents leaking secrets like ANTHROPIC_API_KEY, AWS_SECRET_KEY, GITHUB_TOKEN, etc.
+ */
+const CODEX_ENV_ALLOWLIST = new Set([
+  'PATH', 'HOME', 'TERM', 'LANG', 'SHELL', 'TMPDIR',
+  // Windows-essential vars
+  'SYSTEMROOT', 'COMSPEC', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA',
+  'PATHEXT', 'SYSTEMDRIVE', 'TEMP', 'TMP', 'HOMEDRIVE', 'HOMEPATH',
+])
+
+export function filterCodexEnv(
   env: Record<string, string | undefined>,
 ): Record<string, string | undefined> {
-  const result: Record<string, string | undefined> = {};
-  for (const [key, value] of Object.entries(env)) {
-    if (
-      CODEX_ENV_ALLOWLIST.has(key) ||
-      key.startsWith("OPENAI_") ||
-      key.startsWith("CODEX_")
-    ) {
-      result[key] = value;
+  const result: Record<string, string | undefined> = {}
+  for (const [k, v] of Object.entries(env)) {
+    if (CODEX_ENV_ALLOWLIST.has(k) || k.startsWith('OPENAI_') || k.startsWith('CODEX_')) {
+      result[k] = v
     }
   }
-  return result;
+  return result
 }
 
-function buildPrompt(
-  systemPrompt: string | undefined,
+export async function runCodexExec(
   userPrompt: string,
-): string {
-  if (!systemPrompt?.trim()) return userPrompt.trim();
+  options: CodexExecOptions = {},
+): Promise<CodexCliResult> {
+  const tempDir = await mkdtemp(join(tmpdir(), 'openpencil-codex-'))
+  const outputPath = join(tempDir, 'last-message.txt')
+  const prompt = buildPrompt(options.systemPrompt, userPrompt, options.imageFiles)
+  const codexEffort = resolveCodexEffort(options.thinkingMode, options.effort)
+
+  const args = [
+    'exec',
+    '--json',
+    '--skip-git-repo-check',
+    '--sandbox',
+    'read-only',
+    '--output-last-message',
+    outputPath,
+  ]
+
+  if (options.model) {
+    args.push('--model', options.model)
+  }
+
+  if (codexEffort) {
+    args.push('--config', `model_reasoning_effort="${codexEffort}"`)
+  }
+
+  args.push(prompt)
+
+  try {
+    const runResult = await executeCodexCommand(
+      args,
+      options.timeoutMs ?? DEFAULT_CODEX_TIMEOUT_MS,
+    )
+    const finalText = await readFile(outputPath, 'utf-8').catch(() => '')
+    const normalizedText = finalText.trim() || runResult.text.trim()
+
+    if (normalizedText) {
+      return { text: normalizedText }
+    }
+
+    if (runResult.errors.length > 0) {
+      return { error: runResult.errors.join('; ') }
+    }
+
+    return { error: 'Codex returned no output.' }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Codex execution failed' }
+  } finally {
+    await rm(tempDir, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+function buildPrompt(systemPrompt: string | undefined, userPrompt: string, imageFiles?: string[]): string {
+  const userText = userPrompt.trim()
+  const imageSection = imageFiles && imageFiles.length > 0
+    ? '\n' + imageFiles.map((f) => `[Attached image: ${f} — read this file to see the image]`).join('\n')
+    : ''
+
+  if (!systemPrompt?.trim()) {
+    return userText + imageSection
+  }
+
   return [
-    "SYSTEM INSTRUCTIONS:",
+    'SYSTEM INSTRUCTIONS:',
     systemPrompt.trim(),
-    "",
-    "USER REQUEST:",
-    userPrompt.trim(),
-  ].join("\n");
+    '',
+    'USER REQUEST:',
+    userText + imageSection,
+  ].join('\n')
 }
 
 function resolveCodexEffort(
   thinkingMode: ThinkingMode | undefined,
   effort: ThinkingEffort | undefined,
-): "low" | "medium" | "high" | undefined {
-  if (thinkingMode === "disabled") return "low";
-  if (effort === "max") return "high";
-  if (effort === "low" || effort === "medium" || effort === "high") {
-    return effort;
-  }
-  if (thinkingMode === "enabled") return "medium";
-  return undefined;
-}
-
-function parseCodexJsonLine(
-  line: string,
-): { text?: string; error?: string } | null {
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(line) as Record<string, unknown>;
-  } catch {
-    return null;
+): 'low' | 'medium' | 'high' | undefined {
+  if (thinkingMode === 'disabled') {
+    return 'low'
   }
 
-  if (parsed.type === "error") {
-    return {
-      error:
-        typeof parsed.message === "string"
-          ? parsed.message
-          : "Codex returned an unknown error.",
-    };
+  if (effort === 'max') {
+    return 'high'
   }
 
-  const text =
-    typeof parsed.delta === "string"
-      ? parsed.delta
-      : typeof parsed.text === "string"
-        ? parsed.text
-        : typeof parsed.content === "string"
-          ? parsed.content
-          : null;
+  if (effort === 'low' || effort === 'medium' || effort === 'high') {
+    return effort
+  }
 
-  return text ? { text } : null;
-}
+  if (thinkingMode === 'enabled') {
+    return 'medium'
+  }
 
-function extractCodexCliError(stderr: string): string | null {
-  const trimmed = stderr.trim();
-  return trimmed.length > 0 ? trimmed : null;
+  return undefined
 }
 
 async function executeCodexCommand(
@@ -125,117 +148,130 @@ async function executeCodexCommand(
   timeoutMs: number,
 ): Promise<{ text: string; errors: string[] }> {
   return await new Promise((resolve, reject) => {
-    const child = spawn("codex", args, {
+    const child = spawn('codex', args, {
       env: filterCodexEnv(process.env as Record<string, string | undefined>),
-      stdio: ["ignore", "pipe", "pipe"],
-      ...(process.platform === "win32" && { shell: true }),
-    });
+      stdio: ['ignore', 'pipe', 'pipe'],
+      // On Windows, npm-installed CLIs are .cmd scripts — need shell to resolve them
+      ...(process.platform === 'win32' && { shell: true }),
+    })
 
-    let stdoutBuffer = "";
-    let stderrBuffer = "";
-    let textAccumulator = "";
-    const errors: string[] = [];
+    let stdoutBuffer = ''
+    let stderrBuffer = ''
+    let textAccumulator = ''
+    const errors: string[] = []
 
     const flushStdoutLine = (line: string) => {
-      const event = parseCodexJsonLine(line);
-      if (!event) return;
-      if (event.text) textAccumulator += event.text;
-      if (event.error) errors.push(event.error);
-    };
+      const event = parseCodexJsonLine(line)
+      if (!event) return
+      if (event.text) {
+        textAccumulator += event.text
+      }
+      if (event.error) {
+        errors.push(event.error)
+      }
+    }
 
     const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(
-        new Error(
-          `Codex request timed out after ${Math.round(timeoutMs / 1000)}s.`,
-        ),
-      );
-    }, timeoutMs);
+      child.kill('SIGTERM')
+      reject(new Error(`Codex request timed out after ${Math.round(timeoutMs / 1000)}s.`))
+    }, timeoutMs)
 
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdoutBuffer += chunk.toString("utf-8");
-      let index = stdoutBuffer.indexOf("\n");
-      while (index >= 0) {
-        const line = stdoutBuffer.slice(0, index).trim();
-        stdoutBuffer = stdoutBuffer.slice(index + 1);
-        if (line) flushStdoutLine(line);
-        index = stdoutBuffer.indexOf("\n");
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdoutBuffer += chunk.toString('utf-8')
+      let idx = stdoutBuffer.indexOf('\n')
+      while (idx >= 0) {
+        const line = stdoutBuffer.slice(0, idx).trim()
+        stdoutBuffer = stdoutBuffer.slice(idx + 1)
+        if (line) flushStdoutLine(line)
+        idx = stdoutBuffer.indexOf('\n')
       }
-    });
+    })
 
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderrBuffer += chunk.toString("utf-8");
-    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderrBuffer += chunk.toString('utf-8')
+    })
 
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
+    child.on('error', (err) => {
+      clearTimeout(timer)
+      reject(err)
+    })
 
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      const tail = stdoutBuffer.trim();
-      if (tail) flushStdoutLine(tail);
+    child.on('close', (code) => {
+      clearTimeout(timer)
+
+      const tail = stdoutBuffer.trim()
+      if (tail) {
+        flushStdoutLine(tail)
+      }
 
       if (code === 0) {
-        resolve({ text: textAccumulator, errors });
-        return;
+        resolve({ text: textAccumulator, errors })
+        return
       }
 
+      const stderrError = extractCodexCliError(stderrBuffer)
+      const fallback = errors[errors.length - 1]
       reject(
         new Error(
-          extractCodexCliError(stderrBuffer) ??
-            errors[errors.length - 1] ??
-            `Codex exited with code ${code ?? "unknown"}.`,
+          stderrError
+            || fallback
+            || `Codex exited with code ${code ?? 'unknown'}.`,
         ),
-      );
-    });
-  });
+      )
+    })
+  })
 }
 
-export async function runCodexExec(
-  userPrompt: string,
-  options: CodexExecOptions = {},
-): Promise<CodexCliResult> {
-  const tempDir = await mkdtemp(join(tmpdir(), "game-theory-codex-"));
-  const outputPath = join(tempDir, "last-message.txt");
-  const effort = resolveCodexEffort(options.thinkingMode, options.effort);
-  const args = [
-    "exec",
-    "--json",
-    "--skip-git-repo-check",
-    "--sandbox",
-    "read-only",
-    "--output-last-message",
-    outputPath,
-  ];
-
-  if (options.model) args.push("--model", options.model);
-  if (effort) args.push("--config", `model_reasoning_effort="${effort}"`);
-  args.push(buildPrompt(options.systemPrompt, userPrompt));
-
+function parseCodexJsonLine(
+  line: string,
+): { text?: string; error?: string } | null {
+  let parsed: Record<string, unknown>
   try {
-    const runResult = await executeCodexCommand(
-      args,
-      options.timeoutMs ?? DEFAULT_CODEX_TIMEOUT_MS,
-    );
-    const finalText = await readFile(outputPath, "utf-8").catch(() => "");
-    const normalizedText = finalText.trim() || runResult.text.trim();
-
-    if (normalizedText) {
-      return { text: normalizedText };
-    }
-
-    if (runResult.errors.length > 0) {
-      return { error: runResult.errors.join("; ") };
-    }
-
-    return { error: "Codex returned no output." };
-  } catch (error) {
-    return {
-      error: error instanceof Error ? error.message : "Codex execution failed",
-    };
-  } finally {
-    await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    parsed = JSON.parse(line) as Record<string, unknown>
+  } catch {
+    return null
   }
+
+  const type = typeof parsed.type === 'string' ? parsed.type : ''
+  if (type === 'error') {
+    const message = getStringField(parsed, ['message'])
+    return { error: message || 'Codex returned an unknown error.' }
+  }
+
+  // Common Codex JSONL stream events include deltas in "delta" or "text".
+  const text =
+    getStringField(parsed, ['delta'])
+    || getStringField(parsed, ['text'])
+    || getStringField(parsed, ['content'])
+
+  if (!text) return null
+  return { text }
+}
+
+function getStringField(
+  obj: Record<string, unknown>,
+  keys: string[],
+): string | null {
+  for (const key of keys) {
+    const val = obj[key]
+    if (typeof val === 'string' && val.length > 0) {
+      return val
+    }
+  }
+  return null
+}
+
+function extractCodexCliError(stderr: string): string | null {
+  const trimmed = stderr.trim()
+  if (!trimmed) return null
+
+  const lines = trimmed.split('\n').map((line) => line.trim()).filter(Boolean)
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]
+    if (line.toLowerCase().startsWith('error:')) {
+      return line.replace(/^error:\s*/i, '').trim()
+    }
+  }
+
+  return lines[lines.length - 1] ?? null
 }

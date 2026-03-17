@@ -1,177 +1,244 @@
-/**
- * AI store — provider config, model selection, streaming state, and agent chat.
- * Adapted from OpenPencil's agent-settings-store pattern.
- */
+import { create } from 'zustand'
+import type { ChatMessage, ChatAttachment } from '@/services/ai/ai-types'
+import type { ModelGroup } from '@/types/agent-settings'
+import { appStorage } from '@/utils/app-storage'
 
-import { createStore, useStore } from "zustand";
-import type { AIProviderType } from "@/types/agent-settings";
+export type PanelCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
 
-export interface AIProviderConfig {
-  provider: AIProviderType;
-  modelId: string;
-  // API keys are managed server-side via env vars (ANTHROPIC_API_KEY).
-  // Never store secrets in client-side state.
+const DEFAULT_MODEL = 'claude-sonnet-4-5-20250929'
+const MODEL_PREFERENCE_STORAGE_KEY = 'openpencil-ai-model-preference'
+const CONCURRENCY_STORAGE_KEY = 'openpencil-ai-concurrency'
+const UI_PREFS_KEY = 'openpencil-ai-ui-preferences'
+
+interface AIUIPrefs {
+  isPanelOpen?: boolean
+  panelCorner?: PanelCorner
+  isMinimized?: boolean
+  codeFormat?: 'react-tailwind' | 'html-css' | 'react-inline'
 }
 
-export interface AgentToolCallEntry {
-  id: string;
-  name: string;
-  input: Record<string, unknown>;
-  result?: unknown;
-  durationMs?: number;
-  status: "pending" | "complete" | "error";
+function readUIPrefs(): AIUIPrefs {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = appStorage.getItem(UI_PREFS_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
 }
 
-export interface AgentChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  thinking: string;
-  toolCalls: AgentToolCallEntry[];
-  isStreaming: boolean;
-  timestamp: string;
+function writeUIPrefs(partial: AIUIPrefs): void {
+  if (typeof window === 'undefined') return
+  try {
+    const current = readUIPrefs()
+    appStorage.setItem(UI_PREFS_KEY, JSON.stringify({ ...current, ...partial }))
+  } catch { /* ignore */ }
 }
 
-export interface AiState {
-  provider: AIProviderConfig;
-  isStreaming: boolean;
-  streamingPhase: number | null;
-  lastError: string | null;
-  agentMessages: AgentChatMessage[];
-  abortController: AbortController | null;
+function readStoredModelPreference(): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const value = appStorage.getItem(MODEL_PREFERENCE_STORAGE_KEY)
+    if (!value || value.trim().length === 0) return null
+    return value
+  } catch {
+    return null
+  }
 }
 
-interface AiActions {
-  setProvider: (config: Partial<AIProviderConfig>) => void;
-  setStreaming: (streaming: boolean, phase?: number | null) => void;
-  setError: (error: string | null) => void;
-  appendAgentMessage: (
-    message: Omit<AgentChatMessage, "id" | "timestamp">,
-  ) => void;
-  updateLastAgentMessage: (
-    update: Partial<
-      Pick<
-        AgentChatMessage,
-        "content" | "thinking" | "isStreaming" | "toolCalls"
-      >
-    >,
-  ) => void;
-  addToolCallToLastMessage: (
-    toolCall: Omit<AgentToolCallEntry, "status"> & {
-      status?: AgentToolCallEntry["status"];
-    },
-  ) => void;
-  updateToolCallResult: (
-    toolCallId: string,
-    result: unknown,
-    durationMs: number,
-  ) => void;
-  removeLastAgentMessage: () => void;
-  clearAgentMessages: () => void;
-  setAbortController: (controller: AbortController | null) => void;
-  stopStreaming: () => void;
+function writeStoredModelPreference(model: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    appStorage.setItem(MODEL_PREFERENCE_STORAGE_KEY, model)
+  } catch {
+    // Ignore storage failures (private mode, quota, etc.)
+  }
 }
 
-type AiStore = AiState & AiActions;
+function readStoredConcurrency(): number {
+  if (typeof window === 'undefined') return 1
+  try {
+    const value = appStorage.getItem(CONCURRENCY_STORAGE_KEY)
+    if (!value) return 1
+    const n = parseInt(value, 10)
+    return n >= 1 && n <= 6 ? n : 1
+  } catch {
+    return 1
+  }
+}
 
-const initialState: AiState = {
-  provider: {
-    provider: "anthropic",
-    modelId: "claude-sonnet-4-6",
-  },
+function writeStoredConcurrency(n: number): void {
+  if (typeof window === 'undefined') return
+  try {
+    appStorage.setItem(CONCURRENCY_STORAGE_KEY, String(n))
+  } catch {
+    // Ignore storage failures
+  }
+}
+
+// Keep SSR/CSR first render deterministic to avoid hydration mismatch.
+// Real preference is loaded on mount via hydrateModelPreference().
+const initialPreferredModel = DEFAULT_MODEL
+
+export interface AIModelInfo {
+  value: string
+  displayName: string
+  description: string
+}
+
+interface AIState {
+  messages: ChatMessage[]
+  isStreaming: boolean
+  isPanelOpen: boolean
+  activeTab: 'chat' | 'code'
+  generatedCode: string
+  codeFormat: 'react-tailwind' | 'html-css' | 'react-inline'
+  model: string
+  preferredModel: string
+  availableModels: AIModelInfo[]
+  modelGroups: ModelGroup[]
+  isLoadingModels: boolean
+  panelCorner: PanelCorner
+  isMinimized: boolean
+  chatTitle: string
+  generationProgress: { current: number; total: number } | null
+  concurrency: number
+  pendingAttachments: ChatAttachment[]
+  abortController: AbortController | null
+
+  setConcurrency: (n: number) => void
+  setChatTitle: (title: string) => void
+  setGenerationProgress: (progress: { current: number; total: number } | null) => void
+
+  hydrateModelPreference: () => void
+  selectModel: (model: string) => void
+  setModel: (model: string) => void
+  setAvailableModels: (models: AIModelInfo[]) => void
+  setModelGroups: (groups: ModelGroup[]) => void
+  setLoadingModels: (v: boolean) => void
+  addMessage: (msg: ChatMessage) => void
+  updateLastMessage: (content: string) => void
+  setStreaming: (v: boolean) => void
+  togglePanel: () => void
+  setPanelOpen: (open: boolean) => void
+  setActiveTab: (tab: 'chat' | 'code') => void
+  setGeneratedCode: (code: string) => void
+  setCodeFormat: (f: 'react-tailwind' | 'html-css' | 'react-inline') => void
+  clearMessages: () => void
+  setPanelCorner: (corner: PanelCorner) => void
+  toggleMinimize: () => void
+  addPendingAttachment: (attachment: ChatAttachment) => void
+  removePendingAttachment: (id: string) => void
+  clearPendingAttachments: () => void
+  setAbortController: (c: AbortController | null) => void
+  stopStreaming: () => void
+}
+
+export const useAIStore = create<AIState>((set, get) => ({
+  messages: [],
   isStreaming: false,
-  streamingPhase: null,
-  lastError: null,
-  agentMessages: [],
+  isPanelOpen: true,
+  activeTab: 'chat',
+  generatedCode: '',
+  codeFormat: 'react-tailwind',
+  model: initialPreferredModel,
+  preferredModel: initialPreferredModel,
+  availableModels: [],
+  modelGroups: [],
+  isLoadingModels: false,
+  panelCorner: 'bottom-left',
+  isMinimized: false,
+  chatTitle: 'New Chat',
+  concurrency: 1,
+  generationProgress: null,
+  pendingAttachments: [],
   abortController: null,
-};
 
-export const aiStore = createStore<AiStore>((set, get) => ({
-  ...initialState,
+  setConcurrency: (n) => {
+    const clamped = Math.max(1, Math.min(6, n))
+    writeStoredConcurrency(clamped)
+    set({ concurrency: clamped })
+  },
+  setChatTitle: (chatTitle) => set({ chatTitle }),
+  setGenerationProgress: (generationProgress) => set({ generationProgress }),
 
-  setProvider(config) {
-    set({ provider: { ...get().provider, ...config } });
+  hydrateModelPreference: () => {
+    const stored = readStoredModelPreference()
+    if (stored) set({ model: stored, preferredModel: stored })
+    const storedConcurrency = readStoredConcurrency()
+    if (storedConcurrency !== 1) set({ concurrency: storedConcurrency })
+    const prefs = readUIPrefs()
+    if (typeof prefs.isPanelOpen === 'boolean') set({ isPanelOpen: prefs.isPanelOpen })
+    if (prefs.panelCorner) set({ panelCorner: prefs.panelCorner })
+    if (typeof prefs.isMinimized === 'boolean') set({ isMinimized: prefs.isMinimized })
+    if (prefs.codeFormat) set({ codeFormat: prefs.codeFormat })
   },
 
-  setStreaming(streaming, phase = null) {
-    set({ isStreaming: streaming, streamingPhase: phase });
+  addMessage: (msg) =>
+    set((s) => ({ messages: [...s.messages, msg] })),
+
+  updateLastMessage: (content) =>
+    set((s) => {
+      const msgs = [...s.messages]
+      const last = msgs[msgs.length - 1]
+      if (last && last.role === 'assistant') {
+        msgs[msgs.length - 1] = { ...last, content }
+      }
+      return { messages: msgs }
+    }),
+
+  setStreaming: (isStreaming) => set({ isStreaming }),
+
+  togglePanel: () => {
+    const next = !get().isPanelOpen
+    set({ isPanelOpen: next })
+    writeUIPrefs({ isPanelOpen: next })
   },
 
-  setError(error) {
-    set({ lastError: error });
+  setPanelOpen: (isPanelOpen) => {
+    set({ isPanelOpen })
+    writeUIPrefs({ isPanelOpen })
   },
 
-  appendAgentMessage(message) {
-    const newMessage: AgentChatMessage = {
-      ...message,
-      id: crypto.randomUUID(),
-      timestamp: new Date().toISOString(),
-    };
-    set({ agentMessages: [...get().agentMessages, newMessage] });
+  setActiveTab: (activeTab) => set({ activeTab }),
+
+  setGeneratedCode: (generatedCode) => set({ generatedCode }),
+
+  setCodeFormat: (codeFormat) => {
+    set({ codeFormat })
+    writeUIPrefs({ codeFormat })
   },
 
-  updateLastAgentMessage(update) {
-    const messages = get().agentMessages;
-    if (messages.length === 0) return;
-    const lastIndex = messages.length - 1;
-    const updated = messages.map((msg, i) =>
-      i === lastIndex ? { ...msg, ...update } : msg,
-    );
-    set({ agentMessages: updated });
+  selectModel: (model) => {
+    writeStoredModelPreference(model)
+    set({ model, preferredModel: model })
+  },
+  setModel: (model) => set({ model }),
+  setAvailableModels: (availableModels) => set({ availableModels }),
+  setModelGroups: (modelGroups) => set({ modelGroups }),
+  setLoadingModels: (isLoadingModels) => set({ isLoadingModels }),
+  clearMessages: () => set({ messages: [], chatTitle: 'New Chat' }),
+
+  setPanelCorner: (panelCorner) => {
+    set({ panelCorner })
+    writeUIPrefs({ panelCorner })
+  },
+  toggleMinimize: () => {
+    const next = !get().isMinimized
+    set({ isMinimized: next })
+    writeUIPrefs({ isMinimized: next })
   },
 
-  // ── Tool call tracking (infrastructure for agent endpoint integration) ──
-  // These actions are not used in the current chat flow (/api/ai/chat) which
-  // is text-only. They will be activated when the chat panel is wired to
-  // /api/ai/agent for native tool_use support.
-  addToolCallToLastMessage(toolCall) {
-    const messages = get().agentMessages;
-    if (messages.length === 0) return;
-    const lastIndex = messages.length - 1;
-    const entry: AgentToolCallEntry = {
-      status: "pending",
-      ...toolCall,
-    };
-    const updated = messages.map((msg, i) =>
-      i === lastIndex ? { ...msg, toolCalls: [...msg.toolCalls, entry] } : msg,
-    );
-    set({ agentMessages: updated });
-  },
+  addPendingAttachment: (attachment) =>
+    set((s) => ({ pendingAttachments: [...s.pendingAttachments, attachment] })),
+  removePendingAttachment: (id) =>
+    set((s) => ({ pendingAttachments: s.pendingAttachments.filter((a) => a.id !== id) })),
+  clearPendingAttachments: () => set({ pendingAttachments: [] }),
 
-  updateToolCallResult(toolCallId, result, durationMs) {
-    const messages = get().agentMessages;
-    if (messages.length === 0) return;
-    const lastIndex = messages.length - 1;
-    const updated = messages.map((msg, i) => {
-      if (i !== lastIndex) return msg;
-      const updatedToolCalls = msg.toolCalls.map((tc) =>
-        tc.id === toolCallId
-          ? { ...tc, result, durationMs, status: "complete" as const }
-          : tc,
-      );
-      return { ...msg, toolCalls: updatedToolCalls };
-    });
-    set({ agentMessages: updated });
-  },
-
-  removeLastAgentMessage() {
-    set((state) => ({ agentMessages: state.agentMessages.slice(0, -1) }));
-  },
-
-  clearAgentMessages() {
-    set({ agentMessages: [] });
-  },
-
-  setAbortController(controller) {
-    set({ abortController: controller });
-  },
-
-  stopStreaming() {
-    get().abortController?.abort();
-    set({ abortController: null, isStreaming: false });
-  },
-}));
-
-export function useAiStore<T>(selector: (state: AiStore) => T): T {
-  return useStore(aiStore, selector);
-}
+  setAbortController: (abortController) => set({ abortController }),
+  stopStreaming: () =>
+    set((s) => {
+      s.abortController?.abort()
+      return { isStreaming: false, abortController: null }
+    }),
+}))
