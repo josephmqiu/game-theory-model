@@ -343,6 +343,9 @@ function createAddDynamicInconsistencyRiskTool(): ToolDefinition {
 
 // ── Public factory ────────────────────────────────────────────────────────────
 
+// TODO: add_repeated_game_entry — deferred to Phase 3 integration
+// TODO: update_escalation_ladder — deferred to Phase 3 integration
+
 export function createHistoryTools(): ToolDefinition[] {
   return [
     createAddTrustAssessmentTool(),

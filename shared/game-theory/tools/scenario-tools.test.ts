@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createScenarioTools } from "./scenario-tools";
 import { createGameTools } from "./game-tools";
+import { createFormalizationTools } from "./formalization-tools";
 import { createPlayerTools } from "./player-tools";
 import { emptyCanonicalStore } from "../types/canonical";
 import { dispatch, createEventLog } from "../engine/dispatch";
@@ -43,7 +44,8 @@ async function setupFormalization(
 ): Promise<string | null> {
   const gameTools = createGameTools();
   const addGame = gameTools.find((t) => t.name === "add_game")!;
-  const addFormalization = gameTools.find(
+  const formTools = createFormalizationTools();
+  const addFormalization = formTools.find(
     (t) => t.name === "add_formalization",
   )!;
 

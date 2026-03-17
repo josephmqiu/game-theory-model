@@ -10,6 +10,7 @@ import type { ToolDefinition } from "shared/game-theory/types/agent";
 import { createEvidenceTools } from "shared/game-theory/tools/evidence-tools";
 import { createPlayerTools } from "shared/game-theory/tools/player-tools";
 import { createGameTools } from "shared/game-theory/tools/game-tools";
+import { createFormalizationTools } from "shared/game-theory/tools/formalization-tools";
 import { createHistoryTools } from "shared/game-theory/tools/history-tools";
 import { createAssumptionTools } from "shared/game-theory/tools/assumption-tools";
 import { createScenarioTools } from "shared/game-theory/tools/scenario-tools";
@@ -26,7 +27,10 @@ import {
   type NormalizedMessage,
   type ToolContext,
 } from "shared/game-theory/types/agent";
-import { emptyCanonicalStore } from "shared/game-theory/types/canonical";
+import {
+  emptyCanonicalStore,
+  type CanonicalStore,
+} from "shared/game-theory/types/canonical";
 import { streamAnthropicChat } from "shared/game-theory/providers/anthropic-client";
 
 const bodySchema = z.object({
@@ -78,6 +82,7 @@ export default defineEventHandler(async (event) => {
     ...createEvidenceTools(),
     ...createPlayerTools(),
     ...createGameTools(),
+    ...createFormalizationTools(),
     ...createHistoryTools(),
     ...createAssumptionTools(),
     ...createScenarioTools(),
@@ -96,18 +101,25 @@ export default defineEventHandler(async (event) => {
   // Build ToolContext — placeholder for now (Phase 3 will wire to real stores)
   // Use canonical from body if provided, otherwise empty
   const toolContext: ToolContext = {
-    canonical: (body.canonical ?? emptyCanonicalStore()) as any,
+    canonical: body.canonical
+      ? (body.canonical as unknown as CanonicalStore)
+      : emptyCanonicalStore(),
     dispatch: () => {
       throw new Error("Dispatch not wired — use Phase 3 to connect");
     },
     getAnalysisState: () => null,
-    getDerivedState: () => ({ solverResults: {} }) as any,
+    getDerivedState: () => ({
+      readinessReportsByFormalization: {},
+      solverResultsByFormalization: {},
+      sensitivityByFormalizationAndSolver: {},
+      dirtyFormalizations: {},
+    }),
   };
 
   const encoder = new TextEncoder();
 
   // Accumulated conversation messages — grows each iteration with tool results
-  const conversationMessages: NormalizedMessage[] = body.messages.map(
+  let conversationMessages: NormalizedMessage[] = body.messages.map(
     (m) => ({ role: m.role, content: m.content }) as NormalizedMessage,
   );
 
@@ -143,7 +155,18 @@ export default defineEventHandler(async (event) => {
       try {
         await runAgentLoop(
           {
-            callProvider: async function* (iteration) {
+            callProvider: async function* (_iteration) {
+              // Provider routing — only Anthropic is wired with a real streaming client
+              if (body.provider !== "anthropic") {
+                yield {
+                  type: "text" as const,
+                  content:
+                    "Only Anthropic provider is currently supported for the agent loop. OpenAI support coming soon.",
+                };
+                yield { type: "done" as const, content: "" };
+                return;
+              }
+
               // Reset per-iteration tracking
               iterationToolCalls = [];
               iterationToolResults = [];
@@ -226,8 +249,11 @@ export default defineEventHandler(async (event) => {
                     ),
                   };
 
-                  conversationMessages.push(assistantMessage);
-                  conversationMessages.push(toolResultsMessage);
+                  conversationMessages = [
+                    ...conversationMessages,
+                    assistantMessage,
+                    toolResultsMessage,
+                  ];
                 }
               }
 

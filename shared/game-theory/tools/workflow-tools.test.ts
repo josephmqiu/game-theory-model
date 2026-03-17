@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createWorkflowTools } from "./workflow-tools";
 import { createGameTools } from "./game-tools";
+import { createFormalizationTools } from "./formalization-tools";
 import { emptyCanonicalStore } from "../types/canonical";
 import { dispatch, createEventLog } from "../engine/dispatch";
 import type { ToolContext, ToolResult } from "../types/agent";
@@ -46,7 +47,8 @@ async function setupGameWithNode(
 ): Promise<{ gameId: string; formalizationId: string; nodeId: string } | null> {
   const gameTools = createGameTools();
   const addGame = gameTools.find((t) => t.name === "add_game")!;
-  const addFormalization = gameTools.find(
+  const formTools = createFormalizationTools();
+  const addFormalization = formTools.find(
     (t) => t.name === "add_formalization",
   )!;
 
