@@ -1,6 +1,7 @@
 import { aiStore } from "@/stores/ai-store";
-import { analysisStore } from "@/stores/analysis-store";
-import { streamAgentChat } from "./agent-client";
+import { streamChat } from "./chat-client";
+
+const CHAT_SYSTEM_PROMPT = `You are a game theory analysis copilot. Help the user explore, question, and refine their analysis. You can discuss strategic situations, explain game theory concepts, challenge assumptions, and suggest next analytical steps. Be specific — use numbers, dates, names. Cite evidence when possible.`;
 
 /**
  * Orchestrates the agent chat send flow: appends messages to the store,
@@ -9,11 +10,8 @@ import { streamAgentChat } from "./agent-client";
  */
 export async function sendAgentMessage(
   text: string,
-  options?: { enableWebSearch?: boolean },
+  _options?: { enableWebSearch?: boolean },
 ): Promise<void> {
-  // Tracks replayed command IDs for this send cycle to prevent duplicates on retry/reconnect
-  const replayedCommands = new Set<string>();
-
   // 1. Append user message
   aiStore.getState().appendAgentMessage({
     role: "user",
@@ -47,16 +45,12 @@ export async function sendAgentMessage(
   // 4 & 5. Call SSE client and process events
   try {
     const { provider } = aiStore.getState();
-    const analysisState = analysisStore.getState();
-    const stream = streamAgentChat(
+    const stream = streamChat(
       {
+        system: CHAT_SYSTEM_PROMPT,
         messages: priorMessages,
         provider: provider.provider,
         model: provider.modelId,
-        // TODO: expose a web-search toggle in ai-store so callers can control this
-        enableWebSearch: options?.enableWebSearch ?? true,
-        canonical: analysisState.canonical,
-        eventLogCursor: analysisState.eventLog.cursor,
       },
       controller.signal,
     );
@@ -65,6 +59,7 @@ export async function sendAgentMessage(
     let accumulatedThinking = "";
 
     for await (const event of stream) {
+      if (controller.signal.aborted) break;
       switch (event.type) {
         case "text":
           accumulatedContent += event.content;
@@ -80,49 +75,8 @@ export async function sendAgentMessage(
             .updateLastAgentMessage({ thinking: accumulatedThinking });
           break;
 
-        case "tool_call":
-          aiStore.getState().addToolCallToLastMessage({
-            id: event.id,
-            name: event.name,
-            input: event.input,
-            status: "pending",
-          });
-          break;
-
-        case "tool_result": {
-          aiStore
-            .getState()
-            .updateToolCallResult(event.id, event.result, event.duration_ms);
-
-          // Replay commands to keep client canonical store in sync.
-          // Deduplicate by kind:id to prevent duplicate entities on reconnect/retry.
-          const resultData = event.result as Record<string, unknown> | null;
-          if (resultData && Array.isArray(resultData._commands)) {
-            for (const command of resultData._commands) {
-              const cmdObj = command as { kind?: string; id?: string };
-              const key = `${cmdObj.kind ?? "unknown"}:${cmdObj.id ?? "unknown"}`;
-              if (replayedCommands.has(key)) continue;
-              replayedCommands.add(key);
-              try {
-                analysisStore.getState().dispatch(command);
-              } catch {
-                // Non-fatal — the server already committed, views may be slightly out of sync
-              }
-            }
-          }
-          break;
-        }
-
         case "error":
           aiStore.getState().setError(event.content);
-          break;
-
-        case "status":
-          // Phase 3 will consume analysis_status — ignored for now
-          break;
-
-        case "compaction":
-          // Ignored for now
           break;
 
         case "done":

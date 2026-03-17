@@ -1,29 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { aiStore } from "@/stores/ai-store";
 import { sendAgentMessage } from "./agent-chat-handler";
-import type { AgentEvent } from "shared/game-theory/types/agent";
+import type { AIStreamChunk } from "shared/game-theory/types/ai-stream";
 
-vi.mock("./agent-client", () => ({
-  streamAgentChat: vi.fn(),
+vi.mock("./chat-client", () => ({
+  streamChat: vi.fn(),
 }));
 
-// Stable mock state so dispatch spy is shared across all getState() calls
-const mockAnalysisState = {
-  dispatch: vi.fn(),
-  canonical: {},
-  eventLog: { cursor: 0 },
-};
-
-vi.mock("@/stores/analysis-store", () => ({
-  analysisStore: {
-    getState: () => mockAnalysisState,
-  },
-}));
-
-import { streamAgentChat } from "./agent-client";
+import { streamChat } from "./chat-client";
 
 // Helper: create an async generator from a list of events
-async function* makeStream(events: AgentEvent[]): AsyncGenerator<AgentEvent> {
+async function* makeStream(
+  events: AIStreamChunk[],
+): AsyncGenerator<AIStreamChunk> {
   for (const event of events) {
     yield event;
   }
@@ -43,12 +32,11 @@ const resetState = () =>
 beforeEach(() => {
   resetState();
   vi.clearAllMocks();
-  mockAnalysisState.dispatch.mockReset();
 });
 
 describe("sendAgentMessage", () => {
   it("appends user message and placeholder assistant message to the store", async () => {
-    vi.mocked(streamAgentChat).mockReturnValue(
+    vi.mocked(streamChat).mockReturnValue(
       makeStream([{ type: "done", content: "" }]),
     );
 
@@ -62,7 +50,7 @@ describe("sendAgentMessage", () => {
   });
 
   it("accumulates text events into assistant message content", async () => {
-    vi.mocked(streamAgentChat).mockReturnValue(
+    vi.mocked(streamChat).mockReturnValue(
       makeStream([
         { type: "text", content: "Hello" },
         { type: "text", content: ", world" },
@@ -79,7 +67,7 @@ describe("sendAgentMessage", () => {
   });
 
   it("accumulates thinking events into assistant message thinking field", async () => {
-    vi.mocked(streamAgentChat).mockReturnValue(
+    vi.mocked(streamChat).mockReturnValue(
       makeStream([
         { type: "thinking", content: "Let me " },
         { type: "thinking", content: "think..." },
@@ -94,42 +82,8 @@ describe("sendAgentMessage", () => {
     expect(assistant.thinking).toBe("Let me think...");
   });
 
-  it("tracks tool calls and results in the assistant message", async () => {
-    vi.mocked(streamAgentChat).mockReturnValue(
-      makeStream([
-        {
-          type: "tool_call",
-          id: "tc-1",
-          name: "get_analysis_status",
-          input: { verbose: true },
-        },
-        {
-          type: "tool_result",
-          id: "tc-1",
-          result: { has_analysis: true },
-          duration_ms: 42,
-        },
-        { type: "done", content: "" },
-      ]),
-    );
-
-    await sendAgentMessage("Run a tool");
-
-    const { agentMessages } = aiStore.getState();
-    const assistant = agentMessages[agentMessages.length - 1];
-    expect(assistant.toolCalls).toHaveLength(1);
-
-    const tc = assistant.toolCalls[0];
-    expect(tc.id).toBe("tc-1");
-    expect(tc.name).toBe("get_analysis_status");
-    expect(tc.input).toEqual({ verbose: true });
-    expect(tc.status).toBe("complete");
-    expect(tc.result).toEqual({ has_analysis: true });
-    expect(tc.durationMs).toBe(42);
-  });
-
   it("sets the store error on an error event", async () => {
-    vi.mocked(streamAgentChat).mockReturnValue(
+    vi.mocked(streamChat).mockReturnValue(
       makeStream([
         { type: "error", content: "Something went wrong" },
         { type: "done", content: "" },
@@ -142,7 +96,7 @@ describe("sendAgentMessage", () => {
   });
 
   it("marks streaming complete after done event", async () => {
-    vi.mocked(streamAgentChat).mockReturnValue(
+    vi.mocked(streamChat).mockReturnValue(
       makeStream([
         { type: "text", content: "Done!" },
         { type: "done", content: "" },
@@ -160,13 +114,9 @@ describe("sendAgentMessage", () => {
   });
 
   it("handles abort without setting an error in the store", async () => {
-    const abortError = Object.assign(new Error("The user aborted a request."), {
-      name: "AbortError",
-    });
-
-    // streamAgentChat itself silently returns on abort (see agent-client.ts).
+    // streamChat itself silently returns on abort (see chat-client.ts).
     // Simulate that: the generator simply finishes without yielding.
-    vi.mocked(streamAgentChat).mockReturnValue(
+    vi.mocked(streamChat).mockReturnValue(
       (async function* () {
         // Generator ends immediately, simulating aborted fetch
       })(),
@@ -181,10 +131,10 @@ describe("sendAgentMessage", () => {
   });
 
   it("sets a store error when the stream throws unexpectedly", async () => {
-    vi.mocked(streamAgentChat).mockReturnValue(
+    vi.mocked(streamChat).mockReturnValue(
       (async function* () {
         throw new Error("Network failure");
-        yield { type: "done", content: "" } as AgentEvent; // unreachable, keeps TS happy
+        yield { type: "done", content: "" } as AIStreamChunk; // unreachable, keeps TS happy
       })(),
     );
 
@@ -194,36 +144,20 @@ describe("sendAgentMessage", () => {
     expect(aiStore.getState().isStreaming).toBe(false);
   });
 
-  it("replays _commands from tool_result through analysisStore", async () => {
-    const command = {
-      kind: "add_player",
-      id: "player_1",
-      payload: { name: "US" },
-    };
-    vi.mocked(streamAgentChat).mockReturnValue(
-      makeStream([
-        {
-          type: "tool_call",
-          id: "tc1",
-          name: "add_player",
-          input: { name: "US" },
-        },
-        {
-          type: "tool_result",
-          id: "tc1",
-          result: {
-            id: "player_1",
-            kind: "add_player",
-            _commands: [command],
-          },
-          duration_ms: 10,
-        },
-        { type: "done", content: "" },
-      ]),
+  it("passes system prompt, provider, and model to streamChat", async () => {
+    vi.mocked(streamChat).mockReturnValue(
+      makeStream([{ type: "done", content: "" }]),
     );
 
-    await sendAgentMessage("Add a player");
+    await sendAgentMessage("Test provider params");
 
-    expect(mockAnalysisState.dispatch).toHaveBeenCalledWith(command);
+    expect(vi.mocked(streamChat)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        system: expect.stringContaining("game theory"),
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+      }),
+      expect.any(AbortSignal),
+    );
   });
 });
