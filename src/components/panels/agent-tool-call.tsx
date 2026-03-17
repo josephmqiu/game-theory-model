@@ -21,7 +21,7 @@ interface AgentToolCallProps {
 }
 
 export function summarizeToolCall(
-  name: string,
+  _name: string,
   input: Record<string, unknown>,
 ): string {
   if ("name" in input) return `${input.name}`;

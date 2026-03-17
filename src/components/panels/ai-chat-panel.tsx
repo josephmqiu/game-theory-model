@@ -313,9 +313,29 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
                 const lastUserMsg = [...messages]
                   .reverse()
                   .find((m) => m.role === "user");
-                if (lastUserMsg) {
-                  void sendAgentMessage(lastUserMsg.content);
+                if (!lastUserMsg) return;
+
+                // Remove the failed (empty) assistant message if present
+                const lastMsg = messages[messages.length - 1];
+                if (
+                  lastMsg?.role === "assistant" &&
+                  !lastMsg.isStreaming &&
+                  lastMsg.content.trim() === ""
+                ) {
+                  aiStore.getState().removeLastAgentMessage();
                 }
+
+                // Remove the original user message — sendAgentMessage will re-append it
+                const currentMessages = aiStore.getState().agentMessages;
+                const lastCurrent = currentMessages[currentMessages.length - 1];
+                if (
+                  lastCurrent?.role === "user" &&
+                  lastCurrent.id === lastUserMsg.id
+                ) {
+                  aiStore.getState().removeLastAgentMessage();
+                }
+
+                void sendAgentMessage(lastUserMsg.content);
               }}
               className="shrink-0 rounded px-2 py-1 text-xs text-primary hover:bg-primary/10"
             >

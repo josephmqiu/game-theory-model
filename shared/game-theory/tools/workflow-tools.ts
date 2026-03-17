@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ToolDefinition, ToolContext } from "../types/agent";
+import type { ToolDefinition, ToolContext, ToolResult } from "../types/agent";
 import { executeTool } from "./execute-helper";
 
 // ── add_cross_game_link ────────────────────────────────────────────────────────

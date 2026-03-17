@@ -66,6 +66,7 @@ interface AiActions {
     result: unknown,
     durationMs: number,
   ) => void;
+  removeLastAgentMessage: () => void;
   clearAgentMessages: () => void;
   setAbortController: (controller: AbortController | null) => void;
   stopStreaming: () => void;
@@ -119,6 +120,10 @@ export const aiStore = createStore<AiStore>((set, get) => ({
     set({ agentMessages: updated });
   },
 
+  // ── Tool call tracking (infrastructure for agent endpoint integration) ──
+  // These actions are not used in the current chat flow (/api/ai/chat) which
+  // is text-only. They will be activated when the chat panel is wired to
+  // /api/ai/agent for native tool_use support.
   addToolCallToLastMessage(toolCall) {
     const messages = get().agentMessages;
     if (messages.length === 0) return;
@@ -147,6 +152,10 @@ export const aiStore = createStore<AiStore>((set, get) => ({
       return { ...msg, toolCalls: updatedToolCalls };
     });
     set({ agentMessages: updated });
+  },
+
+  removeLastAgentMessage() {
+    set((state) => ({ agentMessages: state.agentMessages.slice(0, -1) }));
   },
 
   clearAgentMessages() {

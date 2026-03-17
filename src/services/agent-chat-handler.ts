@@ -1,6 +1,9 @@
 import { aiStore } from "@/stores/ai-store";
 import { streamChat } from "./chat-client";
 
+// NOTE: This prompt is duplicated from shared/game-theory/prompts/chat-system.md
+// because the browser renderer cannot use Node fs to load .md files at runtime.
+// When editing, update both the .md file and this constant.
 const CHAT_SYSTEM_PROMPT = `You are a game theory analysis copilot. Help the user explore, question, and refine their analysis. You can discuss strategic situations, explain game theory concepts, challenge assumptions, and suggest next analytical steps. Be specific — use numbers, dates, names. Cite evidence when possible.`;
 
 /**
@@ -8,10 +11,7 @@ const CHAT_SYSTEM_PROMPT = `You are a game theory analysis copilot. Help the use
  * drives the SSE stream, and writes all results back through store actions.
  * Errors are surfaced via the store — this function never rejects.
  */
-export async function sendAgentMessage(
-  text: string,
-  _options?: { enableWebSearch?: boolean },
-): Promise<void> {
+export async function sendAgentMessage(text: string): Promise<void> {
   // 1. Append user message
   aiStore.getState().appendAgentMessage({
     role: "user",

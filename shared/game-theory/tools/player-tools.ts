@@ -237,13 +237,15 @@ function createUpdatePlayerTool(): ToolDefinition {
         updatePlayerSchema,
         (data) => {
           const parsed = data as z.infer<typeof updatePlayerSchema>;
-          const payload: Record<string, unknown> = { id: parsed.id };
-          if (parsed.name !== undefined) payload.name = parsed.name;
-          if (parsed.type !== undefined) payload.type = parsed.type;
-          if (parsed.role !== undefined) payload.role = parsed.role;
           return {
             kind: "update_player" as const,
-            payload,
+            id: parsed.id,
+            payload: {
+              id: parsed.id,
+              ...(parsed.name !== undefined ? { name: parsed.name } : {}),
+              ...(parsed.type !== undefined ? { type: parsed.type } : {}),
+              ...(parsed.role !== undefined ? { role: parsed.role } : {}),
+            },
           };
         },
         context,

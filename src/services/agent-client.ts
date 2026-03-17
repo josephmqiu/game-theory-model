@@ -1,3 +1,11 @@
+/**
+ * SSE client for the agent loop endpoint (/api/ai/agent).
+ *
+ * Currently unused by the chat panel (which uses chat-client.ts → /api/ai/chat).
+ * Reserved for future use when the agent endpoint supports external tool calling
+ * or when the chat panel is wired to use native tool_use.
+ */
+
 import type { AgentEvent } from "shared/game-theory/types/agent";
 
 export async function* streamAgentChat(
@@ -26,7 +34,25 @@ export async function* streamAgentChat(
   }
 
   if (!response.ok) {
-    throw new Error(`Agent request failed: ${response.status}`);
+    const body = await response.text().catch(() => "");
+
+    if (response.status === 401) {
+      throw new Error(
+        "API key not configured. Check Settings to connect a provider.",
+      );
+    }
+    if (response.status === 429) {
+      throw new Error("Rate limited. Please wait a moment and try again.");
+    }
+    if (response.status >= 500) {
+      throw new Error(
+        `Server error (${response.status}). The AI provider may be experiencing issues.`,
+      );
+    }
+
+    throw new Error(
+      `Request failed (${response.status}): ${body.slice(0, 200)}`,
+    );
   }
 
   if (!response.body) {

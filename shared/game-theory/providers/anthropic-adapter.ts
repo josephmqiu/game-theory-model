@@ -4,6 +4,7 @@ import type {
   NormalizedContentBlock,
   NormalizedMessage,
   ProviderAdapter,
+  ToolDefinition,
   ToolResult,
 } from "../types/agent";
 
