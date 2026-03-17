@@ -4,11 +4,11 @@ import { callPost } from "../../../server/test-support/http";
 import { getMcpIntegrationStatuses } from "../../../server/utils/integration-status";
 import { deleteManagedMcpConfig } from "../../../server/utils/mcp-config-writers";
 
-vi.mock("../../utils/integration-status", () => ({
+vi.mock("../../../server/utils/integration-status", () => ({
   getMcpIntegrationStatuses: vi.fn(),
 }));
 
-vi.mock("../../utils/mcp-config-writers", () => ({
+vi.mock("../../../server/utils/mcp-config-writers", () => ({
   deleteManagedMcpConfig: vi.fn(),
 }));
 
@@ -51,7 +51,11 @@ describe("/api/mcp/config.delete", () => {
 
     const response = await callPost<{
       status: string;
-      integration?: { tool: string; configPath: string | null; statusMessage: string };
+      integration?: {
+        tool: string;
+        configPath: string | null;
+        statusMessage: string;
+      };
     }>(handler, "/api/mcp/config/delete", {
       tool: "copilot-cli",
     });
@@ -62,7 +66,9 @@ describe("/api/mcp/config.delete", () => {
     expect(response.body.status).toBe("ok");
     expect(response.body.integration?.tool).toBe("copilot-cli");
     expect(response.body.integration?.configPath).toBeNull();
-    expect(response.body.integration?.statusMessage).toContain("Managed MCP config removed");
+    expect(response.body.integration?.statusMessage).toContain(
+      "Managed MCP config removed",
+    );
   });
 
   it("returns null integration payload when status refresh is unavailable", async () => {

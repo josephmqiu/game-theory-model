@@ -35,7 +35,8 @@ const PHASE_WORKFLOW_COPY: Record<
   complete: {
     badge: "Complete",
     style: "bg-green-500/10 text-green-500",
-    recommendation: "Move to the next phase or inspect outputs in related views.",
+    recommendation:
+      "Move to the next phase or inspect outputs in related views.",
   },
   needs_rerun: {
     badge: "Needs rerun",
@@ -60,22 +61,26 @@ function PhaseDetailPage() {
   const runtimeStatus = analysisState?.status;
   const phaseStatus = phaseState?.status ?? "pending";
 
-  const messages = useConversationStore((s) =>
-    s.messages.filter((m) => m.phase === phase),
+  const allMessages = useConversationStore((s) => s.messages);
+  const messages = useMemo(
+    () => allMessages.filter((m) => m.phase === phase),
+    [allMessages, phase],
   );
-
-  const proposalGroups = useConversationStore((s) => {
-    const groups = s.messages
-      .filter((m) => m.phase === phase)
-      .flatMap((m) => m.structured_content?.proposals ?? []);
-    return groups;
-  });
-  const revalidationEvents = Object.values(canonical.revalidation_events).filter(
-    (event) => event.source_phase === phase || event.target_phases.includes(phase),
+  const proposalGroups = useMemo(
+    () => messages.flatMap((m) => m.structured_content?.proposals ?? []),
+    [messages],
+  );
+  const revalidationEvents = Object.values(
+    canonical.revalidation_events,
+  ).filter(
+    (event) =>
+      event.source_phase === phase || event.target_phases.includes(phase),
   );
 
   const totalMessageRefs = useMemo(() => {
-    return messages.flatMap((message) => message.structured_content?.entity_refs ?? []);
+    return messages.flatMap(
+      (message) => message.structured_content?.entity_refs ?? [],
+    );
   }, [messages]);
 
   const summary = useMemo(() => {
@@ -100,10 +105,12 @@ function PhaseDetailPage() {
   const setInspectedTarget = useUiStore((s) => s.setInspectedTarget);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const workflow = PHASE_WORKFLOW_COPY[phaseStatus] ?? PHASE_WORKFLOW_COPY.pending;
+  const workflow =
+    PHASE_WORKFLOW_COPY[phaseStatus] ?? PHASE_WORKFLOW_COPY.pending;
   const hasRevalidationQueued = summary.pendingRevalidation > 0;
   const isRunning = phaseState?.status === "running";
-  const isBlocked = summary.pendingProposalGroups > 0 || summary.pendingRevalidation > 0;
+  const isBlocked =
+    summary.pendingProposalGroups > 0 || summary.pendingRevalidation > 0;
 
   async function handleAction(
     key: string,
@@ -165,15 +172,11 @@ function PhaseDetailPage() {
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-6">
         <div className="rounded-lg border border-border bg-card p-3">
           <p className="text-xs text-muted-foreground">Pending proposals</p>
-          <p className="text-xl font-bold">
-            {summary.pendingProposalGroups}
-          </p>
+          <p className="text-xl font-bold">{summary.pendingProposalGroups}</p>
         </div>
         <div className="rounded-lg border border-border bg-card p-3">
           <p className="text-xs text-muted-foreground">Pending reruns</p>
-          <p className="text-xl font-bold">
-            {summary.pendingRevalidation}
-          </p>
+          <p className="text-xl font-bold">{summary.pendingRevalidation}</p>
         </div>
         <div className="rounded-lg border border-border bg-card p-3">
           <p className="text-xs text-muted-foreground">Messages</p>
@@ -185,7 +188,9 @@ function PhaseDetailPage() {
         <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">
           Workflow guidance
         </h3>
-        <p className="text-sm text-muted-foreground">{workflow.recommendation}</p>
+        <p className="text-sm text-muted-foreground">
+          {workflow.recommendation}
+        </p>
         <div className="mt-3 flex flex-wrap gap-2">
           {isBlocked ? (
             <span className="inline-flex rounded-full bg-yellow-500/10 text-yellow-500 text-xs px-2 py-0.5">
@@ -270,8 +275,9 @@ function PhaseDetailPage() {
                       {revalidationEvent.trigger_condition}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Targets phases {revalidationEvent.target_phases.join(", ")} ·
-                      pass {revalidationEvent.pass_number}
+                      Targets phases{" "}
+                      {revalidationEvent.target_phases.join(", ")} · pass{" "}
+                      {revalidationEvent.pass_number}
                     </p>
                   </div>
                   <span className="rounded-full bg-secondary px-2 py-0.5 text-xs">
@@ -409,28 +415,28 @@ function PhaseDetailPage() {
                 </div>
                 {msg.structured_content?.entity_refs?.length ? (
                   <div className="mb-2 flex flex-wrap gap-1">
-                {msg.structured_content.entity_refs.map((entityRef) => (
-                  <button
-                    type="button"
-                    key={`${entityRef.type}-${entityRef.id}`}
-                    onClick={() =>
-                      setInspectedTarget({
-                        entityType: entityRef.type,
-                        entityId: entityRef.id,
-                      })
-                    }
-                    className="text-xs rounded-full bg-secondary px-2 py-0.5 text-muted-foreground hover:bg-accent"
-                  >
-                    {entityRef.type}
-                  </button>
-                ))}
-              </div>
+                    {msg.structured_content.entity_refs.map((entityRef) => (
+                      <button
+                        type="button"
+                        key={`${entityRef.type}-${entityRef.id}`}
+                        onClick={() =>
+                          setInspectedTarget({
+                            entityType: entityRef.type,
+                            entityId: entityRef.id,
+                          })
+                        }
+                        className="text-xs rounded-full bg-secondary px-2 py-0.5 text-muted-foreground hover:bg-accent"
+                      >
+                        {entityRef.type}
+                      </button>
+                    ))}
+                  </div>
                 ) : null}
                 <p className="text-sm">{msg.content}</p>
                 {msg.structured_content?.scenario_cards?.length ? (
                   <div className="mt-2 text-xs text-muted-foreground">
-                    {msg.structured_content.scenario_cards.length} scenario links
-                    available from message.
+                    {msg.structured_content.scenario_cards.length} scenario
+                    links available from message.
                   </div>
                 ) : null}
               </div>
@@ -440,7 +446,7 @@ function PhaseDetailPage() {
       )}
 
       {!phaseState && proposalGroups.length === 0 && messages.length === 0 && (
-      <p className="text-muted-foreground italic mb-6">
+        <p className="text-muted-foreground italic mb-6">
           This phase has not been executed yet.
         </p>
       )}

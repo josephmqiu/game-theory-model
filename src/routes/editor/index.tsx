@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useAnalysisStore } from "@/stores/analysis-store";
 import { usePipelineStore } from "@/stores/pipeline-store";
+import { useUiStore } from "@/stores/ui-store";
 import { PHASES } from "@/constants/phases";
 import { executeAppCommand } from "@/services/app-command-runner";
 import { useConversationStore } from "@/stores/conversation-store";
@@ -49,10 +50,15 @@ export const Route = createFileRoute("/editor/")({
 function OverviewPage() {
   const canonical = useAnalysisStore((s) => s.canonical);
   const analysisState = usePipelineStore((s) => s.analysis_state);
-  const pendingApprovals = usePipelineStore((s) =>
-    Object.values(s.pending_revalidation_approvals),
+  const pendingRevalidationApprovals = usePipelineStore(
+    (s) => s.pending_revalidation_approvals,
+  );
+  const pendingApprovals = useMemo(
+    () => Object.values(pendingRevalidationApprovals),
+    [pendingRevalidationApprovals],
   );
   const messages = useConversationStore((s) => s.messages);
+  const manualMode = useUiStore((s) => s.manualMode);
   const phaseStates = analysisState?.phase_states ?? {};
   const [description, setDescription] = useState(
     analysisState?.event_description ?? "",
@@ -154,7 +160,8 @@ function OverviewPage() {
       }
     >();
     for (const message of messages) {
-      for (const finding of message.structured_content?.findings_summary ?? []) {
+      for (const finding of message.structured_content?.findings_summary ??
+        []) {
         const existing = summary.get(finding.label);
         if (existing) {
           existing.count += finding.count;
@@ -172,15 +179,23 @@ function OverviewPage() {
     );
   }, [messages]);
 
-  const scenarioList = useMemo(() => Object.values(canonical.scenarios), [canonical.scenarios]);
-  const gameList = useMemo(() => Object.values(canonical.games), [canonical.games]);
+  const scenarioList = useMemo(
+    () => Object.values(canonical.scenarios),
+    [canonical.scenarios],
+  );
+  const gameList = useMemo(
+    () => Object.values(canonical.games),
+    [canonical.games],
+  );
 
   const activePhaseId = useMemo(() => {
     if (!analysisState) return null;
     if (analysisState.current_phase != null) return analysisState.current_phase;
-    const latestComplete = PHASES.slice().reverse().find(({ id }) => {
-      return phaseStates[id]?.status === "complete";
-    });
+    const latestComplete = PHASES.slice()
+      .reverse()
+      .find(({ id }) => {
+        return phaseStates[id]?.status === "complete";
+      });
     return latestComplete?.id ?? 1;
   }, [analysisState, phaseStates]);
 
@@ -221,7 +236,9 @@ function OverviewPage() {
       <section className="mb-8 rounded-xl border border-border bg-card p-4">
         <div className="flex flex-col gap-4">
           <label className="text-sm">
-            <span className="mb-2 block font-medium">Situation description</span>
+            <span className="mb-2 block font-medium">
+              Situation description
+            </span>
             <textarea
               value={description}
               onChange={(event) => setDescription(event.target.value)}
@@ -236,16 +253,30 @@ function OverviewPage() {
               type="button"
               onClick={() =>
                 void runCommand("start", () =>
-                  executeAppCommand({
-                    type: "start_analysis",
-                    payload: { description: description.trim(), manual: true },
-                  }),
+                  executeAppCommand(
+                    manualMode
+                      ? {
+                          type: "start_analysis",
+                          payload: {
+                            description: description.trim(),
+                            manual: true,
+                          },
+                        }
+                      : {
+                          type: "run_full_analysis",
+                          payload: { description: description.trim() },
+                        },
+                  ),
                 )
               }
               disabled={!description.trim() || busyAction != null}
               className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
             >
-              {busyAction === "start" ? "Starting..." : "Start analysis"}
+              {busyAction === "start"
+                ? "Running..."
+                : manualMode
+                  ? "Start analysis"
+                  : "Run full analysis"}
             </button>
             <button
               type="button"
@@ -270,7 +301,9 @@ function OverviewPage() {
 
       <section className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
         <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-sm text-muted-foreground mb-2">Command dashboard</p>
+          <p className="text-sm text-muted-foreground mb-2">
+            Command dashboard
+          </p>
           <h3 className="text-lg font-semibold">Analysis progress</h3>
           <p className="mt-1 text-sm">{dashboardHeader}</p>
           <div className="mt-4 h-2 rounded-full bg-secondary">
@@ -281,10 +314,12 @@ function OverviewPage() {
           </div>
           <div className="mt-2 text-sm">
             {phaseProgress.completed}/{PHASES.length} phases complete ·{" "}
-            {phaseProgress.inReview} pending review · {phaseProgress.failed} rerun{" "}
-            flagged
+            {phaseProgress.inReview} pending review · {phaseProgress.failed}{" "}
+            rerun flagged
           </div>
-          <p className="mt-3 text-sm text-muted-foreground">{nextTargetLabel}</p>
+          <p className="mt-3 text-sm text-muted-foreground">
+            {nextTargetLabel}
+          </p>
           <button
             type="button"
             onClick={() => setExpandedStatus((value) => !value)}
@@ -394,7 +429,10 @@ function OverviewPage() {
           const phase = phaseStates[id];
           const status = phase?.status ?? "pending";
           return (
-            <div key={id} className="rounded-lg border border-border bg-card p-4">
+            <div
+              key={id}
+              className="rounded-lg border border-border bg-card p-4"
+            >
               <div className="mb-2">
                 <PhaseStatusCard
                   phase={id}
@@ -437,7 +475,10 @@ function OverviewPage() {
           <p>{gameList.length} game entities loaded.</p>
           <p>{scenarioList.length} scenario entities loaded.</p>
           <p>{Object.keys(canonical.players).length} player entities loaded.</p>
-          <p>{Object.keys(canonical.formalizations).length} formalization entities loaded.</p>
+          <p>
+            {Object.keys(canonical.formalizations).length} formalization
+            entities loaded.
+          </p>
         </div>
       </section>
 
@@ -454,7 +495,8 @@ function OverviewPage() {
                 {pendingApprovals.length === 1 ? "" : "s"} pending
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Open the relevant phase page to approve or dismiss rerun requests.
+                Open the relevant phase page to approve or dismiss rerun
+                requests.
               </p>
             </div>
           )}

@@ -85,6 +85,7 @@ function createTestHarness() {
       getFirstPendingProposalPhase(maxPhase),
     updateRevalidationActionStatus: (eventId, resolution) =>
       updateRevalidationActionStatus(eventId, resolution),
+    acceptAllPendingProposals: () => 0,
   });
 
   return {

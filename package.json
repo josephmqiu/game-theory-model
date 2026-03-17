@@ -9,7 +9,7 @@
     "gta-mcp": "dist/mcp-server.cjs"
   },
   "scripts": {
-    "dev": "bun --bun vite dev --port 3000",
+    "dev": "vite dev --port 3000",
     "build": "bun --bun vite build && node scripts/assert-no-test-routes.mjs",
     "preview": "bun --bun vite preview",
     "test": "vitest run --passWithNoTests",

@@ -1,4 +1,6 @@
-import { compare, type Operation } from "fast-json-patch";
+import fjp from "fast-json-patch";
+import type { Operation } from "fast-json-patch";
+const { compare } = fjp;
 
 import type {
   CanonicalStore,

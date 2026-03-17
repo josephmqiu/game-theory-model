@@ -212,6 +212,9 @@ function makeProviderStatusSnapshots(): ProviderStatusSnapshot[] {
     installed: provider.installed,
     authenticated: provider.authenticated,
     validated: provider.validated,
+    statusStage: provider.installed ? "detected" : ("missing_binary" as const),
+    reachable: null,
+    lastError: null,
     statusMessage: provider.statusMessage,
     lastCheckedAt: provider.lastCheckedAt ?? "",
     configPath: provider.configPath,
@@ -311,7 +314,9 @@ vi.mock("@/stores/ai-store", () => ({
     }),
   },
   useAiStore: (
-    selector: (state: { provider: { provider: string; modelId: string } }) => unknown,
+    selector: (state: {
+      provider: { provider: string; modelId: string };
+    }) => unknown,
   ) =>
     selector({
       provider: {
@@ -343,10 +348,15 @@ describe("Settings route", () => {
 
       if (target.includes("/api/integrations/validate")) {
         const payload = getJsonBody(init);
-        if (typeof payload === "object" && payload !== null && "kind" in payload) {
+        if (
+          typeof payload === "object" &&
+          payload !== null &&
+          "kind" in payload
+        ) {
           const kind = (payload as { kind: string }).kind;
           if (kind === "provider") {
-            const provider = (payload as unknown as { target: AIProviderType }).target;
+            const provider = (payload as unknown as { target: AIProviderType })
+              .target;
             return Promise.resolve(
               createJsonResponse({
                 provider: {
@@ -363,9 +373,12 @@ describe("Settings route", () => {
             );
           }
 
-          const integration = (payload as unknown as { target: MCPCliTool }).target;
+          const integration = (payload as unknown as { target: MCPCliTool })
+            .target;
           return Promise.resolve(
-            createJsonResponse({ integration: createIntegrationSnapshot(integration) }),
+            createJsonResponse({
+              integration: createIntegrationSnapshot(integration),
+            }),
           );
         }
 
@@ -406,11 +419,13 @@ describe("Settings route", () => {
   });
 
   it("refreshes statuses and applies shell preference toggles", async () => {
-    renderedShells.push(renderWithShell(
-      <Suspense fallback={null}>
-        <SettingsPage />
-      </Suspense>,
-    ));
+    renderedShells.push(
+      renderWithShell(
+        <Suspense fallback={null}>
+          <SettingsPage />
+        </Suspense>,
+      ),
+    );
 
     await waitFor(() => {
       expect(callbacks.hydrateAgentSettingsStore).toHaveBeenCalledTimes(1);
@@ -424,13 +439,17 @@ describe("Settings route", () => {
     fireEvent.click(screen.getByRole("button", { name: "Hide inspector" }));
     expect(callbacks.toggleInspector).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: /Disable manual mode/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Disable manual mode/i }),
+    );
     expect(callbacks.setManualMode).toHaveBeenCalledWith(false);
 
     const refreshCalls = callbacks.syncProviderStatuses.mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
     await waitFor(() => {
-      expect(callbacks.syncProviderStatuses).toHaveBeenCalledTimes(refreshCalls + 1);
+      expect(callbacks.syncProviderStatuses).toHaveBeenCalledTimes(
+        refreshCalls + 1,
+      );
     });
   });
 
@@ -442,11 +461,13 @@ describe("Settings route", () => {
     claude.authenticated = true;
     claude.configPath = "/tmp/claude-config.json";
 
-    renderedShells.push(renderWithShell(
-      <Suspense fallback={null}>
-        <SettingsPage />
-      </Suspense>,
-    ));
+    renderedShells.push(
+      renderWithShell(
+        <Suspense fallback={null}>
+          <SettingsPage />
+        </Suspense>,
+      ),
+    );
 
     await waitFor(() => {
       expect(screen.getByText("Settings")).toBeTruthy();
@@ -454,7 +475,9 @@ describe("Settings route", () => {
 
     const claudeSection = integrationSection("Claude Code CLI");
 
-    fireEvent.click(within(claudeSection).getByRole("button", { name: "Validate" }));
+    fireEvent.click(
+      within(claudeSection).getByRole("button", { name: "Validate" }),
+    );
     await waitFor(() => {
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         expect.stringContaining("/api/integrations/validate"),
@@ -462,7 +485,9 @@ describe("Settings route", () => {
       );
     });
 
-    fireEvent.click(within(claudeSection).getByRole("button", { name: "Write config" }));
+    fireEvent.click(
+      within(claudeSection).getByRole("button", { name: "Write config" }),
+    );
     await waitFor(() => {
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         expect.stringContaining("/api/mcp/config"),
@@ -473,7 +498,9 @@ describe("Settings route", () => {
       );
     });
 
-    fireEvent.click(within(claudeSection).getByRole("button", { name: "Remove config" }));
+    fireEvent.click(
+      within(claudeSection).getByRole("button", { name: "Remove config" }),
+    );
     await waitFor(() => {
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         expect.stringContaining("/api/mcp/config"),

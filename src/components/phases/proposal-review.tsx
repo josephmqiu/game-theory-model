@@ -2,7 +2,7 @@
  * Proposal review panel — accept/reject proposals using acceptConversationProposal.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Check, X, ChevronDown, ChevronUp } from "lucide-react";
 import type { ProposalGroup } from "shared/game-theory/types/conversation";
 import {
@@ -18,11 +18,14 @@ interface ProposalReviewProps {
 }
 
 export function ProposalReview({ phase }: ProposalReviewProps) {
-  const proposalGroups = useConversationStore((s) => {
-    return s.messages
-      .filter((m) => m.phase === phase)
-      .flatMap((m) => m.structured_content?.proposals ?? []);
-  });
+  const allMessages = useConversationStore((s) => s.messages);
+  const proposalGroups = useMemo(
+    () =>
+      allMessages
+        .filter((m) => m.phase === phase)
+        .flatMap((m) => m.structured_content?.proposals ?? []),
+    [allMessages, phase],
+  );
 
   if (proposalGroups.length === 0) {
     return null;
@@ -66,7 +69,7 @@ function ProposalGroupCard({ group }: { group: ProposalGroup }) {
 
       {expanded && (
         <div className="border-t border-border divide-y divide-border">
-            {group.proposals.map((proposal) => (
+          {group.proposals.map((proposal) => (
             <ProposalRow key={proposal.id} proposalId={proposal.id} />
           ))}
         </div>

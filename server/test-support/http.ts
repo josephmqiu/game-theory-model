@@ -18,8 +18,11 @@ function buildUrl(path: string): string {
 
 type MockEvent = ReturnType<typeof mockEvent>;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyHandler = (event: MockEvent) => Promise<any> | any;
+
 async function callHandler<T>(
-  handler: (event: MockEvent) => Promise<T> | T,
+  handler: AnyHandler,
   request: Request,
 ): Promise<ApiCallResult<T>> {
   const event = mockEvent(request);
@@ -27,12 +30,12 @@ async function callHandler<T>(
 
   return {
     status: getResponseStatus(event),
-    body,
+    body: body as T,
   };
 }
 
 export async function callGet<T>(
-  handler: (event: MockEvent) => Promise<T> | T,
+  handler: AnyHandler,
   path: string,
 ): Promise<ApiCallResult<T>> {
   const request = new Request(buildUrl(path), {
@@ -43,7 +46,7 @@ export async function callGet<T>(
 }
 
 export async function callPost<T>(
-  handler: (event: MockEvent) => Promise<T> | T,
+  handler: AnyHandler,
   path: string,
   body?: unknown,
   init?: Omit<RequestInit, "method" | "body">,

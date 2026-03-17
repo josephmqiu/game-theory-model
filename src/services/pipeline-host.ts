@@ -11,6 +11,7 @@ import { pipelineStore } from "@/stores/pipeline-store";
 import { conversationStore } from "@/stores/conversation-store";
 import { derivedStore } from "@/stores/derived-store";
 import { playStore } from "@/stores/play-store";
+import { acceptConversationProposal } from "@/stores/proposal-actions";
 
 export function createPipelineHostFromStores(): PipelineHost {
   return {
@@ -133,6 +134,34 @@ export function createPipelineHostFromStores(): PipelineHost {
         mapped[fKey] = inner;
       }
       return { sensitivityByFormalizationAndSolver: mapped };
+    },
+
+    acceptAllPendingProposals(phase) {
+      const state = conversationStore.getState();
+      const proposalIds = state.messages
+        .filter((m) => m.phase === phase)
+        .flatMap((m) => m.structured_content?.proposals ?? [])
+        .flatMap((group) => group.proposals)
+        .map((p) => p.id);
+
+      let accepted = 0;
+      for (const proposalId of proposalIds) {
+        const proposal = state.proposals_by_id[proposalId];
+        if (!proposal || proposal.status !== "pending") continue;
+
+        const result = acceptConversationProposal({
+          proposalId,
+          canonical: analysisStore.getState().canonical,
+          currentPersistedRevision: analysisStore.getState().eventLog.cursor,
+          dispatch: analysisStore.getState().dispatch,
+        });
+
+        if (result.status === "accepted") {
+          accepted += 1;
+        }
+      }
+
+      return accepted;
     },
   };
 }

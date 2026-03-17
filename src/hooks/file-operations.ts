@@ -7,6 +7,7 @@ import { analysisStore } from "@/stores/analysis-store";
 import { pipelineStore } from "@/stores/pipeline-store";
 import { conversationStore } from "@/stores/conversation-store";
 import { playStore, type PlaySession } from "@/stores/play-store";
+import { recoveryStore } from "@/stores/recovery-store";
 import { storeToAnalysisFile } from "shared/game-theory/utils/serialization";
 import type { AnalysisFile } from "shared/game-theory/types/file";
 
@@ -19,28 +20,46 @@ interface LoadedAnalysisResponse {
     description?: string;
     metadata?: AnalysisFile["metadata"];
   };
+  stage?: string;
   error?: string;
+  issues?: string[];
 }
 
 interface PersistedWorkflowState {
   pipeline?: {
-    analysis_state?: ReturnType<typeof pipelineStore.getState>["analysis_state"];
-    phase_executions?: ReturnType<typeof pipelineStore.getState>["phase_executions"];
+    analysis_state?: ReturnType<
+      typeof pipelineStore.getState
+    >["analysis_state"];
+    phase_executions?: ReturnType<
+      typeof pipelineStore.getState
+    >["phase_executions"];
     phase_results?: ReturnType<typeof pipelineStore.getState>["phase_results"];
-    steering_messages?: ReturnType<typeof pipelineStore.getState>["steering_messages"];
-    proposal_review?: ReturnType<typeof pipelineStore.getState>["proposal_review"];
+    steering_messages?: ReturnType<
+      typeof pipelineStore.getState
+    >["steering_messages"];
+    proposal_review?: ReturnType<
+      typeof pipelineStore.getState
+    >["proposal_review"];
   };
   runtime?: {
-    prompt_registry?: ReturnType<typeof pipelineStore.getState>["prompt_registry"];
+    prompt_registry?: ReturnType<
+      typeof pipelineStore.getState
+    >["prompt_registry"];
     pending_revalidation_approvals?: ReturnType<
       typeof pipelineStore.getState
     >["pending_revalidation_approvals"];
-    active_rerun_cycle?: ReturnType<typeof pipelineStore.getState>["active_rerun_cycle"];
+    active_rerun_cycle?: ReturnType<
+      typeof pipelineStore.getState
+    >["active_rerun_cycle"];
   };
   conversation?: {
     messages?: ReturnType<typeof conversationStore.getState>["messages"];
-    proposal_review?: ReturnType<typeof conversationStore.getState>["proposal_review"];
-    proposals_by_id?: ReturnType<typeof conversationStore.getState>["proposals_by_id"];
+    proposal_review?: ReturnType<
+      typeof conversationStore.getState
+    >["proposal_review"];
+    proposals_by_id?: ReturnType<
+      typeof conversationStore.getState
+    >["proposals_by_id"];
   };
   play?: {
     active_session_id?: string | null;
@@ -257,15 +276,49 @@ export async function loadFileFromContent(
           conversationStore.getState().proposal_review,
         proposals_by_id: workflowState?.conversation?.proposals_by_id ?? {},
       });
-      playStore.getState().replaceSessions(
-        deserializePlaySessions(metadata.play_sessions),
-        workflowState?.play?.active_session_id ?? null,
-      );
+      playStore
+        .getState()
+        .replaceSessions(
+          deserializePlaySessions(metadata.play_sessions),
+          workflowState?.play?.active_session_id ?? null,
+        );
     } else {
-      console.error("Load failed:", result.error);
+      const stage = result.stage as
+        | "parse"
+        | "migration"
+        | "validation"
+        | "structural"
+        | undefined;
+      if (stage) {
+        recoveryStore.getState().enterRecovery({
+          stage,
+          error: {
+            message: result.error ?? "File could not be loaded.",
+            issues: result.issues?.map(String),
+          },
+          rawContent: content,
+          filePath,
+        });
+      } else {
+        recoveryStore.getState().enterRecovery({
+          stage: "parse",
+          error: {
+            message: result.error ?? "File could not be loaded.",
+          },
+          rawContent: content,
+          filePath,
+        });
+      }
     }
   } catch (err) {
-    console.error("Load failed:", err);
+    recoveryStore.getState().enterRecovery({
+      stage: "parse",
+      error: {
+        message: err instanceof Error ? err.message : "Failed to load file.",
+      },
+      rawContent: content,
+      filePath,
+    });
   }
 }
 

@@ -1,21 +1,42 @@
-import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  type Mock,
+  vi,
+} from "vitest";
 import handler from "../../../server/api/integrations/validate.post.ts";
 import { callPost } from "../../../server/test-support/http";
 
-vi.mock("../ai/connect-agent.post", () => ({
+vi.mock("../../../server/api/ai/connect-agent.post", () => ({
   discoverAgentConnection: vi.fn(),
 }));
 
-vi.mock("../../utils/integration-status", () => ({
+vi.mock("../../../server/utils/integration-status", () => ({
   getMcpIntegrationStatuses: vi.fn(),
 }));
 
-import { discoverAgentConnection } from "../ai/connect-agent.post";
+vi.mock("../../../server/utils/mcp-config-writers", () => ({
+  hasManagedMcpConfig: vi.fn(),
+  getManagedMcpConfigPath: vi.fn(),
+  smokeTestManagedMcpStdio: vi.fn(),
+  writeManagedMcpConfig: vi.fn(),
+}));
+
+import { discoverAgentConnection } from "../../../server/api/ai/connect-agent.post";
 import { getMcpIntegrationStatuses } from "../../../server/utils/integration-status";
+import {
+  hasManagedMcpConfig,
+  smokeTestManagedMcpStdio,
+} from "../../../server/utils/mcp-config-writers";
 
 describe("/api/integrations/validate", () => {
   const mockDiscover = discoverAgentConnection as unknown as Mock;
   const mockGetStatuses = getMcpIntegrationStatuses as unknown as Mock;
+  const mockHasConfig = hasManagedMcpConfig as unknown as Mock;
+  const mockSmokeTest = smokeTestManagedMcpStdio as unknown as Mock;
 
   afterEach(() => {
     vi.clearAllMocks();
@@ -24,11 +45,17 @@ describe("/api/integrations/validate", () => {
   beforeEach(() => {
     mockDiscover.mockReset();
     mockGetStatuses.mockReset();
+    mockHasConfig.mockReset();
+    mockSmokeTest.mockReset();
   });
 
   it("validates a provider by delegating to its connector", async () => {
     mockDiscover.mockResolvedValue({
+      installed: true,
       connected: true,
+      authenticated: true,
+      reachable: true,
+      statusStage: "ready",
       models: [
         {
           value: "claude-sonnet-4",
@@ -37,6 +64,7 @@ describe("/api/integrations/validate", () => {
           provider: "anthropic",
         },
       ],
+      modelsDiscovered: 1,
     });
 
     const response = await callPost<{
@@ -73,8 +101,13 @@ describe("/api/integrations/validate", () => {
 
   it("returns a validation error when provider discovery fails", async () => {
     mockDiscover.mockResolvedValue({
+      installed: false,
       connected: false,
+      authenticated: null,
+      reachable: false,
+      statusStage: "missing_binary",
       models: [],
+      modelsDiscovered: 0,
       error: "provider unavailable",
       notInstalled: true,
     });
@@ -108,6 +141,9 @@ describe("/api/integrations/validate", () => {
         installed: true,
         validated: true,
         authenticated: null,
+        statusStage: "config_written",
+        reachable: null,
+        lastError: null,
         statusMessage: "installed",
         lastCheckedAt: "2026-01-01T00:00:00.000Z",
         configPath: "/tmp/mcp/copilot-cli.json",
@@ -119,11 +155,16 @@ describe("/api/integrations/validate", () => {
         installed: true,
         validated: true,
         authenticated: null,
+        statusStage: "detected",
+        reachable: null,
+        lastError: null,
         statusMessage: "installed",
         lastCheckedAt: "2026-01-01T00:00:00.000Z",
         configPath: null,
       },
     ]);
+    mockHasConfig.mockResolvedValue(true);
+    mockSmokeTest.mockResolvedValue({ reachable: true });
 
     const response = await callPost<{
       status: string;
@@ -132,6 +173,7 @@ describe("/api/integrations/validate", () => {
         installed: boolean;
         validated: boolean;
         authenticated: boolean | null;
+        statusMessage: string;
       };
     }>(handler, "/api/integrations/validate", {
       kind: "integration",
@@ -145,7 +187,7 @@ describe("/api/integrations/validate", () => {
       installed: true,
       validated: true,
       authenticated: null,
-      statusMessage: "copilot-cli is available for MCP wiring.",
+      statusMessage: "copilot-cli is ready for MCP wiring.",
     });
   });
 

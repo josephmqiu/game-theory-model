@@ -1,5 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { useUiStore } from "@/stores/ui-store";
 import { aiStore, useAiStore } from "@/stores/ai-store";
 import {
@@ -9,17 +10,21 @@ import {
 } from "@/stores/agent-settings-store";
 import { refreshIntegrationStatuses } from "@/services/integration-status";
 import type {
-  AIProviderType,
   AIProviderConfig,
+  AIProviderType,
   GroupedModel,
   IntegrationStatusSnapshot,
-  MCPCliIntegration,
   MCPCliTool,
   MCPTransportMode,
-  ProviderStatusStage,
   ProviderStatusSnapshot,
   ProviderConnectionMethod,
 } from "@/types/agent-settings";
+import {
+  SettingRow,
+  StatusBadge,
+  providerStageBadge,
+  integrationStageBadge,
+} from "./-settings-helpers";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
@@ -32,7 +37,10 @@ const CONNECTOR_ORDER: AIProviderType[] = [
   "copilot",
 ];
 
-const PROVIDER_CONNECTION_METHOD: Record<AIProviderType, ProviderConnectionMethod> = {
+const PROVIDER_CONNECTION_METHOD: Record<
+  AIProviderType,
+  ProviderConnectionMethod
+> = {
   anthropic: "claude-code",
   openai: "codex-cli",
   opencode: "opencode",
@@ -44,22 +52,26 @@ const PROVIDER_SETUP_HINTS: Record<
   { install: string; authenticate: string }
 > = {
   anthropic: {
-    install: "Install the Claude Code CLI, then return here to validate and connect it.",
+    install:
+      "Install the Claude Code CLI, then return here to validate and connect it.",
     authenticate:
       'Run "claude login" or configure your Anthropic credentials before validating.',
   },
   openai: {
-    install: "Install the Codex CLI, then run it once so the local model cache exists.",
+    install:
+      "Install the Codex CLI, then run it once so the local model cache exists.",
     authenticate:
       "Authenticate Codex/OpenAI in your terminal before validating model discovery.",
   },
   opencode: {
-    install: "Install OpenCode and start its local service before validating here.",
+    install:
+      "Install OpenCode and start its local service before validating here.",
     authenticate:
       "Configure providers inside OpenCode first so model discovery has something to return.",
   },
   copilot: {
-    install: "Install the GitHub Copilot CLI on this machine before connecting it here.",
+    install:
+      "Install the GitHub Copilot CLI on this machine before connecting it here.",
     authenticate: 'Run "copilot login" in your terminal before validating.',
   },
 };
@@ -106,7 +118,9 @@ export function SettingsPage() {
       await refreshIntegrationStatuses();
     } catch (error) {
       setActionError(
-        error instanceof Error ? error.message : "Could not refresh integration status.",
+        error instanceof Error
+          ? error.message
+          : "Could not refresh integration status.",
       );
     }
   }
@@ -195,7 +209,9 @@ export function SettingsPage() {
       ]);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : `Failed to connect ${providerType}`;
+        error instanceof Error
+          ? error.message
+          : `Failed to connect ${providerType}`;
       agentSettingsStore.getState().setConnectionError(providerType, message);
       setActionError(message);
     } finally {
@@ -208,7 +224,9 @@ export function SettingsPage() {
     agentSettingsStore.getState().disconnectProvider(providerType);
   }
 
-  async function handleValidateProvider(providerType: AIProviderType): Promise<void> {
+  async function handleValidateProvider(
+    providerType: AIProviderType,
+  ): Promise<void> {
     setActionError(null);
     setBusyAction(`validate-provider:${providerType}`);
     try {
@@ -242,7 +260,9 @@ export function SettingsPage() {
       }
     } catch (error) {
       setActionError(
-        error instanceof Error ? error.message : `Could not validate ${providerType}`,
+        error instanceof Error
+          ? error.message
+          : `Could not validate ${providerType}`,
       );
     } finally {
       setBusyAction(null);
@@ -275,7 +295,9 @@ export function SettingsPage() {
         throw new Error(result.error ?? `Could not validate ${tool}`);
       }
 
-      agentSettingsStore.getState().syncIntegrationStatuses([result.integration]);
+      agentSettingsStore
+        .getState()
+        .syncIntegrationStatuses([result.integration]);
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : `Could not validate ${tool}`,
@@ -303,13 +325,19 @@ export function SettingsPage() {
       };
 
       if (!response.ok || !result.integration) {
-        throw new Error(result.error ?? `Could not write MCP config for ${tool}`);
+        throw new Error(
+          result.error ?? `Could not write MCP config for ${tool}`,
+        );
       }
 
-      agentSettingsStore.getState().syncIntegrationStatuses([result.integration]);
+      agentSettingsStore
+        .getState()
+        .syncIntegrationStatuses([result.integration]);
     } catch (error) {
       setActionError(
-        error instanceof Error ? error.message : `Could not write MCP config for ${tool}`,
+        error instanceof Error
+          ? error.message
+          : `Could not write MCP config for ${tool}`,
       );
     } finally {
       setBusyAction(null);
@@ -331,17 +359,23 @@ export function SettingsPage() {
       };
 
       if (!response.ok) {
-        throw new Error(result.error ?? `Could not remove MCP config for ${tool}`);
+        throw new Error(
+          result.error ?? `Could not remove MCP config for ${tool}`,
+        );
       }
 
       if (result.integration) {
-        agentSettingsStore.getState().syncIntegrationStatuses([result.integration]);
+        agentSettingsStore
+          .getState()
+          .syncIntegrationStatuses([result.integration]);
       } else {
         await refreshStatuses();
       }
     } catch (error) {
       setActionError(
-        error instanceof Error ? error.message : `Could not remove MCP config for ${tool}`,
+        error instanceof Error
+          ? error.message
+          : `Could not remove MCP config for ${tool}`,
       );
     } finally {
       setBusyAction(null);
@@ -353,8 +387,18 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-8">
-      <div className="mx-auto max-w-3xl space-y-8">
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="h-10 flex items-center border-b border-border px-4 shrink-0 app-region-drag">
+        <Link
+          to="/editor"
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors app-region-no-drag"
+        >
+          <ArrowLeft size={14} />
+          Back to Editor
+        </Link>
+      </header>
+
+      <div className="mx-auto max-w-3xl space-y-8 p-8">
         <h1 className="text-2xl font-bold">Settings</h1>
 
         <section className="rounded-xl border border-border bg-card p-6">
@@ -364,7 +408,10 @@ export function SettingsPage() {
           </p>
 
           <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-            <SettingRow label="AI panel" value={aiPanelOpen ? "Open" : "Closed"} />
+            <SettingRow
+              label="AI panel"
+              value={aiPanelOpen ? "Open" : "Closed"}
+            />
             <SettingRow
               label="AI panel mode"
               value={aiPanelMinimized ? "Minimized" : "Expanded"}
@@ -426,7 +473,8 @@ export function SettingsPage() {
               const config = providers[providerType];
               const isConnecting = connectingProvider === providerType;
               const error = connectionErrors[providerType];
-              const isValidating = busyAction === `validate-provider:${providerType}`;
+              const isValidating =
+                busyAction === `validate-provider:${providerType}`;
               const stageBadge = providerStageBadge(config);
 
               return (
@@ -476,7 +524,9 @@ export function SettingsPage() {
                         </p>
                       )}
                       {config.lastError && (
-                        <p className="mt-2 text-xs text-red-500">{config.lastError}</p>
+                        <p className="mt-2 text-xs text-red-500">
+                          {config.lastError}
+                        </p>
                       )}
                       {!config.installed && (
                         <p className="mt-2 text-xs text-muted-foreground">
@@ -493,7 +543,9 @@ export function SettingsPage() {
                     <div className="flex flex-col gap-2">
                       <button
                         type="button"
-                        onClick={() => void handleValidateProvider(providerType)}
+                        onClick={() =>
+                          void handleValidateProvider(providerType)
+                        }
                         disabled={isValidating || !config.installed}
                         className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-accent"
                       >
@@ -520,33 +572,53 @@ export function SettingsPage() {
                     </div>
                   </div>
 
-                  {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+                  {error && (
+                    <p className="mt-3 text-sm text-red-500">{error}</p>
+                  )}
 
                   {config.models.length > 0 && (
                     <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                      {config.models.map((model) => (
-                        <div
-                          key={model.value}
-                          className="rounded-md border border-border bg-card px-3 py-2"
-                        >
-                          <p className="text-sm font-medium text-foreground">
-                            {model.displayName}
-                          </p>
-                          <p className="mt-1 break-all text-xs text-muted-foreground">
-                            {model.value}
-                          </p>
-                          {model.description && (
-                            <p className="mt-1 text-xs text-muted-foreground">
-                            {model.description}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                      {config.models.map((model) => {
+                        const isSelected =
+                          provider.provider === providerType &&
+                          provider.modelId === model.value;
+                        return (
+                          <button
+                            key={model.value}
+                            type="button"
+                            onClick={() =>
+                              aiStore.getState().setProvider({
+                                provider: providerType,
+                                modelId: model.value,
+                              })
+                            }
+                            className={`rounded-md border px-3 py-2 text-left transition-colors ${
+                              isSelected
+                                ? "border-primary bg-primary/10"
+                                : "border-border bg-card hover:border-primary/50"
+                            }`}
+                          >
+                            <p className="text-sm font-medium text-foreground">
+                              {model.value}
+                            </p>
+                            {model.description && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {model.description}
+                              </p>
+                            )}
+                            {isSelected && (
+                              <p className="mt-1 text-xs font-medium text-primary">
+                                Active
+                              </p>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </section>
 
@@ -576,9 +648,12 @@ export function SettingsPage() {
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {mcpIntegrations.map((integration) => {
-              const isValidating = busyAction === `validate-integration:${integration.tool}`;
-              const isWritingConfig = busyAction === `write-config:${integration.tool}`;
-              const isRemovingConfig = busyAction === `remove-config:${integration.tool}`;
+              const isValidating =
+                busyAction === `validate-integration:${integration.tool}`;
+              const isWritingConfig =
+                busyAction === `write-config:${integration.tool}`;
+              const isRemovingConfig =
+                busyAction === `remove-config:${integration.tool}`;
               const stageBadge = integrationStageBadge(integration);
 
               return (
@@ -598,7 +673,9 @@ export function SettingsPage() {
                       <div className="mt-2 flex flex-wrap gap-2 text-xs">
                         <StatusBadge
                           tone={integration.installed ? "ready" : "missing"}
-                          label={integration.installed ? "Installed" : "Missing"}
+                          label={
+                            integration.installed ? "Installed" : "Missing"
+                          }
                         />
                         <StatusBadge
                           tone={stageBadge.tone}
@@ -606,7 +683,11 @@ export function SettingsPage() {
                         />
                         <StatusBadge
                           tone={integration.configPath ? "ready" : "pending"}
-                          label={integration.configPath ? "Config written" : "No config"}
+                          label={
+                            integration.configPath
+                              ? "Config written"
+                              : "No config"
+                          }
                         />
                         <StatusBadge
                           tone={integration.enabled ? "ready" : "pending"}
@@ -627,13 +708,16 @@ export function SettingsPage() {
                         {MCP_SETUP_HINTS[integration.tool]}
                       </p>
                       <p className="mt-2 break-all text-xs text-muted-foreground">
-                        Managed config: {integration.configPath ?? "Not written yet"}
+                        Managed config:{" "}
+                        {integration.configPath ?? "Not written yet"}
                       </p>
                     </div>
                     <div className="flex flex-col gap-2">
                       <button
                         type="button"
-                        onClick={() => void handleValidateIntegration(integration.tool)}
+                        onClick={() =>
+                          void handleValidateIntegration(integration.tool)
+                        }
                         disabled={isValidating || !integration.installed}
                         className="rounded-md border border-border px-3 py-1.5 text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                       >
@@ -649,7 +733,9 @@ export function SettingsPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => void handleRemoveConfig(integration.tool)}
+                        onClick={() =>
+                          void handleRemoveConfig(integration.tool)
+                        }
                         disabled={!integration.configPath || isRemovingConfig}
                         className="rounded-md border border-border px-3 py-1.5 text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                       >
@@ -657,7 +743,9 @@ export function SettingsPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleToggleIntegration(integration.tool)}
+                        onClick={() =>
+                          handleToggleIntegration(integration.tool)
+                        }
                         disabled={
                           !integration.installed ||
                           integration.statusStage !== "ready" ||
@@ -687,75 +775,11 @@ export function SettingsPage() {
             <SettingRow label="Model" value={provider.modelId} />
           </dl>
 
-          {actionError && <p className="mt-4 text-sm text-red-500">{actionError}</p>}
+          {actionError && (
+            <p className="mt-4 text-sm text-red-500">{actionError}</p>
+          )}
         </section>
       </div>
     </div>
   );
-}
-
-function SettingRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-      <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </dt>
-      <dd className="mt-1 text-sm text-foreground">{value}</dd>
-    </div>
-  );
-}
-
-function StatusBadge({
-  label,
-  tone,
-}: {
-  label: string;
-  tone: "ready" | "pending" | "missing";
-}) {
-  const classes =
-    tone === "ready"
-      ? "bg-green-500/10 text-green-600"
-      : tone === "missing"
-        ? "bg-red-500/10 text-red-600"
-        : "bg-secondary text-muted-foreground";
-
-  return <span className={`rounded-full px-2 py-0.5 ${classes}`}>{label}</span>;
-}
-
-function providerStageBadge(
-  config: AIProviderConfig,
-): { label: string; tone: "ready" | "pending" | "missing" } {
-  switch (config.statusStage) {
-    case "ready":
-      return { label: "Ready", tone: "ready" };
-    case "authenticated":
-      return { label: "Authenticated", tone: "ready" };
-    case "detected":
-      return { label: "Detected", tone: "pending" };
-    case "error":
-      return { label: "Error", tone: "missing" };
-    case "missing_binary":
-    default:
-      return { label: "Missing", tone: "missing" };
-  }
-}
-
-function integrationStageBadge(
-  integration: MCPCliIntegration,
-): { label: string; tone: "ready" | "pending" | "missing" } {
-  switch (integration.statusStage) {
-    case "ready":
-      return { label: "Ready", tone: "ready" };
-    case "reachable":
-      return { label: "Reachable", tone: "ready" };
-    case "config_written":
-      return { label: "Config written", tone: "pending" };
-    case "detected":
-      return { label: "Detected", tone: "pending" };
-    case "error":
-      return { label: "Error", tone: "missing" };
-    case "missing_binary":
-    default:
-      return { label: "Missing", tone: "missing" };
-  }
 }

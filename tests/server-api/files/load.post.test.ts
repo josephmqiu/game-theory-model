@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { writeFile } from "node:fs/promises";
 import { storeToAnalysisFile } from "shared/game-theory/utils/serialization";
 import { createSampleCanonicalStore } from "shared/game-theory/test-support/sample-analysis";
 import type { AnalysisFileMeta } from "shared/game-theory/types/file";
@@ -15,13 +14,11 @@ function createAnalysisPayload() {
 
 describe("/api/files/load.post", () => {
   it("returns parsed and validated analysis payloads", async () => {
-    const response = await callPost<
-      {
-        success: true;
-        store: unknown;
-        meta: { name: string; description?: string; metadata: unknown };
-      }
-    >(handler, "/api/files/load", {
+    const response = await callPost<{
+      success: true;
+      store: unknown;
+      meta: { name: string; description?: string; metadata: unknown };
+    }>(handler, "/api/files/load", {
       content: createAnalysisPayload(),
     });
 

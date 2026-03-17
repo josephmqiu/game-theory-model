@@ -19,6 +19,8 @@ import {
   AiChatMinimizedBar,
   AiChatPanel,
 } from "@/components/panels/ai-chat-panel";
+import { RecoveryView } from "@/components/shell/recovery-view";
+import { useRecoveryStore } from "@/stores/recovery-store";
 
 export function AppLayout() {
   const [bootstrapped, setBootstrapped] = useState(false);
@@ -62,10 +64,20 @@ function BootstrappedAppLayout() {
   const aiPanelMinimized = useUiStore((s) => s.aiPanelMinimized);
   const setAiPanelOpen = useUiStore((s) => s.setAiPanelOpen);
   const toggleAiPanelMinimized = useUiStore((s) => s.toggleAiPanelMinimized);
+  const recoveryActive = useRecoveryStore((s) => s.active);
 
   useKeyboardShortcuts();
   useElectronMenu();
   useMcpSync(true);
+
+  if (recoveryActive) {
+    return (
+      <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
+        <TopBar />
+        <RecoveryView />
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">

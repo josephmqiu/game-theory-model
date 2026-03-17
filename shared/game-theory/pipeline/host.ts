@@ -125,4 +125,5 @@ export interface PipelineHost {
     eventId: string,
     resolution: "pending" | "approved" | "rerun_complete" | "dismissed",
   ): void;
+  acceptAllPendingProposals(phase: number): number;
 }

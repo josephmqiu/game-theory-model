@@ -3,6 +3,7 @@ import type { AIStreamChunk } from "./ai-stream";
 
 export type AppCommandType =
   | "start_analysis"
+  | "run_full_analysis"
   | "send_chat"
   | "run_phase"
   | "run_next_phase"
@@ -35,6 +36,9 @@ export interface AppCommandPayloadMap {
   start_analysis: {
     description: string;
     manual?: boolean;
+  };
+  run_full_analysis: {
+    description: string;
   };
   send_chat: {
     system: string;

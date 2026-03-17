@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdtemp, realpath, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSampleAnalysisMeta } from "shared/game-theory/test-support/sample-analysis";
@@ -19,26 +19,26 @@ function createPayload() {
 describe("/api/files/save", () => {
   it("writes a valid analysis file to disk", async () => {
     const dir = await mkdtemp(join(tmpdir(), "gta-save-"));
+    const realDir = await realpath(dir);
     const filePath = join(dir, "analysis.gta.json");
+    const realFilePath = join(realDir, "analysis.gta.json");
 
-    const response = await callPost<
-      {
-        success: true;
-        filePath: string;
-        schemaVersion: number;
-        bytesWritten: number;
-      }
-    >(handler, "/api/files/save", {
+    const response = await callPost<{
+      success: true;
+      filePath: string;
+      schemaVersion: number;
+      bytesWritten: number;
+    }>(handler, "/api/files/save", {
       ...createPayload(),
       filePath,
     });
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
-    expect(response.body.filePath).toBe(filePath);
+    expect(response.body.filePath).toBe(realFilePath);
     expect(response.body.bytesWritten).toBeGreaterThan(0);
 
-    const saved = await readFile(filePath, "utf-8");
+    const saved = await readFile(realFilePath, "utf-8");
     const parsed = JSON.parse(saved);
     expect(parsed).toMatchObject({
       name: "Sample strategic analysis",

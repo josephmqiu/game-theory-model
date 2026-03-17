@@ -46,7 +46,9 @@ async function resolveWithExistingAncestor(path: string): Promise<string> {
     if (parent === current) {
       throw new Error("Path is outside the allowed directory");
     }
-    missingSegments.unshift(current.slice(parent.length + (parent.endsWith(sep) ? 0 : 1)));
+    missingSegments.unshift(
+      current.slice(parent.length + (parent.endsWith(sep) ? 0 : 1)),
+    );
     current = parent;
     try {
       const realAncestor = await realpath(current);
@@ -80,10 +82,21 @@ export async function resolveSafePath(
     throw new Error(`File path must end with ${options.requiredSuffix}`);
   }
 
+  // Pre-check: reject paths clearly outside allowed roots before touching
+  // the filesystem. This ensures out-of-tree paths always get the correct
+  // "outside the allowed directory" error instead of ENOENT from realpath.
+  const preliminary = resolve(filePath);
+  const allowedRoots = await resolveAllowedRoots();
+  const rawRoots = [homedir(), tmpdir()].map((r) => resolve(r));
+  const allRoots = [...new Set([...allowedRoots, ...rawRoots])];
+
+  if (!allRoots.some((root) => isWithinRoot(preliminary, root))) {
+    throw new Error("Path is outside the allowed directory");
+  }
+
   const candidate = options.mustExist
     ? await realpath(resolve(filePath))
     : await resolveWithExistingAncestor(filePath);
-  const allowedRoots = await resolveAllowedRoots();
 
   if (!allowedRoots.some((root) => isWithinRoot(candidate, root))) {
     throw new Error("Path is outside the allowed directory");
@@ -92,10 +105,9 @@ export async function resolveSafePath(
   return candidate;
 }
 
-export async function resolveSafeReadPath(filePath: string): Promise<
-  | { ok: true; path: string }
-  | { ok: false; error: string }
-> {
+export async function resolveSafeReadPath(
+  filePath: string,
+): Promise<{ ok: true; path: string } | { ok: false; error: string }> {
   try {
     const path = await resolveSafePath(filePath, {
       mustExist: true,
@@ -110,10 +122,9 @@ export async function resolveSafeReadPath(filePath: string): Promise<
   }
 }
 
-export async function resolveSafeWritePath(filePath: string): Promise<
-  | { ok: true; path: string }
-  | { ok: false; error: string }
-> {
+export async function resolveSafeWritePath(
+  filePath: string,
+): Promise<{ ok: true; path: string } | { ok: false; error: string }> {
   try {
     const path = await resolveSafePath(filePath, {
       mustExist: false,

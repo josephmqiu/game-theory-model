@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   completeCommand,
-  enqueueCommand,
   getPendingCommands,
 } from "../../../server/utils/mcp-command-bus";
 import handler from "../../../server/api/mcp/commands.post.ts";
@@ -9,7 +8,11 @@ import { callPost } from "../../../server/test-support/http";
 
 function clearQueue(): void {
   for (const command of getPendingCommands()) {
-    completeCommand({ id: command.id, status: "failed", error: "test cleanup" });
+    completeCommand({
+      id: command.id,
+      status: "failed",
+      error: "test cleanup",
+    });
   }
 }
 
@@ -105,7 +108,11 @@ describe("/api/mcp/commands.post", () => {
     const [command] = getPendingCommands().filter(
       (entry) => entry.type === "apply_proposal",
     );
-    completeCommand({ id: command.id, status: "failed", error: "proposal failed" });
+    completeCommand({
+      id: command.id,
+      status: "failed",
+      error: "proposal failed",
+    });
 
     const response = await queued;
     expect(response.status).toBe(500);

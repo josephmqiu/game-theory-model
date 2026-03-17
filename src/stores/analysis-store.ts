@@ -13,7 +13,8 @@ import { buildInverseIndex } from "shared/game-theory/engine/inverse-index";
 import type { Command } from "shared/game-theory/engine/commands";
 import type { DispatchResult } from "shared/game-theory/engine/dispatch";
 import { dispatch } from "shared/game-theory/engine/dispatch";
-import { applyPatch } from "fast-json-patch";
+import fjp from "fast-json-patch";
+const { applyPatch } = fjp;
 import type { AnalysisFile } from "shared/game-theory/types/file";
 import { derivedStore } from "./derived-store";
 
@@ -100,10 +101,9 @@ export const analysisStore = createStore<AnalysisStore>((set, get) => ({
     const event = events[cursor - 1];
     if (!event) return;
 
-    const reverted = applyPatch(
-      structuredClone(state.canonical),
-      event.inverse_patches,
-    ).newDocument as CanonicalStore;
+    const reverted = applyPatch(structuredClone(state.canonical), [
+      ...event.inverse_patches,
+    ]).newDocument as CanonicalStore;
 
     set({
       canonical: reverted,
@@ -125,8 +125,9 @@ export const analysisStore = createStore<AnalysisStore>((set, get) => ({
     const event = events[cursor];
     if (!event) return;
 
-    const applied = applyPatch(structuredClone(state.canonical), event.patches)
-      .newDocument as CanonicalStore;
+    const applied = applyPatch(structuredClone(state.canonical), [
+      ...event.patches,
+    ]).newDocument as CanonicalStore;
 
     set({
       canonical: applied,

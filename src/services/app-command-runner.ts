@@ -25,7 +25,11 @@ function findNextRunnablePhase(): number {
 
   for (let phase = 1; phase <= 10; phase += 1) {
     const phaseState = pipelineState.phase_states[phase];
-    if (!phaseState || phaseState.status === "pending" || phaseState.status === "needs_rerun") {
+    if (
+      !phaseState ||
+      phaseState.status === "pending" ||
+      phaseState.status === "needs_rerun"
+    ) {
       return phase;
     }
   }
@@ -36,7 +40,10 @@ function findNextRunnablePhase(): number {
 export async function sendChatCommand(
   payload: AppCommandPayloadMap["send_chat"],
   options?: {
-    onChunk?: (chunk: AIStreamChunk, snapshot: { content: string; thinking: string[] }) => void;
+    onChunk?: (
+      chunk: AIStreamChunk,
+      snapshot: { content: string; thinking: string[] },
+    ) => void;
   },
 ): Promise<SendChatCommandResult> {
   const response = await fetch("/api/ai/chat", {
@@ -123,13 +130,21 @@ export async function executeAppCommand<T extends AppCommandType>(
         (command.payload as AppCommandPayloadMap["start_analysis"]).description,
         {
           manual:
-            (command.payload as AppCommandPayloadMap["start_analysis"]).manual ??
-            false,
+            (command.payload as AppCommandPayloadMap["start_analysis"])
+              .manual ?? false,
         },
       );
 
+    case "run_full_analysis":
+      return pipelineController.runFullAnalysis(
+        (command.payload as AppCommandPayloadMap["run_full_analysis"])
+          .description,
+      );
+
     case "send_chat":
-      return sendChatCommand(command.payload as AppCommandPayloadMap["send_chat"]);
+      return sendChatCommand(
+        command.payload as AppCommandPayloadMap["send_chat"],
+      );
 
     case "run_phase": {
       const payload = command.payload as AppCommandPayloadMap["run_phase"];
@@ -141,12 +156,14 @@ export async function executeAppCommand<T extends AppCommandType>(
 
     case "approve_revalidation":
       return pipelineController.approveRevalidation(
-        (command.payload as AppCommandPayloadMap["approve_revalidation"]).eventId,
+        (command.payload as AppCommandPayloadMap["approve_revalidation"])
+          .eventId,
       );
 
     case "dismiss_revalidation":
       pipelineController.dismissRevalidation(
-        (command.payload as AppCommandPayloadMap["dismiss_revalidation"]).eventId,
+        (command.payload as AppCommandPayloadMap["dismiss_revalidation"])
+          .eventId,
       );
       return { success: true };
 
@@ -181,7 +198,8 @@ export async function executeAppCommand<T extends AppCommandType>(
     }
 
     case "start_play_session": {
-      const payload = command.payload as AppCommandPayloadMap["start_play_session"];
+      const payload =
+        command.payload as AppCommandPayloadMap["start_play_session"];
       return playStore.getState().startSession({
         scenarioId: payload.scenarioId,
         aiControlledPlayers: payload.aiControlledPlayers,
@@ -189,7 +207,8 @@ export async function executeAppCommand<T extends AppCommandType>(
     }
 
     case "branch_play_session": {
-      const payload = command.payload as AppCommandPayloadMap["branch_play_session"];
+      const payload =
+        command.payload as AppCommandPayloadMap["branch_play_session"];
       return playStore.getState().branchSession({
         sessionId: payload.sessionId,
         branchLabel: payload.branchLabel,
@@ -207,6 +226,8 @@ export async function executeAppCommand<T extends AppCommandType>(
     }
 
     default:
-      throw new Error(`Unsupported app command: ${(command as AppCommandEnvelope).type}`);
+      throw new Error(
+        `Unsupported app command: ${(command as AppCommandEnvelope).type}`,
+      );
   }
 }

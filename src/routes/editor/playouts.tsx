@@ -2,7 +2,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { executeAppCommand } from "@/services/app-command-runner";
 import { useAnalysisStore } from "@/stores/analysis-store";
-import { usePlayStore, type PlaySession, type PlaySessionTurn } from "@/stores/play-store";
+import {
+  usePlayStore,
+  type PlaySession,
+  type PlaySessionTurn,
+} from "@/stores/play-store";
 
 export const Route = createFileRoute("/editor/playouts")({
   component: PlayoutsPage,
@@ -88,8 +92,8 @@ function formatTime(value: string): string {
 }
 
 function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values.filter((value) => value.trim().length > 0))].sort((a, b) =>
-    a.localeCompare(b),
+  return [...new Set(values.filter((value) => value.trim().length > 0))].sort(
+    (a, b) => a.localeCompare(b),
   );
 }
 
@@ -110,9 +114,17 @@ function getSessionPlayerTotals(
 
 export function PlayoutsPage() {
   const canonical = useAnalysisStore((state) => state.canonical);
-  const scenarios = useAnalysisStore((s) => Object.values(s.canonical.scenarios));
+  const scenariosRecord = useAnalysisStore((s) => s.canonical.scenarios);
+  const scenarios = useMemo(
+    () => Object.values(scenariosRecord),
+    [scenariosRecord],
+  );
   const players = useAnalysisStore((s) => s.canonical.players);
-  const sessions = usePlayStore((s) => Object.values(s.sessions));
+  const sessionsRecord = usePlayStore((s) => s.sessions);
+  const sessions = useMemo(
+    () => Object.values(sessionsRecord),
+    [sessionsRecord],
+  );
   const activeSessionId = usePlayStore((s) => s.activeSessionId);
   const setActiveSession = usePlayStore((s) => s.setActiveSession);
   const setSessionStatus = usePlayStore((s) => s.setSessionStatus);
@@ -140,16 +152,20 @@ export function PlayoutsPage() {
   const selectedScenario = scenarioById.get(selectedScenarioId) ?? null;
   const selectedScenarioPlayers = useMemo(() => {
     if (!selectedScenario) return [];
-    const formalization = canonical.formalizations[selectedScenario.formalization_id];
+    const formalization =
+      canonical.formalizations[selectedScenario.formalization_id];
     if (!formalization) return [];
     const game = canonical.games[formalization.game_id];
     return (game?.players ?? []).map((id) => players[id]).filter(Boolean);
   }, [canonical.formalizations, canonical.games, players, selectedScenario]);
 
-  const activeScenario = activeSession ? scenarioById.get(activeSession.scenarioId) : null;
+  const activeScenario = activeSession
+    ? scenarioById.get(activeSession.scenarioId)
+    : null;
   const activeScenarioPlayers = useMemo(() => {
     if (!activeScenario) return [];
-    const formalization = canonical.formalizations[activeScenario.formalization_id];
+    const formalization =
+      canonical.formalizations[activeScenario.formalization_id];
     if (!formalization) return [];
     const game = canonical.games[formalization.game_id];
     return (game?.players ?? []).map((id) => players[id]).filter(Boolean);
@@ -182,8 +198,14 @@ export function PlayoutsPage() {
     }
   }, [activeSession]);
 
-  function toggleListValue(list: string[], value: string, checked: boolean): string[] {
-    const next = checked ? uniqueStrings([...list, value]) : list.filter((item) => item !== value);
+  function toggleListValue(
+    list: string[],
+    value: string,
+    checked: boolean,
+  ): string[] {
+    const next = checked
+      ? uniqueStrings([...list, value])
+      : list.filter((item) => item !== value);
     return next;
   }
 
@@ -216,7 +238,11 @@ export function PlayoutsPage() {
       setSelectedAiPlayers([]);
       setTurnPlayerId("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not start play session.");
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not start play session.",
+      );
     }
   }
 
@@ -247,7 +273,9 @@ export function PlayoutsPage() {
       setTurnAction("");
       setTurnReasoning("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not record play turn.");
+      setError(
+        cause instanceof Error ? cause.message : "Could not record play turn.",
+      );
     }
   }
 
@@ -265,7 +293,9 @@ export function PlayoutsPage() {
       setBranchLabel("");
       setTurnPlayerId("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not branch session.");
+      setError(
+        cause instanceof Error ? cause.message : "Could not branch session.",
+      );
     }
   }
 
@@ -287,11 +317,18 @@ export function PlayoutsPage() {
     }
   }
 
-  function handleActiveSessionAiToggle(playerId: string, checked: boolean): void {
+  function handleActiveSessionAiToggle(
+    playerId: string,
+    checked: boolean,
+  ): void {
     if (!activeSession) return;
     setSessionAiPlayers({
       sessionId: activeSession.id,
-      aiControlledPlayers: toggleListValue(activeSession.aiControlledPlayers, playerId, checked),
+      aiControlledPlayers: toggleListValue(
+        activeSession.aiControlledPlayers,
+        playerId,
+        checked,
+      ),
     });
   }
 
@@ -307,8 +344,8 @@ export function PlayoutsPage() {
       <div>
         <h2 className="text-2xl font-bold">Play-outs</h2>
         <p className="text-muted-foreground">
-          Start scenario sessions, choose AI/manual player control, and run turn-by-turn
-          play-outs with branch and review paths.
+          Start scenario sessions, choose AI/manual player control, and run
+          turn-by-turn play-outs with branch and review paths.
         </p>
       </div>
 
@@ -368,7 +405,11 @@ export function PlayoutsPage() {
                       checked={checked}
                       onChange={(event) =>
                         setSelectedAiPlayers((current) =>
-                          toggleListValue(current, player.id, event.target.checked),
+                          toggleListValue(
+                            current,
+                            player.id,
+                            event.target.checked,
+                          ),
                         )
                       }
                     />
@@ -379,7 +420,8 @@ export function PlayoutsPage() {
             </div>
           )}
           <p className="mt-2 text-xs text-muted-foreground">
-            Checked players will be marked as AI-controlled. Others will be manual.
+            Checked players will be marked as AI-controlled. Others will be
+            manual.
           </p>
         </div>
 
@@ -392,14 +434,18 @@ export function PlayoutsPage() {
             Sessions
           </h3>
           {sessions.length === 0 ? (
-            <p className="text-sm italic text-muted-foreground">No play sessions yet.</p>
+            <p className="text-sm italic text-muted-foreground">
+              No play sessions yet.
+            </p>
           ) : (
             scenarioTree.map(({ session, depth }) => {
               const scenario = scenarioById.get(session.scenarioId);
               const formalization = scenario
                 ? canonical.formalizations[scenario.formalization_id]
                 : null;
-              const game = formalization ? canonical.games[formalization.game_id] : null;
+              const game = formalization
+                ? canonical.games[formalization.game_id]
+                : null;
               const gamePlayers = game?.players ?? [];
               const totals = getSessionPlayerTotals(session, gamePlayers);
 
@@ -416,18 +462,19 @@ export function PlayoutsPage() {
                   style={{ paddingLeft: `${0.75 + depth * 1.25}rem` }}
                 >
                   <div className="space-y-1">
-                    <p className="text-sm font-medium">
-                      {session.branchLabel}
-                    </p>
+                    <p className="text-sm font-medium">{session.branchLabel}</p>
                     <p className="text-xs text-muted-foreground">
                       {scenario?.name ?? session.scenarioId}
-                      {session.sourceSessionId ? ` · branch of ${session.sourceSessionId}` : ""}
+                      {session.sourceSessionId
+                        ? ` · branch of ${session.sourceSessionId}`
+                        : ""}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {game?.name ?? game?.id ?? "Unlinked scenario"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {totals.total} players · {totals.aiControlled} AI / {totals.manual} manual
+                      {totals.total} players · {totals.aiControlled} AI /{" "}
+                      {totals.manual} manual
                     </p>
                   </div>
                   <span
@@ -495,7 +542,8 @@ export function PlayoutsPage() {
                 <div className="rounded-md border border-border bg-background p-3">
                   <p className="mb-2 text-sm font-medium">Player control</p>
                   <p className="text-xs text-muted-foreground">
-                    Checked players are AI-driven; unchecked are available for manual turns.
+                    Checked players are AI-driven; unchecked are available for
+                    manual turns.
                   </p>
                   {activeScenarioPlayers.length === 0 ? (
                     <p className="mt-2 text-sm text-muted-foreground">
@@ -510,9 +558,14 @@ export function PlayoutsPage() {
                         >
                           <input
                             type="checkbox"
-                            checked={activeSession.aiControlledPlayers.includes(player.id)}
+                            checked={activeSession.aiControlledPlayers.includes(
+                              player.id,
+                            )}
                             onChange={(event) =>
-                              handleActiveSessionAiToggle(player.id, event.target.checked)
+                              handleActiveSessionAiToggle(
+                                player.id,
+                                event.target.checked,
+                              )
                             }
                           />
                           <span>{player.name}</span>
@@ -528,12 +581,16 @@ export function PlayoutsPage() {
                     onClick={() =>
                       handleToggleSessionStatus(
                         activeSession.id,
-                        activeSession.status === "active" ? "completed" : "active",
+                        activeSession.status === "active"
+                          ? "completed"
+                          : "active",
                       )
                     }
                     className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground"
                   >
-                    {activeSession.status === "active" ? "Mark completed" : "Reopen session"}
+                    {activeSession.status === "active"
+                      ? "Mark completed"
+                      : "Reopen session"}
                   </button>
                   <button
                     type="button"
@@ -547,12 +604,17 @@ export function PlayoutsPage() {
 
               <div className="grid gap-3 md:grid-cols-[12rem_minmax(0,1fr)]">
                 <label className="text-sm">
-                  <span className="mb-2 block font-medium">Player (manual)</span>
+                  <span className="mb-2 block font-medium">
+                    Player (manual)
+                  </span>
                   <select
                     value={turnPlayerId}
                     onChange={(event) => setTurnPlayerId(event.target.value)}
                     className="w-full rounded-md border border-border bg-background px-3 py-2"
-                    disabled={activeScenarioPlayers.length === 0 || availableManualPlayers.length === 0}
+                    disabled={
+                      activeScenarioPlayers.length === 0 ||
+                      availableManualPlayers.length === 0
+                    }
                   >
                     <option value="">Select player</option>
                     {availableManualPlayers.map((player) => (
@@ -601,39 +663,48 @@ export function PlayoutsPage() {
                 availableManualPlayers.length === 0 &&
                 activeSession.status === "active" && (
                   <p className="text-xs text-amber-500">
-                    All scenario players are marked AI-controlled. Unmark at least one player
-                    above to record manual turns.
+                    All scenario players are marked AI-controlled. Unmark at
+                    least one player above to record manual turns.
                   </p>
                 )}
               <p className="text-xs text-muted-foreground">
                 Turn target:&nbsp;
-                <span className="font-medium text-foreground">{activeSessionTurnPlayerName}</span>
+                <span className="font-medium text-foreground">
+                  {activeSessionTurnPlayerName}
+                </span>
               </p>
 
               <div className="space-y-3">
                 {activeSession.turns.length === 0 ? (
-                  <p className="text-sm italic text-muted-foreground">No turns recorded yet.</p>
+                  <p className="text-sm italic text-muted-foreground">
+                    No turns recorded yet.
+                  </p>
                 ) : (
-                  activeSession.turns.map((turn: PlaySessionTurn, index: number) => (
-                    <article
-                      key={turn.id}
-                      className="rounded-lg border border-border bg-background p-3"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-medium">
-                          Turn {index + 1}: {players[turn.playerId]?.name ?? turn.playerId}
-                          {turn.controlMode === "ai" ? " (AI)" : " (manual)"}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{formatTime(turn.timestamp)}</p>
-                      </div>
-                      <p className="mt-2 text-sm">{turn.action}</p>
-                      {turn.reasoning && (
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          {turn.reasoning}
-                        </p>
-                      )}
-                    </article>
-                  ))
+                  activeSession.turns.map(
+                    (turn: PlaySessionTurn, index: number) => (
+                      <article
+                        key={turn.id}
+                        className="rounded-lg border border-border bg-background p-3"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-medium">
+                            Turn {index + 1}:{" "}
+                            {players[turn.playerId]?.name ?? turn.playerId}
+                            {turn.controlMode === "ai" ? " (AI)" : " (manual)"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatTime(turn.timestamp)}
+                          </p>
+                        </div>
+                        <p className="mt-2 text-sm">{turn.action}</p>
+                        {turn.reasoning && (
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            {turn.reasoning}
+                          </p>
+                        )}
+                      </article>
+                    ),
+                  )
                 )}
               </div>
             </>

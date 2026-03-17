@@ -143,18 +143,13 @@ export function useMcpSync(enabled = true): void {
             // L1 canonical changes from MCP should come as proposed commands
             // (not handled here — MCP writes go through proposal flow)
             if (state.pipelineState) {
+              const pState = state.pipelineState;
               pipelineStore.setState((current) => {
-                const nextAnalysisState = hasOwnKey(
-                  state.pipelineState,
-                  "analysis_state",
-                )
-                  ? state.pipelineState.analysis_state
+                const nextAnalysisState = hasOwnKey(pState, "analysis_state")
+                  ? pState.analysis_state
                   : current.analysis_state;
-                const nextPhaseResults = hasOwnKey(
-                  state.pipelineState,
-                  "phase_results",
-                )
-                  ? state.pipelineState.phase_results
+                const nextPhaseResults = hasOwnKey(pState, "phase_results")
+                  ? pState.phase_results
                   : current.phase_results;
 
                 if (
@@ -166,37 +161,33 @@ export function useMcpSync(enabled = true): void {
 
                 return {
                   ...current,
-                  analysis_state:
-                    nextAnalysisState as ReturnType<
-                      typeof pipelineStore.getState
-                    >["analysis_state"],
-                  phase_results:
-                    nextPhaseResults as ReturnType<
-                      typeof pipelineStore.getState
-                    >["phase_results"],
+                  analysis_state: nextAnalysisState as ReturnType<
+                    typeof pipelineStore.getState
+                  >["analysis_state"],
+                  phase_results: nextPhaseResults as ReturnType<
+                    typeof pipelineStore.getState
+                  >["phase_results"],
                 };
               });
             }
 
             if (state.runtimeState) {
+              const rState = state.runtimeState;
               pipelineStore.setState((current) => {
-                const nextPromptRegistry = hasOwnKey(
-                  state.runtimeState,
-                  "prompt_registry",
-                )
-                  ? state.runtimeState.prompt_registry
+                const nextPromptRegistry = hasOwnKey(rState, "prompt_registry")
+                  ? rState.prompt_registry
                   : current.prompt_registry;
                 const nextActiveRerunCycle = hasOwnKey(
-                  state.runtimeState,
+                  rState,
                   "active_rerun_cycle",
                 )
-                  ? state.runtimeState.active_rerun_cycle
+                  ? rState.active_rerun_cycle
                   : current.active_rerun_cycle;
                 const nextPendingRevalidations = hasOwnKey(
-                  state.runtimeState,
+                  rState,
                   "pending_revalidation_approvals",
                 )
-                  ? state.runtimeState.pending_revalidation_approvals
+                  ? rState.pending_revalidation_approvals
                   : current.pending_revalidation_approvals;
 
                 if (
@@ -215,14 +206,12 @@ export function useMcpSync(enabled = true): void {
 
                 return {
                   ...current,
-                  prompt_registry:
-                    nextPromptRegistry as ReturnType<
-                      typeof pipelineStore.getState
-                    >["prompt_registry"],
-                  active_rerun_cycle:
-                    nextActiveRerunCycle as ReturnType<
-                      typeof pipelineStore.getState
-                    >["active_rerun_cycle"],
+                  prompt_registry: nextPromptRegistry as ReturnType<
+                    typeof pipelineStore.getState
+                  >["prompt_registry"],
+                  active_rerun_cycle: nextActiveRerunCycle as ReturnType<
+                    typeof pipelineStore.getState
+                  >["active_rerun_cycle"],
                   pending_revalidation_approvals:
                     nextPendingRevalidations as ReturnType<
                       typeof pipelineStore.getState
@@ -232,32 +221,21 @@ export function useMcpSync(enabled = true): void {
             }
 
             if (state.conversationState) {
+              const cState = state.conversationState;
               conversationStore.setState((current) => {
-                const nextMessages = hasOwnKey(
-                  state.conversationState,
-                  "messages",
-                )
-                  ? state.conversationState.messages
+                const nextMessages = hasOwnKey(cState, "messages")
+                  ? cState.messages
                   : current.messages;
-                const nextProposalReview = hasOwnKey(
-                  state.conversationState,
-                  "proposal_review",
-                )
-                  ? state.conversationState.proposal_review
+                const nextProposalReview = hasOwnKey(cState, "proposal_review")
+                  ? cState.proposal_review
                   : current.proposal_review;
-                const nextProposalsById = hasOwnKey(
-                  state.conversationState,
-                  "proposals_by_id",
-                )
-                  ? state.conversationState.proposals_by_id
+                const nextProposalsById = hasOwnKey(cState, "proposals_by_id")
+                  ? cState.proposals_by_id
                   : current.proposals_by_id;
 
                 if (
                   isSameSnapshot(current.messages, nextMessages) &&
-                  isSameSnapshot(
-                    current.proposal_review,
-                    nextProposalReview,
-                  ) &&
+                  isSameSnapshot(current.proposal_review, nextProposalReview) &&
                   shallowEqualRecord(
                     current.proposals_by_id as Record<string, unknown>,
                     nextProposalsById as Record<string, unknown>,
@@ -268,18 +246,15 @@ export function useMcpSync(enabled = true): void {
 
                 return {
                   ...current,
-                  messages:
-                    nextMessages as ReturnType<
-                      typeof conversationStore.getState
-                    >["messages"],
-                  proposal_review:
-                    nextProposalReview as ReturnType<
-                      typeof conversationStore.getState
-                    >["proposal_review"],
-                  proposals_by_id:
-                    nextProposalsById as ReturnType<
-                      typeof conversationStore.getState
-                    >["proposals_by_id"],
+                  messages: nextMessages as ReturnType<
+                    typeof conversationStore.getState
+                  >["messages"],
+                  proposal_review: nextProposalReview as ReturnType<
+                    typeof conversationStore.getState
+                  >["proposal_review"],
+                  proposals_by_id: nextProposalsById as ReturnType<
+                    typeof conversationStore.getState
+                  >["proposals_by_id"],
                 };
               });
             }

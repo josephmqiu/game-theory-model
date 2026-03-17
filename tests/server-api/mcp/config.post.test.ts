@@ -4,11 +4,11 @@ import { callPost } from "../../../server/test-support/http";
 import { getMcpIntegrationStatuses } from "../../../server/utils/integration-status";
 import { writeManagedMcpConfig } from "../../../server/utils/mcp-config-writers";
 
-vi.mock("../../utils/integration-status", () => ({
+vi.mock("../../../server/utils/integration-status", () => ({
   getMcpIntegrationStatuses: vi.fn(),
 }));
 
-vi.mock("../../utils/mcp-config-writers", () => ({
+vi.mock("../../../server/utils/mcp-config-writers", () => ({
   writeManagedMcpConfig: vi.fn(),
 }));
 
@@ -116,7 +116,10 @@ describe("/api/mcp/config.post", () => {
         configPath: null,
       },
     ]);
-    writeConfigMock.mockResolvedValue("/tmp/mcp/copilot-cli.json");
+    writeConfigMock.mockResolvedValue({
+      outputPath: "/tmp/mcp/copilot-cli.json",
+      reachable: true,
+    });
 
     const response = await callPost<{
       status: string;
@@ -137,6 +140,8 @@ describe("/api/mcp/config.post", () => {
     expect(response.body.status).toBe("ok");
     expect(response.body.path).toBe("/tmp/mcp/copilot-cli.json");
     expect(response.body.integration?.tool).toBe("copilot-cli");
-    expect(response.body.integration?.statusMessage).toContain("Managed MCP config written");
+    expect(response.body.integration?.statusMessage).toContain(
+      "Managed MCP config written",
+    );
   });
 });

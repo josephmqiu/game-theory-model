@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { analysisStore, useAnalysisStore } from "@/stores/analysis-store";
 import { useUiStore } from "@/stores/ui-store";
 
@@ -10,11 +10,22 @@ export const Route = createFileRoute("/editor/assumptions")({
 function AssumptionsPage() {
   const manualMode = useUiStore((s) => s.manualMode);
   const setInspectedTarget = useUiStore((s) => s.setInspectedTarget);
-  const assumptions = useAnalysisStore((s) => Object.values(s.canonical.assumptions));
-  const [editingAssumptionId, setEditingAssumptionId] = useState<string | null>(null);
+  const assumptionsRecord = useAnalysisStore((s) => s.canonical.assumptions);
+  const assumptions = useMemo(
+    () => Object.values(assumptionsRecord),
+    [assumptionsRecord],
+  );
+  const [editingAssumptionId, setEditingAssumptionId] = useState<string | null>(
+    null,
+  );
   const [draftStatement, setDraftStatement] = useState("");
   const [draftType, setDraftType] = useState<
-    "behavioral" | "capability" | "structural" | "institutional" | "rationality" | "information"
+    | "behavioral"
+    | "capability"
+    | "structural"
+    | "institutional"
+    | "rationality"
+    | "information"
   >("behavioral");
   const [draftSensitivity, setDraftSensitivity] = useState<
     "low" | "medium" | "high" | "critical"
@@ -65,7 +76,8 @@ function AssumptionsPage() {
       <div>
         <h2 className="text-2xl font-bold">Assumptions</h2>
         <p className="text-muted-foreground">
-          Extracted assumptions, their types, and sensitivity ratings from the current model.
+          Extracted assumptions, their types, and sensitivity ratings from the
+          current model.
         </p>
       </div>
       {error && <p className="text-sm text-red-500">{error}</p>}
@@ -138,7 +150,9 @@ function AssumptionsPage() {
                     </select>
                     <input
                       value={draftConfidence}
-                      onChange={(event) => setDraftConfidence(event.target.value)}
+                      onChange={(event) =>
+                        setDraftConfidence(event.target.value)
+                      }
                       type="number"
                       min="0"
                       max="1"
@@ -166,7 +180,9 @@ function AssumptionsPage() {
               ) : (
                 <>
                   <div className="flex items-center justify-between gap-3">
-                    <h3 className="text-sm font-semibold">{assumption.statement}</h3>
+                    <h3 className="text-sm font-semibold">
+                      {assumption.statement}
+                    </h3>
                     <div className="flex items-center gap-2">
                       <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
                         {assumption.sensitivity}

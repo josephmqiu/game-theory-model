@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { storeToAnalysisFile } from "shared/game-theory/utils/serialization";
@@ -23,6 +23,7 @@ function buildAnalysisPayload(): string {
 describe("/api/files/load", () => {
   it("loads a valid .gta.json file", async () => {
     const dir = await mkdtemp(join(tmpdir(), "gta-load-"));
+    const realDir = await realpath(dir);
     const filePath = join(dir, "analysis.gta.json");
     await writeFile(filePath, buildAnalysisPayload(), "utf-8");
 
@@ -30,15 +31,21 @@ describe("/api/files/load", () => {
       success: true;
       filePath: string;
       store: Record<string, unknown>;
-      meta: { name: string; description?: string; metadata: Record<string, unknown> };
+      meta: {
+        name: string;
+        description?: string;
+        metadata: Record<string, unknown>;
+      };
     }>(handler, `/api/files/load?path=${encodeURIComponent(filePath)}`);
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
-    expect(response.body.filePath).toBe(filePath);
+    expect(response.body.filePath).toBe(join(realDir, "analysis.gta.json"));
     expect(response.body.store).toHaveProperty("games");
     expect(response.body.store).toHaveProperty("players");
-    expect(response.body.meta).toMatchObject({ name: "Sample strategic analysis" });
+    expect(response.body.meta).toMatchObject({
+      name: "Sample strategic analysis",
+    });
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -51,7 +58,9 @@ describe("/api/files/load", () => {
 
     expect(response.status).toBe(400);
     expect(response.body.success).toBe(false);
-    expect(response.body.error).toContain("Missing required query parameter: path");
+    expect(response.body.error).toContain(
+      "Missing required query parameter: path",
+    );
   });
 
   it("rejects non-gta files", async () => {
