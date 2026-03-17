@@ -7,6 +7,9 @@ import { useState } from "react";
 import { Bot, ChevronDown, ChevronRight, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgentToolCall } from "@/components/panels/agent-tool-call";
+import { AgentProposalCard } from "@/components/panels/agent-proposal-card";
+import type { ProposalData } from "@/components/panels/agent-proposal-card";
+import { sendAgentMessage } from "@/services/agent-chat-handler";
 import type { AgentChatMessage } from "@/stores/ai-store";
 
 interface ThinkingBlockProps {
@@ -76,9 +79,26 @@ export function AgentMessageBubble({ message }: { message: AgentChatMessage }) {
 
         {hasToolCalls && (
           <div className="space-y-1">
-            {message.toolCalls.map((tc) => (
-              <AgentToolCall key={tc.id} toolCall={tc} />
-            ))}
+            {message.toolCalls.map((tc) =>
+              tc.name === "propose_revision" ? (
+                <AgentProposalCard
+                  key={tc.id}
+                  toolCall={tc}
+                  onAccept={(_proposal: ProposalData) => {
+                    // Acceptance is handled inside the card (command dispatch).
+                    // Nothing extra needed here.
+                  }}
+                  onReject={(_proposal: ProposalData, reason: string) => {
+                    const text = reason
+                      ? `Proposal rejected: ${reason}`
+                      : "Proposal rejected.";
+                    void sendAgentMessage(text);
+                  }}
+                />
+              ) : (
+                <AgentToolCall key={tc.id} toolCall={tc} />
+              ),
+            )}
           </div>
         )}
 
