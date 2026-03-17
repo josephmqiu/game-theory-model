@@ -8,8 +8,8 @@ import {
   createSampleAnalysisMeta,
   createSampleCanonicalStore,
 } from "shared/game-theory/test-support/sample-analysis";
-import handler from "./load.ts";
-import { callGet } from "../../test-support/http";
+import handler from "../../../server/api/files/load.ts";
+import { callGet } from "../../../server/test-support/http";
 
 function buildAnalysisPayload(): string {
   return JSON.stringify(

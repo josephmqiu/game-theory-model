@@ -53,6 +53,7 @@ interface PipelineActions {
   ) => void;
   clearPendingRevalidationApproval: (eventId: string) => void;
   setActiveRerunCycle: (cycle: ActiveRerunCycle | null) => void;
+  restoreSnapshot: (snapshot: Partial<PipelineState>) => void;
   resetPipeline: () => void;
 }
 
@@ -160,6 +161,22 @@ export const pipelineStore = createStore<PipelineStore>((set, get) => ({
 
   setActiveRerunCycle(cycle) {
     set({ active_rerun_cycle: cycle });
+  },
+
+  restoreSnapshot(snapshot) {
+    set({
+      ...createInitialState(),
+      ...snapshot,
+      phase_executions: snapshot.phase_executions ?? {},
+      phase_results: snapshot.phase_results ?? {},
+      steering_messages: snapshot.steering_messages ?? [],
+      proposal_review: snapshot.proposal_review ?? null,
+      prompt_registry: snapshot.prompt_registry ?? createInitialState().prompt_registry,
+      pending_revalidation_approvals:
+        snapshot.pending_revalidation_approvals ?? {},
+      active_rerun_cycle: snapshot.active_rerun_cycle ?? null,
+      analysis_state: snapshot.analysis_state ?? null,
+    });
   },
 
   resetPipeline() {

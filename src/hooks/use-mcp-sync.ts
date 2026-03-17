@@ -54,7 +54,15 @@ function buildSyncState(): Partial<SyncState> {
   };
 }
 
+function hasOwnKey<T extends object>(
+  value: T,
+  key: PropertyKey,
+): key is keyof T {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
 function pushStateToServer(clientId: string | null): void {
+  if (!clientId) return;
   const state = buildSyncState();
   fetch(`${getBaseUrl()}/api/mcp/state`, {
     method: "POST",
@@ -68,13 +76,35 @@ function pushStateToServer(clientId: string | null): void {
  * - Pushes local state changes to Nitro so MCP can read them.
  * - Receives MCP-originated state updates and applies to renderer stores.
  */
-export function useMcpSync(): void {
+function shallowEqualRecord(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every((key) => Object.is(left[key], right[key]));
+}
+
+function isSameSnapshot(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+export function useMcpSync(enabled = true): void {
   const clientIdRef = useRef<string | null>(null);
   const pushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipPushUntilRef = useRef(0);
   const executingCommandsRef = useRef(new Set<string>());
+  const lastAppliedVersionRef = useRef(0);
+  const bootstrapCompleteRef = useRef(false);
 
   useEffect(() => {
+    if (!enabled) {
+      bootstrapCompleteRef.current = false;
+      return;
+    }
+
+    bootstrapCompleteRef.current = true;
     const baseUrl = getBaseUrl();
     let eventSource: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -93,63 +123,165 @@ export function useMcpSync(): void {
             // Push current state so MCP can read immediately
             pushStateToServer(data.clientId);
           } else if (data.type === "state:update") {
+            if (
+              typeof data.version === "number" &&
+              data.version <= lastAppliedVersionRef.current
+            ) {
+              return;
+            }
+            if (typeof data.version === "number") {
+              lastAppliedVersionRef.current = data.version;
+            }
+
             // MCP-originated update — apply to renderer stores
             // Suppress push-back briefly to avoid echo
             skipPushUntilRef.current = Date.now() + 200;
 
-            const state = data.state as SyncState;
+            const state = data.state as Partial<SyncState>;
 
             // Non-L1 state can be applied as snapshots
             // L1 canonical changes from MCP should come as proposed commands
             // (not handled here — MCP writes go through proposal flow)
             if (state.pipelineState) {
-              pipelineStore.setState((current) => ({
-                ...current,
-                analysis_state:
-                  state.pipelineState?.analysis_state as ReturnType<
-                    typeof pipelineStore.getState
-                  >["analysis_state"],
-                phase_results:
-                  state.pipelineState?.phase_results as ReturnType<
-                    typeof pipelineStore.getState
-                  >["phase_results"],
-              }));
+              pipelineStore.setState((current) => {
+                const nextAnalysisState = hasOwnKey(
+                  state.pipelineState,
+                  "analysis_state",
+                )
+                  ? state.pipelineState.analysis_state
+                  : current.analysis_state;
+                const nextPhaseResults = hasOwnKey(
+                  state.pipelineState,
+                  "phase_results",
+                )
+                  ? state.pipelineState.phase_results
+                  : current.phase_results;
+
+                if (
+                  isSameSnapshot(current.analysis_state, nextAnalysisState) &&
+                  isSameSnapshot(current.phase_results, nextPhaseResults)
+                ) {
+                  return current;
+                }
+
+                return {
+                  ...current,
+                  analysis_state:
+                    nextAnalysisState as ReturnType<
+                      typeof pipelineStore.getState
+                    >["analysis_state"],
+                  phase_results:
+                    nextPhaseResults as ReturnType<
+                      typeof pipelineStore.getState
+                    >["phase_results"],
+                };
+              });
             }
 
             if (state.runtimeState) {
-              pipelineStore.setState((current) => ({
-                ...current,
-                prompt_registry:
-                  state.runtimeState?.prompt_registry as ReturnType<
-                    typeof pipelineStore.getState
-                  >["prompt_registry"],
-                active_rerun_cycle:
-                  state.runtimeState?.active_rerun_cycle as ReturnType<
-                    typeof pipelineStore.getState
-                  >["active_rerun_cycle"],
-                pending_revalidation_approvals:
-                  state.runtimeState?.pending_revalidation_approvals as ReturnType<
-                    typeof pipelineStore.getState
-                  >["pending_revalidation_approvals"],
-              }));
+              pipelineStore.setState((current) => {
+                const nextPromptRegistry = hasOwnKey(
+                  state.runtimeState,
+                  "prompt_registry",
+                )
+                  ? state.runtimeState.prompt_registry
+                  : current.prompt_registry;
+                const nextActiveRerunCycle = hasOwnKey(
+                  state.runtimeState,
+                  "active_rerun_cycle",
+                )
+                  ? state.runtimeState.active_rerun_cycle
+                  : current.active_rerun_cycle;
+                const nextPendingRevalidations = hasOwnKey(
+                  state.runtimeState,
+                  "pending_revalidation_approvals",
+                )
+                  ? state.runtimeState.pending_revalidation_approvals
+                  : current.pending_revalidation_approvals;
+
+                if (
+                  isSameSnapshot(current.prompt_registry, nextPromptRegistry) &&
+                  isSameSnapshot(
+                    current.active_rerun_cycle,
+                    nextActiveRerunCycle,
+                  ) &&
+                  isSameSnapshot(
+                    current.pending_revalidation_approvals,
+                    nextPendingRevalidations,
+                  )
+                ) {
+                  return current;
+                }
+
+                return {
+                  ...current,
+                  prompt_registry:
+                    nextPromptRegistry as ReturnType<
+                      typeof pipelineStore.getState
+                    >["prompt_registry"],
+                  active_rerun_cycle:
+                    nextActiveRerunCycle as ReturnType<
+                      typeof pipelineStore.getState
+                    >["active_rerun_cycle"],
+                  pending_revalidation_approvals:
+                    nextPendingRevalidations as ReturnType<
+                      typeof pipelineStore.getState
+                    >["pending_revalidation_approvals"],
+                };
+              });
             }
 
             if (state.conversationState) {
-              conversationStore.setState((current) => ({
-                ...current,
-                messages:
-                  state.conversationState?.messages as ReturnType<
-                    typeof conversationStore.getState
-                  >["messages"],
-                proposal_review:
-                  state.conversationState?.proposal_review as ReturnType<
-                    typeof conversationStore.getState
-                  >["proposal_review"],
-                proposals_by_id:
-                  state.conversationState?.proposals_by_id as ReturnType<
-                    typeof conversationStore.getState
-                  >["proposals_by_id"],
-              }));
+              conversationStore.setState((current) => {
+                const nextMessages = hasOwnKey(
+                  state.conversationState,
+                  "messages",
+                )
+                  ? state.conversationState.messages
+                  : current.messages;
+                const nextProposalReview = hasOwnKey(
+                  state.conversationState,
+                  "proposal_review",
+                )
+                  ? state.conversationState.proposal_review
+                  : current.proposal_review;
+                const nextProposalsById = hasOwnKey(
+                  state.conversationState,
+                  "proposals_by_id",
+                )
+                  ? state.conversationState.proposals_by_id
+                  : current.proposals_by_id;
+
+                if (
+                  isSameSnapshot(current.messages, nextMessages) &&
+                  isSameSnapshot(
+                    current.proposal_review,
+                    nextProposalReview,
+                  ) &&
+                  shallowEqualRecord(
+                    current.proposals_by_id as Record<string, unknown>,
+                    nextProposalsById as Record<string, unknown>,
+                  )
+                ) {
+                  return current;
+                }
+
+                return {
+                  ...current,
+                  messages:
+                    nextMessages as ReturnType<
+                      typeof conversationStore.getState
+                    >["messages"],
+                  proposal_review:
+                    nextProposalReview as ReturnType<
+                      typeof conversationStore.getState
+                    >["proposal_review"],
+                  proposals_by_id:
+                    nextProposalsById as ReturnType<
+                      typeof conversationStore.getState
+                    >["proposals_by_id"],
+                };
+              });
             }
           } else if (data.type === "command:queued") {
             const command = data.command as AppCommandEnvelope | undefined;
@@ -233,7 +365,13 @@ export function useMcpSync(): void {
 
     // Push local state changes to Nitro (debounced)
     const unsubAnalysis = analysisStore.subscribe(() => {
-      if (Date.now() < skipPushUntilRef.current) return;
+      if (
+        !bootstrapCompleteRef.current ||
+        !clientIdRef.current ||
+        Date.now() < skipPushUntilRef.current
+      ) {
+        return;
+      }
       if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
       pushTimerRef.current = setTimeout(() => {
         pushStateToServer(clientIdRef.current);
@@ -241,7 +379,13 @@ export function useMcpSync(): void {
     });
 
     const unsubPipeline = pipelineStore.subscribe(() => {
-      if (Date.now() < skipPushUntilRef.current) return;
+      if (
+        !bootstrapCompleteRef.current ||
+        !clientIdRef.current ||
+        Date.now() < skipPushUntilRef.current
+      ) {
+        return;
+      }
       if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
       pushTimerRef.current = setTimeout(() => {
         pushStateToServer(clientIdRef.current);
@@ -249,7 +393,13 @@ export function useMcpSync(): void {
     });
 
     const unsubConversation = conversationStore.subscribe(() => {
-      if (Date.now() < skipPushUntilRef.current) return;
+      if (
+        !bootstrapCompleteRef.current ||
+        !clientIdRef.current ||
+        Date.now() < skipPushUntilRef.current
+      ) {
+        return;
+      }
       if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
       pushTimerRef.current = setTimeout(() => {
         pushStateToServer(clientIdRef.current);
@@ -264,6 +414,7 @@ export function useMcpSync(): void {
       unsubAnalysis();
       unsubPipeline();
       unsubConversation();
+      bootstrapCompleteRef.current = false;
     };
-  }, []);
+  }, [enabled]);
 }

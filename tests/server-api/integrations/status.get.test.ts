@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import handler from "./status.get.ts";
-import { callGet } from "../../test-support/http";
+import handler from "../../../server/api/integrations/status.get.ts";
+import { callGet } from "../../../server/test-support/http";
 
 describe("/api/integrations/status", () => {
   it("returns provider and integration detection snapshots", async () => {

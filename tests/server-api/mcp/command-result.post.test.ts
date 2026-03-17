@@ -4,9 +4,9 @@ import {
   completeCommand,
   enqueueCommand,
   getPendingCommands,
-} from "../../utils/mcp-command-bus";
-import handler from "./command-result.post.ts";
-import { callPost } from "../../test-support/http";
+} from "../../../server/utils/mcp-command-bus";
+import handler from "../../../server/api/mcp/command-result.post.ts";
+import { callPost } from "../../../server/test-support/http";
 
 function clearQueue(): void {
   for (const command of getPendingCommands()) {

@@ -1,4 +1,10 @@
-import { defineEventHandler, readBody, setResponseHeaders } from "h3";
+import {
+  defineEventHandler,
+  readBody,
+  setResponseHeaders,
+  setResponseStatus,
+} from "h3";
+import { z } from "zod";
 import { resolveClaudeCli } from "../../utils/resolve-claude-cli";
 import {
   buildClaudeAgentEnv,
@@ -7,12 +13,21 @@ import {
 import { runCodexExec } from "../../utils/codex-client";
 import type { AIStreamChunk } from "shared/game-theory/types/ai-stream";
 
-interface ChatBody {
-  system: string;
-  messages: Array<{ role: "user" | "assistant"; content: string }>;
-  model?: string;
-  provider?: "anthropic" | "openai" | "opencode" | "copilot";
-}
+const chatBodySchema = z.object({
+  system: z.string().min(1),
+  messages: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string().min(1),
+      }),
+    )
+    .min(1),
+  model: z.string().min(1).optional(),
+  provider: z.enum(["anthropic", "openai", "opencode", "copilot"]),
+});
+
+type ChatBody = z.infer<typeof chatBodySchema>;
 
 const KEEPALIVE_INTERVAL_MS = 15_000;
 
@@ -396,17 +411,20 @@ async function streamViaCopilot(body: ChatBody): Promise<Response> {
 }
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody<ChatBody>(event);
+  const raw = await readBody(event);
+  const parsed = chatBodySchema.safeParse(raw);
 
-  if (!body?.messages?.length || !body.system) {
+  if (!parsed.success) {
+    setResponseStatus(event, 400);
     setResponseHeaders(event, { "Content-Type": "application/json" });
-    return { error: "Missing required fields: system, messages" };
+    return {
+      error: parsed.error.issues
+        .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+        .join("; "),
+    };
   }
 
-  if (!body.provider) {
-    setResponseHeaders(event, { "Content-Type": "application/json" });
-    return { error: "Missing provider." };
-  }
+  const body = parsed.data;
 
   setResponseHeaders(event, {
     "Content-Type": "text/event-stream",

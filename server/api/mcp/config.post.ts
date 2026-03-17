@@ -63,18 +63,34 @@ export default defineEventHandler(async (event) => {
 
   return {
     status: "ok",
-    path: outputPath,
+    path: outputPath.outputPath,
     integration: refreshed
       ? {
           ...refreshed,
-          validated: integration.validated,
+          validated: outputPath.reachable,
           authenticated: integration.authenticated,
-          statusMessage: `Managed MCP config written for ${parsed.data.tool}.`,
+          statusStage: outputPath.reachable ? "ready" : "config_written",
+          reachable: outputPath.reachable,
+          lastError: outputPath.reachable
+            ? null
+            : "Managed config was written, but runtime smoke validation failed.",
+          configPath: outputPath.outputPath,
+          statusMessage: outputPath.reachable
+            ? `Managed MCP config written for ${parsed.data.tool}.`
+            : `Managed MCP config written for ${parsed.data.tool}, but runtime validation still failed.`,
         }
       : {
           ...integration,
-          configPath: outputPath,
-          statusMessage: `Managed MCP config written for ${parsed.data.tool}.`,
+          validated: outputPath.reachable,
+          statusStage: outputPath.reachable ? "ready" : "config_written",
+          reachable: outputPath.reachable,
+          lastError: outputPath.reachable
+            ? null
+            : "Managed config was written, but runtime smoke validation failed.",
+          configPath: outputPath.outputPath,
+          statusMessage: outputPath.reachable
+            ? `Managed MCP config written for ${parsed.data.tool}.`
+            : `Managed MCP config written for ${parsed.data.tool}, but runtime validation still failed.`,
         },
   };
 });

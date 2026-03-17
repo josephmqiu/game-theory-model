@@ -1,5 +1,8 @@
 import { defineEventHandler, readBody, setResponseHeaders } from "h3";
-import type { GroupedModel } from "../../../src/types/agent-settings";
+import type {
+  GroupedModel,
+  ProviderStatusStage,
+} from "../../../src/types/agent-settings";
 import { resolveClaudeCli } from "../../utils/resolve-claude-cli";
 import {
   buildClaudeAgentEnv,
@@ -13,8 +16,13 @@ interface ConnectBody {
 }
 
 export interface ConnectResult {
+  installed: boolean;
   connected: boolean;
+  authenticated: boolean | null;
+  reachable: boolean | null;
+  statusStage: ProviderStatusStage;
   models: GroupedModel[];
+  modelsDiscovered: number;
   error?: string;
   notInstalled?: boolean;
 }
@@ -52,8 +60,13 @@ export default defineEventHandler(async (event) => {
 
   if (!body?.agent) {
     return {
+      installed: false,
       connected: false,
+      authenticated: false,
+      reachable: false,
+      statusStage: "error",
       models: [],
+      modelsDiscovered: 0,
       error: "Missing agent field",
     } satisfies ConnectResult;
   }
@@ -75,8 +88,13 @@ export async function discoverAgentConnection(
       return connectCopilot();
     default:
       return {
+        installed: false,
         connected: false,
+        authenticated: false,
+        reachable: false,
+        statusStage: "error",
         models: [],
+        modelsDiscovered: 0,
         error: `Unknown agent: ${agent}`,
       };
   }
@@ -86,8 +104,13 @@ export async function connectClaudeCode(): Promise<ConnectResult> {
   const claudePath = resolveClaudeCli();
   if (!claudePath) {
     return {
+      installed: false,
       connected: false,
+      authenticated: false,
+      reachable: false,
+      statusStage: "missing_binary",
       models: [],
+      modelsDiscovered: 0,
       notInstalled: true,
       error: "Claude Code CLI not found",
     };
@@ -114,22 +137,40 @@ export async function connectClaudeCode(): Promise<ConnectResult> {
     queryHandle.close();
 
     return {
+      installed: true,
       connected: true,
+      authenticated: true,
+      reachable: true,
+      statusStage: "ready",
       models: raw.map((model) => ({
         value: model.value,
         displayName: model.displayName,
         description: model.description,
         provider: "anthropic",
       })),
+      modelsDiscovered: raw.length,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to connect";
     if (/closed before|closed early|query closed/i.test(message)) {
-      return { connected: true, models: FALLBACK_CLAUDE_MODELS };
+      return {
+        installed: true,
+        connected: true,
+        authenticated: true,
+        reachable: true,
+        statusStage: "ready",
+        models: FALLBACK_CLAUDE_MODELS,
+        modelsDiscovered: FALLBACK_CLAUDE_MODELS.length,
+      };
     }
     return {
+      installed: true,
       connected: false,
+      authenticated: false,
+      reachable: false,
+      statusStage: "error",
       models: [],
+      modelsDiscovered: 0,
       error: friendlyClaudeError(message),
     };
   }
@@ -143,8 +184,13 @@ export async function connectCodexCli(): Promise<ConnectResult> {
 
     if (!resolveCodexCli()) {
       return {
+        installed: false,
         connected: false,
+        authenticated: false,
+        reachable: false,
+        statusStage: "missing_binary",
         models: [],
+        modelsDiscovered: 0,
         notInstalled: true,
         error: "Codex CLI not found",
       };
@@ -175,17 +221,35 @@ export async function connectCodexCli(): Promise<ConnectResult> {
 
     if (models.length === 0) {
       return {
+        installed: true,
         connected: false,
+        authenticated: null,
+        reachable: true,
+        statusStage: "detected",
         models: [],
+        modelsDiscovered: 0,
         error: "No models found. Run codex once to populate the model cache.",
       };
     }
 
-    return { connected: true, models };
+    return {
+      installed: true,
+      connected: true,
+      authenticated: null,
+      reachable: true,
+      statusStage: "ready",
+      models,
+      modelsDiscovered: models.length,
+    };
   } catch (error) {
     return {
+      installed: true,
       connected: false,
+      authenticated: null,
+      reachable: false,
+      statusStage: "error",
       models: [],
+      modelsDiscovered: 0,
       error: error instanceof Error ? error.message : "Failed to connect",
     };
   }
@@ -195,8 +259,13 @@ export async function connectOpenCode(): Promise<ConnectResult> {
   try {
     if (!resolveOpenCodeCli()) {
       return {
+        installed: false,
         connected: false,
+        authenticated: false,
+        reachable: false,
+        statusStage: "missing_binary",
         models: [],
+        modelsDiscovered: 0,
         notInstalled: true,
         error: "OpenCode CLI not found",
       };
@@ -212,8 +281,13 @@ export async function connectOpenCode(): Promise<ConnectResult> {
 
     if (error) {
       return {
+        installed: true,
         connected: false,
+        authenticated: false,
+        reachable: false,
+        statusStage: "error",
         models: [],
+        modelsDiscovered: 0,
         error: "Failed to fetch providers from OpenCode server.",
       };
     }
@@ -233,18 +307,36 @@ export async function connectOpenCode(): Promise<ConnectResult> {
 
     if (models.length === 0) {
       return {
+        installed: true,
         connected: false,
+        authenticated: false,
+        reachable: true,
+        statusStage: "detected",
         models: [],
+        modelsDiscovered: 0,
         error: 'No models configured in OpenCode. Run "opencode" to set up providers.',
       };
     }
 
-    return { connected: true, models };
+    return {
+      installed: true,
+      connected: true,
+      authenticated: true,
+      reachable: true,
+      statusStage: "ready",
+      models,
+      modelsDiscovered: models.length,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to connect";
     return {
+      installed: true,
       connected: false,
+      authenticated: false,
+      reachable: false,
+      statusStage: "error",
       models: [],
+      modelsDiscovered: 0,
       error: friendlyOpenCodeError(message),
     };
   }
@@ -255,8 +347,13 @@ export async function connectCopilot(): Promise<ConnectResult> {
   const cliPath = resolveCopilotCli();
   if (!cliPath) {
     return {
+      installed: false,
       connected: false,
+      authenticated: false,
+      reachable: false,
+      statusStage: "missing_binary",
       models: [],
+      modelsDiscovered: 0,
       notInstalled: true,
       error: "GitHub Copilot CLI not found",
     };
@@ -283,8 +380,13 @@ export async function connectCopilot(): Promise<ConnectResult> {
         error instanceof Error ? error.message : "Failed to list models";
       await client.stop().catch(() => {});
       return {
+        installed: true,
         connected: false,
+        authenticated: false,
+        reachable: false,
+        statusStage: "error",
         models: [],
+        modelsDiscovered: 0,
         error: friendlyCopilotError(message),
       };
     }
@@ -293,18 +395,36 @@ export async function connectCopilot(): Promise<ConnectResult> {
 
     if (models.length === 0) {
       return {
+        installed: true,
         connected: false,
+        authenticated: false,
+        reachable: true,
+        statusStage: "detected",
         models: [],
+        modelsDiscovered: 0,
         error: 'No models found. Run "copilot login" to authenticate first.',
       };
     }
 
-    return { connected: true, models };
+    return {
+      installed: true,
+      connected: true,
+      authenticated: true,
+      reachable: true,
+      statusStage: "ready",
+      models,
+      modelsDiscovered: models.length,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to connect";
     return {
+      installed: true,
       connected: false,
+      authenticated: false,
+      reachable: false,
+      statusStage: "error",
       models: [],
+      modelsDiscovered: 0,
       error: friendlyCopilotError(message),
     };
   }

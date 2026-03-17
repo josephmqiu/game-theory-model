@@ -1053,6 +1053,7 @@ export const analysisFileMetadataSchema = z.object({
       }),
     )
     .optional(),
+  workflow_state: z.record(z.unknown()).optional(),
 })
 
 export const analysisFileSchema = z.object({

@@ -1,21 +1,11 @@
 import { defineEventHandler, readBody, setResponseStatus } from "h3";
 import { writeFile, mkdir } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { homedir, tmpdir } from "node:os";
+import { dirname } from "node:path";
 import { z } from "zod";
 import { storeToAnalysisFile } from "shared/game-theory/utils/serialization";
 import type { CanonicalStore } from "shared/game-theory/types/canonical";
 import type { AnalysisFileMeta } from "shared/game-theory/types/file";
-
-function isSafePath(filePath: string): boolean {
-  if (filePath.includes("\0")) return false;
-
-  const resolved = resolve(filePath);
-  const home = homedir();
-  const tmp = tmpdir();
-
-  return resolved.startsWith(home) || resolved.startsWith(tmp);
-}
+import { resolveSafeWritePath } from "../../utils/safe-path";
 
 const saveSchema = z.object({
   filePath: z.string().min(1),
@@ -58,11 +48,12 @@ export default defineEventHandler(async (event) => {
     };
   }
 
-  if (!isSafePath(filePath)) {
+  const safePath = await resolveSafeWritePath(filePath);
+  if (!safePath.ok) {
     setResponseStatus(event, 403);
     return {
       success: false,
-      error: "Path is outside the allowed directory",
+      error: safePath.error,
     };
   }
 
@@ -72,14 +63,13 @@ export default defineEventHandler(async (event) => {
       meta as unknown as AnalysisFileMeta,
     );
 
-    const resolvedPath = resolve(filePath);
-    await mkdir(dirname(resolvedPath), { recursive: true });
+    await mkdir(dirname(safePath.path), { recursive: true });
     const json = JSON.stringify(analysisFile, null, 2);
-    await writeFile(resolvedPath, json, "utf-8");
+    await writeFile(safePath.path, json, "utf-8");
 
     return {
       success: true,
-      filePath: resolvedPath,
+      filePath: safePath.path,
       schemaVersion: analysisFile.schema_version,
       bytesWritten: Buffer.byteLength(json, "utf-8"),
     };

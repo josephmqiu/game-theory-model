@@ -21,6 +21,8 @@ export interface AnalysisFileMeta {
   filePath: string | null;
   name: string;
   description?: string;
+  createdAt: string | null;
+  updatedAt: string | null;
   metadata: AnalysisFile["metadata"];
   dirty: boolean;
 }
@@ -51,6 +53,7 @@ type AnalysisStore = AnalysisState & AnalysisActions;
 
 function createInitialState(): AnalysisState {
   const canonical = emptyCanonicalStore();
+  const timestamp = new Date().toISOString();
   return {
     canonical,
     eventLog: createEventLog(crypto.randomUUID()),
@@ -58,6 +61,8 @@ function createInitialState(): AnalysisState {
     fileMeta: {
       filePath: null,
       name: "Untitled Analysis",
+      createdAt: timestamp,
+      updatedAt: timestamp,
       metadata: { tags: [] },
       dirty: false,
     },

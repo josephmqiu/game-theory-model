@@ -42,6 +42,7 @@ export default defineEventHandler(async (event) => {
       store: result.store,
       meta: {
         name: result.analysis.name,
+        createdAt: result.analysis.created_at,
         description: result.analysis.description,
         metadata: result.analysis.metadata,
       },

@@ -4,14 +4,22 @@ import type {
   AIProviderType,
   IntegrationStatusSnapshot,
   MCPCliTool,
+  MCPTransportMode,
   ProviderStatusSnapshot,
 } from "../../../src/types/agent-settings";
 import { getMcpIntegrationStatuses } from "../../utils/integration-status";
 import { discoverAgentConnection } from "../ai/connect-agent.post";
+import {
+  getManagedMcpConfigPath,
+  hasManagedMcpConfig,
+  smokeTestManagedMcpStdio,
+  writeManagedMcpConfig,
+} from "../../utils/mcp-config-writers";
 
 const validateSchema = z.object({
   kind: z.enum(["provider", "integration"]),
   target: z.string().min(1),
+  transportMode: z.enum(["stdio", "http", "both"]).optional(),
 });
 
 const PROVIDER_TO_AGENT: Record<
@@ -63,9 +71,13 @@ export default defineEventHandler(async (event) => {
 
     const snapshot: ProviderStatusSnapshot = {
       provider: parsed.data.target,
-      installed: !result.notInstalled,
-      authenticated: result.connected ? true : null,
+      installed: result.installed,
+      authenticated: result.authenticated,
       validated: result.connected,
+      statusStage: result.statusStage,
+      reachable: result.reachable,
+      lastError: result.connected ? null : result.error ?? null,
+      modelsDiscovered: result.modelsDiscovered,
       statusMessage:
         result.error ??
         (result.connected
@@ -96,15 +108,67 @@ export default defineEventHandler(async (event) => {
     return { status: "error", error: "Integration not found." };
   }
 
+  const requestedTransportMode: MCPTransportMode =
+    parsed.data.transportMode ?? "stdio";
+
+  if (!integration.installed) {
+    return {
+      status: "error",
+      integration: integration,
+    };
+  }
+
+  let configPath = integration.configPath;
+  let reachable = false;
+  let lastError: string | null = null;
+
+  try {
+    if (!configPath) {
+      const writeResult = await writeManagedMcpConfig(
+        parsed.data.target,
+        requestedTransportMode,
+      );
+      configPath = writeResult.outputPath;
+      reachable = writeResult.reachable;
+      if (!writeResult.reachable) {
+        lastError = "Managed MCP config was written, but the stdio runtime failed the smoke test.";
+      }
+    } else if (await hasManagedMcpConfig(parsed.data.target)) {
+      const smoke = await smokeTestManagedMcpStdio();
+      reachable = smoke.reachable;
+      lastError = smoke.reachable ? null : smoke.error ?? null;
+    } else {
+      configPath = getManagedMcpConfigPath(parsed.data.target);
+    }
+  } catch (error) {
+    lastError =
+      error instanceof Error ? error.message : "Could not validate MCP runtime.";
+  }
+
+  const validated = Boolean(configPath) && reachable;
+  const statusStage = !configPath
+    ? "detected"
+    : validated
+      ? "ready"
+      : "config_written";
+
   return {
-    status: integration.installed ? "ok" : "error",
+    status: validated ? "ok" : "error",
     integration: {
       ...integration,
-      validated: integration.installed,
-      authenticated: integration.installed ? null : false,
-      statusMessage: integration.installed
-        ? `${parsed.data.target} is available for MCP wiring.`
-        : integration.statusMessage,
+      validated,
+      authenticated: integration.authenticated,
+      statusStage,
+      reachable,
+      lastError,
+      configPath,
+      statusMessage:
+        validated
+          ? `${parsed.data.target} is ready for MCP wiring.`
+          : configPath
+            ? `${parsed.data.target} config exists, but runtime validation still failed.`
+            : `${parsed.data.target} is detected but not configured yet.`,
+      lastCheckedAt: new Date().toISOString(),
     },
   };
 });

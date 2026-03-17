@@ -1,18 +1,7 @@
 import { defineEventHandler, getQuery, setResponseStatus } from "h3";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { homedir, tmpdir } from "node:os";
 import { loadAnalysisJson } from "shared/game-theory/utils/file-io";
-
-function isSafePath(filePath: string): boolean {
-  if (filePath.includes("\0")) return false;
-
-  const resolved = resolve(filePath);
-  const home = homedir();
-  const tmp = tmpdir();
-
-  return resolved.startsWith(home) || resolved.startsWith(tmp);
-}
+import { resolveSafeReadPath } from "../../utils/safe-path";
 
 /**
  * GET endpoint to load a .gta.json analysis file.
@@ -39,17 +28,18 @@ export default defineEventHandler(async (event) => {
     };
   }
 
-  if (!isSafePath(filePath)) {
+  const safePath = await resolveSafeReadPath(filePath);
+  if (!safePath.ok) {
     setResponseStatus(event, 403);
     return {
       success: false,
-      error: "Path is outside the allowed directory",
+      error: safePath.error,
     };
   }
 
   let raw: string;
   try {
-    raw = await readFile(resolve(filePath), "utf-8");
+    raw = await readFile(safePath.path, "utf-8");
   } catch (error) {
     if (
       error instanceof Error &&
@@ -71,7 +61,7 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const result = await loadAnalysisJson(raw, resolve(filePath));
+    const result = await loadAnalysisJson(raw, safePath.path);
 
     if (result.status === "recovery") {
       setResponseStatus(event, 422);
@@ -85,10 +75,11 @@ export default defineEventHandler(async (event) => {
 
     return {
       success: true,
-      filePath: resolve(filePath),
+      filePath: safePath.path,
       store: result.store,
       meta: {
         name: result.analysis.name,
+        createdAt: result.analysis.created_at,
         description: result.analysis.description,
         metadata: result.analysis.metadata,
       },

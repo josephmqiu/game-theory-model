@@ -1,9 +1,18 @@
 /** @vitest-environment jsdom */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { AiChatMinimizedBar } from "@/components/panels/ai-chat-panel";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { AiChatMinimizedBar, AiChatPanel } from "@/components/panels/ai-chat-panel";
 import { aiStore } from "@/stores/ai-store";
+import { conversationStore } from "@/stores/conversation-store";
+import * as agentSettingsModule from "@/stores/agent-settings-store";
+import {
+  agentSettingsStore,
+} from "@/stores/agent-settings-store";
+
+vi.mock("@/services/app-command-runner", () => ({
+  sendChatCommand: vi.fn(),
+}));
 
 describe("AI panel", () => {
   beforeEach(() => {
@@ -15,6 +24,68 @@ describe("AI panel", () => {
       isStreaming: false,
       streamingPhase: null,
       lastError: null,
+    });
+    conversationStore.getState().resetConversation();
+    agentSettingsStore.setState({
+      hydrated: true,
+      connectingProvider: null,
+      connectionErrors: {},
+      providers: {
+        anthropic: {
+          type: "anthropic",
+          displayName: "Claude Code",
+          isConnected: false,
+          connectionMethod: null,
+          models: [],
+          installed: false,
+          authenticated: null,
+          validated: false,
+          statusMessage: null,
+          lastCheckedAt: null,
+          configPath: null,
+        },
+        openai: {
+          type: "openai",
+          displayName: "Codex CLI",
+          isConnected: false,
+          connectionMethod: null,
+          models: [],
+          installed: false,
+          authenticated: null,
+          validated: false,
+          statusMessage: null,
+          lastCheckedAt: null,
+          configPath: null,
+        },
+        opencode: {
+          type: "opencode",
+          displayName: "OpenCode",
+          isConnected: false,
+          connectionMethod: null,
+          models: [],
+          installed: false,
+          authenticated: null,
+          validated: false,
+          statusMessage: null,
+          lastCheckedAt: null,
+          configPath: null,
+        },
+        copilot: {
+          type: "copilot",
+          displayName: "GitHub Copilot",
+          isConnected: false,
+          connectionMethod: null,
+          models: [],
+          installed: false,
+          authenticated: null,
+          validated: false,
+          statusMessage: null,
+          lastCheckedAt: null,
+          configPath: null,
+        },
+      },
+      mcpIntegrations: [],
+      mcpTransportMode: "stdio",
     });
     vi.clearAllMocks();
   });
@@ -48,5 +119,32 @@ describe("AI panel", () => {
     const title = screen.getByRole("button", { name: /AI Panel/ });
     expect(title.textContent).toContain("OpenAI");
     expect(title.textContent).toContain("gpt-5-mini");
+  });
+
+  it("hydrates connector settings only once across chat rerenders", () => {
+    const hydrateSpy = vi
+      .spyOn(agentSettingsModule, "hydrateAgentSettingsStore")
+      .mockResolvedValue();
+
+    render(<AiChatPanel />);
+
+    act(() => {
+      conversationStore.getState().appendMessage({
+        role: "user",
+        content: "hello",
+      });
+    });
+
+    expect(hydrateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables chat when no ready provider is connected", () => {
+    render(<AiChatPanel />);
+
+    expect(
+      screen.getByText(/Connect and validate a provider in Settings/i),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Chat message input")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
   });
 });

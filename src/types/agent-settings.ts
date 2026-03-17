@@ -1,5 +1,20 @@
 export type AIProviderType = "anthropic" | "openai" | "opencode" | "copilot";
 
+export type ProviderStatusStage =
+  | "missing_binary"
+  | "detected"
+  | "authenticated"
+  | "ready"
+  | "error";
+
+export type IntegrationStatusStage =
+  | "missing_binary"
+  | "detected"
+  | "config_written"
+  | "reachable"
+  | "ready"
+  | "error";
+
 export type ProviderConnectionMethod =
   | "claude-code"
   | "codex-cli"
@@ -22,6 +37,10 @@ export interface AIProviderConfig {
   installed: boolean;
   authenticated: boolean | null;
   validated: boolean;
+  statusStage: ProviderStatusStage;
+  reachable: boolean | null;
+  lastError: string | null;
+  modelsDiscovered: number;
   statusMessage: string | null;
   lastCheckedAt: string | null;
   configPath: string | null;
@@ -44,6 +63,9 @@ export interface MCPCliIntegration {
   installed: boolean;
   validated: boolean;
   authenticated: boolean | null;
+  statusStage: IntegrationStatusStage;
+  reachable: boolean | null;
+  lastError: string | null;
   statusMessage: string | null;
   lastCheckedAt: string | null;
   configPath: string | null;
@@ -54,6 +76,10 @@ export interface ProviderStatusSnapshot {
   installed: boolean;
   authenticated: boolean | null;
   validated: boolean;
+  statusStage: ProviderStatusStage;
+  reachable: boolean | null;
+  lastError: string | null;
+  modelsDiscovered?: number | null;
   statusMessage: string | null;
   lastCheckedAt: string;
   configPath: string | null;
@@ -64,6 +90,9 @@ export interface IntegrationStatusSnapshot {
   installed: boolean;
   authenticated: boolean | null;
   validated: boolean;
+  statusStage: IntegrationStatusStage;
+  reachable: boolean | null;
+  lastError: string | null;
   statusMessage: string | null;
   lastCheckedAt: string;
   configPath: string | null;

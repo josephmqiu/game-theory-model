@@ -52,6 +52,10 @@ const DEFAULT_PROVIDERS: Record<AIProviderType, AIProviderConfig> = {
     installed: false,
     authenticated: null,
     validated: false,
+    statusStage: "missing_binary",
+    reachable: false,
+    lastError: null,
+    modelsDiscovered: 0,
     statusMessage: null,
     lastCheckedAt: null,
     configPath: null,
@@ -65,6 +69,10 @@ const DEFAULT_PROVIDERS: Record<AIProviderType, AIProviderConfig> = {
     installed: false,
     authenticated: null,
     validated: false,
+    statusStage: "missing_binary",
+    reachable: false,
+    lastError: null,
+    modelsDiscovered: 0,
     statusMessage: null,
     lastCheckedAt: null,
     configPath: null,
@@ -78,6 +86,10 @@ const DEFAULT_PROVIDERS: Record<AIProviderType, AIProviderConfig> = {
     installed: false,
     authenticated: null,
     validated: false,
+    statusStage: "missing_binary",
+    reachable: false,
+    lastError: null,
+    modelsDiscovered: 0,
     statusMessage: null,
     lastCheckedAt: null,
     configPath: null,
@@ -91,6 +103,10 @@ const DEFAULT_PROVIDERS: Record<AIProviderType, AIProviderConfig> = {
     installed: false,
     authenticated: null,
     validated: false,
+    statusStage: "missing_binary",
+    reachable: false,
+    lastError: null,
+    modelsDiscovered: 0,
     statusMessage: null,
     lastCheckedAt: null,
     configPath: null,
@@ -105,6 +121,9 @@ const DEFAULT_MCP_INTEGRATIONS: MCPCliIntegration[] = [
     installed: false,
     validated: false,
     authenticated: null,
+    statusStage: "missing_binary",
+    reachable: false,
+    lastError: null,
     statusMessage: null,
     lastCheckedAt: null,
     configPath: null,
@@ -116,6 +135,9 @@ const DEFAULT_MCP_INTEGRATIONS: MCPCliIntegration[] = [
     installed: false,
     validated: false,
     authenticated: null,
+    statusStage: "missing_binary",
+    reachable: false,
+    lastError: null,
     statusMessage: null,
     lastCheckedAt: null,
     configPath: null,
@@ -127,6 +149,9 @@ const DEFAULT_MCP_INTEGRATIONS: MCPCliIntegration[] = [
     installed: false,
     validated: false,
     authenticated: null,
+    statusStage: "missing_binary",
+    reachable: false,
+    lastError: null,
     statusMessage: null,
     lastCheckedAt: null,
     configPath: null,
@@ -138,6 +163,9 @@ const DEFAULT_MCP_INTEGRATIONS: MCPCliIntegration[] = [
     installed: false,
     validated: false,
     authenticated: null,
+    statusStage: "missing_binary",
+    reachable: false,
+    lastError: null,
     statusMessage: null,
     lastCheckedAt: null,
     configPath: null,
@@ -149,6 +177,9 @@ const DEFAULT_MCP_INTEGRATIONS: MCPCliIntegration[] = [
     installed: false,
     validated: false,
     authenticated: null,
+    statusStage: "missing_binary",
+    reachable: false,
+    lastError: null,
     statusMessage: null,
     lastCheckedAt: null,
     configPath: null,
@@ -160,6 +191,9 @@ const DEFAULT_MCP_INTEGRATIONS: MCPCliIntegration[] = [
     installed: false,
     validated: false,
     authenticated: null,
+    statusStage: "missing_binary",
+    reachable: false,
+    lastError: null,
     statusMessage: null,
     lastCheckedAt: null,
     configPath: null,
@@ -240,14 +274,44 @@ export const agentSettingsStore = createStore<AgentSettingsStore>((set) => ({
     set((state) => {
       const nextProviders = { ...state.providers };
       for (const status of statuses) {
+        const existing = nextProviders[status.provider];
+        const shouldResetConnection = !status.installed;
+        const preserveConnectedState =
+          status.installed &&
+          status.statusStage === "detected" &&
+          existing.isConnected &&
+          existing.models.length > 0;
         nextProviders[status.provider] = {
-          ...nextProviders[status.provider],
+          ...existing,
           installed: status.installed,
-          authenticated: status.authenticated,
-          validated: status.validated,
-          statusMessage: status.statusMessage,
+          authenticated: preserveConnectedState
+            ? existing.authenticated
+            : status.authenticated,
+          validated: preserveConnectedState
+            ? existing.validated
+            : status.validated,
+          statusStage: preserveConnectedState
+            ? existing.statusStage
+            : status.statusStage,
+          reachable: preserveConnectedState
+            ? existing.reachable
+            : status.reachable,
+          lastError: preserveConnectedState ? null : status.lastError,
+          modelsDiscovered: preserveConnectedState
+            ? existing.models.length
+            : status.modelsDiscovered ?? 0,
+          statusMessage: preserveConnectedState
+            ? existing.statusMessage
+            : status.statusMessage,
           lastCheckedAt: status.lastCheckedAt,
           configPath: status.configPath,
+          ...(shouldResetConnection
+            ? {
+                isConnected: false,
+                connectionMethod: null,
+                models: [],
+              }
+            : {}),
         };
       }
 
@@ -268,9 +332,17 @@ export const agentSettingsStore = createStore<AgentSettingsStore>((set) => ({
         return status
           ? {
               ...integration,
+              enabled:
+                integration.enabled &&
+                status.installed &&
+                status.validated &&
+                Boolean(status.configPath),
               installed: status.installed,
               authenticated: status.authenticated,
               validated: status.validated,
+              statusStage: status.statusStage,
+              reachable: status.reachable,
+              lastError: status.lastError,
               statusMessage: status.statusMessage,
               lastCheckedAt: status.lastCheckedAt,
               configPath: status.configPath,
@@ -298,7 +370,12 @@ export const agentSettingsStore = createStore<AgentSettingsStore>((set) => ({
           connectionMethod: method,
           models,
           installed: true,
+          authenticated: true,
           validated: true,
+          statusStage: "ready",
+          reachable: true,
+          lastError: null,
+          modelsDiscovered: models.length,
           statusMessage:
             models.length > 0
               ? `${models.length} models discovered.`
@@ -329,6 +406,7 @@ export const agentSettingsStore = createStore<AgentSettingsStore>((set) => ({
           isConnected: false,
           connectionMethod: null,
           models: [],
+          modelsDiscovered: 0,
         },
       };
 

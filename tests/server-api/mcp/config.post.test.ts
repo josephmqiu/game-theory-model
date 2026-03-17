@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, type Mock, vi } from "vitest";
-import handler from "./config.post.ts";
-import { callPost } from "../../test-support/http";
-import { getMcpIntegrationStatuses } from "../../utils/integration-status";
-import { writeManagedMcpConfig } from "../../utils/mcp-config-writers";
+import handler from "../../../server/api/mcp/config.post.ts";
+import { callPost } from "../../../server/test-support/http";
+import { getMcpIntegrationStatuses } from "../../../server/utils/integration-status";
+import { writeManagedMcpConfig } from "../../../server/utils/mcp-config-writers";
 
 vi.mock("../../utils/integration-status", () => ({
   getMcpIntegrationStatuses: vi.fn(),

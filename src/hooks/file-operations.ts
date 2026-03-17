@@ -15,10 +15,36 @@ interface LoadedAnalysisResponse {
   store?: unknown;
   meta?: {
     name: string;
+    createdAt?: string;
     description?: string;
     metadata?: AnalysisFile["metadata"];
   };
   error?: string;
+}
+
+interface PersistedWorkflowState {
+  pipeline?: {
+    analysis_state?: ReturnType<typeof pipelineStore.getState>["analysis_state"];
+    phase_executions?: ReturnType<typeof pipelineStore.getState>["phase_executions"];
+    phase_results?: ReturnType<typeof pipelineStore.getState>["phase_results"];
+    steering_messages?: ReturnType<typeof pipelineStore.getState>["steering_messages"];
+    proposal_review?: ReturnType<typeof pipelineStore.getState>["proposal_review"];
+  };
+  runtime?: {
+    prompt_registry?: ReturnType<typeof pipelineStore.getState>["prompt_registry"];
+    pending_revalidation_approvals?: ReturnType<
+      typeof pipelineStore.getState
+    >["pending_revalidation_approvals"];
+    active_rerun_cycle?: ReturnType<typeof pipelineStore.getState>["active_rerun_cycle"];
+  };
+  conversation?: {
+    messages?: ReturnType<typeof conversationStore.getState>["messages"];
+    proposal_review?: ReturnType<typeof conversationStore.getState>["proposal_review"];
+    proposals_by_id?: ReturnType<typeof conversationStore.getState>["proposals_by_id"];
+  };
+  play?: {
+    active_session_id?: string | null;
+  };
 }
 
 function isElectron(): boolean {
@@ -34,12 +60,13 @@ function buildSerializedAnalysis(): string {
     ...(meta.metadata ?? { tags: [] }),
     tags: meta.metadata?.tags ?? [],
     play_sessions: serializePlaySessions(playSessions),
+    workflow_state: buildWorkflowState() as Record<string, unknown>,
   };
 
   const analysisFile = storeToAnalysisFile(state.canonical, {
     name: meta.name,
     description: meta.description,
-    created_at: timestamp,
+    created_at: meta.createdAt ?? timestamp,
     updated_at: timestamp,
     metadata: persistedMetadata,
   });
@@ -51,6 +78,35 @@ function resetWorkspaceState(): void {
   pipelineStore.getState().resetPipeline();
   conversationStore.getState().resetConversation();
   playStore.getState().reset();
+}
+
+function buildWorkflowState(): PersistedWorkflowState {
+  const pipeline = pipelineStore.getState();
+  const conversation = conversationStore.getState();
+  const play = playStore.getState();
+
+  return {
+    pipeline: {
+      analysis_state: pipeline.analysis_state,
+      phase_executions: pipeline.phase_executions,
+      phase_results: pipeline.phase_results,
+      steering_messages: pipeline.steering_messages,
+      proposal_review: pipeline.proposal_review,
+    },
+    runtime: {
+      prompt_registry: pipeline.prompt_registry,
+      pending_revalidation_approvals: pipeline.pending_revalidation_approvals,
+      active_rerun_cycle: pipeline.active_rerun_cycle,
+    },
+    conversation: {
+      messages: conversation.messages,
+      proposal_review: conversation.proposal_review,
+      proposals_by_id: conversation.proposals_by_id,
+    },
+    play: {
+      active_session_id: play.activeSessionId,
+    },
+  };
 }
 
 function serializePlaySessions(
@@ -99,6 +155,14 @@ function deserializePlaySessions(
       sourceSessionId: session.source_session_id ?? null,
     })) ?? []
   );
+}
+
+function readWorkflowState(
+  metadata: AnalysisFile["metadata"] | undefined,
+): PersistedWorkflowState | null {
+  const raw = metadata?.workflow_state;
+  if (!raw || typeof raw !== "object") return null;
+  return raw as PersistedWorkflowState;
 }
 
 // ── Save ──
@@ -166,16 +230,37 @@ export async function loadFileFromContent(
           {
             filePath,
             name: result.meta?.name ?? "Loaded Analysis",
+            createdAt: result.meta?.createdAt ?? null,
             description: result.meta?.description,
             metadata,
             dirty: false,
           },
         );
-      pipelineStore.getState().resetPipeline();
-      conversationStore.getState().resetConversation();
-      playStore
-        .getState()
-        .replaceSessions(deserializePlaySessions(metadata.play_sessions));
+      const workflowState = readWorkflowState(metadata);
+      pipelineStore.getState().restoreSnapshot({
+        analysis_state: workflowState?.pipeline?.analysis_state ?? null,
+        phase_executions: workflowState?.pipeline?.phase_executions ?? {},
+        phase_results: workflowState?.pipeline?.phase_results ?? {},
+        steering_messages: workflowState?.pipeline?.steering_messages ?? [],
+        proposal_review: workflowState?.pipeline?.proposal_review ?? null,
+        prompt_registry:
+          workflowState?.runtime?.prompt_registry ??
+          pipelineStore.getState().prompt_registry,
+        pending_revalidation_approvals:
+          workflowState?.runtime?.pending_revalidation_approvals ?? {},
+        active_rerun_cycle: workflowState?.runtime?.active_rerun_cycle ?? null,
+      });
+      conversationStore.getState().restoreSnapshot({
+        messages: workflowState?.conversation?.messages ?? [],
+        proposal_review:
+          workflowState?.conversation?.proposal_review ??
+          conversationStore.getState().proposal_review,
+        proposals_by_id: workflowState?.conversation?.proposals_by_id ?? {},
+      });
+      playStore.getState().replaceSessions(
+        deserializePlaySessions(metadata.play_sessions),
+        workflowState?.play?.active_session_id ?? null,
+      );
     } else {
       console.error("Load failed:", result.error);
     }

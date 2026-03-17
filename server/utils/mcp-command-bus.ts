@@ -46,7 +46,10 @@ export function enqueueCommand<T extends AppCommandType>(params: {
 
   commands.set(command.id, command);
   trimHistory();
-  broadcastEvent({ type: "command:queued", command }, command.sourceClientId);
+  broadcastEvent(
+    { type: "command:queued", command },
+    command.sourceClientId ?? undefined,
+  );
   return command;
 }
 
@@ -109,7 +112,7 @@ export function completeCommand(params: {
   commands.set(updated.id, updated);
   broadcastEvent(
     { type: "command:result", command: updated },
-    params.sourceClientId,
+    params.sourceClientId ?? undefined,
   );
 
   const resolvers = pendingResolvers.get(updated.id) ?? [];

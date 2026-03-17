@@ -7,12 +7,16 @@ import {
   hydrateAgentSettingsStore,
   useAgentSettingsStore,
 } from "@/stores/agent-settings-store";
+import { refreshIntegrationStatuses } from "@/services/integration-status";
 import type {
   AIProviderType,
+  AIProviderConfig,
   GroupedModel,
   IntegrationStatusSnapshot,
+  MCPCliIntegration,
   MCPCliTool,
   MCPTransportMode,
+  ProviderStatusStage,
   ProviderStatusSnapshot,
   ProviderConnectionMethod,
 } from "@/types/agent-settings";
@@ -99,14 +103,7 @@ export function SettingsPage() {
 
   async function refreshStatuses(): Promise<void> {
     try {
-      const response = await fetch("/api/integrations/status");
-      const result = (await response.json()) as {
-        providers: ProviderStatusSnapshot[];
-        integrations: IntegrationStatusSnapshot[];
-      };
-
-      agentSettingsStore.getState().syncProviderStatuses(result.providers);
-      agentSettingsStore.getState().syncIntegrationStatuses(result.integrations);
+      await refreshIntegrationStatuses();
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : "Could not refresh integration status.",
@@ -130,8 +127,13 @@ export function SettingsPage() {
       });
 
       const result = (await response.json()) as {
+        installed: boolean;
         connected: boolean;
+        authenticated: boolean | null;
+        reachable: boolean | null;
+        statusStage: AIProviderConfig["statusStage"];
         models: GroupedModel[];
+        modelsDiscovered: number;
         error?: string;
         notInstalled?: boolean;
       };
@@ -142,9 +144,13 @@ export function SettingsPage() {
         agentSettingsStore.getState().syncProviderStatuses([
           {
             provider: providerType,
-            installed: !result.notInstalled,
-            authenticated: null,
+            installed: result.installed,
+            authenticated: result.authenticated,
             validated: false,
+            statusStage: result.statusStage,
+            reachable: result.reachable,
+            lastError: message,
+            modelsDiscovered: result.modelsDiscovered,
             statusMessage: message,
             lastCheckedAt: new Date().toISOString(),
             configPath: null,
@@ -168,6 +174,25 @@ export function SettingsPage() {
           modelId: firstModel.value,
         });
       }
+
+      agentSettingsStore.getState().syncProviderStatuses([
+        {
+          provider: providerType,
+          installed: result.installed,
+          authenticated: result.authenticated,
+          validated: true,
+          statusStage: result.statusStage,
+          reachable: result.reachable,
+          lastError: null,
+          modelsDiscovered: result.modelsDiscovered,
+          statusMessage:
+            result.modelsDiscovered > 0
+              ? `${result.modelsDiscovered} models discovered.`
+              : "Connected.",
+          lastCheckedAt: new Date().toISOString(),
+          configPath: null,
+        },
+      ]);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : `Failed to connect ${providerType}`;
@@ -238,6 +263,7 @@ export function SettingsPage() {
         body: JSON.stringify({
           kind: "integration",
           target: tool,
+          transportMode: mcpTransportMode,
         }),
       });
       const result = (await response.json()) as {
@@ -401,6 +427,7 @@ export function SettingsPage() {
               const isConnecting = connectingProvider === providerType;
               const error = connectionErrors[providerType];
               const isValidating = busyAction === `validate-provider:${providerType}`;
+              const stageBadge = providerStageBadge(config);
 
               return (
                 <div
@@ -423,8 +450,8 @@ export function SettingsPage() {
                           label={config.installed ? "Installed" : "Missing"}
                         />
                         <StatusBadge
-                          tone={config.validated ? "ready" : "pending"}
-                          label={config.validated ? "Validated" : "Not validated"}
+                          tone={stageBadge.tone}
+                          label={stageBadge.label}
                         />
                         <StatusBadge
                           tone={
@@ -448,6 +475,9 @@ export function SettingsPage() {
                           {config.statusMessage}
                         </p>
                       )}
+                      {config.lastError && (
+                        <p className="mt-2 text-xs text-red-500">{config.lastError}</p>
+                      )}
                       {!config.installed && (
                         <p className="mt-2 text-xs text-muted-foreground">
                           {PROVIDER_SETUP_HINTS[providerType].install}
@@ -464,7 +494,7 @@ export function SettingsPage() {
                       <button
                         type="button"
                         onClick={() => void handleValidateProvider(providerType)}
-                        disabled={isValidating}
+                        disabled={isValidating || !config.installed}
                         className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-accent"
                       >
                         {isValidating ? "Validating..." : "Validate"}
@@ -549,6 +579,7 @@ export function SettingsPage() {
               const isValidating = busyAction === `validate-integration:${integration.tool}`;
               const isWritingConfig = busyAction === `write-config:${integration.tool}`;
               const isRemovingConfig = busyAction === `remove-config:${integration.tool}`;
+              const stageBadge = integrationStageBadge(integration);
 
               return (
                 <div
@@ -570,8 +601,8 @@ export function SettingsPage() {
                           label={integration.installed ? "Installed" : "Missing"}
                         />
                         <StatusBadge
-                          tone={integration.validated ? "ready" : "pending"}
-                          label={integration.validated ? "Validated" : "Not validated"}
+                          tone={stageBadge.tone}
+                          label={stageBadge.label}
                         />
                         <StatusBadge
                           tone={integration.configPath ? "ready" : "pending"}
@@ -587,6 +618,11 @@ export function SettingsPage() {
                           {integration.statusMessage}
                         </p>
                       )}
+                      {integration.lastError && (
+                        <p className="mt-2 text-xs text-red-500">
+                          {integration.lastError}
+                        </p>
+                      )}
                       <p className="mt-2 text-xs text-muted-foreground">
                         {MCP_SETUP_HINTS[integration.tool]}
                       </p>
@@ -598,7 +634,7 @@ export function SettingsPage() {
                       <button
                         type="button"
                         onClick={() => void handleValidateIntegration(integration.tool)}
-                        disabled={isValidating}
+                        disabled={isValidating || !integration.installed}
                         className="rounded-md border border-border px-3 py-1.5 text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {isValidating ? "Validating..." : "Validate"}
@@ -624,7 +660,7 @@ export function SettingsPage() {
                         onClick={() => handleToggleIntegration(integration.tool)}
                         disabled={
                           !integration.installed ||
-                          !integration.validated ||
+                          integration.statusStage !== "ready" ||
                           !integration.configPath
                         }
                         className="rounded-md border border-border px-3 py-1.5 text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
@@ -684,4 +720,42 @@ function StatusBadge({
         : "bg-secondary text-muted-foreground";
 
   return <span className={`rounded-full px-2 py-0.5 ${classes}`}>{label}</span>;
+}
+
+function providerStageBadge(
+  config: AIProviderConfig,
+): { label: string; tone: "ready" | "pending" | "missing" } {
+  switch (config.statusStage) {
+    case "ready":
+      return { label: "Ready", tone: "ready" };
+    case "authenticated":
+      return { label: "Authenticated", tone: "ready" };
+    case "detected":
+      return { label: "Detected", tone: "pending" };
+    case "error":
+      return { label: "Error", tone: "missing" };
+    case "missing_binary":
+    default:
+      return { label: "Missing", tone: "missing" };
+  }
+}
+
+function integrationStageBadge(
+  integration: MCPCliIntegration,
+): { label: string; tone: "ready" | "pending" | "missing" } {
+  switch (integration.statusStage) {
+    case "ready":
+      return { label: "Ready", tone: "ready" };
+    case "reachable":
+      return { label: "Reachable", tone: "ready" };
+    case "config_written":
+      return { label: "Config written", tone: "pending" };
+    case "detected":
+      return { label: "Detected", tone: "pending" };
+    case "error":
+      return { label: "Error", tone: "missing" };
+    case "missing_binary":
+    default:
+      return { label: "Missing", tone: "missing" };
+  }
 }

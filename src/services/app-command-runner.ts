@@ -17,14 +17,10 @@ const pipelineController = createPipelineOrchestrator(
 );
 
 function findNextRunnablePhase(): number {
-  const analysisState = analysisStore.getState();
   const pipelineState = pipelineController.getState();
 
   if (!pipelineState) {
-    if (Object.keys(analysisState.canonical.games).length > 0) {
-      return 6;
-    }
-    throw new Error("Start an analysis before running the next phase.");
+    return 1;
   }
 
   for (let phase = 1; phase <= 10; phase += 1) {

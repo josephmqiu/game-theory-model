@@ -4,7 +4,7 @@
  * Reads from conversation store, sends messages via /api/ai/chat.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   ChevronUp,
@@ -19,10 +19,7 @@ import { sendChatCommand } from "@/services/app-command-runner";
 import { useConversationStore } from "@/stores/conversation-store";
 import { conversationStore } from "@/stores/conversation-store";
 import { aiStore, useAiStore } from "@/stores/ai-store";
-import {
-  hydrateAgentSettingsStore,
-  useAgentSettingsStore,
-} from "@/stores/agent-settings-store";
+import { useAgentSettingsStore } from "@/stores/agent-settings-store";
 import type { ConversationMessage } from "shared/game-theory/types/conversation";
 import type { AIProviderType } from "@/types/agent-settings";
 
@@ -118,6 +115,7 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
   const messages = useConversationStore((s) => s.messages);
   const provider = useAiStore((s) => s.provider);
   const lastError = useAiStore((s) => s.lastError);
+  const settingsHydrated = useAgentSettingsStore((s) => s.hydrated);
   const connectedProviders = useAgentSettingsStore((s) => s.providers);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -135,37 +133,50 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
   }, []);
 
   useEffect(() => {
-    void hydrateAgentSettingsStore();
     scrollToBottom();
   }, [messages.length, sending, streamedAssistant, thinkingMessages.length, scrollToBottom]);
 
-  const connectedModels = (
-    Object.keys(connectedProviders) as AIProviderType[]
-  ).flatMap((providerType) =>
-    connectedProviders[providerType].models.map((model) => ({
-      ...model,
-      providerLabel: connectedProviders[providerType].displayName,
-    })),
+  const connectedModels = useMemo(
+    () =>
+      (Object.keys(connectedProviders) as AIProviderType[]).flatMap((providerType) =>
+        connectedProviders[providerType].models.map((model) => ({
+          ...model,
+          providerLabel: connectedProviders[providerType].displayName,
+        })),
+      ),
+    [connectedProviders],
   );
 
+  const selectedProviderState = connectedProviders[provider.provider];
+  const currentProviderReady =
+    selectedProviderState.isConnected &&
+    selectedProviderState.validated &&
+    selectedProviderState.models.some((model) => model.value === provider.modelId);
+
   useEffect(() => {
-    if (connectedModels.length === 0) return;
+    if (!settingsHydrated || connectedModels.length === 0) return;
     const currentModel = connectedModels.find(
-      (model) => model.value === provider.modelId,
+      (model) =>
+        model.value === provider.modelId && model.provider === provider.provider,
     );
     if (!currentModel) {
       const firstModel = connectedModels[0];
       if (!firstModel) return;
-      aiStore.getState().setProvider({
-        provider: firstModel.provider,
-        modelId: firstModel.value,
-      });
+      if (
+        firstModel.provider !== provider.provider ||
+        firstModel.value !== provider.modelId
+      ) {
+        aiStore.getState().setProvider({
+          provider: firstModel.provider,
+          modelId: firstModel.value,
+        });
+      }
     }
-  }, [connectedModels, provider.modelId]);
+  }, [connectedModels, provider.modelId, provider.provider, settingsHydrated]);
 
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
-    if (!trimmed || sending) return;
+    if (!trimmed || sending || !currentProviderReady) return;
 
     conversationStore.getState().appendMessage({
       role: "user",
@@ -227,7 +238,14 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
       aiStore.getState().setStreaming(false);
       scrollToBottom();
     }
-  }, [input, provider.modelId, provider.provider, sending, scrollToBottom]);
+  }, [
+    currentProviderReady,
+    input,
+    provider.modelId,
+    provider.provider,
+    sending,
+    scrollToBottom,
+  ]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -357,6 +375,11 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
             {lastError}
           </p>
         )}
+        {!currentProviderReady && settingsHydrated && (
+          <p className="mb-2 text-xs text-muted-foreground">
+            Connect and validate a provider in Settings before sending chat.
+          </p>
+        )}
         <div className="flex items-end gap-2">
           <textarea
             aria-label="Chat message input"
@@ -364,7 +387,7 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask about the analysis..."
-            disabled={sending}
+            disabled={sending || !currentProviderReady}
             rows={1}
             className={cn(
               "flex-1 resize-none rounded-md border border-border bg-background px-3 py-2",
@@ -376,7 +399,7 @@ export function AiChatPanel({ onClose, onMinimize }: AiChatPanelProps) {
           <button
             type="button"
             onClick={handleSend}
-            disabled={!input.trim() || sending}
+            disabled={!input.trim() || sending || !currentProviderReady}
             aria-label={sending ? "Sending message" : "Send message"}
             className={cn(
               "flex h-9 w-9 shrink-0 items-center justify-center rounded-md",

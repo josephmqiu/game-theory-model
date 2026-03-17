@@ -30,7 +30,7 @@ export default defineEventHandler(async (event): Promise<PhaseResult> => {
     setResponseStatus(event, 400);
     return {
       success: false,
-      phase: raw?.phase ?? 0,
+      phase: 0,
       summary: "Invalid request body",
       error: parsed.error.issues
         .map((issue) => `${issue.path.join(".")}: ${issue.message}`)

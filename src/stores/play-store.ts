@@ -58,7 +58,10 @@ interface PlayActions {
   }) => PlaySession;
   deleteSession: (sessionId: string) => void;
   setActiveSession: (sessionId: string | null) => void;
-  replaceSessions: (sessions: PlaySession[]) => void;
+  replaceSessions: (
+    sessions: PlaySession[],
+    activeSessionId?: string | null,
+  ) => void;
   reset: () => void;
 }
 
@@ -225,11 +228,11 @@ export const playStore = createStore<PlayStore>((set, get) => ({
     set({ activeSessionId: sessionId });
   },
 
-  replaceSessions(sessions) {
+  replaceSessions(sessions, activeSessionIdOverride) {
     const mapped = Object.fromEntries(
       sessions.map((session) => [session.id, session]),
     ) as Record<string, PlaySession>;
-    const currentActive = get().activeSessionId;
+    const currentActive = activeSessionIdOverride ?? get().activeSessionId;
     const activeSessionId =
       currentActive && mapped[currentActive] ? currentActive : sessions[0]?.id ?? null;
 

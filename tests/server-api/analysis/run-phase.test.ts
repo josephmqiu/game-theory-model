@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { afterEach } from "vitest";
-import { completeCommand, getPendingCommands } from "../../utils/mcp-command-bus";
-import handler from "./run-phase.ts";
-import { callPost } from "../../test-support/http";
+import {
+  completeCommand,
+  getPendingCommands,
+} from "../../../server/utils/mcp-command-bus";
+import handler from "../../../server/api/analysis/run-phase.ts";
+import { callPost } from "../../../server/test-support/http";
 
 describe("/api/analysis/run-phase", () => {
   afterEach(() => {

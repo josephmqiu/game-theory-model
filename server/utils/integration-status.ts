@@ -29,6 +29,10 @@ function providerStatus(
     installed,
     authenticated: installed ? null : false,
     validated: false,
+    statusStage: installed ? "detected" : "missing_binary",
+    reachable: null,
+    lastError: installed ? null : statusMessage,
+    modelsDiscovered: null,
     statusMessage,
     lastCheckedAt: now(),
     configPath: null,
@@ -39,15 +43,23 @@ function integrationStatus(
   tool: MCPCliTool,
   installed: boolean,
   statusMessage: string,
+  configPath: string | null,
 ): IntegrationStatusSnapshot {
   return {
     tool,
     installed,
     authenticated: installed ? null : false,
     validated: false,
+    statusStage: !installed
+      ? "missing_binary"
+      : configPath
+        ? "config_written"
+        : "detected",
+    reachable: configPath ? null : null,
+    lastError: installed ? null : statusMessage,
     statusMessage,
     lastCheckedAt: now(),
-    configPath: null,
+    configPath,
   };
 }
 
@@ -122,12 +134,13 @@ export async function getMcpIntegrationStatuses(): Promise<IntegrationStatusSnap
 
   return Promise.all(
     entries.map(async ([tool, installed, message]) => {
-      const status = integrationStatus(tool, installed, message);
       const hasConfig = await hasManagedMcpConfig(tool);
-      return {
-        ...status,
-        configPath: hasConfig ? getManagedMcpConfigPath(tool) : null,
-      };
+      return integrationStatus(
+        tool,
+        installed,
+        message,
+        hasConfig ? getManagedMcpConfigPath(tool) : null,
+      );
     }),
   );
 }

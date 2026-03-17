@@ -4,8 +4,8 @@ import { storeToAnalysisFile } from "shared/game-theory/utils/serialization";
 import { createSampleCanonicalStore } from "shared/game-theory/test-support/sample-analysis";
 import type { AnalysisFileMeta } from "shared/game-theory/types/file";
 import { createSampleAnalysisMeta } from "shared/game-theory/test-support/sample-analysis";
-import handler from "./load.post.ts";
-import { callPost } from "../../test-support/http";
+import handler from "../../../server/api/files/load.post.ts";
+import { callPost } from "../../../server/test-support/http";
 
 function createAnalysisPayload() {
   const store = createSampleCanonicalStore();

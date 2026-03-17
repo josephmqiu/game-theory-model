@@ -41,6 +41,7 @@ interface ConversationActions {
     eventId: string,
     resolution: RevalidationActionCard["resolution"],
   ) => void;
+  restoreSnapshot: (snapshot: Partial<ConversationState>) => void;
   resetConversation: () => void;
 }
 
@@ -245,6 +246,16 @@ export const conversationStore = createStore<ConversationStore>((set, get) => ({
       };
     });
     set({ messages });
+  },
+
+  restoreSnapshot(snapshot) {
+    set({
+      ...createInitialState(),
+      ...snapshot,
+      messages: snapshot.messages ?? [],
+      proposal_review: snapshot.proposal_review ?? createEmptyDiffReviewState(),
+      proposals_by_id: snapshot.proposals_by_id ?? {},
+    });
   },
 
   resetConversation() {

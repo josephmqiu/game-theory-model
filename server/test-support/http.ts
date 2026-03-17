@@ -16,8 +16,10 @@ function buildUrl(path: string): string {
   return `${DEFAULT_BASE_URL}${prefix}${path}`;
 }
 
+type MockEvent = ReturnType<typeof mockEvent>;
+
 async function callHandler<T>(
-  handler: (event: unknown) => Promise<T> | T,
+  handler: (event: MockEvent) => Promise<T> | T,
   request: Request,
 ): Promise<ApiCallResult<T>> {
   const event = mockEvent(request);
@@ -30,7 +32,7 @@ async function callHandler<T>(
 }
 
 export async function callGet<T>(
-  handler: (event: unknown) => Promise<T> | T,
+  handler: (event: MockEvent) => Promise<T> | T,
   path: string,
 ): Promise<ApiCallResult<T>> {
   const request = new Request(buildUrl(path), {
@@ -41,7 +43,7 @@ export async function callGet<T>(
 }
 
 export async function callPost<T>(
-  handler: (event: unknown) => Promise<T> | T,
+  handler: (event: MockEvent) => Promise<T> | T,
   path: string,
   body?: unknown,
   init?: Omit<RequestInit, "method" | "body">,

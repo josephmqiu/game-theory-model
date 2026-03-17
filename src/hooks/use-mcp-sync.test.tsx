@@ -286,4 +286,79 @@ describe("useMcpSync", () => {
       expect(conversationStore.getState().messages[0]?.content).toBe("Hydrated");
     });
   });
+
+  it("does not wipe existing store slices when state:update omits partial fields", async () => {
+    function Harness() {
+      useMcpSync();
+      return null;
+    }
+
+    pipelineStore.setState((current) => ({
+      ...current,
+      analysis_state: {
+        id: "analysis-existing",
+        event_description: "Existing event",
+        domain: "geopolitics",
+        current_phase: 3,
+        phase_states: {},
+        pass_number: 1,
+        status: "running",
+        started_at: "2026-03-16T10:00:00.000Z",
+        completed_at: null,
+        classification: null,
+      },
+      phase_results: { 3: { status: "existing" } },
+      pending_revalidation_approvals: {
+        "event-existing": { event_id: "event-existing" } as never,
+      },
+    }));
+    conversationStore.setState((current) => ({
+      ...current,
+      messages: [
+        {
+          id: "msg-existing",
+          role: "ai",
+          content: "Existing",
+          timestamp: "2026-03-16T10:00:00.000Z",
+        },
+      ],
+    }));
+
+    renderedShells.push(renderWithShell(<Harness />));
+
+    await waitFor(() => {
+      expect(eventSources).toHaveLength(1);
+    });
+    const source = eventSources[0]!;
+
+    act(() => {
+      source.dispatchMessage({
+        type: "state:update",
+        state: {
+          pipelineState: {
+            phase_results: {
+              4: { status: "new" },
+            },
+          },
+          conversationState: {
+            proposal_review: {
+              proposals: [],
+              active_proposal_index: 0,
+              merge_log: [],
+            },
+          },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(pipelineStore.getState().analysis_state?.id).toBe("analysis-existing");
+      expect(pipelineStore.getState().phase_results).toEqual({ 4: { status: "new" } });
+      expect(
+        pipelineStore.getState().pending_revalidation_approvals["event-existing"],
+      ).toBeDefined();
+      expect(conversationStore.getState().messages[0]?.content).toBe("Existing");
+      expect(conversationStore.getState().proposal_review.proposals).toEqual([]);
+    });
+  });
 });

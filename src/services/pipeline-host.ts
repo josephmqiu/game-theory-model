@@ -10,6 +10,7 @@ import { analysisStore } from "@/stores/analysis-store";
 import { pipelineStore } from "@/stores/pipeline-store";
 import { conversationStore } from "@/stores/conversation-store";
 import { derivedStore } from "@/stores/derived-store";
+import { playStore } from "@/stores/play-store";
 
 export function createPipelineHostFromStores(): PipelineHost {
   return {
@@ -23,6 +24,7 @@ export function createPipelineHostFromStores(): PipelineHost {
       analysisStore.getState().newAnalysis();
       pipelineStore.getState().resetPipeline();
       conversationStore.getState().resetConversation();
+      playStore.getState().reset();
     },
     dispatch: (command, opts) =>
       analysisStore.getState().dispatch(command, opts),

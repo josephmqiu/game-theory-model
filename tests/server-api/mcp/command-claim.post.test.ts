@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { completeCommand, enqueueCommand, getPendingCommands } from "../../utils/mcp-command-bus";
-import handler from "./command-claim.post.ts";
-import { callPost } from "../../test-support/http";
+import {
+  completeCommand,
+  enqueueCommand,
+  getPendingCommands,
+} from "../../../server/utils/mcp-command-bus";
+import handler from "../../../server/api/mcp/command-claim.post.ts";
+import { callPost } from "../../../server/test-support/http";
 
 type MockedCommandPayload = {
   status: "claimed" | "missing" | "busy";

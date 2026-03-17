@@ -15,7 +15,7 @@ const config = defineConfig({
     include: [
       'src/**/*.{test,spec}.{ts,tsx}',
       'shared/**/*.{test,spec}.{ts,tsx}',
-      'server/**/*.{test,spec}.{ts,tsx}',
+      'tests/**/*.{test,spec}.{ts,tsx}',
     ],
     globals: true,
     environment: 'jsdom',

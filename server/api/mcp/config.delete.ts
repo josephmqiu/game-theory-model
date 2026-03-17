@@ -41,6 +41,10 @@ export default defineEventHandler(async (event) => {
     integration: refreshed
       ? {
           ...refreshed,
+          validated: false,
+          reachable: refreshed.installed,
+          statusStage: refreshed.installed ? "detected" : "missing_binary",
+          lastError: null,
           statusMessage: `Managed MCP config removed for ${parsed.data.tool}.`,
           configPath: null,
         }

@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   completeCommand,
   getPendingCommands,
-} from "../../utils/mcp-command-bus";
-import { enqueueCommand } from "../../utils/mcp-command-bus";
-import handler from "./commands.get.ts";
-import { callGet } from "../../test-support/http";
+} from "../../../server/utils/mcp-command-bus";
+import { enqueueCommand } from "../../../server/utils/mcp-command-bus";
+import handler from "../../../server/api/mcp/commands.get.ts";
+import { callGet } from "../../../server/test-support/http";
 
 function clearQueue(): void {
   for (const command of getPendingCommands()) {

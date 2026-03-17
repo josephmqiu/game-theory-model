@@ -2,23 +2,62 @@
  * App layout — main shell with top bar, sidebar, content area, inspector.
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Outlet } from "@tanstack/react-router";
 import { TopBar } from "./top-bar";
 import { Sidebar } from "./sidebar";
 import { InspectorPanel } from "./inspector-panel";
 import { StatusBar } from "@/components/shell/status-bar";
 import { useUiStore, hydrateUiStore } from "@/stores/ui-store";
+import { hydrateAgentSettingsStore } from "@/stores/agent-settings-store";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { useElectronMenu } from "@/hooks/use-electron-menu";
 import { useMcpSync } from "@/hooks/use-mcp-sync";
 import { setupFileEventListeners } from "@/hooks/file-operations";
+import { refreshIntegrationStatuses } from "@/services/integration-status";
 import {
   AiChatMinimizedBar,
   AiChatPanel,
 } from "@/components/panels/ai-chat-panel";
 
 export function AppLayout() {
+  const [bootstrapped, setBootstrapped] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const cleanup = setupFileEventListeners();
+
+    void (async () => {
+      try {
+        await Promise.all([hydrateUiStore(), hydrateAgentSettingsStore()]);
+        await refreshIntegrationStatuses();
+      } catch {
+        // Boot continues even if local readiness refresh fails.
+      } finally {
+        if (active) {
+          setBootstrapped(true);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+      cleanup();
+    };
+  }, []);
+
+  if (!bootstrapped) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background text-sm text-muted-foreground">
+        Loading workspace...
+      </div>
+    );
+  }
+
+  return <BootstrappedAppLayout />;
+}
+
+function BootstrappedAppLayout() {
   const aiPanelOpen = useUiStore((s) => s.aiPanelOpen);
   const aiPanelMinimized = useUiStore((s) => s.aiPanelMinimized);
   const setAiPanelOpen = useUiStore((s) => s.setAiPanelOpen);
@@ -26,12 +65,7 @@ export function AppLayout() {
 
   useKeyboardShortcuts();
   useElectronMenu();
-  useMcpSync();
-
-  useEffect(() => {
-    void hydrateUiStore();
-    return setupFileEventListeners();
-  }, []);
+  useMcpSync(true);
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">

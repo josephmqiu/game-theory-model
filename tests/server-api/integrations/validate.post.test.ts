@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
-import handler from "./validate.post.ts";
-import { callPost } from "../../test-support/http";
+import handler from "../../../server/api/integrations/validate.post.ts";
+import { callPost } from "../../../server/test-support/http";
 
 vi.mock("../ai/connect-agent.post", () => ({
   discoverAgentConnection: vi.fn(),
@@ -11,7 +11,7 @@ vi.mock("../../utils/integration-status", () => ({
 }));
 
 import { discoverAgentConnection } from "../ai/connect-agent.post";
-import { getMcpIntegrationStatuses } from "../../utils/integration-status";
+import { getMcpIntegrationStatuses } from "../../../server/utils/integration-status";
 
 describe("/api/integrations/validate", () => {
   const mockDiscover = discoverAgentConnection as unknown as Mock;
