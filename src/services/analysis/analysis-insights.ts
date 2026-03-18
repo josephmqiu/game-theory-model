@@ -1,4 +1,8 @@
-import type { Analysis, AnalysisProfile, AnalysisValidation } from "@/types/analysis";
+import type {
+  Analysis,
+  AnalysisProfile,
+  AnalysisValidation,
+} from "@/types/analysis";
 import { getAnalysisProfileKey } from "./analysis-normalization";
 
 export type AnalysisInsightsStatus = "blocked" | "ready";
@@ -139,36 +143,51 @@ function createBestResponseGroup(
 ): AnalysisInsightsBestResponseGroup {
   const player = analysis.players[playerIndex];
   const opponent = analysis.players[playerIndex === 0 ? 1 : 0];
-  const playerName = formatFallbackName(player.name, `Player ${playerIndex + 1}`);
+  const playerName = formatFallbackName(
+    player.name,
+    `Player ${playerIndex + 1}`,
+  );
   const opponentName = formatFallbackName(
     opponent.name,
     `Player ${playerIndex === 0 ? 2 : 1}`,
   );
 
-  const responses = opponent.strategies.map((opponentStrategy, opponentIndex) => {
-    const opponentStrategyName = formatFallbackName(
-      opponentStrategy.name,
-      `Strategy ${opponentIndex + 1}`,
-    );
+  const responses = opponent.strategies.map(
+    (opponentStrategy, opponentIndex) => {
+      const opponentStrategyName = formatFallbackName(
+        opponentStrategy.name,
+        `Strategy ${opponentIndex + 1}`,
+      );
 
-    const payoffs = player.strategies.map((strategy, strategyIndex) => ({
-      id: strategy.id,
-      name: formatFallbackName(strategy.name, `Strategy ${strategyIndex + 1}`),
-      payoff:
-        playerIndex === 0
-          ? getCompletePayoff(profileMap, strategy.id, opponentStrategy.id, 0)
-          : getCompletePayoff(profileMap, opponentStrategy.id, strategy.id, 1),
-    }));
-    const maxPayoff = Math.max(...payoffs.map((entry) => entry.payoff));
-    const bestResponses = payoffs.filter((entry) => entry.payoff === maxPayoff);
+      const payoffs = player.strategies.map((strategy, strategyIndex) => ({
+        id: strategy.id,
+        name: formatFallbackName(
+          strategy.name,
+          `Strategy ${strategyIndex + 1}`,
+        ),
+        payoff:
+          playerIndex === 0
+            ? getCompletePayoff(profileMap, strategy.id, opponentStrategy.id, 0)
+            : getCompletePayoff(
+                profileMap,
+                opponentStrategy.id,
+                strategy.id,
+                1,
+              ),
+      }));
+      const maxPayoff = Math.max(...payoffs.map((entry) => entry.payoff));
+      const bestResponses = payoffs.filter(
+        (entry) => entry.payoff === maxPayoff,
+      );
 
-    return {
-      opponentStrategyId: opponentStrategy.id,
-      opponentStrategyName,
-      strategyIds: bestResponses.map((entry) => entry.id),
-      strategyNames: bestResponses.map((entry) => entry.name),
-    };
-  });
+      return {
+        opponentStrategyId: opponentStrategy.id,
+        opponentStrategyName,
+        strategyIds: bestResponses.map((entry) => entry.id),
+        strategyNames: bestResponses.map((entry) => entry.name),
+      };
+    },
+  );
 
   return {
     playerId: player.id,
@@ -187,19 +206,40 @@ function strategyDominates(
   alternativeStrategyId: string,
   kind: "strict" | "weak",
 ): boolean {
-  const opponentStrategies = analysis.players[playerIndex === 0 ? 1 : 0].strategies;
+  const opponentStrategies =
+    analysis.players[playerIndex === 0 ? 1 : 0].strategies;
 
   let sawStrictImprovement = false;
 
   for (const opponentStrategy of opponentStrategies) {
     const candidatePayoff =
       playerIndex === 0
-        ? getCompletePayoff(profileMap, candidateStrategyId, opponentStrategy.id, 0)
-        : getCompletePayoff(profileMap, opponentStrategy.id, candidateStrategyId, 1);
+        ? getCompletePayoff(
+            profileMap,
+            candidateStrategyId,
+            opponentStrategy.id,
+            0,
+          )
+        : getCompletePayoff(
+            profileMap,
+            opponentStrategy.id,
+            candidateStrategyId,
+            1,
+          );
     const alternativePayoff =
       playerIndex === 0
-        ? getCompletePayoff(profileMap, alternativeStrategyId, opponentStrategy.id, 0)
-        : getCompletePayoff(profileMap, opponentStrategy.id, alternativeStrategyId, 1);
+        ? getCompletePayoff(
+            profileMap,
+            alternativeStrategyId,
+            opponentStrategy.id,
+            0,
+          )
+        : getCompletePayoff(
+            profileMap,
+            opponentStrategy.id,
+            alternativeStrategyId,
+            1,
+          );
 
     if (kind === "strict") {
       if (candidatePayoff <= alternativePayoff) {
@@ -218,7 +258,7 @@ function strategyDominates(
     }
   }
 
-  return kind === "strict" ? sawStrictImprovement : sawStrictImprovement;
+  return sawStrictImprovement;
 }
 
 function createDominanceSummary(
@@ -227,7 +267,10 @@ function createDominanceSummary(
   playerIndex: 0 | 1,
 ): AnalysisInsightsDominance {
   const player = analysis.players[playerIndex];
-  const playerName = formatFallbackName(player.name, `Player ${playerIndex + 1}`);
+  const playerName = formatFallbackName(
+    player.name,
+    `Player ${playerIndex + 1}`,
+  );
   const strategies = player.strategies.map((strategy, strategyIndex) => ({
     id: strategy.id,
     name: formatFallbackName(strategy.name, `Strategy ${strategyIndex + 1}`),
@@ -340,7 +383,9 @@ export function createAnalysisInsights(
       const key = getAnalysisProfileKey(player1Strategy.id, player2Strategy.id);
 
       if (
-        !player1BestResponseMap.get(player2Strategy.id)?.has(player1Strategy.id) ||
+        !player1BestResponseMap
+          .get(player2Strategy.id)
+          ?.has(player1Strategy.id) ||
         !player2BestResponseMap.get(player1Strategy.id)?.has(player2Strategy.id)
       ) {
         continue;
@@ -368,8 +413,18 @@ export function createAnalysisInsights(
         player2StrategyId: player2Strategy.id,
         player2StrategyName,
         payoffs: [
-          getCompletePayoff(profileMap, player1Strategy.id, player2Strategy.id, 0),
-          getCompletePayoff(profileMap, player1Strategy.id, player2Strategy.id, 1),
+          getCompletePayoff(
+            profileMap,
+            player1Strategy.id,
+            player2Strategy.id,
+            0,
+          ),
+          getCompletePayoff(
+            profileMap,
+            player1Strategy.id,
+            player2Strategy.id,
+            1,
+          ),
         ],
       });
     }
