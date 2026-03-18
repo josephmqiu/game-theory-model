@@ -83,13 +83,20 @@ export function PhaseSidebar({
             if (v1) {
               return (
                 <li key={phase}>
-                  <button
-                    type="button"
+                  <div
+                    role="button"
+                    tabIndex={0}
                     onClick={() => handlePhaseClick(phase)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handlePhaseClick(phase);
+                      }
+                    }}
                     onMouseEnter={() => setHoveredPhase(phase)}
                     onMouseLeave={() => setHoveredPhase(null)}
                     className={cn(
-                      "group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+                      "group flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
                       isActive
                         ? "border-l-2 border-amber-500 bg-amber-500/10 pl-1.5"
                         : "border-l-2 border-transparent pl-1.5",
@@ -148,7 +155,7 @@ export function PhaseSidebar({
                         </TooltipContent>
                       </Tooltip>
                     )}
-                  </button>
+                  </div>
                 </li>
               );
             }
