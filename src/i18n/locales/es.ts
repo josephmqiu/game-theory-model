@@ -404,11 +404,11 @@ const es: TranslationKeys = {
   'figma.comingSoon': 'Próximamente',
 
   // ── Landing Page ──
-  'landing.open': 'Game Theory ',
-  'landing.pencil': 'Analysis',
+  'landing.title': 'Game Theory ',
+  'landing.titleAccent': 'Analysis',
   'landing.tagline':
     'Manual strategic analysis for two-player games.',
-  'landing.newDesign': 'Open Analysis',
+  'landing.openAnalysis': 'Open Analysis',
   'landing.shortcutHint':
     'Press {{key1}} + {{key2}} to start a new analysis',
 

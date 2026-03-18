@@ -32,10 +32,12 @@ describe("Phase 4 shell assertions", () => {
     const landingSource = readFileSync(landingPath, "utf8");
     const editorRouteSource = readFileSync(editorRoutePath, "utf8");
 
-    expect(landingSource).toContain("t('landing.open')");
-    expect(landingSource).toContain("t('landing.newDesign')");
-    expect(landingLocaleSource).toContain('"landing.pencil": "Analysis"');
-    expect(landingLocaleSource).toContain('"landing.newDesign": "Open Analysis"');
+    expect(landingSource).toContain('t("landing.title")');
+    expect(landingSource).toContain('t("landing.openAnalysis")');
+    expect(landingLocaleSource).toContain('"landing.titleAccent": "Analysis"');
+    expect(landingLocaleSource).toContain(
+      '"landing.openAnalysis": "Open Analysis"',
+    );
     expect(landingLocaleSource).toContain(
       '"landing.shortcutHint": "Press {{key1}} + {{key2}} to start a new analysis"',
     );

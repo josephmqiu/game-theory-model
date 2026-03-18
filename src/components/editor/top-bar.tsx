@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ComponentType, SVGProps } from "react";
 import {
   Plus,
@@ -148,7 +148,10 @@ export default function TopBar() {
   const validation = useAnalysisStore((state) => state.validation);
   const fileName = useAnalysisStore((state) => state.fileName);
   const isDirty = useAnalysisStore((state) => state.isDirty);
-  const summary = createAnalysisSummary(analysis, validation);
+  const summary = useMemo(
+    () => createAnalysisSummary(analysis, validation),
+    [analysis, validation],
+  );
 
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -170,7 +173,7 @@ export default function TopBar() {
   useEffect(() => {
     const restore = async () => {
       await initAppStorage();
-      const savedTheme = appStorage.getItem("openpencil-theme");
+      const savedTheme = appStorage.getItem("gta-theme");
       if (savedTheme === "light") {
         document.documentElement.classList.add("light");
         setTheme("light");
@@ -201,7 +204,7 @@ export default function TopBar() {
 
     setTheme(nextTheme);
     syncOverlayColors(nextTheme);
-    appStorage.setItem("openpencil-theme", nextTheme);
+    appStorage.setItem("gta-theme", nextTheme);
   }, [theme, syncOverlayColors]);
 
   const toggleFullscreen = useCallback(() => {
@@ -232,8 +235,7 @@ export default function TopBar() {
       ? t("topbar.complete")
       : summary.status === "incomplete"
         ? t("topbar.incomplete", {
-            count:
-              summary.incompleteProfileCount + summary.missingProfileCount,
+            count: summary.incompleteProfileCount + summary.missingProfileCount,
           })
         : t("topbar.issues", { count: summary.issueCount });
 
