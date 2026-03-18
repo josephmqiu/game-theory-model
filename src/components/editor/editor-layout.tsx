@@ -5,10 +5,13 @@ import AgentSettingsDialog from '@/components/shared/agent-settings-dialog'
 import UpdateReadyBanner from './update-ready-banner'
 import AnalysisPanel from '@/components/panels/analysis-panel'
 import { useAgentSettingsStore } from '@/stores/agent-settings-store'
+import { useAnalysisStore } from '@/stores/analysis-store'
 import { useElectronMenu } from '@/hooks/use-electron-menu'
 import { initAppStorage } from '@/utils/app-storage'
 
 export default function EditorLayout() {
+  const isDirty = useAnalysisStore((state) => state.isDirty)
+
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       const isMod = event.metaKey || event.ctrlKey
@@ -32,6 +35,20 @@ export default function EditorLayout() {
     })
   }, [])
 
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!isDirty) {
+        return
+      }
+
+      event.preventDefault()
+      event.returnValue = ''
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [isDirty])
+
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex h-screen flex-col bg-background">
@@ -41,16 +58,16 @@ export default function EditorLayout() {
           <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col gap-6 p-6">
             <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
               <p className="text-sm font-medium text-primary">
-                Phase 2 Workspace
+                Phase 3 Workspace
               </p>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-                Canonical analysis first
+                Canonical analysis persistence
               </h1>
               <p className="mt-3 max-w-3xl text-sm text-muted-foreground">
-                This workspace now centers the game-theory domain core instead
-                of the legacy design canvas. The old document stack remains in
-                the repo for later pruning, but it is no longer the live product
-                truth.
+                The live product now saves and reopens the canonical game-theory
+                model as a `.gta` analysis file. The legacy document stack
+                remains in the repo for later pruning, but this analysis flow is
+                now the product truth.
               </p>
             </section>
 

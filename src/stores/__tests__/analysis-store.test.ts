@@ -1,95 +1,113 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import type { Analysis } from '@/types/analysis'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useAnalysisStore } from '@/stores/analysis-store'
+import { createDefaultAnalysis } from '@/services/analysis/analysis-normalization'
+import {
+  confirmDiscardAnalysisChanges,
+  commitAnalysisSave,
+  hasUnsavedAnalysisChanges,
+  loadAnalysisFromText,
+  resetAnalysisForNewDocument,
+} from '@/services/analysis/analysis-persistence'
+import { serializeAnalysisFile } from '@/services/analysis/analysis-file'
 
-describe('analysis store', () => {
+describe('analysis store persistence state', () => {
   beforeEach(() => {
     useAnalysisStore.setState(useAnalysisStore.getInitialState(), true)
   })
 
-  it('newAnalysis resets the store to the canonical default', () => {
-    const initialAnalysis = useAnalysisStore.getState().analysis
-    const [player1, player2] = initialAnalysis.players
-    const profile = initialAnalysis.profiles[0]
-
-    useAnalysisStore.getState().renameAnalysis('Pricing game')
-    useAnalysisStore.getState().renamePlayer(player1.id, 'Incumbent')
-    useAnalysisStore.getState().addStrategy(player1.id)
-    useAnalysisStore.getState().setPayoff(
-      profile.player1StrategyId,
-      profile.player2StrategyId,
-      player2.id,
-      9,
-    )
-
-    useAnalysisStore.getState().newAnalysis()
-
-    const resetAnalysis = useAnalysisStore.getState().analysis
-    expect(resetAnalysis.name).toBe('Untitled Analysis')
-    expect(resetAnalysis.players[0].name).toBe('Player 1')
-    expect(resetAnalysis.players[0].strategies).toHaveLength(2)
-    expect(resetAnalysis.players[1].strategies).toHaveLength(2)
-    expect(resetAnalysis.profiles).toHaveLength(4)
-    expect(
-      resetAnalysis.profiles.every(
-        (nextProfile) =>
-          nextProfile.payoffs[0] === null && nextProfile.payoffs[1] === null,
-      ),
-    ).toBe(true)
+  afterEach(() => {
+    useAnalysisStore.setState(useAnalysisStore.getInitialState(), true)
   })
 
-  it('setPayoff updates only the targeted profile and player slot', () => {
-    const analysis = useAnalysisStore.getState().analysis
-    const [player1] = analysis.players
-    const [targetProfile, untouchedProfile] = analysis.profiles
+  it('marks edits dirty and preserves file references until a new analysis is created', () => {
+    const state = useAnalysisStore.getState()
+    state.setAnalysisFileReference({
+      fileName: 'pricing.gta',
+      filePath: '/tmp/pricing.gta',
+    })
 
-    useAnalysisStore.getState().setPayoff(
-      targetProfile.player1StrategyId,
-      targetProfile.player2StrategyId,
-      player1.id,
-      7,
-    )
+    state.renameAnalysis('Pricing Game')
 
-    const nextAnalysis = useAnalysisStore.getState().analysis
-    expect(nextAnalysis.profiles[0].payoffs).toEqual([7, null])
-    expect(
-      nextAnalysis.profiles.find(
-        (profile) =>
-          profile.player1StrategyId === untouchedProfile.player1StrategyId &&
-          profile.player2StrategyId === untouchedProfile.player2StrategyId,
-      )?.payoffs,
-    ).toEqual([null, null])
+    expect(useAnalysisStore.getState().analysis.name).toBe('Pricing Game')
+    expect(useAnalysisStore.getState().isDirty).toBe(true)
+    expect(useAnalysisStore.getState().fileName).toBe('pricing.gta')
+    expect(hasUnsavedAnalysisChanges()).toBe(true)
+
+    resetAnalysisForNewDocument()
+
+    expect(useAnalysisStore.getState().analysis.name).toBe('Untitled Analysis')
+    expect(useAnalysisStore.getState().isDirty).toBe(false)
+    expect(useAnalysisStore.getState().fileName).toBeNull()
+    expect(useAnalysisStore.getState().filePath).toBeNull()
+    expect(useAnalysisStore.getState().fileHandle).toBeNull()
   })
 
-  it('replaceAnalysis re-normalizes incomplete incoming data', () => {
-    useAnalysisStore.getState().replaceAnalysis({
-      id: 'analysis-id',
-      name: '   ',
-      players: [
-        {
-          id: 'player-1',
-          name: 'Player 1',
-          strategies: [],
-        },
-        {
-          id: 'player-2',
-          name: 'Player 2',
-          strategies: [{ id: 'player-2-strategy-1', name: 'Enter' }],
-        },
-      ],
-      profiles: [],
-    } as Partial<Analysis>)
+  it('loads a saved file without marking the store dirty', () => {
+    const analysis = createDefaultAnalysis()
+    analysis.players[0].name = 'Incumbent'
+    analysis.profiles[0].payoffs = [4, null]
+    const text = serializeAnalysisFile(analysis)
 
-    const { analysis, validation } = useAnalysisStore.getState()
+    loadAnalysisFromText(text, {
+      fileName: 'pricing.gta',
+      filePath: '/tmp/pricing.gta',
+    })
 
-    expect(analysis.players[0].strategies).toHaveLength(1)
-    expect(analysis.players[1].strategies).toHaveLength(1)
-    expect(analysis.profiles).toHaveLength(1)
-    expect(validation.isValid).toBe(false)
-    expect(
-      validation.issues.some(
-        (issue) => issue.message === 'Analysis name is required.',
+    expect(useAnalysisStore.getState().analysis).toEqual(analysis)
+    expect(useAnalysisStore.getState().fileName).toBe('pricing.gta')
+    expect(useAnalysisStore.getState().filePath).toBe('/tmp/pricing.gta')
+    expect(useAnalysisStore.getState().isDirty).toBe(false)
+  })
+
+  it('keeps the current analysis when a load fails', () => {
+    const before = useAnalysisStore.getState().analysis
+
+    expect(() =>
+      loadAnalysisFromText(
+        JSON.stringify({
+          type: 'game-theory-analysis',
+          version: 1,
+          analysis: {
+            id: 'broken',
+            name: 'Broken',
+            players: [],
+            profiles: [],
+          },
+        }),
       ),
-    ).toBe(true)
+    ).toThrow('Analysis must contain exactly two players.')
+
+    expect(useAnalysisStore.getState().analysis).toEqual(before)
+  })
+
+  it('commits a save by updating the file reference and clearing dirty state', () => {
+    const state = useAnalysisStore.getState()
+    state.renamePlayer(state.analysis.players[0].id, 'Incumbent')
+
+    commitAnalysisSave({
+      fileName: 'pricing.gta',
+      filePath: '/tmp/pricing.gta',
+      fileHandle: null,
+    })
+
+    expect(useAnalysisStore.getState().fileName).toBe('pricing.gta')
+    expect(useAnalysisStore.getState().filePath).toBe('/tmp/pricing.gta')
+    expect(useAnalysisStore.getState().isDirty).toBe(false)
+  })
+
+  it('only discards dirty changes when the confirmation prompt accepts', async () => {
+    useAnalysisStore.getState().renameAnalysis('Pricing Game')
+
+    await expect(
+      confirmDiscardAnalysisChanges({
+        confirm: () => false,
+      }),
+    ).resolves.toBe(false)
+
+    await expect(
+      confirmDiscardAnalysisChanges({
+        confirm: () => true,
+      }),
+    ).resolves.toBe(true)
   })
 })

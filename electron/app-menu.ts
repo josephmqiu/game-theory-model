@@ -39,6 +39,21 @@ export function buildAppMenu(): void {
           accelerator: 'CmdOrCtrl+N',
           click: () => sendMenuAction('new'),
         },
+        {
+          label: 'Open...',
+          accelerator: 'CmdOrCtrl+O',
+          click: () => sendMenuAction('open'),
+        },
+        {
+          label: 'Save',
+          accelerator: 'CmdOrCtrl+S',
+          click: () => sendMenuAction('save'),
+        },
+        {
+          label: 'Save As...',
+          accelerator: 'Shift+CmdOrCtrl+S',
+          click: () => sendMenuAction('saveAs'),
+        },
         ...(!isMac
           ? [{ type: 'separator' as const }, { role: 'quit' as const }]
           : []),

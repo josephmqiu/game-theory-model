@@ -38,3 +38,18 @@ export interface AnalysisValidation {
     player2StrategyId: string
   }>
 }
+
+export const ANALYSIS_FILE_TYPE = 'game-theory-analysis'
+export const ANALYSIS_FILE_VERSION = 1 as const
+
+export interface AnalysisFileV1 {
+  type: typeof ANALYSIS_FILE_TYPE
+  version: typeof ANALYSIS_FILE_VERSION
+  analysis: Analysis
+}
+
+export interface AnalysisFileReference {
+  fileName: string | null
+  filePath: string | null
+  fileHandle: FileSystemFileHandle | null
+}

@@ -61,16 +61,16 @@ linux:
       Icon=openpencil
       StartupWMClass=openpencil
       Categories=Graphics;
-      MimeType=application/x-openpencil;
+      MimeType=application/x-game-theory-analysis;
   target:
     - AppImage
     - deb
 
 fileAssociations:
-  - ext: op
-    name: OpenPencil Document
-    description: OpenPencil Design File
-    mimeType: application/x-openpencil
+  - ext: gta
+    name: Game Theory Analyzer File
+    description: Game Theory Analyzer Analysis File
+    mimeType: application/x-game-theory-analysis
     role: Editor
     icon: build/icon
 

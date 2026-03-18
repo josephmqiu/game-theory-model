@@ -53,9 +53,9 @@ export default function AnalysisPanel() {
                 Two-player normal-form game
               </h2>
               <p className="max-w-2xl text-sm text-muted-foreground">
-                Phase 2 keeps this analysis in session memory only. Save, load,
-                solver logic, and AI-assisted workflows are intentionally
-                deferred to later phases.
+                Phase 3 adds safe save and reopen support for the canonical
+                analysis model. Validation issues still stay visible, and saved
+                `.gta` files restore the exact work you have in progress.
               </p>
             </div>
 

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ComponentType, SVGProps } from 'react'
 import {
   Plus,
+  FolderOpen,
+  Save,
   Sun,
   Moon,
   Maximize,
@@ -24,6 +26,11 @@ import {
 import { appStorage, initAppStorage } from '@/utils/app-storage'
 import { useAgentSettingsStore } from '@/stores/agent-settings-store'
 import { useAnalysisStore } from '@/stores/analysis-store'
+import {
+  newAnalysis as startNewAnalysis,
+  openAnalysis,
+  saveAnalysis,
+} from '@/services/analysis/analysis-persistence'
 import type { AIProviderType } from '@/types/agent-settings'
 
 /** Convert a computed CSS color value (oklch/rgb/etc.) to #rrggbb via an offscreen canvas. */
@@ -134,7 +141,8 @@ export default function TopBar() {
   const { t } = useTranslation()
   const analysis = useAnalysisStore((state) => state.analysis)
   const validation = useAnalysisStore((state) => state.validation)
-  const newAnalysis = useAnalysisStore((state) => state.newAnalysis)
+  const fileName = useAnalysisStore((state) => state.fileName)
+  const isDirty = useAnalysisStore((state) => state.isDirty)
 
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -199,7 +207,20 @@ export default function TopBar() {
     document.documentElement.requestFullscreen()
   }, [])
 
+  const handleNewAnalysis = useCallback(() => {
+    void startNewAnalysis()
+  }, [])
+
+  const handleOpenAnalysis = useCallback(() => {
+    void openAnalysis()
+  }, [])
+
+  const handleSaveAnalysis = useCallback(() => {
+    void saveAnalysis()
+  }, [])
+
   const displayName = analysis.name.trim() || 'Untitled Analysis'
+  const fileStatusLabel = fileName ?? 'Unsaved .gta file'
   const statusLabel = validation.isValid
     ? validation.isComplete
       ? 'Complete'
@@ -215,7 +236,7 @@ export default function TopBar() {
               variant="outline"
               size="sm"
               aria-label="New analysis"
-              onClick={newAnalysis}
+              onClick={handleNewAnalysis}
               className="h-8"
             >
               <Plus size={16} strokeWidth={1.5} />
@@ -223,7 +244,43 @@ export default function TopBar() {
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            Start a fresh in-memory analysis
+            Start a fresh analysis
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label="Open analysis"
+              onClick={handleOpenAnalysis}
+              className="h-8"
+            >
+              <FolderOpen size={16} strokeWidth={1.5} />
+              {t('topbar.open')}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            Open a saved `.gta` analysis
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant={isDirty ? 'default' : 'outline'}
+              size="sm"
+              aria-label="Save analysis"
+              onClick={handleSaveAnalysis}
+              className="h-8"
+            >
+              <Save size={16} strokeWidth={1.5} />
+              {t('topbar.save')}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            Save the current analysis
           </TooltipContent>
         </Tooltip>
       </div>
@@ -233,7 +290,8 @@ export default function TopBar() {
           {displayName}
         </span>
         <span className="hidden text-[11px] text-muted-foreground sm:inline">
-          Session only
+          {fileStatusLabel}
+          {isDirty ? ` ${t('topbar.edited')}` : ''}
         </span>
         <span
           className={cn(

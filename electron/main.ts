@@ -3,6 +3,7 @@ import {
   BrowserWindow,
   ipcMain,
   dialog,
+  type OpenDialogOptions,
   type BrowserWindowConstructorOptions,
 } from 'electron'
 import { execSync } from 'node:child_process'
@@ -49,6 +50,13 @@ let nitroProcess: ChildProcess | null = null
 let serverPort = 0
 let pendingFilePath: string | null = null
 const APP_NAME = 'Game Theory Analyzer'
+const ANALYSIS_FILE_EXTENSION = '.gta'
+const ANALYSIS_FILE_FILTER: OpenDialogOptions['filters'] = [
+  {
+    name: 'Game Theory Analyzer Files',
+    extensions: ['gta'],
+  },
+]
 
 const isDev = !app.isPackaged
 // Settings stored in platform-standard app data dir (Electron-managed):
@@ -228,6 +236,16 @@ function getServerEntry(): string {
   }
   // In production, extraResources copies .output into the resources folder
   return join(process.resourcesPath, 'server', 'index.mjs')
+}
+
+function isAnalysisFilePath(filePath: string): boolean {
+  return extname(filePath).toLowerCase() === ANALYSIS_FILE_EXTENSION
+}
+
+function ensureAnalysisFileName(filePath: string): string {
+  const currentExt = extname(filePath)
+  if (currentExt.toLowerCase() === ANALYSIS_FILE_EXTENSION) return filePath
+  return `${filePath.slice(0, filePath.length - currentExt.length)}${ANALYSIS_FILE_EXTENSION}`
 }
 
 // ---------------------------------------------------------------------------
@@ -462,12 +480,13 @@ function setupIPC(): void {
   ipcMain.handle('dialog:openFile', async () => {
     if (!mainWindow) return null
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: 'Open Workspace File',
-      filters: [{ name: 'Game Theory Analyzer Files', extensions: ['op', 'pen'] }],
+      title: 'Open Analysis File',
+      filters: ANALYSIS_FILE_FILTER,
       properties: ['openFile'],
     })
     if (result.canceled || result.filePaths.length === 0) return null
     const filePath = result.filePaths[0]
+    if (!isAnalysisFilePath(filePath)) return null
     const content = await readFile(filePath, 'utf-8')
     return { filePath, content }
   })
@@ -477,13 +496,16 @@ function setupIPC(): void {
     async (_event, payload: { content: string; defaultPath?: string }) => {
       if (!mainWindow) return null
       const result = await dialog.showSaveDialog(mainWindow, {
-        title: 'Save Workspace File',
-        defaultPath: payload.defaultPath,
-        filters: [{ name: 'Game Theory Analyzer Files', extensions: ['op'] }],
+        title: 'Save Analysis File',
+        defaultPath: payload.defaultPath
+          ? ensureAnalysisFileName(payload.defaultPath)
+          : `untitled${ANALYSIS_FILE_EXTENSION}`,
+        filters: ANALYSIS_FILE_FILTER,
       })
       if (result.canceled || !result.filePath) return null
-      await writeFile(result.filePath, payload.content, 'utf-8')
-      return result.filePath
+      const filePath = ensureAnalysisFileName(result.filePath)
+      await writeFile(filePath, payload.content, 'utf-8')
+      return filePath
     },
   )
 
@@ -495,8 +517,8 @@ function setupIPC(): void {
         throw new Error('Invalid file path')
       }
       const ext = extname(resolved).toLowerCase()
-      if (ext !== '.op' && ext !== '.pen') {
-        throw new Error('Only .op and .pen file extensions are allowed')
+      if (ext !== ANALYSIS_FILE_EXTENSION) {
+        throw new Error('Only .gta file extensions are allowed')
       }
       // Directory allowlist: only allow writes under user home or OS temp
       const allowedRoots = [app.getPath('home'), app.getPath('temp')]
@@ -523,7 +545,7 @@ function setupIPC(): void {
   ipcMain.handle('file:read', async (_event, filePath: string) => {
     const resolved = resolve(filePath)
     const ext = extname(resolved).toLowerCase()
-    if (ext !== '.op' && ext !== '.pen') return null
+    if (ext !== ANALYSIS_FILE_EXTENSION) return null
     try {
       const content = await readFile(resolved, 'utf-8')
       return { filePath: resolved, content }
@@ -590,16 +612,16 @@ function setupIPC(): void {
 }
 
 // ---------------------------------------------------------------------------
-// File association: open .op files
+// File association: open .gta files
 // ---------------------------------------------------------------------------
 
-/** Extract .op file path from command-line arguments. */
+/** Extract .gta file path from command-line arguments. */
 function getFilePathFromArgs(args: string[]): string | null {
   for (const arg of args) {
     // Skip flags and the Electron binary/script path
     if (arg.startsWith('-') || arg.startsWith('--')) continue
     const ext = extname(arg).toLowerCase()
-    if (ext === '.op' || ext === '.pen') {
+    if (ext === ANALYSIS_FILE_EXTENSION) {
       return arg
     }
   }
@@ -608,6 +630,7 @@ function getFilePathFromArgs(args: string[]): string | null {
 
 /** Send a file path to the renderer for loading. */
 function sendOpenFile(filePath: string): void {
+  if (!isAnalysisFilePath(filePath)) return
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('file:open', filePath)
   } else {
@@ -615,13 +638,15 @@ function sendOpenFile(filePath: string): void {
   }
 }
 
-// macOS: open-file fires when user double-clicks a .op file
+// macOS: open-file fires when user double-clicks a .gta file
 app.on('open-file', (event, filePath) => {
   event.preventDefault()
   if (app.isReady()) {
     sendOpenFile(filePath)
   } else {
-    pendingFilePath = filePath
+    if (isAnalysisFilePath(filePath)) {
+      pendingFilePath = filePath
+    }
   }
 })
 
@@ -679,7 +704,7 @@ app.on('ready', async () => {
 
   // Check for file to open: pending open-file event or CLI args (Windows/Linux).
   // The file path is stored in pendingFilePath and pulled by the renderer
-  // via file:getPending IPC when the React app mounts (useElectronMenu hook).
+  // via file:getPending IPC when the React app mounts.
   if (!pendingFilePath) {
     pendingFilePath = getFilePathFromArgs(process.argv)
   }

@@ -1,9 +1,16 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useAnalysisStore } from '@/stores/analysis-store'
 import AnalysisPanel from '@/components/panels/analysis-panel'
+
+const analysisPanelPath = join(
+  process.cwd(),
+  'src/components/panels/analysis-panel.tsx',
+)
 
 describe('AnalysisPanel', () => {
   beforeEach(() => {
@@ -69,6 +76,17 @@ describe('AnalysisPanel', () => {
     expect(screen.getByText('Player 1 name is required.')).not.toBeNull()
     expect(screen.getByTestId('analysis-status').textContent).toContain(
       '1 issue to fix',
+    )
+  })
+
+  it('drops the Phase 2 memory-only copy from the shell text', () => {
+    const source = readFileSync(analysisPanelPath, 'utf8')
+
+    expect(source).not.toContain(
+      'Phase 2 keeps this analysis in session memory only.',
+    )
+    expect(source).not.toContain(
+      'Save, load, solver logic, and AI-assisted workflows are intentionally deferred to later phases.',
     )
   })
 })

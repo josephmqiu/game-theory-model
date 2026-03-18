@@ -1,19 +1,61 @@
 import { useEffect } from 'react'
-import { useAnalysisStore } from '@/stores/analysis-store'
+import {
+  newAnalysis as startNewAnalysis,
+  openAnalysis,
+  openAnalysisFromFilePath,
+  saveAnalysis,
+  saveAnalysisAs,
+} from '@/services/analysis/analysis-persistence'
 
 /**
- * Listens for Electron native menu actions and dispatches the subset that is
- * still truthful for the Phase 2 analysis-first workspace.
+ * Listens for Electron native menu actions and dispatches them into the
+ * analysis persistence controller used by the live workspace.
  */
 export function useElectronMenu() {
   useEffect(() => {
     const api = window.electronAPI
-    if (!api?.onMenuAction) return
+    if (!api) return
 
-    return api.onMenuAction((action: string) => {
+    const handleMenuAction = async (action: string) => {
       if (action === 'new') {
-        useAnalysisStore.getState().newAnalysis()
+        await startNewAnalysis()
+        return
+      }
+
+      if (action === 'open') {
+        await openAnalysis()
+        return
+      }
+
+      if (action === 'save') {
+        await saveAnalysis()
+        return
+      }
+
+      if (action === 'saveAs') {
+        await saveAnalysisAs()
+      }
+    }
+
+    const disposeMenu =
+      api.onMenuAction?.((action: string) => {
+        void handleMenuAction(action)
+      }) ?? null
+
+    const disposeOpenFile =
+      api.onOpenFile?.((filePath: string) => {
+        void openAnalysisFromFilePath(filePath)
+      }) ?? null
+
+    void api.getPendingFile?.().then((filePath) => {
+      if (filePath) {
+        void openAnalysisFromFilePath(filePath)
       }
     })
+
+    return () => {
+      disposeMenu?.()
+      disposeOpenFile?.()
+    }
   }, [])
 }

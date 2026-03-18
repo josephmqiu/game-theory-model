@@ -7,7 +7,7 @@ const editorLayoutPath = fileURLToPath(
 )
 const topBarPath = fileURLToPath(new URL('../top-bar.tsx', import.meta.url))
 
-describe('Phase 2 shell assertions', () => {
+describe('Phase 3 shell assertions', () => {
   it('keeps the editor layout analysis-first', () => {
     const source = readFileSync(editorLayoutPath, 'utf8')
 
@@ -21,10 +21,14 @@ describe('Phase 2 shell assertions', () => {
     expect(source).not.toContain('BooleanToolbar')
   })
 
-  it('keeps open and save document controls out of the top bar shell', () => {
+  it('shows the Phase 03 file actions in the top bar shell', () => {
     const source = readFileSync(topBarPath, 'utf8')
 
     expect(source).toContain('New Analysis')
+    expect(source).toContain('openAnalysis')
+    expect(source).toContain('Save')
+    expect(source).not.toContain('Session only')
+    expect(source).not.toContain('Start a fresh in-memory analysis')
     expect(source).not.toContain('useDocumentStore')
     expect(source).not.toContain('saveDocumentAs')
     expect(source).not.toContain('openDocumentFS')
