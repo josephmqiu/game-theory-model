@@ -1,11 +1,15 @@
 import { useAnalysisStore } from "@/stores/analysis-store";
+import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import type { AnalysisFileReference } from "@/types/analysis";
 import {
   AnalysisFileError,
   createAnalysisFile,
   createDefaultAnalysisFileName,
+  createDefaultEntityAnalysisFileName,
   parseAnalysisFileText,
+  parseEntityAnalysisFileText,
   serializeAnalysisFile,
+  serializeEntityAnalysisFile,
 } from "./analysis-file";
 
 export type AnalysisPersistenceSource = Partial<AnalysisFileReference>;
@@ -270,7 +274,9 @@ export function loadAnalysisFromText(
   source?: AnalysisPersistenceSource,
 ): void {
   const file = parseAnalysisFileText(text);
-  useAnalysisStore.getState().loadAnalysis(file.analysis, source, file.workflow);
+  useAnalysisStore
+    .getState()
+    .loadAnalysis(file.analysis, source, file.workflow);
 }
 
 export function createAnalysisSavePayload(
@@ -477,6 +483,219 @@ export async function saveAnalysis(): Promise<boolean> {
       `Could not save analysis.\n\n${toErrorMessage(
         error,
         "The analysis could not be saved.",
+      )}`,
+    );
+    return false;
+  }
+}
+
+// ── Entity graph persistence (v2) ──
+
+export function createEntityAnalysisSavePayload(
+  state = useEntityGraphStore.getState(),
+): {
+  text: string;
+  fileName: string;
+  source: AnalysisFileReference;
+} {
+  return {
+    text: serializeEntityAnalysisFile(state.analysis),
+    fileName:
+      state.fileName ?? createDefaultEntityAnalysisFileName(state.analysis),
+    source: {
+      fileName: state.fileName,
+      filePath: state.filePath,
+      fileHandle: state.fileHandle,
+    },
+  };
+}
+
+export async function saveEntityAnalysisAs(): Promise<boolean> {
+  const payload = createEntityAnalysisSavePayload();
+
+  try {
+    let source: AnalysisPersistenceSource | null = null;
+
+    if (window.electronAPI?.isElectron) {
+      source = await saveAnalysisAsWithElectron(
+        payload.fileName,
+        payload.text,
+        payload.source.filePath ?? payload.fileName,
+      );
+    } else if (supportsFileSystemAccess()) {
+      source = await saveAnalysisAsWithPicker(payload.fileName, payload.text);
+    } else {
+      source = saveAnalysisAsWithDownload(payload.fileName, payload.text);
+    }
+
+    if (!source) {
+      return false;
+    }
+
+    useEntityGraphStore.getState().commitSave({
+      fileName: source.fileName ?? undefined,
+      filePath: source.filePath ?? undefined,
+      fileHandle: source.fileHandle ?? undefined,
+    });
+    return true;
+  } catch (error) {
+    if (isUserAbortError(error)) {
+      return false;
+    }
+
+    showNativeAlert(
+      `Could not save analysis.\n\n${toErrorMessage(
+        error,
+        "The analysis could not be saved.",
+      )}`,
+    );
+    return false;
+  }
+}
+
+export async function saveEntityAnalysis(): Promise<boolean> {
+  const payload = createEntityAnalysisSavePayload();
+
+  try {
+    if (payload.source.fileHandle) {
+      await writeTextToFileHandle(payload.source.fileHandle, payload.text);
+      useEntityGraphStore.getState().commitSave({
+        fileName: payload.source.fileName ?? undefined,
+        filePath: payload.source.filePath ?? undefined,
+        fileHandle: payload.source.fileHandle ?? undefined,
+      });
+      return true;
+    }
+
+    if (payload.source.filePath && window.electronAPI?.isElectron) {
+      const filePath = await window.electronAPI.saveToPath(
+        payload.source.filePath,
+        payload.text,
+      );
+
+      useEntityGraphStore.getState().commitSave({
+        fileName: getFileNameFromPath(filePath),
+        filePath,
+      });
+      return true;
+    }
+
+    return saveEntityAnalysisAs();
+  } catch (error) {
+    if (isUserAbortError(error)) {
+      return false;
+    }
+
+    showNativeAlert(
+      `Could not save analysis.\n\n${toErrorMessage(
+        error,
+        "The analysis could not be saved.",
+      )}`,
+    );
+    return false;
+  }
+}
+
+export function loadEntityAnalysisFromText(
+  text: string,
+  source?: AnalysisPersistenceSource,
+): void {
+  const analysis = parseEntityAnalysisFileText(text);
+  useEntityGraphStore.getState().loadAnalysis(analysis, {
+    fileName: source?.fileName ?? undefined,
+    filePath: source?.filePath ?? undefined,
+    fileHandle: source?.fileHandle ?? undefined,
+  });
+}
+
+export async function openEntityAnalysis(): Promise<boolean> {
+  const entityState = useEntityGraphStore.getState();
+  if (entityState.isDirty) {
+    const confirmed = await getNativeConfirm()(
+      "You have unsaved analysis changes. Discard them and open another analysis?",
+    );
+    if (!confirmed) {
+      return false;
+    }
+  }
+
+  try {
+    if (window.electronAPI?.isElectron) {
+      const result = await window.electronAPI.openFile?.();
+      if (!result) {
+        return false;
+      }
+
+      loadEntityAnalysisFromText(result.content, {
+        fileName: getFileNameFromPath(result.filePath),
+        filePath: result.filePath,
+        fileHandle: null,
+      });
+      return true;
+    }
+
+    if (supportsFileSystemAccess()) {
+      const pickerWindow = window as unknown as PickerWindow;
+      const [handle] = await pickerWindow.showOpenFilePicker({
+        types: [
+          {
+            description: ANALYSIS_FILE_DESCRIPTION,
+            accept: getPickerAccept(),
+          },
+        ],
+        excludeAcceptAllOption: true,
+        multiple: false,
+      });
+
+      if (!handle) {
+        return false;
+      }
+
+      const file = await handle.getFile();
+      const text = await file.text();
+      loadEntityAnalysisFromText(text, {
+        fileName: file.name,
+        fileHandle: handle,
+        filePath: null,
+      });
+      return true;
+    }
+
+    return new Promise((resolve, reject) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ANALYSIS_FILE_EXTENSION;
+      input.onchange = async () => {
+        const file = input.files?.[0];
+        if (!file) {
+          resolve(false);
+          return;
+        }
+
+        try {
+          const text = await file.text();
+          loadEntityAnalysisFromText(text, {
+            fileName: file.name,
+            filePath: null,
+            fileHandle: null,
+          });
+          resolve(true);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      input.oncancel = () => resolve(false);
+      input.click();
+    });
+  } catch (error) {
+    if (isUserAbortError(error)) {
+      return false;
+    }
+
+    showNativeAlert(
+      `Could not open analysis.\n\n${toErrorMessage(
+        error,
+        "The selected file is not a valid .gta analysis.",
       )}`,
     );
     return false;
