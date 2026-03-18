@@ -39,7 +39,7 @@ describe('analysis AI helpers', () => {
     const validation = validateAnalysis(analysis)
     const summary = createAnalysisSummary(analysis, validation)
     const insights = createAnalysisInsights(analysis, validation)
-    const context = buildAnalysisAIContext(
+    const { prompt } = buildAnalysisAIContext(
       analysis,
       validation,
       summary,
@@ -47,14 +47,13 @@ describe('analysis AI helpers', () => {
       7,
     )
 
-    expect(context.analysisRevision).toBe(7)
-    expect(context.prompt).toContain('Revision: 7')
-    expect(context.prompt).toContain('Pricing Game')
-    expect(context.prompt).toContain('Incumbent')
-    expect(context.prompt).toContain('Enter')
-    expect(context.prompt).toContain('PAYOFF PROFILES')
-    expect(context.prompt).toContain('VALIDATION ISSUES')
-    expect(context.prompt).toContain('STRATEGIC INSIGHTS')
+    expect(prompt).toContain('Revision: 7')
+    expect(prompt).toContain('Pricing Game')
+    expect(prompt).toContain('Incumbent')
+    expect(prompt).toContain('Enter')
+    expect(prompt).toContain('PAYOFF PROFILES')
+    expect(prompt).toContain('VALIDATION ISSUES')
+    expect(prompt).toContain('STRATEGIC INSIGHTS')
   })
 
   it('parses edit and cannot-edit planner results from strict JSON', () => {

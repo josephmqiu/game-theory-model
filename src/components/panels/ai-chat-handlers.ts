@@ -154,21 +154,20 @@ function formatAnalysisOperation(operation: AnalysisAIOperation): string {
   }
 }
 
-function buildAnalysisSuccessMessage(
+export function buildAnalysisSuccessMessage(
   operations: AnalysisAIOperation[],
   summary: AnalysisSummary,
 ): string {
-  const plannedLines = operations.map((operation) => `[done] ${formatAnalysisOperation(operation)}`)
+  const appliedLines = operations.map((operation) => `[done] ${formatAnalysisOperation(operation)}`)
 
   return [
-    `<step title="Planned changes" status="done">${plannedLines.join('\n')}</step>`,
-    `<step title="Applied changes" status="done">${plannedLines.join('\n')}</step>`,
+    `<step title="Applied changes" status="done">${appliedLines.join('\n')}</step>`,
     `<step title="Current analysis" status="done">[done] ${summary.statusLabel}\n[done] ${summary.progressLabel}</step>`,
     `Applied ${operations.length} analysis change${operations.length === 1 ? '' : 's'}. ${summary.statusLabel}. ${summary.progressLabel}.`,
   ].join('\n\n')
 }
 
-function buildAnalysisNoopMessage(
+export function buildAnalysisNoopMessage(
   reason: string,
   title = 'No changes applied',
 ): string {
@@ -179,7 +178,11 @@ function buildAnalysisNoopMessage(
   ].join('\n\n')
 }
 
-async function requestAnalysisPlannerResult(
+function buildAnalysisAnswerSystemPrompt(contextPrompt: string): string {
+  return `${ANALYSIS_CHAT_SYSTEM_PROMPT}\n\n${contextPrompt}`
+}
+
+export async function requestAnalysisPlannerResult(
   messageText: string,
   context: string,
   model: string,
@@ -268,7 +271,7 @@ export function buildContextString(): string {
   return parts.length > 0 ? `\n\n[Canvas context: ${parts.join('. ')}]` : ''
 }
 
-async function handleAnalysisRequest(args: {
+export async function handleAnalysisRequest(args: {
   messageText: string
   messages: ChatMessageType[]
   model: string
@@ -370,14 +373,14 @@ async function handleAnalysisRequest(args: {
   }))
   chatHistory.push({
     role: 'user',
-    content: `${messageText}\n\n${context.prompt}`,
+    content: messageText,
   })
 
   const trimmedHistory = trimChatHistory(chatHistory)
   let accumulated = ''
   let chatThinking = ''
   for await (const chunk of streamChat(
-    ANALYSIS_CHAT_SYSTEM_PROMPT,
+    buildAnalysisAnswerSystemPrompt(context.prompt),
     trimmedHistory,
     model,
     CHAT_STREAM_THINKING_CONFIG,
@@ -430,12 +433,6 @@ export function useChatHandlers({
       setInput('')
       useAIStore.getState().clearPendingAttachments()
 
-      const selectedIds = useCanvasStore.getState().selection.selectedIds
-      const hasSelection = selectedIds.length > 0
-
-      const context = buildContextString()
-      const fullUserMessage = messageText + context
-
       const userMsg: ChatMessageType = {
         id: nanoid(),
         role: 'user',
@@ -484,12 +481,16 @@ export function useChatHandlers({
             abortController,
           })
         } else {
+          const context = buildContextString()
+          const fullUserMessage = messageText + context
           const classified = await classifyIntent(
             messageText,
             model,
             currentProvider,
           )
           isDesign = classified.isDesign
+          const selectedIds = useCanvasStore.getState().selection.selectedIds
+          const hasSelection = selectedIds.length > 0
           const isModification = isDesign && hasSelection
 
           if (isDesign) {

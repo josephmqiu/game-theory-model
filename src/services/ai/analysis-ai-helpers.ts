@@ -302,14 +302,7 @@ function buildAnalysisAIContextData(
     ...formatInsights(insights),
   ].join('\n')
 
-  return {
-    analysisRevision,
-    analysis,
-    validation,
-    summary,
-    insights,
-    prompt,
-  }
+  return { prompt }
 }
 
 export function buildAnalysisAIContext(
@@ -390,6 +383,8 @@ export function applyAnalysisOperations(
             name: operation.name,
           },
         ]
+        // Normalize immediately so later operations in the same batch can
+        // reference the newly created strategy profiles by stable ids.
         working = normalizeAnalysis(working)
         break
       }
@@ -436,5 +431,6 @@ export function applyAnalysisOperations(
     }
   }
 
+  // Re-normalize once at the end so the full batch lands in the canonical shape.
   return normalizeAnalysis(working)
 }

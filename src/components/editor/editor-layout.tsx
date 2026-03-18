@@ -9,12 +9,6 @@ import { useAgentSettingsStore } from "@/stores/agent-settings-store";
 import { useAnalysisStore } from "@/stores/analysis-store";
 import { useElectronMenu } from "@/hooks/use-electron-menu";
 import { initAppStorage } from "@/utils/app-storage";
-import type { ComponentType } from "react";
-
-const AIChatPanel = AIChatPanelBase as ComponentType<{
-  mode: "analysis";
-  presentation: "docked";
-}>;
 
 export default function EditorLayout() {
   const isDirty = useAnalysisStore((state) => state.isDirty);
@@ -79,7 +73,7 @@ export default function EditorLayout() {
                 <AnalysisPanel />
               </div>
               <section className="order-1 rounded-2xl border border-border bg-card p-6 shadow-sm xl:sticky xl:top-6 xl:order-2 xl:h-fit">
-                <AIChatPanel mode="analysis" presentation="docked" />
+                <AIChatPanelBase mode="analysis" presentation="docked" />
               </section>
             </div>
           </div>

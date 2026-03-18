@@ -1,7 +1,3 @@
-import type { Analysis, AnalysisValidation } from '@/types/analysis'
-import type { AnalysisInsights } from '@/services/analysis/analysis-insights'
-import type { AnalysisSummary } from '@/services/analysis/analysis-summary'
-
 export type AnalysisAIIntent = 'answer' | 'edit'
 
 export interface AnalysisAIRenameAnalysisOperation {
@@ -54,10 +50,5 @@ export type AnalysisAIPlannerResult =
     }
 
 export interface AnalysisAIContext {
-  analysisRevision: number
-  analysis: Analysis
-  validation: AnalysisValidation
-  summary: AnalysisSummary
-  insights: AnalysisInsights
   prompt: string
 }
