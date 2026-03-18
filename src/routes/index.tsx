@@ -6,7 +6,7 @@ import { PenTool, Plus } from 'lucide-react'
 export const Route = createFileRoute('/')({
   component: LandingPage,
   head: () => ({
-    meta: [{ title: 'Game Theory Analyzer' }],
+    meta: [{ title: 'Game Theory Analysis' }],
   }),
 })
 
@@ -14,7 +14,7 @@ function LandingPage() {
   const { t } = useTranslation()
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center text-foreground">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background text-foreground">
       <div className="text-center mb-12">
         <div className="flex items-center justify-center gap-3 mb-4">
           <PenTool size={40} className="text-primary" />

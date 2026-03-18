@@ -6,7 +6,7 @@ export const Route = createFileRoute('/editor')({
   component: EditorPage,
   ssr: false,
   head: () => ({
-    meta: [{ title: 'Game Theory Analyzer Workspace' }],
+    meta: [{ title: 'Game Theory Manual Analysis' }],
   }),
 })
 

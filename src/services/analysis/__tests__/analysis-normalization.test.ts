@@ -67,6 +67,13 @@ describe('analysis normalization', () => {
     expect(
       getProfilePayoffs(
         nextAnalysis,
+        analysis.players[0].strategies[1].id,
+        analysis.players[1].strategies[1].id,
+      ),
+    ).toEqual([4, 14])
+    expect(
+      getProfilePayoffs(
+        nextAnalysis,
         'player-1-strategy-3',
         analysis.players[1].strategies[0].id,
       ),
@@ -109,6 +116,13 @@ describe('analysis normalization', () => {
         remainingColumnStrategy.id,
       ),
     ).toEqual([3, 23])
+    expect(
+      getProfilePayoffs(
+        nextAnalysis,
+        analysis.players[0].strategies[0].id,
+        analysis.players[1].strategies[1].id,
+      ),
+    ).toBeUndefined()
   })
 
   it('keeps profile payoffs when players or strategies are renamed', () => {

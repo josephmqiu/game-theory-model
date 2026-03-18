@@ -65,8 +65,14 @@ describe('AnalysisPanel', () => {
   it('shows validation state for incomplete and invalid inputs', () => {
     render(<AnalysisPanel />)
 
+    expect(screen.getByTestId('analysis-progress').textContent).toContain(
+      '0 of 4 payoff cells complete',
+    )
     expect(screen.getByTestId('analysis-status').textContent).toContain(
       '4 payoff cells still incomplete',
+    )
+    expect(screen.getByTestId('analysis-review').textContent).toContain(
+      'Player 1: Strategy 1 vs Player 2: Strategy 1',
     )
 
     fireEvent.change(screen.getByLabelText('Player 1 name'), {
@@ -79,11 +85,38 @@ describe('AnalysisPanel', () => {
     )
   })
 
-  it('drops the Phase 2 memory-only copy from the shell text', () => {
+  it('updates the review progress when a payoff cell is completed', () => {
+    render(<AnalysisPanel />)
+
+    fireEvent.change(
+      screen.getByLabelText('Player 1 payoff for Strategy 1 vs Strategy 1'),
+      {
+        target: { value: '7' },
+      },
+    )
+    fireEvent.change(
+      screen.getByLabelText('Player 2 payoff for Strategy 1 vs Strategy 1'),
+      {
+        target: { value: '3' },
+      },
+    )
+
+    expect(screen.getByTestId('analysis-progress').textContent).toContain(
+      '1 of 4 payoff cells complete',
+    )
+    expect(screen.getByTestId('analysis-status').textContent).toContain(
+      '3 payoff cells still incomplete',
+    )
+  })
+
+  it('drops the old phase copy from the manual modeling panel', () => {
     const source = readFileSync(analysisPanelPath, 'utf8')
 
     expect(source).not.toContain(
       'Phase 2 keeps this analysis in session memory only.',
+    )
+    expect(source).not.toContain(
+      'Phase 3 adds safe save and reopen support for the canonical',
     )
     expect(source).not.toContain(
       'Save, load, solver logic, and AI-assisted workflows are intentionally deferred to later phases.',

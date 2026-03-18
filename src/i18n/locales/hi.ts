@@ -397,10 +397,10 @@ const hi: TranslationKeys = {
 
   // ── Landing Page ──
   'landing.open': 'Game Theory ',
-  'landing.pencil': 'Analyzer',
-  'landing.tagline': 'Strategic analysis workspace.',
-  'landing.newDesign': 'Open Workspace',
-  'landing.shortcutHint': 'Press {{key1}} + {{key2}} to open a new workspace',
+  'landing.pencil': 'Analysis',
+  'landing.tagline': 'Manual strategic analysis for two-player games.',
+  'landing.newDesign': 'Open Analysis',
+  'landing.shortcutHint': 'Press {{key1}} + {{key2}} to start a new analysis',
 
   // ── 404 ──
   'notFound.message': 'पेज नहीं मिला',

@@ -18,6 +18,7 @@ import CopilotLogo from "@/components/icons/copilot-logo";
 import LanguageSelector from "@/components/shared/language-selector";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { createAnalysisSummary } from "@/services/analysis/analysis-summary";
 import {
   Tooltip,
   TooltipTrigger,
@@ -147,6 +148,7 @@ export default function TopBar() {
   const validation = useAnalysisStore((state) => state.validation);
   const fileName = useAnalysisStore((state) => state.fileName);
   const isDirty = useAnalysisStore((state) => state.isDirty);
+  const summary = createAnalysisSummary(analysis, validation);
 
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -225,11 +227,15 @@ export default function TopBar() {
 
   const displayName = analysis.name.trim() || "Untitled Analysis";
   const fileStatusLabel = fileName ?? t("topbar.unsavedFile");
-  const statusLabel = validation.isValid
-    ? validation.isComplete
+  const statusLabel =
+    summary.status === "complete"
       ? t("topbar.complete")
-      : t("topbar.incomplete", { count: validation.incompleteProfiles.length })
-    : t("topbar.issues", { count: validation.issues.length });
+      : summary.status === "incomplete"
+        ? t("topbar.incomplete", {
+            count:
+              summary.incompleteProfileCount + summary.missingProfileCount,
+          })
+        : t("topbar.issues", { count: summary.issueCount });
 
   return (
     <div className="app-region-drag flex h-10 shrink-0 select-none items-center border-b border-border bg-card px-2">
@@ -304,7 +310,7 @@ export default function TopBar() {
           className={cn(
             "rounded-full px-2 py-0.5 text-[11px] font-medium",
             validation.isValid
-              ? validation.isComplete
+              ? summary.status === "complete"
                 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"
                 : "bg-amber-500/15 text-amber-600 dark:text-amber-300"
               : "bg-rose-500/15 text-rose-600 dark:text-rose-300",

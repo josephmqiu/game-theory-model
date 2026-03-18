@@ -58,11 +58,12 @@ export default function EditorLayout() {
           <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col gap-6 p-6">
             <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
               <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-                Game Theory Analyzer
+                Manual Analysis
               </h1>
               <p className="mt-3 max-w-3xl text-sm text-muted-foreground">
-                Build and analyze strategic interactions. Create a new analysis
-                or open an existing `.gta` file to get started.
+                Build a complete two-player analysis manually. Create a new
+                analysis or open an existing `.gta` file to continue working
+                without AI.
               </p>
             </section>
 
