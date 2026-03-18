@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { ComponentType, SVGProps } from 'react'
+import { useCallback, useEffect, useState } from "react";
+import type { ComponentType, SVGProps } from "react";
 import {
   Plus,
   FolderOpen,
@@ -9,80 +9,84 @@ import {
   Maximize,
   Minimize,
   Blocks,
-} from 'lucide-react'
-import { useTranslation } from 'react-i18next'
-import ClaudeLogo from '@/components/icons/claude-logo'
-import OpenAILogo from '@/components/icons/openai-logo'
-import OpenCodeLogo from '@/components/icons/opencode-logo'
-import CopilotLogo from '@/components/icons/copilot-logo'
-import LanguageSelector from '@/components/shared/language-selector'
-import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
+} from "lucide-react";
+import { useTranslation } from "react-i18next";
+import ClaudeLogo from "@/components/icons/claude-logo";
+import OpenAILogo from "@/components/icons/openai-logo";
+import OpenCodeLogo from "@/components/icons/opencode-logo";
+import CopilotLogo from "@/components/icons/copilot-logo";
+import LanguageSelector from "@/components/shared/language-selector";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from '@/components/ui/tooltip'
-import { appStorage, initAppStorage } from '@/utils/app-storage'
-import { useAgentSettingsStore } from '@/stores/agent-settings-store'
-import { useAnalysisStore } from '@/stores/analysis-store'
+} from "@/components/ui/tooltip";
+import { appStorage, initAppStorage } from "@/utils/app-storage";
+import { useAgentSettingsStore } from "@/stores/agent-settings-store";
+import { useAnalysisStore } from "@/stores/analysis-store";
 import {
   newAnalysis as startNewAnalysis,
   openAnalysis,
   saveAnalysis,
-} from '@/services/analysis/analysis-persistence'
-import type { AIProviderType } from '@/types/agent-settings'
+} from "@/services/analysis/analysis-persistence";
+import type { AIProviderType } from "@/types/agent-settings";
 
 /** Convert a computed CSS color value (oklch/rgb/etc.) to #rrggbb via an offscreen canvas. */
 function cssToHex(raw: string): string | null {
-  const value = raw.trim()
-  if (!value) return null
+  const value = raw.trim();
+  if (!value) return null;
 
   try {
-    const ctx = document.createElement('canvas').getContext('2d')
-    if (!ctx) return null
-    ctx.fillStyle = value
-    const hex = ctx.fillStyle
-    return hex.startsWith('#') ? hex : null
+    const ctx = document.createElement("canvas").getContext("2d");
+    if (!ctx) return null;
+    ctx.fillStyle = value;
+    const hex = ctx.fillStyle;
+    return hex.startsWith("#") ? hex : null;
   } catch {
-    return null
+    return null;
   }
 }
 
-const PROVIDER_ICONS: Record<AIProviderType, ComponentType<SVGProps<SVGSVGElement>>> = {
+const PROVIDER_ICONS: Record<
+  AIProviderType,
+  ComponentType<SVGProps<SVGSVGElement>>
+> = {
   anthropic: ClaudeLogo,
   openai: OpenAILogo,
   opencode: OpenCodeLogo,
   copilot: CopilotLogo,
-}
+};
 
 const PROVIDER_ORDER: AIProviderType[] = [
-  'anthropic',
-  'openai',
-  'opencode',
-  'copilot',
-]
+  "anthropic",
+  "openai",
+  "opencode",
+  "copilot",
+];
 
 function AgentStatusButton() {
-  const { t } = useTranslation()
-  const providers = useAgentSettingsStore((state) => state.providers)
+  const { t } = useTranslation();
+  const providers = useAgentSettingsStore((state) => state.providers);
   const mcpIntegrations = useAgentSettingsStore(
     (state) => state.mcpIntegrations,
-  )
+  );
   const connectedTypes = PROVIDER_ORDER.filter(
     (providerType) => providers[providerType].isConnected,
-  )
-  const agentCount = connectedTypes.length
-  const mcpCount = mcpIntegrations.filter((integration) => integration.enabled)
-    .length
-  const hasAny = agentCount > 0 || mcpCount > 0
+  );
+  const agentCount = connectedTypes.length;
+  const mcpCount = mcpIntegrations.filter(
+    (integration) => integration.enabled,
+  ).length;
+  const hasAny = agentCount > 0 || mcpCount > 0;
 
-  const tooltipParts: string[] = []
+  const tooltipParts: string[] = [];
   if (agentCount > 0) {
-    tooltipParts.push(`${agentCount} agent${agentCount === 1 ? '' : 's'}`)
+    tooltipParts.push(`${agentCount} agent${agentCount === 1 ? "" : "s"}`);
   }
   if (mcpCount > 0) {
-    tooltipParts.push(`${mcpCount} MCP`)
+    tooltipParts.push(`${mcpCount} MCP`);
   }
 
   return (
@@ -99,7 +103,7 @@ function AgentStatusButton() {
               {agentCount > 0 ? (
                 <div className="flex items-center -space-x-1.5">
                   {connectedTypes.map((providerType) => {
-                    const Icon = PROVIDER_ICONS[providerType]
+                    const Icon = PROVIDER_ICONS[providerType];
                     return (
                       <div
                         key={providerType}
@@ -107,7 +111,7 @@ function AgentStatusButton() {
                       >
                         <Icon className="h-3 w-3" />
                       </div>
-                    )
+                    );
                   })}
                 </div>
               ) : (
@@ -115,14 +119,14 @@ function AgentStatusButton() {
               )}
               <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
               <span className="hidden text-[11px] text-muted-foreground sm:inline">
-                {tooltipParts.join(' · ')}
+                {tooltipParts.join(" · ")}
               </span>
             </div>
           ) : (
             <div className="flex items-center gap-1.5">
               <Blocks size={14} strokeWidth={1.5} />
-              <span className={cn('hidden text-[11px] sm:inline')}>
-                {t('topbar.agentsAndMcp')}
+              <span className={cn("hidden text-[11px] sm:inline")}>
+                {t("topbar.agentsAndMcp")}
               </span>
             </div>
           )}
@@ -130,102 +134,102 @@ function AgentStatusButton() {
       </TooltipTrigger>
       <TooltipContent side="bottom">
         {hasAny
-          ? `${tooltipParts.join(' · ')} ${t('topbar.connected')}`
-          : t('topbar.setupAgentsMcp')}
+          ? `${tooltipParts.join(" · ")} ${t("topbar.connected")}`
+          : t("topbar.setupAgentsMcp")}
       </TooltipContent>
     </Tooltip>
-  )
+  );
 }
 
 export default function TopBar() {
-  const { t } = useTranslation()
-  const analysis = useAnalysisStore((state) => state.analysis)
-  const validation = useAnalysisStore((state) => state.validation)
-  const fileName = useAnalysisStore((state) => state.fileName)
-  const isDirty = useAnalysisStore((state) => state.isDirty)
+  const { t } = useTranslation();
+  const analysis = useAnalysisStore((state) => state.analysis);
+  const validation = useAnalysisStore((state) => state.validation);
+  const fileName = useAnalysisStore((state) => state.fileName);
+  const isDirty = useAnalysisStore((state) => state.isDirty);
 
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
-  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
-  const syncOverlayColors = useCallback((nextTheme: 'dark' | 'light') => {
-    if (!window.electronAPI?.setTheme) return
+  const syncOverlayColors = useCallback((nextTheme: "dark" | "light") => {
+    if (!window.electronAPI?.setTheme) return;
 
     requestAnimationFrame(() => {
-      const styles = getComputedStyle(document.documentElement)
-      const bg = cssToHex(styles.getPropertyValue('--card'))
-      const fg = cssToHex(styles.getPropertyValue('--card-foreground'))
+      const styles = getComputedStyle(document.documentElement);
+      const bg = cssToHex(styles.getPropertyValue("--card"));
+      const fg = cssToHex(styles.getPropertyValue("--card-foreground"));
       window.electronAPI!.setTheme(
         nextTheme,
         bg && fg ? { bg, fg } : undefined,
-      )
-    })
-  }, [])
+      );
+    });
+  }, []);
 
   useEffect(() => {
     const restore = async () => {
-      await initAppStorage()
-      const savedTheme = appStorage.getItem('openpencil-theme')
-      if (savedTheme === 'light') {
-        document.documentElement.classList.add('light')
-        setTheme('light')
-        syncOverlayColors('light')
-        return
+      await initAppStorage();
+      const savedTheme = appStorage.getItem("openpencil-theme");
+      if (savedTheme === "light") {
+        document.documentElement.classList.add("light");
+        setTheme("light");
+        syncOverlayColors("light");
+        return;
       }
 
-      syncOverlayColors('dark')
-    }
+      syncOverlayColors("dark");
+    };
 
-    restore()
-  }, [syncOverlayColors])
+    restore();
+  }, [syncOverlayColors]);
 
   useEffect(() => {
-    const handler = () => setIsFullscreen(Boolean(document.fullscreenElement))
-    document.addEventListener('fullscreenchange', handler)
-    return () => document.removeEventListener('fullscreenchange', handler)
-  }, [])
+    const handler = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
 
   const toggleTheme = useCallback(() => {
-    const nextTheme = theme === 'dark' ? 'light' : 'dark'
+    const nextTheme = theme === "dark" ? "light" : "dark";
 
-    if (nextTheme === 'light') {
-      document.documentElement.classList.add('light')
+    if (nextTheme === "light") {
+      document.documentElement.classList.add("light");
     } else {
-      document.documentElement.classList.remove('light')
+      document.documentElement.classList.remove("light");
     }
 
-    setTheme(nextTheme)
-    syncOverlayColors(nextTheme)
-    appStorage.setItem('openpencil-theme', nextTheme)
-  }, [theme, syncOverlayColors])
+    setTheme(nextTheme);
+    syncOverlayColors(nextTheme);
+    appStorage.setItem("openpencil-theme", nextTheme);
+  }, [theme, syncOverlayColors]);
 
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) {
-      document.exitFullscreen()
-      return
+      document.exitFullscreen();
+      return;
     }
 
-    document.documentElement.requestFullscreen()
-  }, [])
+    document.documentElement.requestFullscreen();
+  }, []);
 
   const handleNewAnalysis = useCallback(() => {
-    void startNewAnalysis()
-  }, [])
+    void startNewAnalysis();
+  }, []);
 
   const handleOpenAnalysis = useCallback(() => {
-    void openAnalysis()
-  }, [])
+    void openAnalysis();
+  }, []);
 
   const handleSaveAnalysis = useCallback(() => {
-    void saveAnalysis()
-  }, [])
+    void saveAnalysis();
+  }, []);
 
-  const displayName = analysis.name.trim() || 'Untitled Analysis'
-  const fileStatusLabel = fileName ?? 'Unsaved .gta file'
+  const displayName = analysis.name.trim() || "Untitled Analysis";
+  const fileStatusLabel = fileName ?? t("topbar.unsavedFile");
   const statusLabel = validation.isValid
     ? validation.isComplete
-      ? 'Complete'
-      : `${validation.incompleteProfiles.length} incomplete`
-    : `${validation.issues.length} issue${validation.issues.length === 1 ? '' : 's'}`
+      ? t("topbar.complete")
+      : t("topbar.incomplete", { count: validation.incompleteProfiles.length })
+    : t("topbar.issues", { count: validation.issues.length });
 
   return (
     <div className="app-region-drag flex h-10 shrink-0 select-none items-center border-b border-border bg-card px-2">
@@ -240,11 +244,11 @@ export default function TopBar() {
               className="h-8"
             >
               <Plus size={16} strokeWidth={1.5} />
-              New Analysis
+              {t("topbar.newAnalysis")}
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            Start a fresh analysis
+            {t("topbar.tooltipNew")}
           </TooltipContent>
         </Tooltip>
 
@@ -258,49 +262,52 @@ export default function TopBar() {
               className="h-8"
             >
               <FolderOpen size={16} strokeWidth={1.5} />
-              {t('topbar.open')}
+              {t("topbar.open")}
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            Open a saved `.gta` analysis
+            {t("topbar.tooltipOpen")}
           </TooltipContent>
         </Tooltip>
 
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
-              variant={isDirty ? 'default' : 'outline'}
+              variant={isDirty ? "default" : "outline"}
               size="sm"
               aria-label="Save analysis"
               onClick={handleSaveAnalysis}
               className="h-8"
             >
               <Save size={16} strokeWidth={1.5} />
-              {t('topbar.save')}
+              {t("topbar.save")}
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            Save the current analysis
+            {t("topbar.tooltipSave")}
           </TooltipContent>
         </Tooltip>
       </div>
 
       <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-4">
-        <span className="truncate text-xs text-foreground" suppressHydrationWarning>
+        <span
+          className="truncate text-xs text-foreground"
+          suppressHydrationWarning
+        >
           {displayName}
         </span>
         <span className="hidden text-[11px] text-muted-foreground sm:inline">
           {fileStatusLabel}
-          {isDirty ? ` ${t('topbar.edited')}` : ''}
+          {isDirty ? ` ${t("topbar.edited")}` : ""}
         </span>
         <span
           className={cn(
-            'rounded-full px-2 py-0.5 text-[11px] font-medium',
+            "rounded-full px-2 py-0.5 text-[11px] font-medium",
             validation.isValid
               ? validation.isComplete
-                ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300'
-                : 'bg-amber-500/15 text-amber-600 dark:text-amber-300'
-              : 'bg-rose-500/15 text-rose-600 dark:text-rose-300',
+                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"
+                : "bg-amber-500/15 text-amber-600 dark:text-amber-300"
+              : "bg-rose-500/15 text-rose-600 dark:text-rose-300",
           )}
         >
           {statusLabel}
@@ -319,11 +326,11 @@ export default function TopBar() {
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+              aria-label={theme === "dark" ? "Light mode" : "Dark mode"}
               className="text-muted-foreground"
               onClick={toggleTheme}
             >
-              {theme === 'dark' ? (
+              {theme === "dark" ? (
                 <Sun size={15} strokeWidth={1.5} />
               ) : (
                 <Moon size={15} strokeWidth={1.5} />
@@ -331,7 +338,7 @@ export default function TopBar() {
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            {theme === 'dark' ? t('topbar.lightMode') : t('topbar.darkMode')}
+            {theme === "dark" ? t("topbar.lightMode") : t("topbar.darkMode")}
           </TooltipContent>
         </Tooltip>
 
@@ -340,7 +347,7 @@ export default function TopBar() {
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+              aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
               className="text-muted-foreground"
               onClick={toggleFullscreen}
             >
@@ -352,10 +359,10 @@ export default function TopBar() {
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            {isFullscreen ? t('topbar.exitFullscreen') : t('topbar.fullscreen')}
+            {isFullscreen ? t("topbar.exitFullscreen") : t("topbar.fullscreen")}
           </TooltipContent>
         </Tooltip>
       </div>
     </div>
-  )
+  );
 }

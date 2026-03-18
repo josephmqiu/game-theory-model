@@ -1,139 +1,117 @@
-import { useAnalysisStore } from '@/stores/analysis-store'
-import type { Analysis, AnalysisFileReference } from '@/types/analysis'
+import { useAnalysisStore } from "@/stores/analysis-store";
+import type { AnalysisFileReference } from "@/types/analysis";
 import {
   AnalysisFileError,
   createAnalysisFile,
   createDefaultAnalysisFileName,
   parseAnalysisFileText,
   serializeAnalysisFile,
-} from './analysis-file'
+} from "./analysis-file";
 
-export type AnalysisPersistenceSource = Partial<AnalysisFileReference>
+export type AnalysisPersistenceSource = Partial<AnalysisFileReference>;
 
 export interface AnalysisDiscardPrompt {
-  confirm: (message: string) => boolean | Promise<boolean>
-  message?: string
-}
-
-interface AnalysisFileOpenResult {
-  analysis: Analysis
-  source: AnalysisFileReference
+  confirm: (message: string) => boolean | Promise<boolean>;
+  message?: string;
 }
 
 interface PickerWindow extends Window {
-  showOpenFilePicker: (options: unknown) => Promise<FileSystemFileHandle[]>
-  showSaveFilePicker: (options: unknown) => Promise<FileSystemFileHandle>
+  showOpenFilePicker: (options: unknown) => Promise<FileSystemFileHandle[]>;
+  showSaveFilePicker: (options: unknown) => Promise<FileSystemFileHandle>;
 }
 
-const ANALYSIS_FILE_EXTENSION = '.gta'
-const ANALYSIS_FILE_DESCRIPTION = 'Game Theory Analyzer Files'
+const ANALYSIS_FILE_EXTENSION = ".gta";
+const ANALYSIS_FILE_DESCRIPTION = "Game Theory Analyzer Files";
 
 function isPickerWindow(windowValue: Window): windowValue is PickerWindow {
   return (
-    'showOpenFilePicker' in windowValue &&
-    'showSaveFilePicker' in windowValue
-  )
+    "showOpenFilePicker" in windowValue && "showSaveFilePicker" in windowValue
+  );
 }
 
 function supportsFileSystemAccess(): boolean {
-  return isPickerWindow(window)
+  return isPickerWindow(window);
 }
 
-function getNativeConfirm(): AnalysisDiscardPrompt['confirm'] {
-  return (message) => window.confirm(message)
+function getNativeConfirm(): AnalysisDiscardPrompt["confirm"] {
+  return (message) => window.confirm(message);
 }
 
 function showNativeAlert(message: string): void {
-  window.alert(message)
+  window.alert(message);
 }
 
 function toErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof AnalysisFileError) {
-    return error.message
+    return error.message;
   }
 
   if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message
+    return error.message;
   }
 
-  return fallback
+  return fallback;
 }
 
 function getFileNameFromPath(filePath: string): string {
-  const normalized = filePath.replace(/\\/g, '/')
-  return normalized.split('/').pop() || filePath
+  const normalized = filePath.replace(/\\/g, "/");
+  return normalized.split("/").pop() || filePath;
 }
 
 function ensureAnalysisFileName(fileName: string): string {
   return fileName.toLowerCase().endsWith(ANALYSIS_FILE_EXTENSION)
     ? fileName
-    : `${fileName}${ANALYSIS_FILE_EXTENSION}`
+    : `${fileName}${ANALYSIS_FILE_EXTENSION}`;
 }
 
 function isUserAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError'
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 function getPickerAccept(): Record<string, string[]> {
   return {
-    'application/json': [ANALYSIS_FILE_EXTENSION],
-  }
+    "application/json": [ANALYSIS_FILE_EXTENSION],
+  };
 }
 
 async function writeTextToFileHandle(
   handle: FileSystemFileHandle,
   text: string,
 ): Promise<void> {
-  const writable = await handle.createWritable()
-  await writable.write(text)
-  await writable.close()
+  const writable = await handle.createWritable();
+  await writable.write(text);
+  await writable.close();
 }
 
 async function openAnalysisFromHandle(
   handle: FileSystemFileHandle,
-): Promise<AnalysisFileOpenResult> {
-  const file = await handle.getFile()
-  const text = await file.text()
-  const analysis = loadAnalysisFromText(text, {
+): Promise<boolean> {
+  const file = await handle.getFile();
+  const text = await file.text();
+  loadAnalysisFromText(text, {
     fileName: file.name,
     fileHandle: handle,
     filePath: null,
-  })
-
-  return {
-    analysis,
-    source: {
-      fileName: file.name,
-      fileHandle: handle,
-      filePath: null,
-    },
-  }
+  });
+  return true;
 }
 
-async function openAnalysisWithElectronDialog(): Promise<AnalysisFileOpenResult | null> {
-  const result = await window.electronAPI?.openFile?.()
+async function openAnalysisWithElectronDialog(): Promise<boolean> {
+  const result = await window.electronAPI?.openFile?.();
   if (!result) {
-    return null
+    return false;
   }
 
-  const analysis = loadAnalysisFromText(result.content, {
+  loadAnalysisFromText(result.content, {
     fileName: getFileNameFromPath(result.filePath),
     filePath: result.filePath,
     fileHandle: null,
-  })
-
-  return {
-    analysis,
-    source: {
-      fileName: getFileNameFromPath(result.filePath),
-      filePath: result.filePath,
-      fileHandle: null,
-    },
-  }
+  });
+  return true;
 }
 
-async function openAnalysisWithPicker(): Promise<AnalysisFileOpenResult | null> {
-  const pickerWindow = window as unknown as PickerWindow
+async function openAnalysisWithPicker(): Promise<boolean> {
+  const pickerWindow = window as unknown as PickerWindow;
   const [handle] = await pickerWindow.showOpenFilePicker({
     types: [
       {
@@ -143,75 +121,64 @@ async function openAnalysisWithPicker(): Promise<AnalysisFileOpenResult | null> 
     ],
     excludeAcceptAllOption: true,
     multiple: false,
-  })
+  });
 
   if (!handle) {
-    return null
+    return false;
   }
 
-  return openAnalysisFromHandle(handle)
+  return openAnalysisFromHandle(handle);
 }
 
-async function openAnalysisWithFileInput(): Promise<AnalysisFileOpenResult | null> {
+async function openAnalysisWithFileInput(): Promise<boolean> {
   return new Promise((resolve, reject) => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = ANALYSIS_FILE_EXTENSION
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ANALYSIS_FILE_EXTENSION;
     input.onchange = async () => {
-      const file = input.files?.[0]
+      const file = input.files?.[0];
       if (!file) {
-        resolve(null)
-        return
+        resolve(false);
+        return;
       }
 
       try {
-        const text = await file.text()
-        const analysis = loadAnalysisFromText(text, {
+        const text = await file.text();
+        loadAnalysisFromText(text, {
           fileName: file.name,
           filePath: null,
           fileHandle: null,
-        })
-
-        resolve({
-          analysis,
-          source: {
-            fileName: file.name,
-            filePath: null,
-            fileHandle: null,
-          },
-        })
+        });
+        resolve(true);
       } catch (error) {
-        reject(error)
+        reject(error);
       }
-    }
-    input.oncancel = () => resolve(null)
-    input.click()
-  })
+    };
+    input.oncancel = () => resolve(false);
+    input.click();
+  });
 }
 
 async function openAnalysisWithPromptlessPicker(): Promise<boolean> {
   if (window.electronAPI?.isElectron) {
-    const result = await openAnalysisWithElectronDialog()
-    return result !== null
+    return openAnalysisWithElectronDialog();
   }
 
   if (supportsFileSystemAccess()) {
-    const result = await openAnalysisWithPicker()
-    return result !== null
+    return openAnalysisWithPicker();
   }
 
-  const result = await openAnalysisWithFileInput()
-  return result !== null
+  return openAnalysisWithFileInput();
 }
 
 function downloadAnalysisText(text: string, fileName: string): void {
-  const blob = new Blob([text], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = fileName
-  anchor.click()
-  URL.revokeObjectURL(url)
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 async function saveAnalysisAsWithElectron(
@@ -219,23 +186,26 @@ async function saveAnalysisAsWithElectron(
   text: string,
   defaultPath?: string | null,
 ): Promise<AnalysisPersistenceSource | null> {
-  const filePath = await window.electronAPI?.saveFile?.(text, defaultPath ?? fileName)
+  const filePath = await window.electronAPI?.saveFile?.(
+    text,
+    defaultPath ?? fileName,
+  );
   if (!filePath) {
-    return null
+    return null;
   }
 
   return {
     fileName: getFileNameFromPath(filePath),
     filePath,
     fileHandle: null,
-  }
+  };
 }
 
 async function saveAnalysisAsWithPicker(
   fileName: string,
   text: string,
 ): Promise<AnalysisPersistenceSource | null> {
-  const pickerWindow = window as unknown as PickerWindow
+  const pickerWindow = window as unknown as PickerWindow;
   const handle = await pickerWindow.showSaveFilePicker({
     suggestedName: ensureAnalysisFileName(fileName),
     types: [
@@ -245,39 +215,39 @@ async function saveAnalysisAsWithPicker(
       },
     ],
     excludeAcceptAllOption: true,
-  })
+  });
 
   if (!handle) {
-    return null
+    return null;
   }
 
-  await writeTextToFileHandle(handle, text)
+  await writeTextToFileHandle(handle, text);
 
   return {
     fileName: handle.name,
     fileHandle: handle,
     filePath: null,
-  }
+  };
 }
 
 function saveAnalysisAsWithDownload(
   fileName: string,
   text: string,
 ): AnalysisPersistenceSource {
-  const nextFileName = ensureAnalysisFileName(fileName)
-  downloadAnalysisText(text, nextFileName)
+  const nextFileName = ensureAnalysisFileName(fileName);
+  downloadAnalysisText(text, nextFileName);
 
   return {
     fileName: nextFileName,
     filePath: null,
     fileHandle: null,
-  }
+  };
 }
 
 export function hasUnsavedAnalysisChanges(
   state = useAnalysisStore.getState(),
 ): boolean {
-  return state.isDirty
+  return state.isDirty;
 }
 
 export async function confirmDiscardAnalysisChanges(
@@ -285,32 +255,33 @@ export async function confirmDiscardAnalysisChanges(
   state = useAnalysisStore.getState(),
 ): Promise<boolean> {
   if (!hasUnsavedAnalysisChanges(state)) {
-    return true
+    return true;
   }
 
   const confirmed = await prompt.confirm(
-    prompt.message ?? 'You have unsaved analysis changes. Discard them?',
-  )
+    prompt.message ?? "You have unsaved analysis changes. Discard them?",
+  );
 
-  return Boolean(confirmed)
+  return Boolean(confirmed);
 }
 
 export function loadAnalysisFromText(
   text: string,
   source?: AnalysisPersistenceSource,
-): Analysis {
-  const file = parseAnalysisFileText(text)
-  useAnalysisStore.getState().loadAnalysis(file.analysis, source)
-  return file.analysis
+): void {
+  const file = parseAnalysisFileText(text);
+  useAnalysisStore.getState().loadAnalysis(file.analysis, source);
 }
 
-export function createAnalysisSavePayload(state = useAnalysisStore.getState()): {
-  file: ReturnType<typeof createAnalysisFile>
-  text: string
-  fileName: string
-  source: AnalysisFileReference
+export function createAnalysisSavePayload(
+  state = useAnalysisStore.getState(),
+): {
+  file: ReturnType<typeof createAnalysisFile>;
+  text: string;
+  fileName: string;
+  source: AnalysisFileReference;
 } {
-  const file = createAnalysisFile(state.analysis)
+  const file = createAnalysisFile(state.analysis);
   return {
     file,
     text: serializeAnalysisFile(state.analysis),
@@ -320,70 +291,73 @@ export function createAnalysisSavePayload(state = useAnalysisStore.getState()): 
       filePath: state.filePath,
       fileHandle: state.fileHandle,
     },
-  }
+  };
 }
 
-export function commitAnalysisSave(source: AnalysisPersistenceSource = {}): void {
-  useAnalysisStore.getState().setAnalysisFileReference(source)
-  useAnalysisStore.getState().markClean()
+export function commitAnalysisSave(
+  source: AnalysisPersistenceSource = {},
+): void {
+  useAnalysisStore.getState().commitSave(source);
 }
 
 export function clearAnalysisFileReference(): void {
-  useAnalysisStore.getState().clearAnalysisFileReference()
+  useAnalysisStore.getState().clearAnalysisFileReference();
 }
 
 export function resetAnalysisForNewDocument(): void {
-  useAnalysisStore.getState().newAnalysis()
+  useAnalysisStore.getState().newAnalysis();
 }
 
 export function getAnalysisFileStatus(state = useAnalysisStore.getState()): {
-  fileName: string | null
-  isDirty: boolean
-  hasSavedLocation: boolean
+  fileName: string | null;
+  isDirty: boolean;
+  hasSavedLocation: boolean;
 } {
   return {
     fileName: state.fileName,
     isDirty: state.isDirty,
     hasSavedLocation: Boolean(state.filePath || state.fileHandle),
-  }
+  };
 }
 
-export async function openAnalysisFromFilePath(filePath: string): Promise<boolean> {
+export async function openAnalysisFromFilePath(
+  filePath: string,
+): Promise<boolean> {
   const confirmed = await confirmDiscardAnalysisChanges({
     confirm: getNativeConfirm(),
     message:
-      'You have unsaved analysis changes. Discard them and open another analysis?',
-  })
+      "You have unsaved analysis changes. Discard them and open another analysis?",
+  });
 
   if (!confirmed) {
-    return false
+    return false;
   }
 
   try {
-    const readResult = await window.electronAPI?.readFile?.(filePath)
+    const readResult = await window.electronAPI?.readFile?.(filePath);
     if (!readResult) {
-      throw new Error('Could not read the selected analysis file.')
+      throw new Error("Could not read the selected analysis file.");
     }
 
     loadAnalysisFromText(readResult.content, {
       fileName: getFileNameFromPath(readResult.filePath),
       filePath: readResult.filePath,
       fileHandle: null,
-    })
+    });
 
-    return true
+    return true;
   } catch (error) {
     if (isUserAbortError(error)) {
-      return false
+      return false;
     }
 
     showNativeAlert(
       `Could not open analysis.\n\n${toErrorMessage(
         error,
-        'The selected file is not a valid .gta analysis.',
+        "The selected file is not a valid .gta analysis.",
       )}`,
-    )
-    return false
+    );
+    return false;
   }
 }
 
@@ -391,27 +365,27 @@ export async function openAnalysis(): Promise<boolean> {
   const confirmed = await confirmDiscardAnalysisChanges({
     confirm: getNativeConfirm(),
     message:
-      'You have unsaved analysis changes. Discard them and open another analysis?',
-  })
+      "You have unsaved analysis changes. Discard them and open another analysis?",
+  });
 
   if (!confirmed) {
-    return false
+    return false;
   }
 
   try {
-    return await openAnalysisWithPromptlessPicker()
+    return await openAnalysisWithPromptlessPicker();
   } catch (error) {
     if (isUserAbortError(error)) {
-      return false
+      return false;
     }
 
     showNativeAlert(
       `Could not open analysis.\n\n${toErrorMessage(
         error,
-        'The selected file is not a valid .gta analysis.',
+        "The selected file is not a valid .gta analysis.",
       )}`,
-    )
-    return false
+    );
+    return false;
   }
 }
 
@@ -419,92 +393,92 @@ export async function newAnalysis(): Promise<boolean> {
   const confirmed = await confirmDiscardAnalysisChanges({
     confirm: getNativeConfirm(),
     message:
-      'You have unsaved analysis changes. Discard them and start a new analysis?',
-  })
+      "You have unsaved analysis changes. Discard them and start a new analysis?",
+  });
 
   if (!confirmed) {
-    return false
+    return false;
   }
 
-  resetAnalysisForNewDocument()
-  return true
+  resetAnalysisForNewDocument();
+  return true;
 }
 
 export async function saveAnalysisAs(): Promise<boolean> {
-  const payload = createAnalysisSavePayload()
+  const payload = createAnalysisSavePayload();
 
   try {
-    let source: AnalysisPersistenceSource | null = null
+    let source: AnalysisPersistenceSource | null = null;
 
     if (window.electronAPI?.isElectron) {
       source = await saveAnalysisAsWithElectron(
         payload.fileName,
         payload.text,
         payload.source.filePath ?? payload.fileName,
-      )
+      );
     } else if (supportsFileSystemAccess()) {
-      source = await saveAnalysisAsWithPicker(payload.fileName, payload.text)
+      source = await saveAnalysisAsWithPicker(payload.fileName, payload.text);
     } else {
-      source = saveAnalysisAsWithDownload(payload.fileName, payload.text)
+      source = saveAnalysisAsWithDownload(payload.fileName, payload.text);
     }
 
     if (!source) {
-      return false
+      return false;
     }
 
-    commitAnalysisSave(source)
-    return true
+    commitAnalysisSave(source);
+    return true;
   } catch (error) {
     if (isUserAbortError(error)) {
-      return false
+      return false;
     }
 
     showNativeAlert(
       `Could not save analysis.\n\n${toErrorMessage(
         error,
-        'The analysis could not be saved.',
+        "The analysis could not be saved.",
       )}`,
-    )
-    return false
+    );
+    return false;
   }
 }
 
 export async function saveAnalysis(): Promise<boolean> {
-  const payload = createAnalysisSavePayload()
+  const payload = createAnalysisSavePayload();
 
   try {
     if (payload.source.fileHandle) {
-      await writeTextToFileHandle(payload.source.fileHandle, payload.text)
-      commitAnalysisSave(payload.source)
-      return true
+      await writeTextToFileHandle(payload.source.fileHandle, payload.text);
+      commitAnalysisSave(payload.source);
+      return true;
     }
 
     if (payload.source.filePath && window.electronAPI?.isElectron) {
       const filePath = await window.electronAPI.saveToPath(
         payload.source.filePath,
         payload.text,
-      )
+      );
 
       commitAnalysisSave({
         fileName: getFileNameFromPath(filePath),
         filePath,
         fileHandle: null,
-      })
-      return true
+      });
+      return true;
     }
 
-    return saveAnalysisAs()
+    return saveAnalysisAs();
   } catch (error) {
     if (isUserAbortError(error)) {
-      return false
+      return false;
     }
 
     showNativeAlert(
       `Could not save analysis.\n\n${toErrorMessage(
         error,
-        'The analysis could not be saved.',
+        "The analysis could not be saved.",
       )}`,
-    )
-    return false
+    );
+    return false;
   }
 }
