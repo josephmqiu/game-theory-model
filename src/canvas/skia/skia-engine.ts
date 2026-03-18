@@ -1,5 +1,11 @@
-import type { CanvasKit, Surface } from "canvaskit-wasm";
+import type { CanvasKit, Canvas, Surface } from "canvaskit-wasm";
 import type { PenNode, ContainerProps, EllipseNode } from "@/types/pen";
+import type {
+  AnalysisEntity,
+  AnalysisRelationship,
+  EntityType,
+  RelationshipType,
+} from "@/types/entity";
 import { useCanvasStore } from "@/stores/canvas-store";
 import {
   useDocumentStore,
@@ -831,6 +837,259 @@ export class SkiaEngine {
     if (hasAgentOverlays) {
       this.markDirty();
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Entity graph rendering (used by analysis-canvas, not the document render())
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Render an entity graph onto the given canvas.
+   *
+   * Draws entity RenderNodes with type-specific fills, confidence-encoded
+   * borders, and stale/human-edited visual states. Then draws relationship
+   * edges as Bezier curves between entity centers.
+   *
+   * This method does NOT use the document store — it receives pre-built
+   * RenderNodes (from entityToRenderNode) and relationship data directly.
+   */
+  renderEntityGraph(
+    canvas: Canvas,
+    entityRenderNodes: RenderNode[],
+    relationships: AnalysisRelationship[],
+    entities: AnalysisEntity[],
+  ) {
+    const entityMap = new Map<string, AnalysisEntity>();
+    for (const e of entities) entityMap.set(e.id, e);
+
+    // Build a position lookup for edge drawing
+    const posMap = new Map<string, { cx: number; cy: number }>();
+    for (const rn of entityRenderNodes) {
+      posMap.set(rn.node.id, {
+        cx: rn.absX + rn.absW / 2,
+        cy: rn.absY + rn.absH / 2,
+      });
+    }
+
+    // ── Draw relationship edges (behind nodes) ──
+    for (const rel of relationships) {
+      const from = posMap.get(rel.fromEntityId);
+      const to = posMap.get(rel.toEntityId);
+      if (!from || !to) continue;
+      this.drawRelationshipEdge(canvas, from, to, rel.type);
+    }
+
+    // ── Draw entity nodes ──
+    for (const rn of entityRenderNodes) {
+      const entity = entityMap.get(rn.node.id);
+      this.drawEntityNode(canvas, rn, entity);
+    }
+  }
+
+  // ── Entity type colors (from DESIGN.md Entity Type Palette) ──
+
+  private static ENTITY_TYPE_COLOR: Record<string, string> = {
+    fact: "#94A3B8",
+    player: "#60A5FA",
+    objective: "#60A5FA", // inherits player color at 40% (approximated as base)
+    game: "#FBBF24",
+    strategy: "#FBBF24", // inherits game color lighter variant
+    payoff: "#FCD34D",
+    "institutional-rule": "#A1A1AA",
+    "escalation-rung": "#4ADE80",
+  };
+
+  /** Resolve entity type color, with player index hue pool support. */
+  private entityColor(entityType: EntityType): string {
+    return SkiaEngine.ENTITY_TYPE_COLOR[entityType] ?? "#A1A1AA";
+  }
+
+  // ── Draw a single entity node ──
+
+  private drawEntityNode(
+    canvas: Canvas,
+    rn: RenderNode,
+    entity: AnalysisEntity | undefined,
+  ) {
+    const ck = this.ck;
+    const { absX, absY, absW, absH } = rn;
+    const entityType = entity?.type ?? "fact";
+    const color = this.entityColor(entityType);
+    const confidence = entity?.confidence ?? "medium";
+    const isStale = entity?.stale ?? false;
+    const isHumanEdited = entity?.source === "human";
+
+    const nodeOpacity = isStale ? 0.4 : 1.0;
+
+    // ── Human-edited glow (subtle shadow in entity color, behind everything) ──
+    if (isHumanEdited && !isStale) {
+      const glowPaint = new ck.Paint();
+      glowPaint.setStyle(ck.PaintStyle.Fill);
+      glowPaint.setAntiAlias(true);
+      const gc = parseColor(ck, color);
+      gc[3] = 0.25;
+      glowPaint.setColor(gc);
+      const sigma = 6;
+      const filter = ck.MaskFilter.MakeBlur(ck.BlurStyle.Normal, sigma, true);
+      glowPaint.setMaskFilter(filter);
+      const glowRRect = ck.RRectXY(
+        ck.LTRBRect(absX - 3, absY - 3, absX + absW + 3, absY + absH + 3),
+        8,
+        8,
+      );
+      canvas.drawRRect(glowRRect, glowPaint);
+      glowPaint.delete();
+    }
+
+    // ── Fill background ──
+    const bgPaint = new ck.Paint();
+    bgPaint.setStyle(ck.PaintStyle.Fill);
+    bgPaint.setAntiAlias(true);
+    const bgC = parseColor(ck, "#18181B"); // zinc-900 elevated surface
+    bgC[3] *= nodeOpacity;
+    bgPaint.setColor(bgC);
+    const rrect = ck.RRectXY(
+      ck.LTRBRect(absX, absY, absX + absW, absY + absH),
+      6,
+      6,
+    );
+    canvas.drawRRect(rrect, bgPaint);
+    bgPaint.delete();
+
+    // ── Confidence border ──
+    const borderPaint = new ck.Paint();
+    borderPaint.setStyle(ck.PaintStyle.Stroke);
+    borderPaint.setAntiAlias(true);
+    const bc = parseColor(ck, color);
+
+    switch (confidence) {
+      case "high":
+        borderPaint.setStrokeWidth(2);
+        bc[3] = 1.0 * nodeOpacity;
+        break;
+      case "medium":
+        borderPaint.setStrokeWidth(1.5);
+        bc[3] = 0.8 * nodeOpacity;
+        break;
+      case "low":
+        borderPaint.setStrokeWidth(1.5);
+        bc[3] = 0.6 * nodeOpacity;
+        // Dashed for low confidence
+        const dashEffect = ck.PathEffect.MakeDash([6, 4], 0);
+        if (dashEffect) borderPaint.setPathEffect(dashEffect);
+        break;
+    }
+    borderPaint.setColor(bc);
+    canvas.drawRRect(rrect, borderPaint);
+    borderPaint.delete();
+
+    // ── Stale badge ──
+    if (isStale) {
+      // Draw a small warning dot at top-right corner
+      const badgePaint = new ck.Paint();
+      badgePaint.setStyle(ck.PaintStyle.Fill);
+      badgePaint.setAntiAlias(true);
+      badgePaint.setColor(parseColor(ck, "#FBBF24"));
+      canvas.drawCircle(absX + absW - 8, absY + 8, 4, badgePaint);
+      badgePaint.delete();
+      // Draw inner exclamation stroke
+      const excPaint = new ck.Paint();
+      excPaint.setStyle(ck.PaintStyle.Stroke);
+      excPaint.setAntiAlias(true);
+      excPaint.setStrokeWidth(1.5);
+      excPaint.setStrokeCap(ck.StrokeCap.Round);
+      excPaint.setColor(parseColor(ck, "#09090B"));
+      canvas.drawLine(
+        absX + absW - 8,
+        absY + 6,
+        absX + absW - 8,
+        absY + 9,
+        excPaint,
+      );
+      excPaint.delete();
+    }
+
+    // ── Draw child text nodes (name + meta) via renderer ──
+    const children =
+      "children" in rn.node ? (rn.node as any).children : undefined;
+    if (children && Array.isArray(children)) {
+      const emptySet = new Set<string>();
+      for (const child of children) {
+        const childRN: RenderNode = {
+          node: {
+            ...child,
+            x: absX + (child.x ?? 0),
+            y: absY + (child.y ?? 0),
+          },
+          absX: absX + (child.x ?? 0),
+          absY: absY + (child.y ?? 0),
+          absW: typeof child.width === "number" ? child.width : absW - 20,
+          absH: typeof child.height === "number" ? child.height : 20,
+        };
+        // Adjust text opacity for stale nodes
+        if (isStale) {
+          childRN.node = { ...childRN.node, opacity: 0.4 } as PenNode;
+        }
+        this.renderer.drawNode(canvas, childRN, emptySet);
+      }
+    }
+  }
+
+  // ── Relationship edge styling ──
+
+  private static EDGE_STYLE: Record<
+    string,
+    { color: string; dash?: number[]; width: number }
+  > = {
+    "plays-in": { color: "#3F3F46", width: 1 },
+    supports: { color: "#34D399", dash: [6, 4], width: 1 },
+    contradicts: { color: "#F87171", dash: [6, 4], width: 1 },
+    constrains: { color: "#3F3F46", dash: [2, 3], width: 1 },
+  };
+
+  private drawRelationshipEdge(
+    canvas: Canvas,
+    from: { cx: number; cy: number },
+    to: { cx: number; cy: number },
+    relType: RelationshipType,
+  ) {
+    const ck = this.ck;
+    const style = SkiaEngine.EDGE_STYLE[relType] ?? {
+      color: "#3F3F46",
+      width: 1,
+    };
+
+    const paint = new ck.Paint();
+    paint.setStyle(ck.PaintStyle.Stroke);
+    paint.setAntiAlias(true);
+    paint.setStrokeWidth(style.width);
+    paint.setColor(parseColor(ck, style.color));
+
+    if (style.dash) {
+      const effect = ck.PathEffect.MakeDash(style.dash, 0);
+      if (effect) paint.setPathEffect(effect);
+    }
+
+    // Quadratic Bezier: control point offset perpendicular to midpoint
+    const midX = (from.cx + to.cx) / 2;
+    const midY = (from.cy + to.cy) / 2;
+    const dx = to.cx - from.cx;
+    const dy = to.cy - from.cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    // Curve amount: 15% of distance, perpendicular to line direction
+    const offset = dist > 0 ? dist * 0.15 : 20;
+    // Perpendicular unit vector (rotated 90 degrees)
+    const px = dist > 0 ? -dy / dist : 0;
+    const py = dist > 0 ? dx / dist : 1;
+    const cpx = midX + px * offset;
+    const cpy = midY + py * offset;
+
+    const path = new ck.Path();
+    path.moveTo(from.cx, from.cy);
+    path.quadTo(cpx, cpy, to.cx, to.cy);
+    canvas.drawPath(path, paint);
+    path.delete();
+    paint.delete();
   }
 
   // ---------------------------------------------------------------------------
