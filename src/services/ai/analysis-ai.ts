@@ -1,3 +1,2 @@
-export * from './analysis-ai-types'
-export * from './analysis-ai-prompts'
-export * from './analysis-ai-helpers'
+// This file is intentionally empty — the old AI analysis barrel export has been removed.
+// TODO: physically delete this file.

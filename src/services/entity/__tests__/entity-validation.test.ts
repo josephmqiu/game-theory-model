@@ -7,7 +7,7 @@ import {
 import type {
   AnalysisEntity,
   AnalysisRelationship,
-  EntityAnalysis,
+  Analysis,
 } from "@/types/entity";
 
 const makeEntity = (
@@ -205,7 +205,7 @@ describe("validateRelationships", () => {
 
 describe("validateAnalysis", () => {
   it("detects duplicate entity IDs", () => {
-    const analysis: EntityAnalysis = {
+    const analysis: Analysis = {
       id: "a1",
       name: "Test",
       topic: "Test",
@@ -221,7 +221,7 @@ describe("validateAnalysis", () => {
   });
 
   it("catches invalid entities", () => {
-    const analysis: EntityAnalysis = {
+    const analysis: Analysis = {
       id: "a1",
       name: "Test",
       topic: "Test",
@@ -248,7 +248,7 @@ describe("validateAnalysis", () => {
   });
 
   it("catches dangling relationship refs", () => {
-    const analysis: EntityAnalysis = {
+    const analysis: Analysis = {
       id: "a1",
       name: "Test",
       topic: "Test",
@@ -266,7 +266,7 @@ describe("validateAnalysis", () => {
   });
 
   it("passes a valid analysis", () => {
-    const analysis: EntityAnalysis = {
+    const analysis: Analysis = {
       id: "a1",
       name: "Test Analysis",
       topic: "Trade conflict",

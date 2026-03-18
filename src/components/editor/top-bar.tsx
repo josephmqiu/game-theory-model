@@ -28,8 +28,8 @@ import { appStorage, initAppStorage } from "@/utils/app-storage";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import {
-  saveEntityAnalysis,
-  openEntityAnalysis,
+  saveAnalysis,
+  openAnalysis,
 } from "@/services/analysis/analysis-persistence";
 import { exportToMarkdown } from "@/services/entity/entity-export";
 import type { AIProviderType } from "@/types/agent-settings";
@@ -223,11 +223,11 @@ export default function TopBar() {
   }, []);
 
   const handleOpenAnalysis = useCallback(() => {
-    void openEntityAnalysis();
+    void openAnalysis();
   }, []);
 
   const handleSaveAnalysis = useCallback(() => {
-    void saveEntityAnalysis();
+    void saveAnalysis();
   }, []);
 
   const handleExportMarkdown = useCallback(() => {

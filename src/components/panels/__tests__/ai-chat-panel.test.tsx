@@ -15,7 +15,6 @@ describe("AIChatPanel analysis mode", () => {
     expect(source).toContain("const isAnalysisMode = mode");
     expect(source).not.toContain("allowAttachments");
     expect(source).not.toContain("useCanvasStore");
-    expect(source).toContain("function getAnalysisQuickActions");
   });
 
   it("resets analysis chat state when the active analysis id changes", () => {
@@ -33,5 +32,15 @@ describe("AIChatPanel analysis mode", () => {
     expect(source).toContain("useEntityGraphStore");
     expect(source).toContain("EXAMPLE_TOPICS");
     expect(source).toContain("handleSendWrapped");
+  });
+
+  it("does not depend on the old analysis store", () => {
+    const source = readFileSync(aiChatPanelPath, "utf8");
+
+    expect(source).not.toContain("useAnalysisStore");
+    expect(source).not.toContain("analysis-workflow");
+    expect(source).not.toContain("analysis-normalization");
+    expect(source).not.toContain("analysis-insights");
+    expect(source).not.toContain("analysis-summary");
   });
 });

@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { EntityAnalysis } from "@/types/entity";
+import type { Analysis } from "@/types/entity";
 import type { PhaseState } from "@/types/methodology";
 import {
-  parseEntityAnalysisFileText,
-  serializeEntityAnalysisFile,
-  createDefaultEntityAnalysisFileName,
+  parseAnalysisFileText,
+  serializeAnalysisFile,
+  createDefaultAnalysisFileName,
 } from "@/services/analysis/analysis-file";
 
-function createTestEntityAnalysis(): EntityAnalysis {
+function createTestAnalysis(): Analysis {
   const phases: PhaseState[] = [
     { phase: "situational-grounding", status: "complete", entityIds: ["e1"] },
     { phase: "player-identification", status: "pending", entityIds: [] },
@@ -44,16 +44,16 @@ function createTestEntityAnalysis(): EntityAnalysis {
 }
 
 describe("v2 entity analysis file format", () => {
-  it("round-trips an EntityAnalysis through serialize and parse", () => {
-    const analysis = createTestEntityAnalysis();
-    const text = serializeEntityAnalysisFile(analysis);
-    const parsed = parseEntityAnalysisFileText(text);
+  it("round-trips an Analysis through serialize and parse", () => {
+    const analysis = createTestAnalysis();
+    const text = serializeAnalysisFile(analysis);
+    const parsed = parseAnalysisFileText(text);
 
     expect(parsed).toEqual(analysis);
   });
 
   it("preserves entities with relationships through round-trip", () => {
-    const analysis = createTestEntityAnalysis();
+    const analysis = createTestAnalysis();
     analysis.entities.push({
       id: "e2",
       type: "player",
@@ -78,8 +78,8 @@ describe("v2 entity analysis file format", () => {
       toEntityId: "e1",
     });
 
-    const text = serializeEntityAnalysisFile(analysis);
-    const parsed = parseEntityAnalysisFileText(text);
+    const text = serializeAnalysisFile(analysis);
+    const parsed = parseAnalysisFileText(text);
 
     expect(parsed.entities).toHaveLength(2);
     expect(parsed.relationships).toHaveLength(1);
@@ -103,7 +103,7 @@ describe("v2 entity analysis file format", () => {
       },
     });
 
-    expect(() => parseEntityAnalysisFileText(v1File)).toThrow(
+    expect(() => parseAnalysisFileText(v1File)).toThrow(
       "This file uses an older format. Please create a new analysis.",
     );
   });
@@ -112,10 +112,10 @@ describe("v2 entity analysis file format", () => {
     const badVersion = JSON.stringify({
       type: "game-theory-analysis",
       version: 99,
-      analysis: createTestEntityAnalysis(),
+      analysis: createTestAnalysis(),
     });
 
-    expect(() => parseEntityAnalysisFileText(badVersion)).toThrow(
+    expect(() => parseAnalysisFileText(badVersion)).toThrow(
       "Unsupported analysis file version: 99.",
     );
   });
@@ -124,22 +124,22 @@ describe("v2 entity analysis file format", () => {
     const badType = JSON.stringify({
       type: "not-a-real-type",
       version: 2,
-      analysis: createTestEntityAnalysis(),
+      analysis: createTestAnalysis(),
     });
 
-    expect(() => parseEntityAnalysisFileText(badType)).toThrow(
+    expect(() => parseAnalysisFileText(badType)).toThrow(
       "Unsupported analysis file type: not-a-real-type.",
     );
   });
 
   it("rejects corrupted JSON", () => {
-    expect(() => parseEntityAnalysisFileText("{not json")).toThrow(
+    expect(() => parseAnalysisFileText("{not json")).toThrow(
       "Analysis file is not valid JSON.",
     );
   });
 
   it("rejects non-object JSON", () => {
-    expect(() => parseEntityAnalysisFileText('"a string"')).toThrow(
+    expect(() => parseAnalysisFileText('"a string"')).toThrow(
       "Analysis file must be a JSON object.",
     );
   });
@@ -158,22 +158,22 @@ describe("v2 entity analysis file format", () => {
       },
     });
 
-    expect(() => parseEntityAnalysisFileText(missingTopic)).toThrow(
+    expect(() => parseAnalysisFileText(missingTopic)).toThrow(
       "analysis.topic must be a string.",
     );
   });
 
   it("generates a file name from the analysis name", () => {
-    const analysis = createTestEntityAnalysis();
-    expect(createDefaultEntityAnalysisFileName(analysis)).toBe(
+    const analysis = createTestAnalysis();
+    expect(createDefaultAnalysisFileName(analysis)).toBe(
       "trade-war-analysis.gta",
     );
   });
 
   it("generates a fallback file name for empty names", () => {
-    const analysis = createTestEntityAnalysis();
+    const analysis = createTestAnalysis();
     analysis.name = "  ";
-    expect(createDefaultEntityAnalysisFileName(analysis)).toBe(
+    expect(createDefaultAnalysisFileName(analysis)).toBe(
       "untitled-analysis.gta",
     );
   });

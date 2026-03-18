@@ -19,6 +19,7 @@ describe("editor layout", () => {
     expect(source).toContain("AIChatPanel");
     expect(source).toContain('mode="analysis"');
     expect(source).toContain('presentation="docked"');
+    expect(source).not.toContain("useAnalysisStore");
   });
 
   it("keeps the editor route and landing page analysis-focused", () => {
@@ -43,7 +44,7 @@ describe("editor layout", () => {
     const source = readFileSync(topBarPath, "utf8");
 
     expect(source).toContain("topbar.newAnalysis");
-    expect(source).toContain("openEntityAnalysis");
+    expect(source).toContain("openAnalysis");
     expect(source).toContain("topbar.save");
     expect(source).not.toContain("Session only");
     expect(source).not.toContain("Start a fresh in-memory analysis");

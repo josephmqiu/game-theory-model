@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { exportToMarkdown } from "../entity-export";
-import type { AnalysisEntity, EntityAnalysis } from "@/types/entity";
+import type { AnalysisEntity, Analysis } from "@/types/entity";
 
 const makeEntity = (
   overrides: Partial<AnalysisEntity> = {},
@@ -24,9 +24,7 @@ const makeEntity = (
   ...overrides,
 });
 
-const makeAnalysis = (
-  overrides: Partial<EntityAnalysis> = {},
-): EntityAnalysis => ({
+const makeAnalysis = (overrides: Partial<Analysis> = {}): Analysis => ({
   id: "a1",
   name: "Trade War Analysis",
   topic: "US-China trade conflict",

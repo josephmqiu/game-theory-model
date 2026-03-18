@@ -1,8 +1,8 @@
 import {
   entityDataSchema,
+  type Analysis,
   type AnalysisEntity,
   type AnalysisRelationship,
-  type EntityAnalysis,
 } from "@/types/entity";
 
 // ── Result types ──
@@ -74,9 +74,7 @@ export function validateRelationships(
 }
 
 /** Full analysis validation: duplicate IDs, entity data, relationship refs. */
-export function validateAnalysis(
-  analysis: EntityAnalysis,
-): AnalysisValidationResult {
+export function validateAnalysis(analysis: Analysis): AnalysisValidationResult {
   const issues: AnalysisValidationIssue[] = [];
 
   // Check duplicate entity IDs

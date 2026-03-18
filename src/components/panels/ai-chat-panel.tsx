@@ -14,15 +14,8 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { useAIStore } from "@/stores/ai-store";
 import type { PanelCorner } from "@/stores/ai-store";
-import { useAnalysisStore } from "@/stores/analysis-store";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
-import { createAnalysisInsights } from "@/services/analysis/analysis-insights";
-import { createAnalysisSummary } from "@/services/analysis/analysis-summary";
-import {
-  createAnalysisWorkflow,
-  GUIDED_WORKFLOW_STAGE_LABELS,
-} from "@/services/analysis/analysis-workflow";
 import { PHASE_LABELS, V1_PHASES } from "@/types/methodology";
 import type { AIProviderType } from "@/types/agent-settings";
 import ClaudeLogo from "@/components/icons/claude-logo";
@@ -50,109 +43,6 @@ const PROVIDER_ICON: Record<AIProviderType, typeof ClaudeLogo> = {
   opencode: OpenCodeLogo,
   copilot: CopilotLogo,
 };
-
-function getAnalysisQuickActions(
-  workflow: ReturnType<typeof createAnalysisWorkflow>,
-) {
-  switch (workflow.currentStage) {
-    case "details":
-      return [
-        {
-          label: "Refine the analysis title",
-          prompt:
-            "Suggest a better analysis title and explain why it clarifies the model.",
-        },
-        {
-          label: "Move to strategy setup",
-          prompt:
-            "Explain what needs to happen next to move from details into player and strategy setup.",
-        },
-        {
-          label: "Summarize the modeling goal",
-          prompt: "Summarize the current analysis goal in one paragraph.",
-        },
-      ];
-    case "strategies":
-      return [
-        {
-          label: "Review player names",
-          prompt:
-            "Check the player names and strategy labels for clarity and suggest improvements.",
-        },
-        {
-          label: "Suggest the next stage",
-          prompt:
-            "Identify the next workflow stage and explain what is still blocking it.",
-        },
-        {
-          label: "Summarize strategy setup",
-          prompt: "Summarize the current player and strategy setup.",
-        },
-      ];
-    case "payoffs":
-      return [
-        {
-          label: "Find the next payoff to fill",
-          prompt:
-            "Tell me the single most useful payoff cell to complete next and why.",
-        },
-        {
-          label: "Summarize payoff gaps",
-          prompt: "Summarize the remaining incomplete payoff cells.",
-        },
-        {
-          label: "Explain matrix progress",
-          prompt:
-            "Explain how close the analysis is to a complete payoff matrix.",
-        },
-      ];
-    case "review":
-      return [
-        {
-          label: "Review model readiness",
-          prompt:
-            "Review the model for any validation issues or completeness gaps before insights.",
-        },
-        {
-          label: "Suggest the next edit",
-          prompt:
-            "Suggest the single most useful next edit to make the analysis ready for strategic insights.",
-        },
-        {
-          label: "Explain review status",
-          prompt:
-            "Explain whether the analysis is ready for the review stage and what is still missing.",
-        },
-      ];
-    case "insights":
-      return [
-        {
-          label: "Explain best responses",
-          prompt:
-            "Explain the current best responses, dominant strategies, and any pure Nash equilibria.",
-        },
-        {
-          label: "Summarize strategic insights",
-          prompt: "Summarize the strategic picture from the current analysis.",
-        },
-        {
-          label: "Suggest a revision",
-          prompt:
-            "If the analysis needs revision, identify the most important change to make first.",
-        },
-      ];
-    default:
-      return [];
-  }
-}
-
-function formatWorkflowStageLabel(stage: string): string {
-  return (
-    GUIDED_WORKFLOW_STAGE_LABELS[
-      stage as keyof typeof GUIDED_WORKFLOW_STAGE_LABELS
-    ] ?? stage
-  );
-}
 
 const CORNER_CLASSES: Record<PanelCorner, string> = {
   "top-left": "top-3 left-3",
@@ -246,24 +136,10 @@ export default function AIChatPanel({
   const providersHydrated = useAgentSettingsStore((s) => s.isHydrated);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const { input, setInput, handleSend } = useChatHandlers();
-  const analysis = useAnalysisStore((state) => state.analysis);
-  const currentWorkflowStage = useAnalysisStore(
-    (state) => state.workflow.currentStage,
-  );
-  const validation = useAnalysisStore((state) => state.validation);
-  const summary = createAnalysisSummary(analysis, validation);
-  const insights = createAnalysisInsights(analysis, validation);
-  const workflow = createAnalysisWorkflow(
-    analysis,
-    validation,
-    summary,
-    insights,
-    currentWorkflowStage,
-  );
-  // Entity graph state (for orchestrator-driven chat)
+  // Entity graph state
   const entityGraphPhases = useEntityGraphStore((s) => s.analysis.phases);
   const entityGraphEntities = useEntityGraphStore((s) => s.analysis.entities);
-  const entityAnalysisId = useEntityGraphStore((s) => s.analysis.id);
+  const analysisId = useEntityGraphStore((s) => s.analysis.id);
 
   const noAvailableModels = !isLoadingModels && availableModels.length === 0;
   const canUseModel = !isLoadingModels && availableModels.length > 0;
@@ -272,13 +148,11 @@ export default function AIChatPanel({
   const isDocked = presentation === "docked";
   const isAnalysisMode = mode === "analysis";
   const hasOnStartAnalysis = typeof onStartAnalysis === "function";
-  const analysisId = hasOnStartAnalysis ? entityAnalysisId : analysis.id;
   const previousAnalysisIdRef = useRef<string | null>(null);
 
   // Track entity graph phase changes and inject status messages into chat
   const prevEntityPhasesRef = useRef<string>("");
   useEffect(() => {
-    if (!hasOnStartAnalysis) return;
     const key = entityGraphPhases
       .map((ps) => `${ps.phase}:${ps.status}`)
       .join(",");
@@ -300,12 +174,11 @@ export default function AIChatPanel({
         }
       }
     }
-  }, [entityGraphPhases, hasOnStartAnalysis]);
+  }, [entityGraphPhases]);
 
   // Show completion message when all V1 phases are done
   const prevCompleteRef = useRef(false);
   useEffect(() => {
-    if (!hasOnStartAnalysis) return;
     const v1Statuses = entityGraphPhases
       .filter((ps) => (V1_PHASES as readonly string[]).includes(ps.phase))
       .map((ps) => ps.status);
@@ -322,7 +195,7 @@ export default function AIChatPanel({
     } else if (!allComplete) {
       prevCompleteRef.current = false;
     }
-  }, [entityGraphPhases, entityGraphEntities.length, hasOnStartAnalysis]);
+  }, [entityGraphPhases, entityGraphEntities.length]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -625,28 +498,15 @@ export default function AIChatPanel({
   // Don't render when minimized — the minimized bar is rendered by parent
   if (!isDocked && isMinimized) return null;
 
-  // Entity graph mode: different empty state and placeholder
-  const isEntityGraphMode = hasOnStartAnalysis;
-  const quickActions = isEntityGraphMode
-    ? []
-    : getAnalysisQuickActions(workflow);
-  const emptyStateLabel = isEntityGraphMode
-    ? "I'm your game theory analyst. What event do you want to analyze?"
-    : `Try a ${formatWorkflowStageLabel(workflow.currentStage)} prompt...`;
-  const emptyStateHint = isEntityGraphMode
-    ? "I'll identify players, strategies, and game structure automatically."
-    : `Current stage: ${formatWorkflowStageLabel(workflow.currentStage)}.${workflow.recommendedNextStage ? ` Next stage: ${formatWorkflowStageLabel(workflow.recommendedNextStage)}.` : ""}`.trim();
+  const emptyStateLabel =
+    "I'm your game theory analyst. What event do you want to analyze?";
+  const emptyStateHint =
+    "I'll identify players, strategies, and game structure automatically.";
   const inputPlaceholder = isStreaming
     ? t("ai.generating")
-    : isEntityGraphMode
-      ? "Describe an event to analyze..."
-      : `Ask about this analysis or request a supported edit for ${formatWorkflowStageLabel(workflow.currentStage)}...`;
+    : "Describe an event to analyze...";
   const displayTitle =
-    messages.length === 0
-      ? isEntityGraphMode
-        ? "Game Theory Analyst"
-        : "Analysis Assistant"
-      : chatTitle;
+    messages.length === 0 ? "Game Theory Analyst" : chatTitle;
 
   return (
     <div
@@ -730,38 +590,22 @@ export default function AIChatPanel({
               {emptyStateLabel}
             </p>
             <div className="flex flex-col gap-2 w-full px-2">
-              {isEntityGraphMode
-                ? EXAMPLE_TOPICS.map((topic) => (
-                    <button
-                      key={topic}
-                      type="button"
-                      onClick={() => handleSendWrapped(topic)}
-                      disabled={quickActionsDisabled}
-                      className={cn(
-                        "text-xs text-left px-3.5 py-1.5 rounded-full bg-secondary/50 border border-border text-muted-foreground transition-colors",
-                        quickActionsDisabled
-                          ? "cursor-default"
-                          : "hover:bg-secondary hover:text-foreground",
-                      )}
-                    >
-                      {topic}
-                    </button>
-                  ))
-                : quickActions.map((action) => (
-                    <button
-                      key={action.label}
-                      type="button"
-                      onClick={() => handleSend(action.prompt)}
-                      className={cn(
-                        "text-xs text-left px-3.5 py-1 rounded-full bg-secondary/50 border border-border text-muted-foreground transition-colors",
-                        quickActionsDisabled
-                          ? "cursor-default"
-                          : "hover:bg-secondary hover:text-foreground",
-                      )}
-                    >
-                      {action.label}
-                    </button>
-                  ))}
+              {EXAMPLE_TOPICS.map((topic) => (
+                <button
+                  key={topic}
+                  type="button"
+                  onClick={() => handleSendWrapped(topic)}
+                  disabled={quickActionsDisabled}
+                  className={cn(
+                    "text-xs text-left px-3.5 py-1.5 rounded-full bg-secondary/50 border border-border text-muted-foreground transition-colors",
+                    quickActionsDisabled
+                      ? "cursor-default"
+                      : "hover:bg-secondary hover:text-foreground",
+                  )}
+                >
+                  {topic}
+                </button>
+              ))}
             </div>
             <p className="text-[10px] text-muted-foreground/50 mt-5">
               {emptyStateHint}

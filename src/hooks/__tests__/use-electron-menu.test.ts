@@ -15,7 +15,7 @@ describe("use-electron-menu", () => {
     expect(source).toContain('action === "save"');
     expect(source).toContain('action === "saveAs"');
     expect(source).toContain("useEntityGraphStore");
-    expect(source).toContain("openEntityAnalysis");
-    expect(source).toContain("saveEntityAnalysis");
+    expect(source).toContain("openAnalysis");
+    expect(source).toContain("saveAnalysis");
   });
 });

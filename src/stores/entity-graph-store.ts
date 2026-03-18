@@ -2,24 +2,24 @@ import { create } from "zustand";
 import { nanoid } from "nanoid";
 import type {
   AnalysisEntity,
+  AnalysisFileReference,
   AnalysisRelationship,
-  EntityAnalysis,
+  Analysis,
 } from "@/types/entity";
 import { RELATIONSHIP_CATEGORY } from "@/types/entity";
 import type { MethodologyPhase, PhaseStatus } from "@/types/methodology";
 import { V1_PHASES } from "@/types/methodology";
-import type { AnalysisFileReference } from "@/types/analysis";
 
 // ── State shape ──
 
 interface EntityGraphStoreState extends AnalysisFileReference {
-  analysis: EntityAnalysis;
+  analysis: Analysis;
   isDirty: boolean;
   revision: number;
 
   newAnalysis: (topic: string) => void;
   loadAnalysis: (
-    analysis: EntityAnalysis,
+    analysis: Analysis,
     source?: {
       fileName?: string;
       filePath?: string;
@@ -54,7 +54,7 @@ interface EntityGraphStoreState extends AnalysisFileReference {
 
 // ── Helpers ──
 
-function createEmptyAnalysis(topic: string): EntityAnalysis {
+function createEmptyAnalysis(topic: string): Analysis {
   return {
     id: nanoid(),
     name: topic,

@@ -1,7 +1,7 @@
 import type {
+  Analysis,
   AnalysisEntity,
   AnalysisRelationship,
-  EntityAnalysis,
   EntityType,
   FactData,
   PlayerData,
@@ -203,7 +203,7 @@ function entityLabel(e: AnalysisEntity): string {
 
 // ── Main export ──
 
-export function exportToMarkdown(analysis: EntityAnalysis): string {
+export function exportToMarkdown(analysis: Analysis): string {
   if (analysis.entities.length === 0) {
     return "# Game Theory Analysis\n\nNo entities. Run an analysis first.";
   }

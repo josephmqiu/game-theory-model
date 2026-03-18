@@ -1,8 +1,8 @@
 import { useEffect } from "react";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import {
-  saveEntityAnalysis,
-  openEntityAnalysis,
+  saveAnalysis,
+  openAnalysis,
 } from "@/services/analysis/analysis-persistence";
 
 export function useKeyboardShortcuts() {
@@ -25,13 +25,13 @@ export function useKeyboardShortcuts() {
 
       if (isMod && event.key.toLowerCase() === "s") {
         event.preventDefault();
-        void saveEntityAnalysis();
+        void saveAnalysis();
         return;
       }
 
       if (isMod && event.key.toLowerCase() === "o") {
         event.preventDefault();
-        void openEntityAnalysis();
+        void openAnalysis();
         return;
       }
     };

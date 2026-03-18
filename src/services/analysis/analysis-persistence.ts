@@ -1,15 +1,10 @@
-import { useAnalysisStore } from "@/stores/analysis-store";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
-import type { AnalysisFileReference } from "@/types/analysis";
+import type { AnalysisFileReference } from "@/types/entity";
 import {
   AnalysisFileError,
-  createAnalysisFile,
   createDefaultAnalysisFileName,
-  createDefaultEntityAnalysisFileName,
   parseAnalysisFileText,
-  parseEntityAnalysisFileText,
   serializeAnalysisFile,
-  serializeEntityAnalysisFile,
 } from "./analysis-file";
 
 export type AnalysisPersistenceSource = Partial<AnalysisFileReference>;
@@ -87,94 +82,6 @@ async function writeTextToFileHandle(
   await writable.close();
 }
 
-async function openAnalysisFromHandle(
-  handle: FileSystemFileHandle,
-): Promise<boolean> {
-  const file = await handle.getFile();
-  const text = await file.text();
-  loadAnalysisFromText(text, {
-    fileName: file.name,
-    fileHandle: handle,
-    filePath: null,
-  });
-  return true;
-}
-
-async function openAnalysisWithElectronDialog(): Promise<boolean> {
-  const result = await window.electronAPI?.openFile?.();
-  if (!result) {
-    return false;
-  }
-
-  loadAnalysisFromText(result.content, {
-    fileName: getFileNameFromPath(result.filePath),
-    filePath: result.filePath,
-    fileHandle: null,
-  });
-  return true;
-}
-
-async function openAnalysisWithPicker(): Promise<boolean> {
-  const pickerWindow = window as unknown as PickerWindow;
-  const [handle] = await pickerWindow.showOpenFilePicker({
-    types: [
-      {
-        description: ANALYSIS_FILE_DESCRIPTION,
-        accept: getPickerAccept(),
-      },
-    ],
-    excludeAcceptAllOption: true,
-    multiple: false,
-  });
-
-  if (!handle) {
-    return false;
-  }
-
-  return openAnalysisFromHandle(handle);
-}
-
-async function openAnalysisWithFileInput(): Promise<boolean> {
-  return new Promise((resolve, reject) => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ANALYSIS_FILE_EXTENSION;
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) {
-        resolve(false);
-        return;
-      }
-
-      try {
-        const text = await file.text();
-        loadAnalysisFromText(text, {
-          fileName: file.name,
-          filePath: null,
-          fileHandle: null,
-        });
-        resolve(true);
-      } catch (error) {
-        reject(error);
-      }
-    };
-    input.oncancel = () => resolve(false);
-    input.click();
-  });
-}
-
-async function openAnalysisWithPromptlessPicker(): Promise<boolean> {
-  if (window.electronAPI?.isElectron) {
-    return openAnalysisWithElectronDialog();
-  }
-
-  if (supportsFileSystemAccess()) {
-    return openAnalysisWithPicker();
-  }
-
-  return openAnalysisWithFileInput();
-}
-
 function downloadAnalysisText(text: string, fileName: string): void {
   const blob = new Blob([text], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -248,49 +155,17 @@ function saveAnalysisAsWithDownload(
   };
 }
 
-export function hasUnsavedAnalysisChanges(
-  state = useAnalysisStore.getState(),
-): boolean {
-  return state.isDirty;
-}
-
-export async function confirmDiscardAnalysisChanges(
-  prompt: AnalysisDiscardPrompt,
-  state = useAnalysisStore.getState(),
-): Promise<boolean> {
-  if (!hasUnsavedAnalysisChanges(state)) {
-    return true;
-  }
-
-  const confirmed = await prompt.confirm(
-    prompt.message ?? "You have unsaved analysis changes. Discard them?",
-  );
-
-  return Boolean(confirmed);
-}
-
-export function loadAnalysisFromText(
-  text: string,
-  source?: AnalysisPersistenceSource,
-): void {
-  const file = parseAnalysisFileText(text);
-  useAnalysisStore
-    .getState()
-    .loadAnalysis(file.analysis, source, file.workflow);
-}
+// ── Persistence ──
 
 export function createAnalysisSavePayload(
-  state = useAnalysisStore.getState(),
+  state = useEntityGraphStore.getState(),
 ): {
-  file: ReturnType<typeof createAnalysisFile>;
   text: string;
   fileName: string;
   source: AnalysisFileReference;
 } {
-  const file = createAnalysisFile(state.analysis, state.workflow);
   return {
-    file,
-    text: serializeAnalysisFile(state.analysis, state.workflow),
+    text: serializeAnalysisFile(state.analysis),
     fileName: state.fileName ?? createDefaultAnalysisFileName(state.analysis),
     source: {
       fileName: state.fileName,
@@ -300,218 +175,8 @@ export function createAnalysisSavePayload(
   };
 }
 
-export function commitAnalysisSave(
-  source: AnalysisPersistenceSource = {},
-): void {
-  useAnalysisStore.getState().commitSave(source);
-}
-
-export function clearAnalysisFileReference(): void {
-  useAnalysisStore.getState().clearAnalysisFileReference();
-}
-
-export function resetAnalysisForNewDocument(): void {
-  useAnalysisStore.getState().newAnalysis();
-}
-
-export function getAnalysisFileStatus(state = useAnalysisStore.getState()): {
-  fileName: string | null;
-  isDirty: boolean;
-  hasSavedLocation: boolean;
-} {
-  return {
-    fileName: state.fileName,
-    isDirty: state.isDirty,
-    hasSavedLocation: Boolean(state.filePath || state.fileHandle),
-  };
-}
-
-export async function openAnalysisFromFilePath(
-  filePath: string,
-): Promise<boolean> {
-  const confirmed = await confirmDiscardAnalysisChanges({
-    confirm: getNativeConfirm(),
-    message:
-      "You have unsaved analysis changes. Discard them and open another analysis?",
-  });
-
-  if (!confirmed) {
-    return false;
-  }
-
-  try {
-    const readResult = await window.electronAPI?.readFile?.(filePath);
-    if (!readResult) {
-      throw new Error("Could not read the selected analysis file.");
-    }
-
-    loadAnalysisFromText(readResult.content, {
-      fileName: getFileNameFromPath(readResult.filePath),
-      filePath: readResult.filePath,
-      fileHandle: null,
-    });
-
-    return true;
-  } catch (error) {
-    if (isUserAbortError(error)) {
-      return false;
-    }
-
-    showNativeAlert(
-      `Could not open analysis.\n\n${toErrorMessage(
-        error,
-        "The selected file is not a valid .gta analysis.",
-      )}`,
-    );
-    return false;
-  }
-}
-
-export async function openAnalysis(): Promise<boolean> {
-  const confirmed = await confirmDiscardAnalysisChanges({
-    confirm: getNativeConfirm(),
-    message:
-      "You have unsaved analysis changes. Discard them and open another analysis?",
-  });
-
-  if (!confirmed) {
-    return false;
-  }
-
-  try {
-    return await openAnalysisWithPromptlessPicker();
-  } catch (error) {
-    if (isUserAbortError(error)) {
-      return false;
-    }
-
-    showNativeAlert(
-      `Could not open analysis.\n\n${toErrorMessage(
-        error,
-        "The selected file is not a valid .gta analysis.",
-      )}`,
-    );
-    return false;
-  }
-}
-
-export async function newAnalysis(): Promise<boolean> {
-  const confirmed = await confirmDiscardAnalysisChanges({
-    confirm: getNativeConfirm(),
-    message:
-      "You have unsaved analysis changes. Discard them and start a new analysis?",
-  });
-
-  if (!confirmed) {
-    return false;
-  }
-
-  resetAnalysisForNewDocument();
-  return true;
-}
-
 export async function saveAnalysisAs(): Promise<boolean> {
   const payload = createAnalysisSavePayload();
-
-  try {
-    let source: AnalysisPersistenceSource | null = null;
-
-    if (window.electronAPI?.isElectron) {
-      source = await saveAnalysisAsWithElectron(
-        payload.fileName,
-        payload.text,
-        payload.source.filePath ?? payload.fileName,
-      );
-    } else if (supportsFileSystemAccess()) {
-      source = await saveAnalysisAsWithPicker(payload.fileName, payload.text);
-    } else {
-      source = saveAnalysisAsWithDownload(payload.fileName, payload.text);
-    }
-
-    if (!source) {
-      return false;
-    }
-
-    commitAnalysisSave(source);
-    return true;
-  } catch (error) {
-    if (isUserAbortError(error)) {
-      return false;
-    }
-
-    showNativeAlert(
-      `Could not save analysis.\n\n${toErrorMessage(
-        error,
-        "The analysis could not be saved.",
-      )}`,
-    );
-    return false;
-  }
-}
-
-export async function saveAnalysis(): Promise<boolean> {
-  const payload = createAnalysisSavePayload();
-
-  try {
-    if (payload.source.fileHandle) {
-      await writeTextToFileHandle(payload.source.fileHandle, payload.text);
-      commitAnalysisSave(payload.source);
-      return true;
-    }
-
-    if (payload.source.filePath && window.electronAPI?.isElectron) {
-      const filePath = await window.electronAPI.saveToPath(
-        payload.source.filePath,
-        payload.text,
-      );
-
-      commitAnalysisSave({
-        fileName: getFileNameFromPath(filePath),
-        filePath,
-        fileHandle: null,
-      });
-      return true;
-    }
-
-    return saveAnalysisAs();
-  } catch (error) {
-    if (isUserAbortError(error)) {
-      return false;
-    }
-
-    showNativeAlert(
-      `Could not save analysis.\n\n${toErrorMessage(
-        error,
-        "The analysis could not be saved.",
-      )}`,
-    );
-    return false;
-  }
-}
-
-// ── Entity graph persistence (v2) ──
-
-export function createEntityAnalysisSavePayload(
-  state = useEntityGraphStore.getState(),
-): {
-  text: string;
-  fileName: string;
-  source: AnalysisFileReference;
-} {
-  return {
-    text: serializeEntityAnalysisFile(state.analysis),
-    fileName:
-      state.fileName ?? createDefaultEntityAnalysisFileName(state.analysis),
-    source: {
-      fileName: state.fileName,
-      filePath: state.filePath,
-      fileHandle: state.fileHandle,
-    },
-  };
-}
-
-export async function saveEntityAnalysisAs(): Promise<boolean> {
-  const payload = createEntityAnalysisSavePayload();
 
   try {
     let source: AnalysisPersistenceSource | null = null;
@@ -553,8 +218,8 @@ export async function saveEntityAnalysisAs(): Promise<boolean> {
   }
 }
 
-export async function saveEntityAnalysis(): Promise<boolean> {
-  const payload = createEntityAnalysisSavePayload();
+export async function saveAnalysis(): Promise<boolean> {
+  const payload = createAnalysisSavePayload();
 
   try {
     if (payload.source.fileHandle) {
@@ -580,7 +245,7 @@ export async function saveEntityAnalysis(): Promise<boolean> {
       return true;
     }
 
-    return saveEntityAnalysisAs();
+    return saveAnalysisAs();
   } catch (error) {
     if (isUserAbortError(error)) {
       return false;
@@ -596,11 +261,11 @@ export async function saveEntityAnalysis(): Promise<boolean> {
   }
 }
 
-export function loadEntityAnalysisFromText(
+export function loadAnalysisFromText(
   text: string,
   source?: AnalysisPersistenceSource,
 ): void {
-  const analysis = parseEntityAnalysisFileText(text);
+  const analysis = parseAnalysisFileText(text);
   useEntityGraphStore.getState().loadAnalysis(analysis, {
     fileName: source?.fileName ?? undefined,
     filePath: source?.filePath ?? undefined,
@@ -608,7 +273,7 @@ export function loadEntityAnalysisFromText(
   });
 }
 
-export async function openEntityAnalysis(): Promise<boolean> {
+export async function openAnalysis(): Promise<boolean> {
   const entityState = useEntityGraphStore.getState();
   if (entityState.isDirty) {
     const confirmed = await getNativeConfirm()(
@@ -626,7 +291,7 @@ export async function openEntityAnalysis(): Promise<boolean> {
         return false;
       }
 
-      loadEntityAnalysisFromText(result.content, {
+      loadAnalysisFromText(result.content, {
         fileName: getFileNameFromPath(result.filePath),
         filePath: result.filePath,
         fileHandle: null,
@@ -653,7 +318,7 @@ export async function openEntityAnalysis(): Promise<boolean> {
 
       const file = await handle.getFile();
       const text = await file.text();
-      loadEntityAnalysisFromText(text, {
+      loadAnalysisFromText(text, {
         fileName: file.name,
         fileHandle: handle,
         filePath: null,
@@ -674,7 +339,7 @@ export async function openEntityAnalysis(): Promise<boolean> {
 
         try {
           const text = await file.text();
-          loadEntityAnalysisFromText(text, {
+          loadAnalysisFromText(text, {
             fileName: file.name,
             filePath: null,
             fileHandle: null,

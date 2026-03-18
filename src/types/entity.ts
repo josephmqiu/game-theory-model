@@ -267,7 +267,7 @@ export interface AnalysisRelationship {
 
 // ── Full Analysis ──
 
-export interface EntityAnalysis {
+export interface Analysis {
   id: string;
   name: string;
   topic: string;
@@ -282,7 +282,14 @@ export interface EntityAnalysis {
 export interface AnalysisFileV2 {
   type: "game-theory-analysis";
   version: 2;
-  analysis: EntityAnalysis;
+  analysis: Analysis;
+}
+
+/** File reference for persistence (shared across v1 and v2 formats). */
+export interface AnalysisFileReference {
+  fileName: string | null;
+  filePath: string | null;
+  fileHandle: FileSystemFileHandle | null;
 }
 
 /** Result type for phase worker parsing */

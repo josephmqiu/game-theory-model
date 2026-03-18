@@ -1,9 +1,9 @@
 import { useEffect } from "react";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import {
-  saveEntityAnalysis,
-  saveEntityAnalysisAs,
-  openEntityAnalysis,
+  saveAnalysis,
+  saveAnalysisAs,
+  openAnalysis,
 } from "@/services/analysis/analysis-persistence";
 
 /**
@@ -29,17 +29,17 @@ export function useElectronMenu() {
       }
 
       if (action === "open") {
-        await openEntityAnalysis();
+        await openAnalysis();
         return;
       }
 
       if (action === "save") {
-        await saveEntityAnalysis();
+        await saveAnalysis();
         return;
       }
 
       if (action === "saveAs") {
-        await saveEntityAnalysisAs();
+        await saveAnalysisAs();
       }
     };
 
@@ -52,12 +52,12 @@ export function useElectronMenu() {
       api.onOpenFile?.((_filePath: string) => {
         // Entity graph file opening from OS-level file association
         // For now, delegate to the entity analysis opener
-        void openEntityAnalysis();
+        void openAnalysis();
       }) ?? null;
 
     void api.getPendingFile?.().then((_filePath) => {
       if (_filePath) {
-        void openEntityAnalysis();
+        void openAnalysis();
       }
     });
 
