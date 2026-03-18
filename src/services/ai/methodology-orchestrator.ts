@@ -14,6 +14,13 @@ export interface OrchestratorCallbacks {
   onComplete: () => void;
 }
 
+export interface RevalidationCallbacks {
+  onPhaseStart: (phase: MethodologyPhase) => void;
+  onPhaseComplete: (phase: MethodologyPhase, entityCount: number) => void;
+  onPhaseFailed: (phase: MethodologyPhase, error: string) => void;
+  onComplete: () => void;
+}
+
 export interface OrchestratorConfig {
   topic: string;
   signal: AbortSignal;
@@ -148,6 +155,108 @@ export async function runMethodologyAnalysis(
     // Drain any queued edits between phases
     drainEditQueue();
   }
+
+  callbacks.onComplete();
+}
+
+// ── Revalidation ──
+
+/**
+ * Identify the earliest phase that contains stale entities, re-run that phase
+ * (and all subsequent supported phases), then clear stale flags on affected entities.
+ * Designed to be called after a human edit triggers downstream staleness.
+ */
+export async function revalidateStaleEntities(
+  signal: AbortSignal,
+  callbacks: RevalidationCallbacks,
+): Promise<void> {
+  const store = useEntityGraphStore.getState();
+  const staleIds = store.getStaleEntityIds();
+
+  if (staleIds.length === 0) {
+    callbacks.onComplete();
+    return;
+  }
+
+  // Find the earliest phase that has stale entities
+  const staleEntities = store.analysis.entities.filter((e) => e.stale);
+  const stalePhases = new Set(staleEntities.map((e) => e.phase));
+  const earliestPhase = SUPPORTED_PHASES.find((p) => stalePhases.has(p));
+
+  if (!earliestPhase) {
+    // Stale entities exist but none in supported phases — just clear them
+    store.clearStale(staleIds);
+    callbacks.onComplete();
+    return;
+  }
+
+  // Re-run from the earliest stale phase through all subsequent supported phases
+  const startIndex = SUPPORTED_PHASES.indexOf(earliestPhase);
+  const phasesToRerun = SUPPORTED_PHASES.slice(startIndex);
+
+  // Collect all prior phases (before the ones we're re-running) for context
+  const priorPhases = SUPPORTED_PHASES.slice(0, startIndex);
+
+  const topic = store.analysis.topic;
+  const model = useAIStore.getState().model || DEFAULT_MODEL;
+
+  for (const phase of phasesToRerun) {
+    if (signal.aborted) break;
+
+    callbacks.onPhaseStart(phase);
+    store.setPhaseStatus(phase, "running");
+
+    // Remove old entities from this phase before re-running
+    const oldPhaseEntities = store.analysis.entities.filter(
+      (e) => e.phase === phase,
+    );
+    for (const ent of oldPhaseEntities) {
+      useEntityGraphStore.getState().removeEntity(ent.id);
+    }
+
+    const worker = createPhaseWorker(phase);
+    const priorContext = buildPriorContext(priorPhases);
+    const { system, user } = worker.buildPrompt(topic, priorContext);
+
+    let succeeded = false;
+    let lastError = "";
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (signal.aborted) break;
+
+      try {
+        const raw = await generateCompletion(system, user, model);
+        const result = worker.parseResponse(raw);
+
+        if (result.success) {
+          const { entities, relationships } = result.data;
+          useEntityGraphStore.getState().addEntities(entities, relationships);
+          useEntityGraphStore.getState().setPhaseStatus(phase, "complete");
+
+          callbacks.onPhaseComplete(phase, entities.length);
+          priorPhases.push(phase);
+          succeeded = true;
+          break;
+        } else {
+          lastError = result.error;
+        }
+      } catch (error) {
+        if (signal.aborted) break;
+        lastError = error instanceof Error ? error.message : "Unknown error";
+      }
+    }
+
+    if (signal.aborted) break;
+
+    if (!succeeded) {
+      useEntityGraphStore.getState().setPhaseStatus(phase, "failed");
+      callbacks.onPhaseFailed(phase, lastError);
+      break;
+    }
+  }
+
+  // Clear stale flags on all originally-stale entities
+  useEntityGraphStore.getState().clearStale(staleIds);
 
   callbacks.onComplete();
 }

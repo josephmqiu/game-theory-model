@@ -1,11 +1,13 @@
-import { useEffect, useRef } from "react";
-import { Pencil, ShieldQuestion, X } from "lucide-react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { Pencil, ShieldQuestion, X, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { PHASE_LABELS, PHASE_NUMBERS } from "@/types/methodology";
+import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import type {
   AnalysisEntity,
   EntityType,
+  EntityData,
   EntityConfidence,
   EntitySource,
   FactData,
@@ -208,6 +210,199 @@ function EscalationRungDetails({ data }: { data: EscalationRungData }) {
   );
 }
 
+// ── Edit-mode field input ──
+
+function EditField({
+  label,
+  value,
+  onChange,
+  type = "text",
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: "text" | "number";
+}) {
+  return (
+    <div>
+      <label className="text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-500">
+        {label}
+      </label>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-0.5 w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1 text-[13px] text-zinc-200 outline-none focus:border-zinc-500"
+      />
+    </div>
+  );
+}
+
+// ── Editable data sections per entity type ──
+
+function EditableEntityData({
+  data,
+  onChange,
+}: {
+  data: EntityData;
+  onChange: (updated: EntityData) => void;
+}) {
+  const set = (field: string, value: string | number | boolean) =>
+    onChange({ ...data, [field]: value } as EntityData);
+
+  switch (data.type) {
+    case "fact":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Content"
+            value={data.content}
+            onChange={(v) => set("content", v)}
+          />
+          <EditField
+            label="Date"
+            value={data.date}
+            onChange={(v) => set("date", v)}
+          />
+          <EditField
+            label="Source"
+            value={data.source}
+            onChange={(v) => set("source", v)}
+          />
+        </div>
+      );
+    case "player":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Name"
+            value={data.name}
+            onChange={(v) => set("name", v)}
+          />
+          <EditField
+            label="Type"
+            value={data.playerType}
+            onChange={(v) => set("playerType", v)}
+          />
+        </div>
+      );
+    case "objective":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Description"
+            value={data.description}
+            onChange={(v) => set("description", v)}
+          />
+          <EditField
+            label="Priority"
+            value={data.priority}
+            onChange={(v) => set("priority", v)}
+          />
+        </div>
+      );
+    case "game":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Name"
+            value={data.name}
+            onChange={(v) => set("name", v)}
+          />
+          <EditField
+            label="Game type"
+            value={data.gameType}
+            onChange={(v) => set("gameType", v)}
+          />
+          <EditField
+            label="Description"
+            value={data.description}
+            onChange={(v) => set("description", v)}
+          />
+        </div>
+      );
+    case "strategy":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Name"
+            value={data.name}
+            onChange={(v) => set("name", v)}
+          />
+          <EditField
+            label="Feasibility"
+            value={data.feasibility}
+            onChange={(v) => set("feasibility", v)}
+          />
+          <EditField
+            label="Description"
+            value={data.description}
+            onChange={(v) => set("description", v)}
+          />
+        </div>
+      );
+    case "payoff":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Value"
+            value={data.value != null ? String(data.value) : ""}
+            onChange={(v) =>
+              set("value", v === "" ? (null as unknown as number) : Number(v))
+            }
+            type="number"
+          />
+          <EditField
+            label="Rationale"
+            value={data.rationale}
+            onChange={(v) => set("rationale", v)}
+          />
+        </div>
+      );
+    case "institutional-rule":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Name"
+            value={data.name}
+            onChange={(v) => set("name", v)}
+          />
+          <EditField
+            label="Rule type"
+            value={data.ruleType}
+            onChange={(v) => set("ruleType", v)}
+          />
+          <EditField
+            label="Effect"
+            value={data.effectOnStrategies}
+            onChange={(v) => set("effectOnStrategies", v)}
+          />
+        </div>
+      );
+    case "escalation-rung":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Action"
+            value={data.action}
+            onChange={(v) => set("action", v)}
+          />
+          <EditField
+            label="Reversibility"
+            value={data.reversibility}
+            onChange={(v) => set("reversibility", v)}
+          />
+          <EditField
+            label="Order"
+            value={String(data.order)}
+            onChange={(v) => set("order", Number(v))}
+            type="number"
+          />
+        </div>
+      );
+  }
+}
+
 function EntityDataSection({ entity }: { entity: AnalysisEntity }) {
   switch (entity.data.type) {
     case "fact":
@@ -293,18 +488,38 @@ export default function EntityOverlayCard({
   onClose,
 }: EntityOverlayCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const [editing, setEditing] = useState(false);
+  const [editData, setEditData] = useState<EntityData>(entity.data);
+  const [editRationale, setEditRationale] = useState(entity.rationale);
 
-  // Dismiss on Escape
+  // Reset edit state when the entity prop changes
+  useEffect(() => {
+    setEditData(entity.data);
+    setEditRationale(entity.rationale);
+    setEditing(false);
+  }, [entity.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Dismiss on Escape (cancel edit if editing, otherwise close)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        if (editing) {
+          setEditing(false);
+          setEditData(entity.data);
+          setEditRationale(entity.rationale);
+        } else {
+          onClose();
+        }
+      }
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [onClose, editing, entity.data, entity.rationale]);
 
-  // Click-away dismissal
+  // Click-away dismissal (disabled while editing to prevent accidental loss)
   useEffect(() => {
+    if (editing) return;
+
     const handlePointerDown = (e: PointerEvent) => {
       if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
         onClose();
@@ -318,7 +533,30 @@ export default function EntityOverlayCard({
       clearTimeout(timer);
       document.removeEventListener("pointerdown", handlePointerDown);
     };
-  }, [onClose]);
+  }, [onClose, editing]);
+
+  const handleSave = useCallback(() => {
+    const store = useEntityGraphStore.getState();
+    store.updateEntity(entity.id, {
+      data: editData,
+      rationale: editRationale,
+      source: "human",
+      revision: entity.revision + 1,
+    });
+    // Mark downstream entities stale
+    const downstream = store.getDownstreamEntityIds(entity.id);
+    if (downstream.length > 0) {
+      store.markStale(downstream);
+    }
+    setEditing(false);
+    onEdit(entity);
+  }, [entity, editData, editRationale, onEdit]);
+
+  const handleCancel = useCallback(() => {
+    setEditData(entity.data);
+    setEditRationale(entity.rationale);
+    setEditing(false);
+  }, [entity.data, entity.rationale]);
 
   // Position: right of node by default, flip left if near right edge
   const viewportWidth =
@@ -366,21 +604,35 @@ export default function EntityOverlayCard({
         {/* Phase badge */}
         <PhaseBadge phase={entity.phase} />
 
-        {/* Type-specific data */}
+        {/* Type-specific data — editable or read-only */}
         <div className="border-t border-zinc-800 pt-2">
-          <EntityDataSection entity={entity} />
+          {editing ? (
+            <EditableEntityData data={editData} onChange={setEditData} />
+          ) : (
+            <EntityDataSection entity={entity} />
+          )}
         </div>
 
         {/* Rationale */}
-        {entity.rationale && (
+        {editing ? (
           <div className="border-t border-zinc-800 pt-2">
-            <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-500">
-              Rationale
-            </dt>
-            <dd className="mt-0.5 text-[13px] leading-relaxed text-zinc-300">
-              {entity.rationale}
-            </dd>
+            <EditField
+              label="Rationale"
+              value={editRationale}
+              onChange={setEditRationale}
+            />
           </div>
+        ) : (
+          entity.rationale && (
+            <div className="border-t border-zinc-800 pt-2">
+              <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-500">
+                Rationale
+              </dt>
+              <dd className="mt-0.5 text-[13px] leading-relaxed text-zinc-300">
+                {entity.rationale}
+              </dd>
+            </div>
+          )
         )}
 
         {/* Stale indicator */}
@@ -393,24 +645,49 @@ export default function EntityOverlayCard({
 
       {/* Action buttons */}
       <div className="flex items-center gap-1 border-t border-zinc-800 px-3 py-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onEdit(entity)}
-          className="text-xs text-zinc-400 hover:text-zinc-100"
-        >
-          <Pencil size={12} />
-          Edit
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onChallenge(entity)}
-          className="text-xs text-zinc-400 hover:text-zinc-100"
-        >
-          <ShieldQuestion size={12} />
-          Challenge
-        </Button>
+        {editing ? (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSave}
+              className="text-xs text-emerald-400 hover:text-emerald-300"
+            >
+              <Check size={12} />
+              Save
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCancel}
+              className="text-xs text-zinc-400 hover:text-zinc-100"
+            >
+              <X size={12} />
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setEditing(true)}
+              className="text-xs text-zinc-400 hover:text-zinc-100"
+            >
+              <Pencil size={12} />
+              Edit
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onChallenge(entity)}
+              className="text-xs text-zinc-400 hover:text-zinc-100"
+            >
+              <ShieldQuestion size={12} />
+              Challenge
+            </Button>
+          </>
+        )}
         <div className="ml-auto">
           <Button
             variant="ghost"

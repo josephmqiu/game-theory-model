@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { V1_PHASES } from "@/types/methodology";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
-import type { OrchestratorCallbacks } from "@/services/ai/methodology-orchestrator";
+import type {
+  OrchestratorCallbacks,
+  RevalidationCallbacks,
+} from "@/services/ai/methodology-orchestrator";
 
 // ── Mock AI service ──
 
@@ -16,7 +19,10 @@ vi.mock("@/stores/ai-store", () => ({
 }));
 
 import { generateCompletion } from "@/services/ai/ai-service";
-import { runMethodologyAnalysis } from "@/services/ai/methodology-orchestrator";
+import {
+  runMethodologyAnalysis,
+  revalidateStaleEntities,
+} from "@/services/ai/methodology-orchestrator";
 
 const mockGenerateCompletion = generateCompletion as ReturnType<typeof vi.fn>;
 
@@ -127,6 +133,18 @@ const EMPTY_PHASE_RESPONSE = JSON.stringify({
 function createCallbacks(
   overrides: Partial<OrchestratorCallbacks> = {},
 ): OrchestratorCallbacks {
+  return {
+    onPhaseStart: vi.fn(),
+    onPhaseComplete: vi.fn(),
+    onPhaseFailed: vi.fn(),
+    onComplete: vi.fn(),
+    ...overrides,
+  };
+}
+
+function createRevalidationCallbacks(
+  overrides: Partial<RevalidationCallbacks> = {},
+): RevalidationCallbacks {
   return {
     onPhaseStart: vi.fn(),
     onPhaseComplete: vi.fn(),
@@ -424,6 +442,110 @@ describe("methodology orchestrator", () => {
         (p) => p.phase === "situational-grounding",
       );
       expect(p1?.status).toBe("complete");
+    });
+  });
+
+  describe("revalidation", () => {
+    it("re-runs Phase 3 when baseline-model entities are stale, then clears stale", async () => {
+      // First, run a full analysis so all phases are complete
+      mockGenerateCompletion
+        .mockResolvedValueOnce(PHASE_1_RESPONSE)
+        .mockResolvedValueOnce(PHASE_2_RESPONSE)
+        .mockResolvedValueOnce(PHASE_3_RESPONSE);
+
+      const runCallbacks = createCallbacks();
+      const { signal: runSignal } = makeAbortSignal();
+
+      await runMethodologyAnalysis({
+        topic: "Trade war",
+        signal: runSignal,
+        callbacks: runCallbacks,
+      });
+
+      // Verify game-1 entity exists
+      const store = useEntityGraphStore.getState();
+      expect(
+        store.analysis.entities.find((e) => e.id === "game-1"),
+      ).toBeTruthy();
+
+      // Mark the Phase 3 entity as stale (simulating downstream of a human edit)
+      store.markStale(["game-1"]);
+      expect(useEntityGraphStore.getState().getStaleEntityIds()).toEqual([
+        "game-1",
+      ]);
+
+      // Set up new AI response for Phase 3 re-run
+      const REVALIDATED_PHASE_3 = JSON.stringify({
+        entities: [
+          {
+            id: "game-1-rev2",
+            type: "game",
+            phase: "baseline-model",
+            data: {
+              type: "game",
+              name: "Revised Trade War",
+              gameType: "prisoners-dilemma",
+              timing: "simultaneous",
+              description: "Revalidated model",
+            },
+            position: { x: 0, y: 0 },
+            confidence: "high",
+            source: "ai",
+            rationale: "Revised after human edit",
+            revision: 2,
+            stale: false,
+          },
+        ],
+        relationships: [],
+      });
+
+      mockGenerateCompletion.mockReset();
+      mockGenerateCompletion.mockResolvedValueOnce(REVALIDATED_PHASE_3);
+
+      // Run revalidation
+      const revalCallbacks = createRevalidationCallbacks();
+      const { signal: revalSignal } = makeAbortSignal();
+
+      await revalidateStaleEntities(revalSignal, revalCallbacks);
+
+      // Phase 3 was re-run
+      expect(revalCallbacks.onPhaseStart).toHaveBeenCalledWith(
+        "baseline-model",
+      );
+      expect(revalCallbacks.onPhaseComplete).toHaveBeenCalledWith(
+        "baseline-model",
+        1,
+      );
+      expect(revalCallbacks.onPhaseFailed).not.toHaveBeenCalled();
+      expect(revalCallbacks.onComplete).toHaveBeenCalledTimes(1);
+
+      // Only Phase 3 was re-run (not Phases 1 or 2)
+      expect(revalCallbacks.onPhaseStart).toHaveBeenCalledTimes(1);
+      expect(mockGenerateCompletion).toHaveBeenCalledTimes(1);
+
+      // Old entity removed, new entity present
+      const finalStore = useEntityGraphStore.getState();
+      expect(
+        finalStore.analysis.entities.find((e) => e.id === "game-1"),
+      ).toBeFalsy();
+      expect(
+        finalStore.analysis.entities.find((e) => e.id === "game-1-rev2"),
+      ).toBeTruthy();
+
+      // Stale flag cleared
+      expect(finalStore.getStaleEntityIds()).toEqual([]);
+    });
+
+    it("does nothing when no entities are stale", async () => {
+      const revalCallbacks = createRevalidationCallbacks();
+      const { signal } = makeAbortSignal();
+
+      await revalidateStaleEntities(signal, revalCallbacks);
+
+      // Only onComplete fires, no phases re-run
+      expect(revalCallbacks.onComplete).toHaveBeenCalledTimes(1);
+      expect(revalCallbacks.onPhaseStart).not.toHaveBeenCalled();
+      expect(mockGenerateCompletion).not.toHaveBeenCalled();
     });
   });
 });
