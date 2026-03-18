@@ -462,6 +462,10 @@ export function applyAnalysisOperations(
         profile.payoffs = operation.payoffs
         break
       }
+      case 'set-workflow-stage':
+        throw new Error(
+          `${errorPrefix} set-workflow-stage must be handled by applyAnalysisWorkflowOperations.`,
+        )
       default:
         throw new Error(`${errorPrefix} has an unsupported type.`)
     }

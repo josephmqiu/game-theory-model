@@ -78,7 +78,7 @@ export async function initLogger(userDataPath: string): Promise<void> {
     // ignore
   }
   initialized = true
-  await writeLine('INFO', '--- OpenPencil started ---')
+  await writeLine('INFO', '--- Game Theory Analyzer started ---')
   // Clean old logs in background
   cleanOldLogs()
 }

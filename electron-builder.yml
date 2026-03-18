@@ -1,6 +1,6 @@
-appId: dev.openpencil.app
-productName: OpenPencil
-copyright: Copyright (c) 2024-2026 OpenPencil contributors
+appId: dev.game-theory-analyzer.app
+productName: Game Theory Analyzer
+copyright: Copyright (c) 2024-2026 Game Theory Analyzer contributors
 
 directories:
   output: dist-electron
@@ -19,7 +19,7 @@ extraResources:
     to: mcp-server.cjs
 
 mac:
-  category: public.app-category.graphics-design
+  category: public.app-category.productivity
   icon: build/icon.icns
   artifactName: "${productName}-${version}-${arch}-mac.${ext}"
   target:
@@ -49,17 +49,17 @@ nsis:
 
 linux:
   icon: build/icon.png
-  category: Graphics
+  category: Office
   artifactName: "${productName}-${version}-${arch}-linux.${ext}"
   desktop:
     entry: |
       [Desktop Entry]
-      Name=OpenPencil
+      Name=Game Theory Analyzer
       Exec=AppRun --no-sandbox %U
       Terminal=false
       Type=Application
-      Icon=openpencil
-      StartupWMClass=openpencil
+      Icon=game-theory-analyzer
+      StartupWMClass=game-theory-analyzer
       Categories=Graphics;
       MimeType=application/x-game-theory-analysis;
   target:

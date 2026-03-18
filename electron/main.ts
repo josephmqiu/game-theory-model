@@ -60,9 +60,9 @@ const ANALYSIS_FILE_FILTER: OpenDialogOptions["filters"] = [
 
 const isDev = !app.isPackaged;
 // Settings stored in platform-standard app data dir (Electron-managed):
-// macOS: ~/Library/Application Support/OpenPencil/
-// Windows: %APPDATA%\OpenPencil\
-// Linux: ~/.config/OpenPencil/
+// macOS: ~/Library/Application Support/Game Theory Analyzer/
+// Windows: %APPDATA%\Game Theory Analyzer\
+// Linux: ~/.config/Game Theory Analyzer/
 const SETTINGS_PATH = join(app.getPath("userData"), "settings.json");
 const PREFS_PATH = join(app.getPath("userData"), "preferences.json");
 
@@ -186,7 +186,7 @@ async function writeAppSettings(patch: Partial<AppSettings>): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Port file for MCP sync discovery (~/.openpencil/.port)
+// Port file for MCP sync discovery (~/.game-theory-analyzer/.port)
 // ---------------------------------------------------------------------------
 
 const PORT_FILE_DIR = join(homedir(), PORT_FILE_DIR_NAME);
@@ -407,7 +407,7 @@ function createWindow(): void {
       nodeIntegration: false,
       // Persist localStorage/cookies in a fixed partition so data survives
       // across random Nitro server port changes (origin-independent storage).
-      partition: "persist:openpencil",
+      partition: "persist:game-theory-analyzer",
     },
   };
 

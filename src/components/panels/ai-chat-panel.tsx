@@ -1,17 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Plus, ChevronDown, ChevronUp, Check, MessageSquare, Loader2, Paperclip, X, Square, Zap } from 'lucide-react'
-import { nanoid } from 'nanoid'
+import { Send, Plus, ChevronDown, ChevronUp, Check, MessageSquare, Loader2, Square } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useAIStore } from '@/stores/ai-store'
 import type { PanelCorner } from '@/stores/ai-store'
 import { useAnalysisStore } from '@/stores/analysis-store'
-import { useCanvasStore } from '@/stores/canvas-store'
 import { useAgentSettingsStore } from '@/stores/agent-settings-store'
-import {
-  extractAndApplyDesign,
-} from '@/services/ai/design-generator'
 import { createAnalysisInsights } from '@/services/analysis/analysis-insights'
 import { createAnalysisSummary } from '@/services/analysis/analysis-summary'
 import {
@@ -27,7 +22,7 @@ import ChatMessage from './chat-message'
 import { useChatHandlers } from './ai-chat-handlers'
 import { FixedChecklist } from './ai-chat-checklist'
 
-export type AIChatMode = 'design' | 'analysis'
+export type AIChatMode = 'analysis'
 export type AIChatPresentation = 'floating' | 'docked'
 
 const PROVIDER_ICON: Record<AIProviderType, typeof ClaudeLogo> = {
@@ -36,25 +31,6 @@ const PROVIDER_ICON: Record<AIProviderType, typeof ClaudeLogo> = {
   opencode: OpenCodeLogo,
   copilot: CopilotLogo,
 }
-
-const QUICK_ACTIONS = [
-  {
-    labelKey: 'ai.quickAction.loginScreen',
-    prompt: 'Summarize the current workspace and the main items visible in the document context.',
-  },
-  {
-    labelKey: 'ai.quickAction.foodApp',
-    prompt: 'Describe the currently selected items and any important structure you notice.',
-  },
-  {
-    labelKey: 'ai.quickAction.bottomNav',
-    prompt: 'Based on the current workspace, suggest three concrete next steps.',
-  },
-  {
-    labelKey: 'ai.quickAction.colorPalette',
-    prompt: 'Explain which connected agents and MCP tools are available right now and how they could help in this workspace.',
-  },
-]
 
 function getAnalysisQuickActions(
   workflow: ReturnType<typeof createAnalysisWorkflow>,
@@ -166,39 +142,6 @@ function resolveNextModel(
 }
 
 /**
- * Compact concurrency selector — cycles 1x through 6x on click.
- * Only visually prominent when concurrency > 1.
- */
-function ConcurrencyButton() {
-  const concurrency = useAIStore((s) => s.concurrency)
-  const setConcurrency = useAIStore((s) => s.setConcurrency)
-  const isStreaming = useAIStore((s) => s.isStreaming)
-
-  const handleClick = () => {
-    // Cycle: 1 → 2 → 3 → 4 → 5 → 6 → 1
-    setConcurrency(concurrency >= 6 ? 1 : concurrency + 1)
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={isStreaming}
-      title={`Parallel sub-agents: ${concurrency}x (click to cycle)`}
-      className={cn(
-        'flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-md transition-colors shrink-0',
-        concurrency > 1
-          ? 'text-primary bg-primary/10 hover:bg-primary/20'
-          : 'text-muted-foreground/50 hover:text-muted-foreground hover:bg-secondary',
-      )}
-    >
-      <Zap size={10} />
-      <span>{concurrency}x</span>
-    </button>
-  )
-}
-
-/**
  * Minimized AI bar — a compact clickable pill.
  * Parent is responsible for placing it in the layout.
  */
@@ -228,7 +171,7 @@ export function AIChatMinimizedBar() {
  * Only renders when NOT minimized.
  */
 export default function AIChatPanel({
-  mode = 'design',
+  mode = 'analysis',
   presentation = 'floating',
 }: {
   mode?: AIChatMode
@@ -238,7 +181,6 @@ export default function AIChatPanel({
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const dragRef = useRef<{ offsetX: number; offsetY: number } | null>(null)
   const resizeRef = useRef<{ startY: number; startHeight: number; startTop: number } | null>(null)
   const [dragStyle, setDragStyle] = useState<React.CSSProperties | null>(null)
@@ -251,7 +193,6 @@ export default function AIChatPanel({
   const isMinimized = useAIStore((s) => s.isMinimized)
   const setPanelCorner = useAIStore((s) => s.setPanelCorner)
   const chatTitle = useAIStore((s) => s.chatTitle)
-  const selectedIds = useCanvasStore((s) => s.selection.selectedIds)
   const stopStreaming = useAIStore((s) => s.stopStreaming)
   const toggleMinimize = useAIStore((s) => s.toggleMinimize)
   const hydrateModelPreference = useAIStore((s) => s.hydrateModelPreference)
@@ -267,11 +208,7 @@ export default function AIChatPanel({
   const providers = useAgentSettingsStore((s) => s.providers)
   const providersHydrated = useAgentSettingsStore((s) => s.isHydrated)
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false)
-  const pendingAttachments = useAIStore((s) => s.pendingAttachments)
-  const addPendingAttachment = useAIStore((s) => s.addPendingAttachment)
-  const removePendingAttachment = useAIStore((s) => s.removePendingAttachment)
-  const clearPendingAttachments = useAIStore((s) => s.clearPendingAttachments)
-  const { input, setInput, handleSend } = useChatHandlers({ mode })
+  const { input, setInput, handleSend } = useChatHandlers()
   const analysis = useAnalysisStore((state) => state.analysis)
   const currentWorkflowStage = useAnalysisStore((state) => state.workflow.currentStage)
   const validation = useAnalysisStore((state) => state.validation)
@@ -286,8 +223,7 @@ export default function AIChatPanel({
   )
   const noAvailableModels = !isLoadingModels && availableModels.length === 0
   const canUseModel = !isLoadingModels && availableModels.length > 0
-  const allowAttachments = mode === 'design'
-  const canSendMessage = canUseModel && !isStreaming && (!!input.trim() || (allowAttachments && pendingAttachments.length > 0))
+  const canSendMessage = canUseModel && !isStreaming && !!input.trim()
   const quickActionsDisabled = !canUseModel || isStreaming
   const isDocked = presentation === 'docked'
   const isAnalysisMode = mode === 'analysis'
@@ -383,9 +319,8 @@ export default function AIChatPanel({
     }
 
     stopStreaming()
-    clearPendingAttachments()
     clearMessages()
-  }, [analysisId, clearMessages, clearPendingAttachments, isAnalysisMode, stopStreaming])
+  }, [analysisId, clearMessages, isAnalysisMode, stopStreaming])
 
   /* --- Drag-to-snap handlers --- */
 
@@ -525,85 +460,6 @@ export default function AIChatPanel({
     e.currentTarget.releasePointerCapture(e.pointerId)
   }, [])
 
-  const handleApplyDesign = useCallback((jsonString: string) => {
-    // For manual apply, we always use the "add/create" logic for now,
-    // unless we want to try to infer if it's a modification.
-    // But usually applying a block from history is "add this snippet".
-    // If the snippet has IDs that exist, addNode might duplicate or error?
-    // addNode usually generates new ID if we don't handle it,
-    // but our validateNodes checks for IDs.
-    // `applyNodesToCanvas` (called by extractAndApplyDesign) calls `addNode`.
-    // `addNode` in document-store generates new IDs?
-    // Let's check `addNode` implementation.
-    // It pushes to children. If ID exists, it might duplicate ID in tree (bad).
-
-    // For safety, `extractAndApplyDesign` creates new nodes with same IDs?
-    // No, it passes nodes as is.
-    // We should probably regenerate IDs when applying from history to avoid ID conflicts.
-    // But for this task, let's stick to existing behavior or use extractAndApplyDesign.
-    const count = extractAndApplyDesign('```json\n' + jsonString + '\n```')
-    if (count > 0) {
-      useAIStore.setState((s) => {
-        const msgs = [...s.messages]
-        for (let i = msgs.length - 1; i >= 0; i--) {
-          if (msgs[i].role === 'assistant' && msgs[i].content.includes(jsonString.slice(0, 50))) {
-            if (!msgs[i].content.includes('\u2705') && !msgs[i].content.includes('<!-- APPLIED -->')) {
-              msgs[i] = {
-                ...msgs[i],
-                content: msgs[i].content + `\n\n<!-- APPLIED -->`,
-              }
-            }
-            break
-          }
-        }
-        return { messages: msgs }
-      })
-    }
-  }, [])
-
-  const processImageFiles = useCallback((files: File[]) => {
-    const maxSize = 5 * 1024 * 1024 // 5MB
-    const maxCount = 4
-    const currentCount = useAIStore.getState().pendingAttachments.length
-    const remaining = maxCount - currentCount
-    if (remaining <= 0) return
-
-    files.filter((f) => f.type.startsWith('image/') && f.size <= maxSize)
-      .slice(0, remaining)
-      .forEach((file) => {
-        const reader = new FileReader()
-        reader.onload = () => {
-          const dataUrl = reader.result as string
-          const base64 = dataUrl.split(',')[1]
-          if (!base64) return
-          addPendingAttachment({
-            id: nanoid(),
-            name: file.name || 'pasted-image.png',
-            mediaType: file.type,
-            data: base64,
-            size: file.size,
-          })
-        }
-        reader.readAsDataURL(file)
-      })
-  }, [addPendingAttachment])
-
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files) return
-    processImageFiles(Array.from(files))
-    // Reset so the same file can be re-selected
-    e.target.value = ''
-  }, [processImageFiles])
-
-  const handlePaste = useCallback((e: React.ClipboardEvent) => {
-    const files = Array.from(e.clipboardData?.files ?? [])
-    const images = files.filter((f) => f.type.startsWith('image/'))
-    if (images.length === 0) return
-    e.preventDefault()
-    processImageFiles(images)
-  }, [processImageFiles])
-
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -614,19 +470,13 @@ export default function AIChatPanel({
   // Don't render when minimized — the minimized bar is rendered by parent
   if (!isDocked && isMinimized) return null
 
-  const quickActions = isAnalysisMode ? getAnalysisQuickActions(workflow) : QUICK_ACTIONS
-  const emptyStateLabel = isAnalysisMode
-    ? `Try a ${formatWorkflowStageLabel(workflow.currentStage)} prompt...`
-    : t('ai.tryExample')
-  const emptyStateHint = isAnalysisMode
-    ? `Current stage: ${formatWorkflowStageLabel(workflow.currentStage)}.${workflow.recommendedNextStage ? ` Next stage: ${formatWorkflowStageLabel(workflow.recommendedNextStage)}.` : ''}`.trim()
-    : t('ai.tipSelectElements')
+  const quickActions = getAnalysisQuickActions(workflow)
+  const emptyStateLabel = `Try a ${formatWorkflowStageLabel(workflow.currentStage)} prompt...`
+  const emptyStateHint = `Current stage: ${formatWorkflowStageLabel(workflow.currentStage)}.${workflow.recommendedNextStage ? ` Next stage: ${formatWorkflowStageLabel(workflow.recommendedNextStage)}.` : ''}`.trim()
   const inputPlaceholder = isStreaming
     ? t('ai.generating')
-    : isAnalysisMode
-      ? `Ask about this analysis or request a supported edit for ${formatWorkflowStageLabel(workflow.currentStage)}...`
-      : t('ai.designWithAgent')
-  const displayTitle = isAnalysisMode && messages.length === 0
+    : `Ask about this analysis or request a supported edit for ${formatWorkflowStageLabel(workflow.currentStage)}...`
+  const displayTitle = messages.length === 0
     ? 'Analysis Assistant'
     : chatTitle
 
@@ -707,7 +557,7 @@ export default function AIChatPanel({
             <div className="flex flex-col gap-2 w-full px-2">
               {quickActions.map((action) => (
                 <button
-                  key={'labelKey' in action ? action.labelKey : action.label}
+                  key={action.label}
                   type="button"
                   onClick={() => handleSend(action.prompt)}
                   className={cn(
@@ -717,7 +567,7 @@ export default function AIChatPanel({
                       : 'hover:bg-secondary hover:text-foreground',
                   )}
                 >
-                  {'labelKey' in action ? t(action.labelKey) : action.label}
+                  {action.label}
                 </button>
               ))}
             </div>
@@ -732,7 +582,6 @@ export default function AIChatPanel({
               role={msg.role}
               content={msg.content}
               isStreaming={msg.isStreaming && isStreaming}
-              onApplyDesign={handleApplyDesign}
               attachments={msg.attachments}
             />
           ))
@@ -748,45 +597,11 @@ export default function AIChatPanel({
         'relative border-t border-border bg-card',
         isDocked ? 'rounded-xl' : 'rounded-b-xl',
       )}>
-        {allowAttachments && (
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={handleFileSelect}
-          />
-        )}
-
-        {/* Attachment preview strip */}
-        {allowAttachments && pendingAttachments.length > 0 && (
-          <div className="flex items-center gap-1.5 px-3 pt-2 pb-1 overflow-x-auto">
-            {pendingAttachments.map((att) => (
-              <div key={att.id} className="relative group shrink-0">
-                <img
-                  src={`data:${att.mediaType};base64,${att.data}`}
-                  alt={att.name}
-                  className="w-8 h-8 rounded object-cover border border-border"
-                />
-                <button
-                  type="button"
-                  onClick={() => removePendingAttachment(att.id)}
-                  className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-foreground text-background flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <X size={8} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
         <textarea
           ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          onPaste={allowAttachments ? handlePaste : undefined}
           placeholder={inputPlaceholder}
           disabled={isStreaming}
           rows={2}
@@ -823,34 +638,7 @@ export default function AIChatPanel({
           </button>
 
           <div className="flex items-center gap-1 w-full">
-            {/* Concurrency selector */}
-            {!isAnalysisMode && <ConcurrencyButton />}
-
-            {!isAnalysisMode && (
-              <span
-                className={cn(
-                  'ml-1 shrink-0 whitespace-nowrap text-[10px] select-none',
-                  selectedIds.length > 0 ? 'text-muted-foreground/80' : 'text-muted-foreground/40',
-                )}
-              >
-                {t('common.selected', { count: selectedIds.length })}
-              </span>
-            )}
-
-            {/* Action icons */}
             <div className="ml-auto flex items-center gap-0.5">
-              {allowAttachments && (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isStreaming || pendingAttachments.length >= 4}
-                  title={t('ai.attachImage')}
-                  className="shrink-0 rounded-lg h-7 w-7"
-                >
-                  <Paperclip size={13} />
-                </Button>
-              )}
               {isStreaming ? (
                 <Button
                   variant="ghost"

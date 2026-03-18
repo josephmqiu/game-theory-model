@@ -701,7 +701,7 @@ function startHttpServer(port: number): void {
   })
 
   httpServer.listen(port, '0.0.0.0', () => {
-    console.error(`OpenPencil MCP server listening on http://0.0.0.0:${port}/mcp`)
+    console.error(`Game Theory Analyzer MCP server listening on http://0.0.0.0:${port}/mcp`)
   })
 }
 

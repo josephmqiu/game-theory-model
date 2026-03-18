@@ -125,7 +125,7 @@ function getAgentThinkingConfig(body: ChatBody):
 /**
  * Save base64 attachments to temp files. Returns { tempDir, files[] } — caller must clean up tempDir.
  *
- * When `insideProject` is true, files are saved under `.openpencil-tmp/` in the
+ * When `insideProject` is true, files are saved under `.game-theory-analyzer-tmp/` in the
  * current working directory so that Claude Code Agent SDK (which restricts reads
  * to the project directory in plan mode) can access them.
  */
@@ -136,12 +136,12 @@ async function saveAttachmentsToTempFiles(
   let tempDir: string
   if (insideProject) {
     const { mkdirSync, chmodSync } = await import('node:fs')
-    const baseDir = join(process.cwd(), '.openpencil-tmp')
+    const baseDir = join(process.cwd(), '.game-theory-analyzer-tmp')
     mkdirSync(baseDir, { recursive: true, mode: 0o700 })
     chmodSync(baseDir, 0o700)
     tempDir = await mkdtemp(join(baseDir, 'attach-'))
   } else {
-    tempDir = await mkdtemp(join(tmpdir(), 'openpencil-attach-'))
+    tempDir = await mkdtemp(join(tmpdir(), 'game-theory-analyzer-attach-'))
   }
   const files: string[] = []
   for (const att of attachments) {
@@ -536,7 +536,7 @@ function streamViaOpenCode(body: ChatBody, model?: string) {
 
         // Create a session for this conversation
         const { data: session, error: sessionError } = await ocClient.session.create({
-          title: 'OpenPencil Chat',
+          title: 'Game Theory Analyzer Chat',
         })
         if (sessionError || !session) {
           throw new Error(`Failed to create OpenCode session: ${formatOpenCodeError(sessionError)}`)

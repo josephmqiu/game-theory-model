@@ -8,7 +8,7 @@ function buildPresetFile(
   variables: Record<string, VariableDefinition>,
 ): ThemePresetFile {
   return {
-    type: 'openpencil-theme-preset',
+    type: 'game-theory-analyzer-theme-preset',
     version: '1.0.0',
     name,
     themes,
@@ -20,7 +20,7 @@ function validatePresetFile(data: unknown): data is ThemePresetFile {
   if (!data || typeof data !== 'object') return false
   const d = data as Record<string, unknown>
   return (
-    d.type === 'openpencil-theme-preset' &&
+    d.type === 'game-theory-analyzer-theme-preset' &&
     typeof d.name === 'string' &&
     typeof d.themes === 'object' &&
     d.themes !== null &&
@@ -49,7 +49,7 @@ export async function exportThemePreset(
         suggestedName: fileName,
         types: [
           {
-            description: 'OpenPencil Theme Preset',
+            description: 'Game Theory Analyzer Theme Preset',
             accept: { 'application/json': ['.optheme'] },
           },
         ],
@@ -89,7 +89,7 @@ export async function importThemePreset(): Promise<{
       ).showOpenFilePicker({
         types: [
           {
-            description: 'OpenPencil Theme Preset',
+            description: 'Game Theory Analyzer Theme Preset',
             accept: { 'application/json': ['.optheme'] },
           },
         ],

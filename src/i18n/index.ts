@@ -54,12 +54,12 @@ if (!i18n.isInitialized) {
 
 // Persist language changes
 i18n.on('languageChanged', (lng) => {
-  appStorage.setItem('openpencil-language', lng)
+  appStorage.setItem('game-theory-analyzer-language', lng)
 })
 
 /** Detect user language from persisted storage or navigator, after hydration. */
 export function detectLanguagePostHydration() {
-  const stored = appStorage.getItem('openpencil-language')
+  const stored = appStorage.getItem('game-theory-analyzer-language')
   if (stored && SUPPORTED_LANGS.includes(stored)) {
     i18n.changeLanguage(stored)
     return

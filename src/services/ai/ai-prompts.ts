@@ -139,7 +139,7 @@ LANDING PAGE DESIGN TIPS:
 // Safe code block delimiter
 const BLOCK = "```"
 
-export const CHAT_SYSTEM_PROMPT = `You are a design assistant for OpenPencil, a vector design tool that renders PenNode JSON on a canvas.
+export const CHAT_SYSTEM_PROMPT = `You are a design assistant for Game Theory Analyzer's legacy design workspace. It renders PenNode JSON on a canvas.
 
 ${PEN_NODE_SCHEMA}
 
@@ -326,7 +326,7 @@ DESIGN VARIABLES:
 
 Design like a professional: hierarchy, contrast, whitespace, consistent palette.`
 
-export const CODE_GENERATOR_PROMPT = `You are a code generation engine for OpenPencil. Convert PenNode design descriptions into clean, production-ready code.
+export const CODE_GENERATOR_PROMPT = `You are a code generation engine for Game Theory Analyzer's legacy design workspace. Convert PenNode design descriptions into clean, production-ready code.
 
 ${PEN_NODE_SCHEMA}
 

@@ -191,3 +191,7 @@ export function normalizeAnalysis(input?: AnalysisInput): Analysis {
     profiles: createProfiles(players, payoffMap),
   }
 }
+
+export function areAnalysesEqual(left: Analysis, right: Analysis): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
+}

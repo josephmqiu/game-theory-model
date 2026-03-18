@@ -2,10 +2,7 @@ import { useState, useCallback } from 'react'
 import { nanoid } from 'nanoid'
 import { useAIStore } from '@/stores/ai-store'
 import { useAnalysisStore } from '@/stores/analysis-store'
-import { useCanvasStore } from '@/stores/canvas-store'
-import { useDocumentStore } from '@/stores/document-store'
 import { streamChat } from '@/services/ai/ai-service'
-import { CHAT_SYSTEM_PROMPT } from '@/services/ai/ai-prompts'
 import { ANALYSIS_CHAT_SYSTEM_PROMPT, ANALYSIS_EDIT_PLANNER_PROMPT } from '@/services/ai/analysis-ai-prompts'
 import {
   applyAnalysisWorkflowOperations,
@@ -17,21 +14,20 @@ import type {
   AnalysisAIPlannerResult,
   AnalysisAIOperation,
 } from '@/services/ai/analysis-ai-types'
-import {
-  generateDesign,
-  generateDesignModification,
-  animateNodesToCanvas,
-  extractAndApplyDesignModification,
-} from '@/services/ai/design-generator'
 import { createAnalysisInsights } from '@/services/analysis/analysis-insights'
+import { areAnalysesEqual } from '@/services/analysis/analysis-normalization'
 import {
   createAnalysisSummary,
   type AnalysisSummary,
 } from '@/services/analysis/analysis-summary'
 import {
+  canTransitionToWorkflowStage,
   GUIDED_WORKFLOW_STAGE_LABELS,
+  getAnalysisWorkflowStageSummary,
+  createAnalysisWorkflow,
 } from '@/services/analysis/analysis-workflow'
-import type { GuidedWorkflowStage } from '@/types/analysis'
+import { validateAnalysis } from '@/services/analysis/analysis-validation'
+import type { AnalysisValidation, GuidedWorkflowStage } from '@/types/analysis'
 import { trimChatHistory } from '@/services/ai/context-optimizer'
 import type { ChatMessage as ChatMessageType } from '@/services/ai/ai-types'
 import { CHAT_STREAM_THINKING_CONFIG } from '@/services/ai/ai-runtime-config'
@@ -40,48 +36,6 @@ import {
   resolveModelProfile,
 } from '@/services/ai/model-profiles'
 import type { AIProviderType } from '@/types/agent-settings'
-
-type ChatMode = 'design' | 'analysis'
-
-/** Intent classification prompt — lightweight LLM call to determine message routing */
-const CLASSIFY_PROMPT = `You are a UI design tool assistant. Classify the user's message intent.
-Reply with EXACTLY one of these tags, nothing else:
-- DESIGN — user wants to create, generate, or modify any UI element, component, screen, or page
-- CHAT — user is asking a question, seeking help, or having a conversation`
-
-/** Classify user intent via a lightweight LLM call instead of hardcoded keyword matching */
-async function classifyIntent(
-  text: string,
-  model: string,
-  provider?: string,
-): Promise<{ isDesign: boolean }> {
-  try {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 8_000)
-
-    const response = await fetch('/api/ai/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system: CLASSIFY_PROMPT,
-        message: text,
-        model,
-        provider,
-      }),
-      signal: controller.signal,
-    })
-    clearTimeout(timeout)
-
-    if (!response.ok) throw new Error('classify failed')
-    const data = await response.json()
-    const upper = (data.text ?? '').trim().toUpperCase()
-
-    return { isDesign: upper.includes('DESIGN') }
-  } catch {
-    // Fallback: in a design tool, default to design mode
-    return { isDesign: true }
-  }
-}
 
 async function generateText(
   system: string,
@@ -208,6 +162,19 @@ function getWorkflowSnapshot() {
   }
 }
 
+function getIntroducedValidationIssues(
+  previousValidation: AnalysisValidation,
+  nextValidation: AnalysisValidation,
+): string[] {
+  const previousIssues = new Set(
+    previousValidation.issues.map((issue) => `${issue.path}::${issue.message}`),
+  )
+
+  return nextValidation.issues
+    .filter((issue) => !previousIssues.has(`${issue.path}::${issue.message}`))
+    .map((issue) => issue.message)
+}
+
 export async function requestAnalysisPlannerResult(
   messageText: string,
   context: string,
@@ -255,46 +222,6 @@ export async function requestAnalysisPlannerResult(
   }
 
   throw new Error('The assistant could not produce a valid analysis edit plan.')
-}
-
-export function buildContextString(): string {
-  const selectedIds = useCanvasStore.getState().selection.selectedIds
-  const { getFlatNodes, document: doc } = useDocumentStore.getState()
-  const flatNodes = getFlatNodes()
-
-  const parts: string[] = []
-
-  if (flatNodes.length > 0) {
-    const summary = flatNodes
-      .slice(0, 20)
-      .map((n) => `${n.type}:${n.name ?? n.id}`)
-      .join(', ')
-    parts.push(`Document has ${flatNodes.length} nodes: ${summary}`)
-  }
-
-  if (selectedIds.length > 0) {
-    const selectedNodes = selectedIds
-      .map((id) => useDocumentStore.getState().getNodeById(id))
-      .filter(Boolean)
-    const selectedSummary = selectedNodes
-      .map((n) => {
-        const dims = 'width' in n! && 'height' in n!
-          ? ` (${n!.width}x${n!.height})`
-          : ''
-        return `${n!.type}:${n!.name ?? n!.id}${dims}`
-      })
-      .join(', ')
-    parts.push(`Selected: ${selectedSummary}`)
-  }
-
-  if (doc.variables && Object.keys(doc.variables).length > 0) {
-    const varNames = Object.entries(doc.variables)
-      .map(([n, d]) => `$${n}(${d.type})`)
-      .join(', ')
-    parts.push(`Variables: ${varNames}`)
-  }
-
-  return parts.length > 0 ? `\n\n[Canvas context: ${parts.join('. ')}]` : ''
 }
 
 export async function handleAnalysisRequest(args: {
@@ -377,8 +304,52 @@ export async function handleAnalysisRequest(args: {
     )
     const workflowStageChanged = appliedBatch.workflowStageChanged
     const workflowStage = appliedBatch.workflowStage
+    const nextAnalysis = appliedBatch.analysis
+    const analysisChanged = !areAnalysesEqual(analysisSnapshot, nextAnalysis)
+    const nextValidation = validateAnalysis(nextAnalysis)
+    const introducedValidationIssues = getIntroducedValidationIssues(
+      validationAtStart,
+      nextValidation,
+    )
+    const nextSummaryDraft = createAnalysisSummary(
+      nextAnalysis,
+      nextValidation,
+    )
+    const nextInsightsDraft = createAnalysisInsights(
+      nextAnalysis,
+      nextValidation,
+    )
+    const nextWorkflow = createAnalysisWorkflow(
+      nextAnalysis,
+      nextValidation,
+      nextSummaryDraft,
+      nextInsightsDraft,
+      workflowSnapshotAtStart.currentStage,
+    )
 
-    if (appliedBatch.analysisOperationCount === 0 && !workflowStageChanged) {
+    if (introducedValidationIssues.length > 0) {
+      return buildAnalysisNoopMessage(
+        `The request would introduce new validation issues: ${introducedValidationIssues.join(' ')}`,
+        'Invalid analysis changes',
+      )
+    }
+
+    if (workflowStageChanged && workflowStage) {
+      const requestedStage = getAnalysisWorkflowStageSummary(
+        nextWorkflow,
+        workflowStage,
+      )
+
+      if (!requestedStage || !canTransitionToWorkflowStage(nextWorkflow, workflowStage)) {
+        return buildAnalysisNoopMessage(
+          requestedStage?.blocker ??
+            `Workflow stage ${formatWorkflowStage(workflowStage)} is blocked right now.`,
+          'Blocked workflow stage',
+        )
+      }
+    }
+
+    if (!analysisChanged && !workflowStageChanged) {
       return buildAnalysisNoopMessage(
         'The request did not change the analysis or workflow stage.',
       )
@@ -400,8 +371,6 @@ export async function handleAnalysisRequest(args: {
     ].join('\n\n')
     updateLastMessage(planningMessage)
 
-    const nextAnalysis = appliedBatch.analysis
-
     if (
       useAnalysisStore.getState().analysisRevision !== revisionAtStart ||
       getWorkflowSnapshot().workflowRevision !== workflowRevisionAtStart
@@ -414,10 +383,10 @@ export async function handleAnalysisRequest(args: {
 
     if (workflowStageChanged && workflowStage) {
       useAnalysisStore.getState().commitAnalysisWorkflow({
-        ...(appliedBatch.analysisOperationCount > 0 ? { analysis: nextAnalysis } : {}),
+        ...(analysisChanged ? { analysis: nextAnalysis } : {}),
         workflow: { currentStage: workflowStage },
       })
-    } else if (appliedBatch.analysisOperationCount > 0) {
+    } else if (analysisChanged) {
       useAnalysisStore.getState().replaceAnalysis(nextAnalysis)
     } else {
       return buildAnalysisNoopMessage(
@@ -431,7 +400,11 @@ export async function handleAnalysisRequest(args: {
     )
 
     return buildAnalysisSuccessMessage(
-      plannerResult.operations,
+      !analysisChanged && workflowStageChanged
+        ? plannerResult.operations.filter(
+            (operation) => operation.type === 'set-workflow-stage',
+          )
+        : plannerResult.operations,
       nextSummary,
       workflowStageChanged ? workflowStage : null,
     )
@@ -477,12 +450,7 @@ export async function handleAnalysisRequest(args: {
   return accumulated
 }
 
-/** Shared chat logic hook */
-export function useChatHandlers({
-  mode = 'design',
-}: {
-  mode?: ChatMode
-} = {}) {
+export function useChatHandlers() {
   const [input, setInput] = useState('')
   const messages = useAIStore((s) => s.messages)
   const isStreaming = useAIStore((s) => s.isStreaming)
@@ -496,20 +464,17 @@ export function useChatHandlers({
   const handleSend = useCallback(
     async (text?: string) => {
       const messageText = text ?? input.trim()
-      const pendingAttachments = useAIStore.getState().pendingAttachments
-      const allowAttachments = mode === 'design'
-      const hasAttachments = allowAttachments && pendingAttachments.length > 0
-      if ((!messageText && !hasAttachments) || isStreaming || isLoadingModels || availableModels.length === 0) return
+      if (!messageText || isStreaming || isLoadingModels || availableModels.length === 0) {
+        return
+      }
 
       setInput('')
-      useAIStore.getState().clearPendingAttachments()
 
       const userMsg: ChatMessageType = {
         id: nanoid(),
         role: 'user',
-        content: messageText || '',
+        content: messageText,
         timestamp: Date.now(),
-        ...(hasAttachments ? { attachments: pendingAttachments } : {}),
       }
       addMessage(userMsg)
 
@@ -524,10 +489,10 @@ export function useChatHandlers({
       setStreaming(true)
 
       if (messages.length === 0) {
-        const cleanText = messageText.replace(/^(Design|Create|Generate|Make|Rename|Add|Set|Update|Change)\s+/i, '')
+        const cleanText = messageText.replace(/^(Rename|Add|Set|Update|Change|Explain|Summarize)\s+/i, '')
         const words = cleanText.split(' ').slice(0, 4).join(' ')
-        const title = words.length > 30 ? words.slice(0, 30) + '...' : words
-        useAIStore.getState().setChatTitle(title || 'New Chat')
+        const title = words.length > 30 ? `${words.slice(0, 30)}...` : words
+        useAIStore.getState().setChatTitle(title || 'Analysis Chat')
       }
 
       const currentProvider = useAIStore.getState().modelGroups.find((g) =>
@@ -535,128 +500,22 @@ export function useChatHandlers({
       )?.provider as AIProviderType | undefined
 
       let accumulated = ''
-      let appliedCount = 0
-      let isDesign = false
-
       const abortController = new AbortController()
       useAIStore.getState().setAbortController(abortController)
 
       try {
-        if (mode === 'analysis') {
-          accumulated = await handleAnalysisRequest({
-            messageText,
-            messages,
-            model,
-            provider: currentProvider,
-            updateLastMessage,
-            abortController,
-          })
-        } else {
-          const context = buildContextString()
-          const fullUserMessage = messageText + context
-          const classified = await classifyIntent(
-            messageText,
-            model,
-            currentProvider,
-          )
-          isDesign = classified.isDesign
-          const selectedIds = useCanvasStore.getState().selection.selectedIds
-          const hasSelection = selectedIds.length > 0
-          const isModification = isDesign && hasSelection
-
-          if (isDesign) {
-            if (isModification) {
-              const { getNodeById, document: modDoc } = useDocumentStore.getState()
-              const selectedNodes = selectedIds.map(id => getNodeById(id)).filter(Boolean) as any[]
-
-              accumulated = '<step title="Checking guidelines">Analyzing modification request...</step>'
-              updateLastMessage(accumulated)
-
-              const { rawResponse, nodes } = await generateDesignModification(selectedNodes, messageText, {
-                variables: modDoc.variables,
-                themes: modDoc.themes,
-                model,
-                provider: currentProvider,
-              }, abortController.signal)
-              accumulated = rawResponse
-              updateLastMessage(accumulated)
-
-              const count = extractAndApplyDesignModification(JSON.stringify(nodes))
-              appliedCount += count
-            } else {
-              const doc = useDocumentStore.getState().document
-              const concurrency = useAIStore.getState().concurrency
-              const { rawResponse, nodes } = await generateDesign({
-                prompt: fullUserMessage,
-                model,
-                provider: currentProvider,
-                concurrency,
-                context: {
-                  canvasSize: { width: 1200, height: 800 },
-                  documentSummary: `Current selection: ${hasSelection ? selectedIds.length + ' items' : 'Empty'}`,
-                  variables: doc.variables,
-                  themes: doc.themes,
-                },
-              }, {
-                animated: true,
-                onApplyPartial: (partialCount: number) => {
-                  appliedCount += partialCount
-                },
-                onTextUpdate: (updatedText: string) => {
-                  accumulated = updatedText
-                  updateLastMessage(updatedText)
-                },
-              }, abortController.signal)
-              accumulated = rawResponse
-              if (appliedCount === 0 && nodes.length > 0) {
-                animateNodesToCanvas(nodes)
-                appliedCount += nodes.length
-              }
-            }
-          } else {
-            const chatHistory = messages.map((message) => ({
-              role: message.role,
-              content: message.content,
-              ...(message.attachments?.length ? { attachments: message.attachments } : {}),
-            }))
-            chatHistory.push({
-              role: 'user',
-              content: fullUserMessage,
-              ...(hasAttachments ? { attachments: pendingAttachments } : {}),
-            })
-            const trimmedHistory = trimChatHistory(chatHistory)
-            let chatThinking = ''
-            for await (const chunk of streamChat(
-              CHAT_SYSTEM_PROMPT,
-              trimmedHistory,
-              model,
-              CHAT_STREAM_THINKING_CONFIG,
-              currentProvider,
-              abortController.signal,
-            )) {
-              if (chunk.type === 'thinking') {
-                chatThinking += chunk.content
-                const thinkingStep = `<step title="Thinking">${chatThinking}</step>`
-                updateLastMessage(thinkingStep + (accumulated ? `\n${accumulated}` : ''))
-              } else if (chunk.type === 'text') {
-                accumulated += chunk.content
-                const thinkingPrefix = chatThinking
-                  ? `<step title="Thinking">${chatThinking}</step>\n`
-                  : ''
-                updateLastMessage(thinkingPrefix + accumulated)
-              } else if (chunk.type === 'error') {
-                accumulated += `\n\n**Error:** ${chunk.content}`
-                updateLastMessage(accumulated)
-              }
-            }
-          }
-        }
+        accumulated = await handleAnalysisRequest({
+          messageText,
+          messages,
+          model,
+          provider: currentProvider,
+          updateLastMessage,
+          abortController,
+        })
       } catch (error) {
         if (!abortController.signal.aborted) {
           const errMsg = error instanceof Error ? error.message : 'Unknown error'
-          accumulated = mode === 'analysis'
-            ? buildAnalysisNoopMessage(errMsg)
-            : `${accumulated}\n\n**Error:** ${errMsg}`.trim()
+          accumulated = buildAnalysisNoopMessage(errMsg)
           updateLastMessage(accumulated)
         }
       } finally {
@@ -664,13 +523,9 @@ export function useChatHandlers({
         setStreaming(false)
       }
 
-      if (isDesign && appliedCount > 0) {
-        accumulated += `\n\n<!-- APPLIED -->`
-      }
-
       useAIStore.setState((state) => {
         const nextMessages = [...state.messages]
-        const lastMessage = nextMessages.find(message => message.id === assistantMsg.id)
+        const lastMessage = nextMessages.find((message) => message.id === assistantMsg.id)
         if (lastMessage) {
           lastMessage.content = accumulated
           lastMessage.isStreaming = false
@@ -678,7 +533,7 @@ export function useChatHandlers({
         return { messages: nextMessages }
       })
     },
-    [availableModels.length, input, isLoadingModels, isStreaming, messages, mode, model, addMessage, updateLastMessage, setStreaming],
+    [availableModels.length, input, isLoadingModels, isStreaming, messages, model, addMessage, updateLastMessage, setStreaming],
   )
 
   return { input, setInput, handleSend, isStreaming }

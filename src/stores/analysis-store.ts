@@ -9,13 +9,18 @@ import type {
   GuidedWorkflowStage,
 } from "@/types/analysis";
 import {
+  areAnalysesEqual,
   createDefaultAnalysis,
   normalizeAnalysis,
 } from "@/services/analysis/analysis-normalization";
 import {
+  canTransitionToWorkflowStage,
+  createAnalysisWorkflow,
   createDefaultAnalysisWorkflowState,
   normalizeAnalysisWorkflowState,
 } from "@/services/analysis/analysis-workflow";
+import { createAnalysisInsights } from "@/services/analysis/analysis-insights";
+import { createAnalysisSummary } from "@/services/analysis/analysis-summary";
 import { validateAnalysis } from "@/services/analysis/analysis-validation";
 
 interface AnalysisStoreState extends AnalysisFileReference {
@@ -125,6 +130,23 @@ function createStoreState(
   };
 }
 
+function createWorkflowSnapshot(
+  analysis: Analysis,
+  validation: AnalysisValidation,
+  currentStage: GuidedWorkflowStage,
+) {
+  const summary = createAnalysisSummary(analysis, validation);
+  const insights = createAnalysisInsights(analysis, validation);
+
+  return createAnalysisWorkflow(
+    analysis,
+    validation,
+    summary,
+    insights,
+    currentStage,
+  );
+}
+
 function createAnalysisMutationState(
   state: AnalysisStoreState,
   analysisInput: Partial<Analysis>,
@@ -192,16 +214,35 @@ export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
 
   commitAnalysisWorkflow: (payload) =>
     set((state) => {
-      const hasAnalysisChange = payload.analysis !== undefined;
+      const nextAnalysis = payload.analysis
+        ? normalizeAnalysis(payload.analysis)
+        : state.analysis;
+      const nextValidation = validateAnalysis(nextAnalysis);
+      const hasAnalysisChange =
+        payload.analysis !== undefined &&
+        !areAnalysesEqual(nextAnalysis, state.analysis);
+      const requestedWorkflowStage = payload.workflow?.currentStage;
       const hasWorkflowChange =
-        payload.workflow !== undefined &&
-        payload.workflow.currentStage !== state.workflow.currentStage;
+        requestedWorkflowStage !== undefined &&
+        requestedWorkflowStage !== state.workflow.currentStage;
 
       if (!hasAnalysisChange && !hasWorkflowChange) {
         return state;
       }
 
-      return createStoreState(payload.analysis ?? state.analysis, {
+      if (hasWorkflowChange && requestedWorkflowStage) {
+        const workflow = createWorkflowSnapshot(
+          nextAnalysis,
+          nextValidation,
+          state.workflow.currentStage,
+        );
+
+        if (!canTransitionToWorkflowStage(workflow, requestedWorkflowStage)) {
+          return state;
+        }
+      }
+
+      return createStoreState(nextAnalysis, {
         source: getAnalysisSource(state),
         workflowInput: payload.workflow ?? state.workflow,
         workflowMode: "preserve",
@@ -217,6 +258,16 @@ export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
   setWorkflowStage: (stage) =>
     set((state) => {
       if (state.workflow.currentStage === stage) {
+        return state;
+      }
+
+      const workflow = createWorkflowSnapshot(
+        state.analysis,
+        state.validation,
+        state.workflow.currentStage,
+      );
+
+      if (!canTransitionToWorkflowStage(workflow, stage)) {
         return state;
       }
 

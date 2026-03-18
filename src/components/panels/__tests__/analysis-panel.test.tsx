@@ -2,10 +2,12 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useAnalysisStore } from '@/stores/analysis-store'
-import AnalysisPanel from '@/components/panels/analysis-panel'
+import AnalysisPanel, {
+  focusWorkflowStage,
+} from '@/components/panels/analysis-panel'
 
 const analysisPanelPath = join(
   process.cwd(),
@@ -95,7 +97,7 @@ describe('AnalysisPanel', () => {
     )
   })
 
-  it('moves through the guided workflow and returns to the blocker', () => {
+  it('moves through selectable stages and keeps blocked stages disabled', () => {
     render(<AnalysisPanel />)
 
     fireEvent.click(
@@ -115,14 +117,34 @@ describe('AnalysisPanel', () => {
       screen.getByTestId('analysis-payoffs').getAttribute('data-active-stage'),
     ).toBe('true')
 
+    const reviewStageButton = screen.getByRole('button', { name: /Review stage/i })
+    const nextButton = screen.getByRole('button', { name: /Next/i })
+
+    expect(reviewStageButton.getAttribute('disabled')).not.toBeNull()
+    expect(nextButton.getAttribute('disabled')).not.toBeNull()
+
+    fireEvent.click(reviewStageButton)
+    expect(
+      screen.getByTestId('analysis-payoffs').getAttribute('data-active-stage'),
+    ).toBe('true')
+
     fireEvent.click(screen.getByRole('button', { name: /Previous/i }))
     expect(
       screen
         .getByTestId('analysis-strategies')
         .getAttribute('data-active-stage'),
     ).toBe('true')
+  })
 
-    fireEvent.click(screen.getByRole('button', { name: /Review stage/i }))
+  it('returns from a blocked persisted stage to the blocker', () => {
+    const state = useAnalysisStore.getState()
+    useAnalysisStore.setState({
+      ...state,
+      workflow: { currentStage: 'review' },
+    })
+
+    render(<AnalysisPanel />)
+
     expect(
       screen.getByTestId('analysis-review').getAttribute('data-active-stage'),
     ).toBe('true')
@@ -131,6 +153,34 @@ describe('AnalysisPanel', () => {
     expect(
       screen.getByTestId('analysis-payoffs').getAttribute('data-active-stage'),
     ).toBe('true')
+  })
+
+  it('focuses the matching workflow section when it exists', () => {
+    const section = document.createElement('section')
+    section.id = 'analysis-strategies'
+    const scrollIntoView = vi.fn()
+    const focus = vi.fn()
+
+    Object.defineProperty(section, 'scrollIntoView', {
+      value: scrollIntoView,
+      configurable: true,
+    })
+    Object.defineProperty(section, 'focus', {
+      value: focus,
+      configurable: true,
+    })
+
+    document.body.appendChild(section)
+
+    focusWorkflowStage('strategies')
+
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'smooth',
+      block: 'start',
+    })
+    expect(focus).toHaveBeenCalledWith({
+      preventScroll: true,
+    })
   })
 
   it('updates the review progress when a payoff cell is completed', () => {

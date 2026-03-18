@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
+  canTransitionToWorkflowStage,
   GUIDED_WORKFLOW_STAGE_LABELS,
   type AnalysisWorkflow,
   type AnalysisWorkflowStageSummary,
@@ -58,6 +59,16 @@ export function AnalysisWorkflowNavigator({
 }: AnalysisWorkflowNavigatorProps) {
   const currentStage = workflow.current;
   const returnTarget = workflow.returnToStage;
+  const canGoPrevious = currentStage?.previousStage
+    ? canTransitionToWorkflowStage(workflow, currentStage.previousStage)
+    : false;
+  const canGoNext = currentStage?.nextStage
+    ? canTransitionToWorkflowStage(workflow, currentStage.nextStage)
+    : false;
+  const canReturnToBlocker =
+    returnTarget !== null &&
+    returnTarget !== workflow.currentStage &&
+    canTransitionToWorkflowStage(workflow, returnTarget);
 
   return (
     <aside
@@ -84,7 +95,7 @@ export function AnalysisWorkflowNavigator({
             variant="outline"
             size="sm"
             onClick={() => currentStage?.previousStage && onStageChange(currentStage.previousStage)}
-            disabled={!currentStage?.previousStage}
+            disabled={!canGoPrevious}
           >
             <ChevronLeft />
             Previous
@@ -94,7 +105,7 @@ export function AnalysisWorkflowNavigator({
             variant="outline"
             size="sm"
             onClick={() => currentStage?.nextStage && onStageChange(currentStage.nextStage)}
-            disabled={!currentStage?.nextStage}
+            disabled={!canGoNext}
           >
             Next
             <ChevronRight />
@@ -103,7 +114,7 @@ export function AnalysisWorkflowNavigator({
             type="button"
             size="sm"
             onClick={() => returnTarget && onStageChange(returnTarget)}
-            disabled={!returnTarget || returnTarget === workflow.currentStage}
+            disabled={!canReturnToBlocker}
           >
             <RotateCcw />
             Return to blocker
@@ -114,6 +125,7 @@ export function AnalysisWorkflowNavigator({
       <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
         {workflow.stages.map((stage, index) => {
           const isActive = stage.isCurrent;
+          const isSelectable = canTransitionToWorkflowStage(workflow, stage.stage);
           return (
             <button
               key={stage.stage}
@@ -122,12 +134,15 @@ export function AnalysisWorkflowNavigator({
               aria-label={`${stage.label} stage`}
               data-stage={stage.stage}
               data-active={isActive}
+              disabled={!isSelectable}
               onClick={() => onStageChange(stage.stage)}
               className={cn(
-                "rounded-xl border px-3 py-3 text-left transition-colors",
+                "rounded-xl border px-3 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-70",
                 isActive
                   ? "border-primary bg-primary/5 shadow-sm"
-                  : "border-border/70 bg-background/60 hover:border-primary/40 hover:bg-primary/5",
+                  : isSelectable
+                    ? "border-border/70 bg-background/60 hover:border-primary/40 hover:bg-primary/5"
+                    : "border-border/70 bg-background/40",
               )}
             >
               <div className="flex items-start justify-between gap-2">

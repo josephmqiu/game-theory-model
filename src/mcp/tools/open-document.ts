@@ -44,11 +44,11 @@ export async function handleOpenDocument(
       doc = await openDocument(LIVE_CANVAS_PATH)
     } else if (params.filePath === LIVE_CANVAS_PATH) {
       throw new Error(
-        'No running OpenPencil instance found. Start the Electron app or dev server first.',
+        'No running Game Theory Analyzer instance found. Start the Electron app or dev server first.',
       )
     } else {
       throw new Error(
-        'filePath is required when no OpenPencil instance is running. Provide a path to an existing .op file or a new file to create.',
+        'filePath is required when no Game Theory Analyzer instance is running. Provide a path to an existing .op file or a new file to create.',
       )
     }
   } else {

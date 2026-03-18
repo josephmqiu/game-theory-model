@@ -9,7 +9,7 @@ import type {
 import { MCP_DEFAULT_PORT } from '@/constants/app'
 import { appStorage } from '@/utils/app-storage'
 
-const STORAGE_KEY = 'openpencil-agent-settings'
+const STORAGE_KEY = 'game-theory-analyzer-agent-settings'
 
 interface PersistedState {
   providers: Record<AIProviderType, AIProviderConfig>

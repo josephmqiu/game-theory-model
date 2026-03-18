@@ -192,7 +192,7 @@ async function generateViaOpenCode(body: GenerateBody, model?: string): Promise<
     ocServer = oc.server
 
     const { data: session, error: sessionError } = await ocClient.session.create({
-      title: 'OpenPencil Generate',
+      title: 'Game Theory Analyzer Generate',
     })
     if (sessionError || !session) {
       const detail = formatOpenCodeError(sessionError)

@@ -8,7 +8,7 @@ import {
 // Named prompt sections — can be retrieved individually via section parameter
 // ---------------------------------------------------------------------------
 
-const INTRO = `You are generating designs for OpenPencil, a vector design tool.
+const INTRO = `You are generating designs for Game Theory Analyzer's legacy design workspace.
 Use batch_design (for multi-node designs with DSL) or insert_node (for single node trees with JSON).
 Both support postProcess=true for automatic role defaults, icon resolution, and layout sanitization.
 Each node must follow the PenNode schema below.`

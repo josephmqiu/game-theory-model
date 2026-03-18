@@ -110,7 +110,7 @@ export function buildClaudeAgentEnv(): EnvLike {
  */
 export function getClaudeAgentDebugFilePath(): string | undefined {
   try {
-    const dir = join(tmpdir(), 'openpencil-claude-debug')
+    const dir = join(tmpdir(), 'game-theory-analyzer-claude-debug')
     mkdirSync(dir, { recursive: true })
     return join(dir, 'claude-agent.log')
   } catch {

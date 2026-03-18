@@ -1,7 +1,7 @@
 {
-    "name": "openpencil",
+    "name": "game-theory-analyzer",
     "version": "0.4.0",
-    "description": "The world's first open-source AI-native vector design tool and the first to feature concurrent Agent Teams. Design-as-Code. Turn prompts into UI directly on the live canvas. A modern alternative to Pencil.",
+    "description": "A desktop game-theory analysis workspace for evidence-backed modeling, workflow-guided review, and AI-assisted strategic analysis.",
     "author": {
         "name": "ZSeven-W",
         "email": "maintainers@game-theory-analyzer.invalid"
@@ -10,7 +10,7 @@
     "type": "module",
     "main": "electron-dist/main.cjs",
     "bin": {
-        "openpencil-mcp": "dist/mcp-server.cjs"
+        "game-theory-analyzer-mcp": "dist/mcp-server.cjs"
     },
     "scripts": {
         "dev": "bun --bun vite dev --port 3000",

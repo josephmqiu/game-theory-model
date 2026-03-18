@@ -212,4 +212,17 @@ describe('analysis AI helpers', () => {
 
     expect(analysis).toEqual(snapshot)
   })
+
+  it('throws a dedicated error when workflow stage operations skip the workflow batch helper', () => {
+    const analysis = makeAnalysis()
+
+    expect(() =>
+      applyAnalysisOperations(analysis, [
+        {
+          type: 'set-workflow-stage',
+          stage: 'review',
+        },
+      ]),
+    ).toThrow('set-workflow-stage must be handled by applyAnalysisWorkflowOperations')
+  })
 })

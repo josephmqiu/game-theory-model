@@ -74,6 +74,26 @@ export function createDefaultAnalysisWorkflowState(): AnalysisWorkflowState {
   };
 }
 
+export function getAnalysisWorkflowStageSummary(
+  workflow: AnalysisWorkflow,
+  stage: GuidedWorkflowStage,
+): AnalysisWorkflowStageSummary | null {
+  return workflow.stages.find((entry) => entry.stage === stage) ?? null;
+}
+
+export function canTransitionToWorkflowStage(
+  workflow: AnalysisWorkflow,
+  stage: GuidedWorkflowStage,
+): boolean {
+  const target = getAnalysisWorkflowStageSummary(workflow, stage);
+
+  if (!target) {
+    return false;
+  }
+
+  return target.isCurrent || target.status !== "blocked";
+}
+
 function hasIssuePath(
   validation: AnalysisValidation,
   path: string,
@@ -103,8 +123,7 @@ export function getAnalysisWorkflowAttentionState(
   const detailsNeedsAttention =
     analysis.name.trim().length === 0 ||
     analysis.name.trim() === DEFAULT_ANALYSIS_NAME;
-  const strategiesReady =
-    !hasIssuePrefix(validation, "players") && !hasIssuePath(validation, "name");
+  const strategiesReady = !hasIssuePrefix(validation, "players");
   const payoffsComplete =
     summary.incompleteProfileCount === 0 && summary.missingProfileCount === 0;
   const reviewReady = validation.isValid && payoffsComplete;
@@ -165,13 +184,14 @@ export function createAnalysisWorkflow(
     payoffsComplete,
     reviewReady,
   } = getAnalysisWorkflowAttentionState(analysis, validation, summary);
+  const hasNameIssue = hasIssuePath(validation, "name");
 
-  const recommendedNextStage = detailsNeedsAttention
-    ? "details"
-    : !strategiesReady
-      ? "strategies"
-      : !payoffsComplete
-        ? "payoffs"
+  const recommendedNextStage = !strategiesReady
+    ? "strategies"
+    : !payoffsComplete
+      ? "payoffs"
+      : hasNameIssue || detailsNeedsAttention
+        ? "details"
         : currentStage === "review"
           ? "insights"
           : currentStage === "insights"
@@ -184,7 +204,7 @@ export function createAnalysisWorkflow(
       ? "strategies"
       : !payoffsComplete
         ? "payoffs"
-        : detailsNeedsAttention
+        : hasNameIssue
           ? "details"
           : null;
 
@@ -192,7 +212,9 @@ export function createAnalysisWorkflow(
     ? "Finish player and strategy setup before review."
     : !payoffsComplete
       ? "Complete every payoff cell before review."
-      : null;
+      : hasNameIssue
+        ? "Give the analysis a real title before review."
+        : null;
   const insightsBlocker =
     insights.status === "blocked"
       ? insights.blockMessage

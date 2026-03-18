@@ -1,5 +1,5 @@
 /**
- * Nitro plugin — writes ~/.openpencil/.port on server startup so the MCP
+ * Nitro plugin — writes ~/.game-theory-analyzer/.port on server startup so the MCP
  * server can discover the running instance (dev server or Electron).
  *
  * In Electron production mode the main process also writes this file,
@@ -10,7 +10,7 @@
 import { writeFile, mkdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-const PORT_FILE_DIR = join(homedir(), '.openpencil')
+const PORT_FILE_DIR = join(homedir(), '.game-theory-analyzer')
 const PORT_FILE_PATH = join(PORT_FILE_DIR, '.port')
 
 async function writePortFile(port: number): Promise<void> {

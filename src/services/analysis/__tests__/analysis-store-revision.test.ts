@@ -62,4 +62,27 @@ describe('analysis store revision tracking', () => {
     expect(useAnalysisStore.getState().analysis.name).toBe('Pricing Game')
     expect(useAnalysisStore.getState().workflow.currentStage).toBe('payoffs')
   })
+
+  it('treats unchanged combined commits as no-ops', () => {
+    const state = useAnalysisStore.getState()
+
+    state.commitAnalysisWorkflow({
+      analysis: state.analysis,
+      workflow: state.workflow,
+    })
+
+    expect(useAnalysisStore.getState().analysisRevision).toBe(0)
+    expect(useAnalysisStore.getState().workflowRevision).toBe(0)
+    expect(useAnalysisStore.getState().isDirty).toBe(false)
+  })
+
+  it('rejects blocked workflow stage transitions', () => {
+    const state = useAnalysisStore.getState()
+
+    state.setWorkflowStage('review')
+
+    expect(useAnalysisStore.getState().workflow.currentStage).toBe('details')
+    expect(useAnalysisStore.getState().workflowRevision).toBe(0)
+    expect(useAnalysisStore.getState().isDirty).toBe(false)
+  })
 })

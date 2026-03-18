@@ -5,6 +5,7 @@ import { createAnalysisSummary } from "@/services/analysis/analysis-summary";
 import {
   createAnalysisWorkflow,
   deriveWorkflowStageFromAnalysis,
+  normalizeAnalysisWorkflowState,
 } from "@/services/analysis/analysis-workflow";
 import { validateAnalysis } from "@/services/analysis/analysis-validation";
 
@@ -28,7 +29,7 @@ function createWorkflowForCurrentStage(
 }
 
 describe("analysis workflow", () => {
-  it("treats the default title as details attention without blocking later setup", () => {
+  it("treats the default title as details attention without hiding the payoff blocker", () => {
     const analysis = createDefaultAnalysis();
     const workflow = createWorkflowForCurrentStage("details", analysis);
 
@@ -45,7 +46,19 @@ describe("analysis workflow", () => {
       stage: "payoffs",
       status: "needs-attention",
     });
-    expect(workflow.recommendedNextStage).toBe("details");
+    expect(workflow.recommendedNextStage).toBe("payoffs");
+  });
+
+  it("keeps strategies and payoffs ready state independent from a blank title", () => {
+    const analysis = createDefaultAnalysis();
+    analysis.name = " ";
+
+    const workflow = createWorkflowForCurrentStage("details", analysis);
+
+    expect(workflow.stages[0].status).toBe("needs-attention");
+    expect(workflow.stages[1].status).toBe("complete");
+    expect(workflow.stages[2].status).toBe("needs-attention");
+    expect(workflow.recommendedNextStage).toBe("payoffs");
   });
 
   it("routes invalid player or strategy setup back to the strategies stage", () => {
@@ -119,5 +132,20 @@ describe("analysis workflow", () => {
     expect(workflow.currentStage).toBe("insights");
     expect(workflow.stages[4].status).toBe("blocked");
     expect(workflow.returnToStage).toBe("payoffs");
+  });
+
+  it("falls back to the derived stage when persisted workflow metadata is invalid", () => {
+    const analysis = createDefaultAnalysis();
+    analysis.name = "Pricing Game";
+
+    const validation = validateAnalysis(analysis);
+
+    expect(
+      normalizeAnalysisWorkflowState(analysis, validation, {
+        currentStage: "bogus" as never,
+      }),
+    ).toEqual({
+      currentStage: "payoffs",
+    });
   });
 });

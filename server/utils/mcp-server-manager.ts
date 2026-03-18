@@ -10,8 +10,8 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 // PID/Port files for tracking the detached MCP server process across restarts
-const MCP_PID_FILE = join(tmpdir(), 'openpencil-mcp-server.pid')
-const MCP_PORT_FILE = join(tmpdir(), 'openpencil-mcp-server.port')
+const MCP_PID_FILE = join(tmpdir(), 'game-theory-analyzer-mcp-server.pid')
+const MCP_PORT_FILE = join(tmpdir(), 'game-theory-analyzer-mcp-server.port')
 
 /** Resolve the MCP server script path across dev, web build, and Electron production. */
 function resolveMcpServerScript(): string {

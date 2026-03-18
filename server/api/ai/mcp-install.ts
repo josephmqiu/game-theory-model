@@ -27,7 +27,7 @@ interface InstallResult {
   fallbackHttp?: boolean
 }
 
-const MCP_SERVER_NAME = 'openpencil'
+const MCP_SERVER_NAME = 'game-theory-analyzer'
 
 /**
  * Resolve the absolute path to the compiled MCP server.
@@ -210,7 +210,7 @@ async function writeJsonConfig(
 
 /**
  * POST /api/ai/mcp-install
- * Install or uninstall the openpencil MCP server into a CLI tool's config.
+ * Install or uninstall the Game Theory Analyzer MCP server into a CLI tool's config.
  */
 export default defineEventHandler(async (event) => {
   const body = await readBody<InstallBody>(event)

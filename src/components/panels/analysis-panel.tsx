@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { createAnalysisSummary } from "@/services/analysis/analysis-summary";
 import { createAnalysisInsights } from "@/services/analysis/analysis-insights";
 import {
+  canTransitionToWorkflowStage,
   createAnalysisWorkflow,
   GUIDED_WORKFLOW_SECTION_IDS,
 } from "@/services/analysis/analysis-workflow";
@@ -63,7 +64,7 @@ function WorkflowSection({
   );
 }
 
-function focusWorkflowStage(stage: GuidedWorkflowStage) {
+export function focusWorkflowStage(stage: GuidedWorkflowStage) {
   const sectionId = GUIDED_WORKFLOW_SECTION_IDS[stage];
   const section = document.getElementById(sectionId);
 
@@ -103,6 +104,10 @@ export default function AnalysisPanel() {
   );
 
   const handleStageChange = (stage: GuidedWorkflowStage) => {
+    if (!canTransitionToWorkflowStage(workflow, stage)) {
+      return;
+    }
+
     setWorkflowStage(stage);
     focusWorkflowStage(stage);
   };

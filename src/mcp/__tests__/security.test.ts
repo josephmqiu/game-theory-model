@@ -6,7 +6,7 @@ import { sanitizeObject } from '../utils/sanitize'
 import { openDocument, invalidateCache } from '../document-manager'
 import { handleBatchDesign } from '../tools/batch-design'
 
-const TMP_DIR = join(tmpdir(), 'openpencil-security-tests')
+const TMP_DIR = join(tmpdir(), 'game-theory-analyzer-security-tests')
 
 beforeEach(async () => {
   await mkdir(TMP_DIR, { recursive: true })

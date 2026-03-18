@@ -22,7 +22,7 @@ export async function handleSaveThemePreset(
   const presetPath = resolve(params.presetPath)
 
   const preset: ThemePresetFile = {
-    type: 'openpencil-theme-preset',
+    type: 'game-theory-analyzer-theme-preset',
     version: '1.0.0',
     name: params.name ?? basename(presetPath, extname(presetPath)),
     themes: doc.themes ?? {},
@@ -52,7 +52,7 @@ export async function handleLoadThemePreset(
   const raw = await readFile(presetPath, 'utf-8')
   const data = JSON.parse(raw) as ThemePresetFile
 
-  if (data.type !== 'openpencil-theme-preset') {
+  if (data.type !== 'game-theory-analyzer-theme-preset') {
     throw new Error('Invalid theme preset file')
   }
 
@@ -90,7 +90,7 @@ export async function handleListThemePresets(
     try {
       const raw = await readFile(fullPath, 'utf-8')
       const data = JSON.parse(raw) as ThemePresetFile
-      if (data.type === 'openpencil-theme-preset') {
+      if (data.type === 'game-theory-analyzer-theme-preset') {
         presets.push({ name: data.name ?? basename(entry, '.optheme'), path: fullPath })
       }
     } catch {

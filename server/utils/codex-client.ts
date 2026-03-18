@@ -52,7 +52,7 @@ export async function runCodexExec(
   userPrompt: string,
   options: CodexExecOptions = {},
 ): Promise<CodexCliResult> {
-  const tempDir = await mkdtemp(join(tmpdir(), 'openpencil-codex-'))
+  const tempDir = await mkdtemp(join(tmpdir(), 'game-theory-analyzer-codex-'))
   const outputPath = join(tempDir, 'last-message.txt')
   const prompt = buildPrompt(options.systemPrompt, userPrompt, options.imageFiles)
   const codexEffort = resolveCodexEffort(options.thinkingMode, options.effort)

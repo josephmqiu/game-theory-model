@@ -49,7 +49,7 @@ async function fetchLiveDocument(): Promise<PenDocument> {
   const syncUrl = await getSyncUrl()
   if (!syncUrl) {
     throw new Error(
-      'No running OpenPencil instance found. Start the Electron app or dev server first.',
+      'No running Game Theory Analyzer instance found. Start the Electron app or dev server first.',
     )
   }
   const res = await fetch(`${syncUrl}/api/mcp/document`)

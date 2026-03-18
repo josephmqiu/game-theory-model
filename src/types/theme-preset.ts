@@ -9,7 +9,7 @@ export interface ThemePreset {
 }
 
 export interface ThemePresetFile {
-  type: 'openpencil-theme-preset'
+  type: 'game-theory-analyzer-theme-preset'
   version: '1.0.0'
   name: string
   themes: Record<string, string[]>

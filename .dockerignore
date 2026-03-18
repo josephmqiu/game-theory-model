@@ -10,4 +10,4 @@ build
 screenshot
 *.md
 !package.json
-.openpencil-tmp
+.game-theory-analyzer-tmp

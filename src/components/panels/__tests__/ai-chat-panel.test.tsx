@@ -13,8 +13,9 @@ describe("AIChatPanel analysis mode", () => {
 
     expect(source).toContain("const isDocked = presentation === 'docked'")
     expect(source).toContain("const isAnalysisMode = mode === 'analysis'")
-    expect(source).toContain("const allowAttachments = mode === 'design'")
-    expect(source).toContain("const ANALYSIS_QUICK_ACTIONS")
+    expect(source).not.toContain("allowAttachments")
+    expect(source).not.toContain("useCanvasStore")
+    expect(source).toContain("function getAnalysisQuickActions")
   })
 
   it("resets analysis chat state when the active analysis id changes", () => {

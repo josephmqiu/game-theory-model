@@ -223,6 +223,48 @@ describe('analysis chat handlers', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it('treats same-value analysis edits as no-ops', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        makeResponse(
+          JSON.stringify({
+            kind: 'edit',
+            operations: [
+              {
+                type: 'rename-analysis',
+                name: 'Pricing Game',
+              },
+            ],
+          }),
+        ),
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const analysis = makeAnalysis()
+    useAnalysisStore.setState({
+      analysis,
+      validation: validateAnalysis(analysis),
+      analysisRevision: 0,
+      workflowRevision: 0,
+      isDirty: false,
+    } as any)
+
+    const result = await handleAnalysisRequest({
+      messageText: 'Rename the analysis to Pricing Game',
+      messages: [],
+      model: 'claude-sonnet-4-5-20250929',
+      provider: 'anthropic',
+      updateLastMessage: vi.fn(),
+      abortController: new AbortController(),
+    })
+
+    expect(result).toContain('No changes were applied.')
+    expect(useAnalysisStore.getState().analysisRevision).toBe(0)
+    expect(useAnalysisStore.getState().workflowRevision).toBe(0)
+    expect(useAnalysisStore.getState().isDirty).toBe(false)
+  })
+
   it('retries the planner once after invalid JSON and succeeds on the repaired response', async () => {
     const fetchMock = vi
       .fn()
@@ -234,7 +276,7 @@ describe('analysis chat handlers', () => {
             operations: [
               {
                 type: 'rename-analysis',
-                name: 'Pricing Game',
+                name: 'Pricing Game Revised',
               },
             ],
           }),
@@ -260,7 +302,7 @@ describe('analysis chat handlers', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(result).toContain('Applied 1 analysis change')
-    expect(useAnalysisStore.getState().analysis.name).toBe('Pricing Game')
+    expect(useAnalysisStore.getState().analysis.name).toBe('Pricing Game Revised')
   })
 
   it('applies workflow stage changes through the combined analysis-workflow commit path', async () => {
@@ -281,7 +323,7 @@ describe('analysis chat handlers', () => {
             operations: [
               {
                 type: 'rename-analysis',
-                name: 'Pricing Game',
+                name: 'Pricing Game Revised',
               },
               {
                 type: 'set-workflow-stage',
@@ -303,11 +345,93 @@ describe('analysis chat handlers', () => {
       abortController: new AbortController(),
     })
 
-    expect(useAnalysisStore.getState().analysis.name).toBe('Pricing Game')
+    expect(useAnalysisStore.getState().analysis.name).toBe('Pricing Game Revised')
     expect(useAnalysisStore.getState().workflow.currentStage).toBe('review')
     expect(useAnalysisStore.getState().analysisRevision).toBe(1)
     expect(useAnalysisStore.getState().workflowRevision).toBe(1)
     expect(result).toContain('Workflow moved to Review')
+  })
+
+  it('rejects batches that introduce new validation issues', async () => {
+    const analysis = makeAnalysis()
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        makeResponse(
+          JSON.stringify({
+            kind: 'edit',
+            operations: [
+              {
+                type: 'rename-player',
+                playerId: analysis.players[1].id,
+                name: 'Incumbent',
+              },
+            ],
+          }),
+        ),
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    useAnalysisStore.setState({
+      analysis,
+      validation: validateAnalysis(analysis),
+      analysisRevision: 0,
+      workflowRevision: 0,
+    } as any)
+
+    const result = await handleAnalysisRequest({
+      messageText: 'Rename player 2 to Incumbent',
+      messages: [],
+      model: 'claude-sonnet-4-5-20250929',
+      provider: 'anthropic',
+      updateLastMessage: vi.fn(),
+      abortController: new AbortController(),
+    })
+
+    expect(result).toContain('Invalid analysis changes')
+    expect(useAnalysisStore.getState().analysis.players[1].name).toBe('Entrant')
+    expect(useAnalysisStore.getState().analysisRevision).toBe(0)
+  })
+
+  it('rejects blocked workflow stage requests', async () => {
+    const analysis = createDefaultAnalysis()
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        makeResponse(
+          JSON.stringify({
+            kind: 'edit',
+            operations: [
+              {
+                type: 'set-workflow-stage',
+                stage: 'review',
+              },
+            ],
+          }),
+        ),
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    useAnalysisStore.setState({
+      analysis,
+      validation: validateAnalysis(analysis),
+      workflow: { currentStage: 'details' },
+      analysisRevision: 0,
+      workflowRevision: 0,
+    } as any)
+
+    const result = await handleAnalysisRequest({
+      messageText: 'Set the workflow stage to review',
+      messages: [],
+      model: 'claude-sonnet-4-5-20250929',
+      provider: 'anthropic',
+      updateLastMessage: vi.fn(),
+      abortController: new AbortController(),
+    })
+
+    expect(result).toContain('Blocked workflow stage')
+    expect(useAnalysisStore.getState().workflow.currentStage).toBe('details')
+    expect(useAnalysisStore.getState().workflowRevision).toBe(0)
   })
 
   it('propagates apply failures for unsupported operations', async () => {
@@ -375,7 +499,7 @@ describe('analysis chat handlers', () => {
             operations: [
               {
                 type: 'rename-analysis',
-                name: 'Pricing Game',
+                name: 'Pricing Game Revised',
               },
             ],
           }),
@@ -397,7 +521,7 @@ describe('analysis chat handlers', () => {
       operations: [
         {
           type: 'rename-analysis',
-          name: 'Pricing Game',
+          name: 'Pricing Game Revised',
         },
       ],
     })
