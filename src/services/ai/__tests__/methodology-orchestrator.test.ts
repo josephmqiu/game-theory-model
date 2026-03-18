@@ -1,10 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { V1_PHASES } from "@/types/methodology";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
-import type {
-  OrchestratorCallbacks,
-  RevalidationCallbacks,
-} from "@/services/ai/methodology-orchestrator";
+import type { OrchestratorCallbacks } from "@/services/ai/methodology-orchestrator";
 
 // ── Mock AI service ──
 
@@ -142,9 +139,9 @@ function createCallbacks(
   };
 }
 
-function createRevalidationCallbacks(
-  overrides: Partial<RevalidationCallbacks> = {},
-): RevalidationCallbacks {
+function createOrchestratorCallbacks(
+  overrides: Partial<OrchestratorCallbacks> = {},
+): OrchestratorCallbacks {
   return {
     onPhaseStart: vi.fn(),
     onPhaseComplete: vi.fn(),
@@ -503,7 +500,7 @@ describe("methodology orchestrator", () => {
       mockGenerateCompletion.mockResolvedValueOnce(REVALIDATED_PHASE_3);
 
       // Run revalidation
-      const revalCallbacks = createRevalidationCallbacks();
+      const revalCallbacks = createOrchestratorCallbacks();
       const { signal: revalSignal } = makeAbortSignal();
 
       await revalidateStaleEntities(revalSignal, revalCallbacks);
@@ -537,7 +534,7 @@ describe("methodology orchestrator", () => {
     });
 
     it("does nothing when no entities are stale", async () => {
-      const revalCallbacks = createRevalidationCallbacks();
+      const revalCallbacks = createOrchestratorCallbacks();
       const { signal } = makeAbortSignal();
 
       await revalidateStaleEntities(signal, revalCallbacks);

@@ -59,8 +59,6 @@ function entityMetaLine(entity: AnalysisEntity): string {
       return `rule / ${d.ruleType}`;
     case "escalation-rung":
       return `rung #${d.order}`;
-    default:
-      return entity.type;
   }
 }
 

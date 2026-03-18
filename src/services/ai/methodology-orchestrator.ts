@@ -14,34 +14,10 @@ export interface OrchestratorCallbacks {
   onComplete: () => void;
 }
 
-export interface RevalidationCallbacks {
-  onPhaseStart: (phase: MethodologyPhase) => void;
-  onPhaseComplete: (phase: MethodologyPhase, entityCount: number) => void;
-  onPhaseFailed: (phase: MethodologyPhase, error: string) => void;
-  onComplete: () => void;
-}
-
 export interface OrchestratorConfig {
   topic: string;
   signal: AbortSignal;
   callbacks: OrchestratorCallbacks;
-}
-
-// ── Edit queue (applied between phases) ──
-// External code can push edits here; the orchestrator drains them between phases.
-
-type EditFn = () => void;
-const editQueue: EditFn[] = [];
-
-export function enqueueEdit(edit: EditFn): void {
-  editQueue.push(edit);
-}
-
-function drainEditQueue(): void {
-  while (editQueue.length > 0) {
-    const edit = editQueue.shift()!;
-    edit();
-  }
 }
 
 // ── Prior context builder ──
@@ -80,9 +56,13 @@ type SupportedPhase = Extract<
   "situational-grounding" | "player-identification" | "baseline-model"
 >;
 
-const SUPPORTED_PHASES: SupportedPhase[] = V1_PHASES as SupportedPhase[];
+const SUPPORTED_PHASES: SupportedPhase[] = V1_PHASES.filter(
+  (p): p is SupportedPhase =>
+    p === "situational-grounding" ||
+    p === "player-identification" ||
+    p === "baseline-model",
+);
 
-const DEFAULT_MODEL = "claude-sonnet-4-5-20250514";
 const MAX_RETRIES = 2; // 2 retries = 3 total attempts
 
 // ── Orchestrator ──
@@ -106,7 +86,7 @@ export async function runMethodologyAnalysis(
     const priorContext = buildPriorContext(completedPhases);
     const { system, user } = worker.buildPrompt(topic, priorContext);
 
-    const model = useAIStore.getState().model || DEFAULT_MODEL;
+    const model = useAIStore.getState().model;
 
     let succeeded = false;
     let lastError = "";
@@ -151,9 +131,6 @@ export async function runMethodologyAnalysis(
       // Stop the pipeline on phase failure — downstream phases depend on earlier output
       break;
     }
-
-    // Drain any queued edits between phases
-    drainEditQueue();
   }
 
   callbacks.onComplete();
@@ -168,7 +145,7 @@ export async function runMethodologyAnalysis(
  */
 export async function revalidateStaleEntities(
   signal: AbortSignal,
-  callbacks: RevalidationCallbacks,
+  callbacks: OrchestratorCallbacks,
 ): Promise<void> {
   const store = useEntityGraphStore.getState();
   const staleIds = store.getStaleEntityIds();
@@ -198,18 +175,18 @@ export async function revalidateStaleEntities(
   const priorPhases = SUPPORTED_PHASES.slice(0, startIndex);
 
   const topic = store.analysis.topic;
-  const model = useAIStore.getState().model || DEFAULT_MODEL;
+  const model = useAIStore.getState().model;
 
   for (const phase of phasesToRerun) {
     if (signal.aborted) break;
 
     callbacks.onPhaseStart(phase);
-    store.setPhaseStatus(phase, "running");
+    useEntityGraphStore.getState().setPhaseStatus(phase, "running");
 
     // Remove old entities from this phase before re-running
-    const oldPhaseEntities = store.analysis.entities.filter(
-      (e) => e.phase === phase,
-    );
+    // Read fresh state each iteration — prior iterations mutate the store
+    const currentEntities = useEntityGraphStore.getState().analysis.entities;
+    const oldPhaseEntities = currentEntities.filter((e) => e.phase === phase);
     for (const ent of oldPhaseEntities) {
       useEntityGraphStore.getState().removeEntity(ent.id);
     }
@@ -251,11 +228,13 @@ export async function revalidateStaleEntities(
     if (!succeeded) {
       useEntityGraphStore.getState().setPhaseStatus(phase, "failed");
       callbacks.onPhaseFailed(phase, lastError);
-      break;
+      // Don't clear stale flags — revalidation failed
+      callbacks.onComplete();
+      return;
     }
   }
 
-  // Clear stale flags on all originally-stale entities
+  // Only clear stale flags when all phases re-ran successfully
   useEntityGraphStore.getState().clearStale(staleIds);
 
   callbacks.onComplete();
