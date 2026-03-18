@@ -1,12 +1,18 @@
 import type { AnalysisSummary } from '@/services/analysis/analysis-summary'
 import { normalizeAnalysis } from '@/services/analysis/analysis-normalization'
 import type { AnalysisInsights } from '@/services/analysis/analysis-insights'
+import {
+  createAnalysisWorkflow,
+  deriveWorkflowStageFromAnalysis,
+  isGuidedWorkflowStage,
+} from '@/services/analysis/analysis-workflow'
 import type {
   Analysis,
   AnalysisPlayer,
   AnalysisProfile,
   AnalysisStrategy,
   AnalysisValidation,
+  GuidedWorkflowStage,
 } from '@/types/analysis'
 import type {
   AnalysisAIContext,
@@ -20,9 +26,9 @@ const TRAILING_COMMA_PATTERN = /,\s*([}\]])/g
 const MUTATION_VERB_PATTERN =
   /\b(rename|add|create|set|update|change|fill|edit|modify|remove|delete)\b/i
 const MUTATION_TARGET_PATTERN =
-  /\b(analysis|player|strategy|payoff|payoffs|cell|cells|profile|matrix|row|column|player 1|player 2|p1|p2)\b/i
+  /\b(analysis|workflow|stage|player|strategy|payoff|payoffs|cell|cells|profile|matrix|row|column|player 1|player 2|p1|p2)\b/i
 const EXPLICIT_EDIT_PATTERN =
-  /\b(rename\s+(?:the\s+)?(?:analysis|player|strategy)\b|add\s+(?:a\s+)?strategy\b|set\s+(?:the\s+)?(?:payoff|payoffs)\b|fill\s+(?:the\s+)?(?:payoff|cell)\b|update\s+(?:the\s+)?(?:analysis|player|strategy|payoff)\b|change\s+(?:the\s+)?(?:analysis|player|strategy|payoff)\b)/i
+  /\b(rename\s+(?:the\s+)?(?:analysis|player|strategy)\b|add\s+(?:a\s+)?strategy\b|set\s+(?:the\s+)?(?:workflow\s+stage|stage|payoff|payoffs)\b|fill\s+(?:the\s+)?(?:payoff|cell)\b|update\s+(?:the\s+)?(?:analysis|workflow\s+stage|stage|player|strategy|payoff)\b|change\s+(?:the\s+)?(?:analysis|workflow\s+stage|stage|player|strategy|payoff)\b)/i
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -236,6 +242,14 @@ function normalizeOperation(value: unknown): AnalysisAIOperation | null {
       : null
   }
 
+  if (type === 'set-workflow-stage') {
+    const stage = trimString(value.stage)
+    return stage &&
+      isGuidedWorkflowStage(stage)
+      ? { type: 'set-workflow-stage', stage }
+      : null
+  }
+
   return null
 }
 
@@ -271,7 +285,16 @@ function buildAnalysisAIContextData(
   summary: AnalysisSummary,
   insights: AnalysisInsights,
   analysisRevision = 0,
+  currentWorkflowStage?: GuidedWorkflowStage,
 ): AnalysisAIContext {
+  const workflow = createAnalysisWorkflow(
+    analysis,
+    validation,
+    summary,
+    insights,
+    currentWorkflowStage ??
+      deriveWorkflowStageFromAnalysis(analysis, validation),
+  )
   const players = analysis.players.map((player, index) =>
     [
       `- Player ${index + 1}: ${player.name} (${player.id})`,
@@ -289,6 +312,17 @@ function buildAnalysisAIContextData(
     `Progress: ${summary.progressLabel}`,
     `Completion: ${summary.completeProfileCount}/${summary.totalProfileCount} complete`,
     '',
+    'WORKFLOW',
+    `Current stage: ${workflow.currentStage}`,
+    `Recommended next stage: ${workflow.recommendedNextStage}`,
+    `Return to blocker: ${workflow.returnToStage ?? 'none'}`,
+    '',
+    'STAGES',
+    ...workflow.stages.map((stage) => {
+      const blocker = stage.blocker ? ` | blocker: ${stage.blocker}` : ''
+      return `- ${stage.stage}: ${stage.status} | ${stage.label}${blocker}`
+    }),
+    '',
     'PLAYERS AND STRATEGIES',
     ...players,
     '',
@@ -302,7 +336,7 @@ function buildAnalysisAIContextData(
     ...formatInsights(insights),
   ].join('\n')
 
-  return { prompt }
+  return { prompt, workflow }
 }
 
 export function buildAnalysisAIContext(
@@ -311,6 +345,7 @@ export function buildAnalysisAIContext(
   summary: AnalysisSummary,
   insights: AnalysisInsights,
   analysisRevision = 0,
+  currentWorkflowStage?: GuidedWorkflowStage,
 ): AnalysisAIContext {
   return buildAnalysisAIContextData(
     analysis,
@@ -318,6 +353,7 @@ export function buildAnalysisAIContext(
     summary,
     insights,
     analysisRevision,
+    currentWorkflowStage,
   )
 }
 
@@ -433,4 +469,43 @@ export function applyAnalysisOperations(
 
   // Re-normalize once at the end so the full batch lands in the canonical shape.
   return normalizeAnalysis(working)
+}
+
+export interface AnalysisWorkflowBatchResult {
+  analysis: Analysis
+  workflowStage: GuidedWorkflowStage | null
+  workflowStageChanged: boolean
+  analysisOperationCount: number
+}
+
+export function applyAnalysisWorkflowOperations(
+  analysisSnapshot: Analysis,
+  operations: AnalysisAIOperation[],
+  currentWorkflowStage: GuidedWorkflowStage | null = null,
+): AnalysisWorkflowBatchResult {
+  const analysisOperations: AnalysisAIOperation[] = []
+  let workflowStage = currentWorkflowStage
+  let workflowStageChanged = false
+
+  for (const operation of operations) {
+    if (operation.type === 'set-workflow-stage') {
+      workflowStageChanged = workflowStageChanged || workflowStage !== operation.stage
+      workflowStage = operation.stage
+      continue
+    }
+
+    analysisOperations.push(operation)
+  }
+
+  const analysis =
+    analysisOperations.length > 0
+      ? applyAnalysisOperations(analysisSnapshot, analysisOperations)
+      : normalizeAnalysis(analysisSnapshot)
+
+  return {
+    analysis,
+    workflowStage,
+    workflowStageChanged,
+    analysisOperationCount: analysisOperations.length,
+  }
 }

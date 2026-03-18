@@ -11,6 +11,10 @@ const analysisPanelPath = join(
   process.cwd(),
   'src/components/panels/analysis-panel.tsx',
 )
+const workflowNavigatorPath = join(
+  process.cwd(),
+  'src/components/panels/analysis-workflow-navigator.tsx',
+)
 
 describe('AnalysisPanel', () => {
   beforeEach(() => {
@@ -65,6 +69,12 @@ describe('AnalysisPanel', () => {
   it('shows validation state for incomplete and invalid inputs', () => {
     render(<AnalysisPanel />)
 
+    expect(screen.getByTestId('workflow-navigator').textContent).toContain(
+      'Guided workflow',
+    )
+    expect(
+      screen.getByTestId('analysis-details').getAttribute('data-active-stage'),
+    ).toBe('true')
     expect(screen.getByTestId('analysis-progress').textContent).toContain(
       '0 of 4 payoff cells complete',
     )
@@ -83,6 +93,44 @@ describe('AnalysisPanel', () => {
     expect(screen.getByTestId('analysis-status').textContent).toContain(
       '1 issue to fix',
     )
+  })
+
+  it('moves through the guided workflow and returns to the blocker', () => {
+    render(<AnalysisPanel />)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /Strategies stage/i }),
+    )
+    expect(
+      screen
+        .getByTestId('analysis-strategies')
+        .getAttribute('data-active-stage'),
+    ).toBe('true')
+    expect(
+      screen.getByTestId('analysis-details').getAttribute('data-active-stage'),
+    ).toBe('false')
+
+    fireEvent.click(screen.getByRole('button', { name: /Next/i }))
+    expect(
+      screen.getByTestId('analysis-payoffs').getAttribute('data-active-stage'),
+    ).toBe('true')
+
+    fireEvent.click(screen.getByRole('button', { name: /Previous/i }))
+    expect(
+      screen
+        .getByTestId('analysis-strategies')
+        .getAttribute('data-active-stage'),
+    ).toBe('true')
+
+    fireEvent.click(screen.getByRole('button', { name: /Review stage/i }))
+    expect(
+      screen.getByTestId('analysis-review').getAttribute('data-active-stage'),
+    ).toBe('true')
+
+    fireEvent.click(screen.getByRole('button', { name: /Return to blocker/i }))
+    expect(
+      screen.getByTestId('analysis-payoffs').getAttribute('data-active-stage'),
+    ).toBe('true')
   })
 
   it('updates the review progress when a payoff cell is completed', () => {
@@ -113,13 +161,18 @@ describe('AnalysisPanel', () => {
     const source = readFileSync(analysisPanelPath, 'utf8')
 
     expect(source).not.toContain(
-      'Phase 2 keeps this analysis in session memory only.',
+      '1. Analysis details',
     )
     expect(source).not.toContain(
-      'Phase 3 adds safe save and reopen support for the canonical',
+      '2. Player and strategy setup',
     )
     expect(source).not.toContain(
-      'Save, load, solver logic, and AI-assisted workflows are intentionally deferred to later phases.',
+      '3. Payoff matrix entry',
     )
+    expect(source).toContain('workflow-navigator')
+    expect(source).toContain('data-active-stage')
+    const navigatorSource = readFileSync(workflowNavigatorPath, 'utf8')
+    expect(navigatorSource).toContain('Guided workflow')
+    expect(navigatorSource).toContain('Return to blocker')
   })
 })

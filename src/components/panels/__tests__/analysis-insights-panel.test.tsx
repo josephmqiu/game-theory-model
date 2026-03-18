@@ -51,10 +51,10 @@ describe("Phase 5 analysis insights panel coverage", () => {
   it("shows a blocked strategic insights state before the matrix is complete", () => {
     const { container } = render(<AnalysisPanel />);
 
-    expect(screen.getByTestId("strategic-insights").textContent).toContain(
+    expect(screen.getByTestId("analysis-insights").textContent).toContain(
       "Analysis readiness",
     );
-    expect(screen.getByTestId("strategic-insights").textContent).toContain(
+    expect(screen.getByTestId("analysis-insights").textContent).toContain(
       "Complete every payoff cell before strategic insights can compute best responses, dominance, and pure Nash equilibria.",
     );
     expect(screen.getByTestId("analysis-review").textContent).toContain(
@@ -77,13 +77,13 @@ describe("Phase 5 analysis insights panel coverage", () => {
       [2, 2],
     ]);
 
-    expect(screen.getByTestId("strategic-insights").textContent).toContain(
+    expect(screen.getByTestId("analysis-insights").textContent).toContain(
       "Pure Nash equilibria",
     );
-    expect(screen.getByTestId("strategic-insights").textContent).toContain(
+    expect(screen.getByTestId("analysis-insights").textContent).toContain(
       "Best responses",
     );
-    expect(screen.getByTestId("strategic-insights").textContent).toContain(
+    expect(screen.getByTestId("analysis-insights").textContent).toContain(
       "Dominance",
     );
     expect(
@@ -117,7 +117,7 @@ describe("Phase 5 analysis insights panel coverage", () => {
         "No pure Nash equilibrium is present in the current matrix.",
       ),
     ).not.toBeNull();
-    expect(screen.getByTestId("strategic-insights").textContent).toContain(
+    expect(screen.getByTestId("analysis-insights").textContent).toContain(
       "Best responses",
     );
     expect(

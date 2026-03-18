@@ -16,23 +16,36 @@ interface PayoffMatrixSectionProps {
   analysis: Analysis;
   setPayoff: ReturnType<typeof useAnalysisStore.getState>["setPayoff"];
   insights: AnalysisInsights;
+  sectionId?: string;
+  isActive?: boolean;
 }
 
 export default function PayoffMatrixSection({
   analysis,
   setPayoff,
   insights,
+  sectionId = "analysis-payoffs",
+  isActive = false,
 }: PayoffMatrixSectionProps) {
   const [player1, player2] = analysis.players;
   const pureNashKeys =
     insights.status === "ready" ? new Set(insights.pureNashProfileKeys) : null;
 
   return (
-    <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+    <section
+      id={sectionId}
+      className={cn(
+        "rounded-2xl border bg-card p-6 shadow-sm transition-colors scroll-mt-28",
+        isActive ? "border-primary ring-1 ring-primary/15" : "border-border",
+      )}
+      data-active-stage={isActive}
+      data-testid={sectionId}
+      tabIndex={-1}
+    >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm font-medium text-primary">
-            3. Payoff matrix entry
+          <p className={cn("text-sm font-medium", isActive ? "text-primary" : "text-muted-foreground")}>
+            Payoff matrix
           </p>
           <h3 className="mt-1 text-xl font-semibold text-foreground">
             Profiles and payoffs

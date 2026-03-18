@@ -53,9 +53,11 @@ describe("analysis persistence controller", () => {
     window.electronAPI = createElectronApiMock({ saveFile });
 
     useAnalysisStore.getState().renameAnalysis("Pricing Game");
+    useAnalysisStore.getState().setWorkflowStage("strategies");
 
     await expect(saveAnalysis()).resolves.toBe(true);
     expect(saveFile).toHaveBeenCalledTimes(1);
+    expect(String(saveFile.mock.calls[0]?.[0])).toContain('"currentStage": "strategies"');
     expect(useAnalysisStore.getState().fileName).toBe("pricing-game.gta");
     expect(useAnalysisStore.getState().filePath).toBe("/tmp/pricing-game.gta");
     expect(useAnalysisStore.getState().isDirty).toBe(false);
@@ -94,6 +96,7 @@ describe("analysis persistence controller", () => {
     ).resolves.toBe(true);
 
     expect(useAnalysisStore.getState().analysis).toEqual(analysis);
+    expect(useAnalysisStore.getState().workflow.currentStage).toBe("payoffs");
     expect(useAnalysisStore.getState().fileName).toBe("pricing-game.gta");
     expect(useAnalysisStore.getState().filePath).toBe("/tmp/pricing-game.gta");
     expect(useAnalysisStore.getState().isDirty).toBe(false);

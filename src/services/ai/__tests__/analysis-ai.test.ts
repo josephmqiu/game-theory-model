@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyAnalysisOperations,
+  applyAnalysisWorkflowOperations,
   buildAnalysisAIContext,
   classifyAnalysisIntent,
   parseAnalysisAIPlannerResult,
@@ -8,6 +9,7 @@ import {
 import { createAnalysisInsights } from '@/services/analysis/analysis-insights'
 import { createDefaultAnalysis } from '@/services/analysis/analysis-normalization'
 import { createAnalysisSummary } from '@/services/analysis/analysis-summary'
+import { createAnalysisWorkflow } from '@/services/analysis/analysis-workflow'
 import { validateAnalysis } from '@/services/analysis/analysis-validation'
 
 function makeAnalysis() {
@@ -30,30 +32,36 @@ describe('analysis AI helpers', () => {
   it('routes explicit edit prompts locally and keeps ambiguous prompts in answer mode', () => {
     expect(classifyAnalysisIntent('Please add a strategy for player 1')).toBe('edit')
     expect(classifyAnalysisIntent('Set the payoff cell for High price versus Enter')).toBe('edit')
+    expect(classifyAnalysisIntent('Set the workflow stage to review')).toBe('edit')
     expect(classifyAnalysisIntent('What is the Nash equilibrium?')).toBe('answer')
     expect(classifyAnalysisIntent('Summarize this game')).toBe('answer')
   })
 
-  it('builds a deterministic analysis context snapshot with ids, payoffs, validation, and insights', () => {
+  it('builds a deterministic analysis context snapshot with ids, payoffs, validation, insights, and workflow state', () => {
     const analysis = makeAnalysis()
     const validation = validateAnalysis(analysis)
     const summary = createAnalysisSummary(analysis, validation)
     const insights = createAnalysisInsights(analysis, validation)
-    const { prompt } = buildAnalysisAIContext(
+    const workflow = createAnalysisWorkflow(analysis, validation, summary, insights, 'review')
+    const { prompt, workflow: contextWorkflow } = buildAnalysisAIContext(
       analysis,
       validation,
       summary,
       insights,
       7,
+      workflow.currentStage,
     )
 
     expect(prompt).toContain('Revision: 7')
     expect(prompt).toContain('Pricing Game')
     expect(prompt).toContain('Incumbent')
     expect(prompt).toContain('Enter')
+    expect(prompt).toContain('WORKFLOW')
     expect(prompt).toContain('PAYOFF PROFILES')
     expect(prompt).toContain('VALIDATION ISSUES')
     expect(prompt).toContain('STRATEGIC INSIGHTS')
+    expect(contextWorkflow.currentStage).toBe(workflow.currentStage)
+    expect(contextWorkflow.stages).toHaveLength(5)
   })
 
   it('parses edit and cannot-edit planner results from strict JSON', () => {
@@ -83,6 +91,20 @@ describe('analysis AI helpers', () => {
           playerId: 'player-1',
           strategyId: 'player-1-middle',
           name: 'Middle',
+        },
+      ],
+    })
+
+    const stageEdit = parseAnalysisAIPlannerResult(
+      '{"kind":"edit","operations":[{"type":"set-workflow-stage","stage":"review"}]}',
+    )
+
+    expect(stageEdit).toEqual({
+      kind: 'edit',
+      operations: [
+        {
+          type: 'set-workflow-stage',
+          stage: 'review',
         },
       ],
     })
@@ -149,6 +171,25 @@ describe('analysis AI helpers', () => {
           profile.player2StrategyId === analysis.players[1].strategies[0].id,
       )?.payoffs,
     ).toEqual([6, -2])
+  })
+
+  it('applies mixed analysis and workflow operations as one batch result', () => {
+    const analysis = makeAnalysis()
+    const result = applyAnalysisWorkflowOperations(analysis, [
+      {
+        type: 'rename-analysis',
+        name: 'Pricing Game Revised',
+      },
+      {
+        type: 'set-workflow-stage',
+        stage: 'review',
+      },
+    ])
+
+    expect(result.analysis.name).toBe('Pricing Game Revised')
+    expect(result.workflowStage).toBe('review')
+    expect(result.workflowStageChanged).toBe(true)
+    expect(result.analysisOperationCount).toBe(1)
   })
 
   it('aborts the full batch when any operation is invalid', () => {

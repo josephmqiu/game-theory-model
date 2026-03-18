@@ -270,7 +270,7 @@ export function loadAnalysisFromText(
   source?: AnalysisPersistenceSource,
 ): void {
   const file = parseAnalysisFileText(text);
-  useAnalysisStore.getState().loadAnalysis(file.analysis, source);
+  useAnalysisStore.getState().loadAnalysis(file.analysis, source, file.workflow);
 }
 
 export function createAnalysisSavePayload(
@@ -281,10 +281,10 @@ export function createAnalysisSavePayload(
   fileName: string;
   source: AnalysisFileReference;
 } {
-  const file = createAnalysisFile(state.analysis);
+  const file = createAnalysisFile(state.analysis, state.workflow);
   return {
     file,
-    text: serializeAnalysisFile(state.analysis),
+    text: serializeAnalysisFile(state.analysis, state.workflow),
     fileName: state.fileName ?? createDefaultAnalysisFileName(state.analysis),
     source: {
       fileName: state.fileName,

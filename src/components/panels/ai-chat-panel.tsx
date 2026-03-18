@@ -12,6 +12,12 @@ import { useAgentSettingsStore } from '@/stores/agent-settings-store'
 import {
   extractAndApplyDesign,
 } from '@/services/ai/design-generator'
+import { createAnalysisInsights } from '@/services/analysis/analysis-insights'
+import { createAnalysisSummary } from '@/services/analysis/analysis-summary'
+import {
+  createAnalysisWorkflow,
+  GUIDED_WORKFLOW_STAGE_LABELS,
+} from '@/services/analysis/analysis-workflow'
 import type { AIProviderType } from '@/types/agent-settings'
 import ClaudeLogo from '@/components/icons/claude-logo'
 import OpenAILogo from '@/components/icons/openai-logo'
@@ -50,20 +56,96 @@ const QUICK_ACTIONS = [
   },
 ]
 
-const ANALYSIS_QUICK_ACTIONS = [
-  {
-    label: 'Summarize the current analysis',
-    prompt: 'Summarize the current analysis and identify the biggest modeling gaps.',
-  },
-  {
-    label: 'Explain the strategic picture',
-    prompt: 'Explain the current best responses, dominant strategies, and any pure Nash equilibria.',
-  },
-  {
-    label: 'Suggest the next edit',
-    prompt: 'Based on the current analysis, suggest the single most useful next edit to make it more complete.',
-  },
-]
+function getAnalysisQuickActions(
+  workflow: ReturnType<typeof createAnalysisWorkflow>,
+) {
+  switch (workflow.currentStage) {
+    case 'details':
+      return [
+        {
+          label: 'Refine the analysis title',
+          prompt: 'Suggest a better analysis title and explain why it clarifies the model.',
+        },
+        {
+          label: 'Move to strategy setup',
+          prompt: 'Explain what needs to happen next to move from details into player and strategy setup.',
+        },
+        {
+          label: 'Summarize the modeling goal',
+          prompt: 'Summarize the current analysis goal in one paragraph.',
+        },
+      ]
+    case 'strategies':
+      return [
+        {
+          label: 'Review player names',
+          prompt: 'Check the player names and strategy labels for clarity and suggest improvements.',
+        },
+        {
+          label: 'Suggest the next stage',
+          prompt: 'Identify the next workflow stage and explain what is still blocking it.',
+        },
+        {
+          label: 'Summarize strategy setup',
+          prompt: 'Summarize the current player and strategy setup.',
+        },
+      ]
+    case 'payoffs':
+      return [
+        {
+          label: 'Find the next payoff to fill',
+          prompt: 'Tell me the single most useful payoff cell to complete next and why.',
+        },
+        {
+          label: 'Summarize payoff gaps',
+          prompt: 'Summarize the remaining incomplete payoff cells.',
+        },
+        {
+          label: 'Explain matrix progress',
+          prompt: 'Explain how close the analysis is to a complete payoff matrix.',
+        },
+      ]
+    case 'review':
+      return [
+        {
+          label: 'Review model readiness',
+          prompt: 'Review the model for any validation issues or completeness gaps before insights.',
+        },
+        {
+          label: 'Suggest the next edit',
+          prompt: 'Suggest the single most useful next edit to make the analysis ready for strategic insights.',
+        },
+        {
+          label: 'Explain review status',
+          prompt: 'Explain whether the analysis is ready for the review stage and what is still missing.',
+        },
+      ]
+    case 'insights':
+      return [
+        {
+          label: 'Explain best responses',
+          prompt: 'Explain the current best responses, dominant strategies, and any pure Nash equilibria.',
+        },
+        {
+          label: 'Summarize strategic insights',
+          prompt: 'Summarize the strategic picture from the current analysis.',
+        },
+        {
+          label: 'Suggest a revision',
+          prompt: 'If the analysis needs revision, identify the most important change to make first.',
+        },
+      ]
+    default:
+      return []
+  }
+}
+
+function formatWorkflowStageLabel(stage: string): string {
+  return (
+    GUIDED_WORKFLOW_STAGE_LABELS[stage as keyof typeof GUIDED_WORKFLOW_STAGE_LABELS] ??
+    stage
+  )
+}
 
 const CORNER_CLASSES: Record<PanelCorner, string> = {
   'top-left': 'top-3 left-3',
@@ -190,6 +272,18 @@ export default function AIChatPanel({
   const removePendingAttachment = useAIStore((s) => s.removePendingAttachment)
   const clearPendingAttachments = useAIStore((s) => s.clearPendingAttachments)
   const { input, setInput, handleSend } = useChatHandlers({ mode })
+  const analysis = useAnalysisStore((state) => state.analysis)
+  const currentWorkflowStage = useAnalysisStore((state) => state.workflow.currentStage)
+  const validation = useAnalysisStore((state) => state.validation)
+  const summary = createAnalysisSummary(analysis, validation)
+  const insights = createAnalysisInsights(analysis, validation)
+  const workflow = createAnalysisWorkflow(
+    analysis,
+    validation,
+    summary,
+    insights,
+    currentWorkflowStage,
+  )
   const noAvailableModels = !isLoadingModels && availableModels.length === 0
   const canUseModel = !isLoadingModels && availableModels.length > 0
   const allowAttachments = mode === 'design'
@@ -197,7 +291,7 @@ export default function AIChatPanel({
   const quickActionsDisabled = !canUseModel || isStreaming
   const isDocked = presentation === 'docked'
   const isAnalysisMode = mode === 'analysis'
-  const analysisId = useAnalysisStore((state) => state.analysis.id)
+  const analysisId = analysis.id
   const previousAnalysisIdRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -520,17 +614,17 @@ export default function AIChatPanel({
   // Don't render when minimized — the minimized bar is rendered by parent
   if (!isDocked && isMinimized) return null
 
-  const quickActions = isAnalysisMode ? ANALYSIS_QUICK_ACTIONS : QUICK_ACTIONS
+  const quickActions = isAnalysisMode ? getAnalysisQuickActions(workflow) : QUICK_ACTIONS
   const emptyStateLabel = isAnalysisMode
-    ? 'Try an analysis prompt...'
+    ? `Try a ${formatWorkflowStageLabel(workflow.currentStage)} prompt...`
     : t('ai.tryExample')
   const emptyStateHint = isAnalysisMode
-    ? 'Ask about the current game or request a supported non-destructive edit.'
+    ? `Current stage: ${formatWorkflowStageLabel(workflow.currentStage)}.${workflow.recommendedNextStage ? ` Next stage: ${formatWorkflowStageLabel(workflow.recommendedNextStage)}.` : ''}`.trim()
     : t('ai.tipSelectElements')
   const inputPlaceholder = isStreaming
     ? t('ai.generating')
     : isAnalysisMode
-      ? 'Ask about this analysis or request a supported edit...'
+      ? `Ask about this analysis or request a supported edit for ${formatWorkflowStageLabel(workflow.currentStage)}...`
       : t('ai.designWithAgent')
   const displayTitle = isAnalysisMode && messages.length === 0
     ? 'Analysis Assistant'

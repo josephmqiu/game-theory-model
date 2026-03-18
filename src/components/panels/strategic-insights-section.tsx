@@ -8,6 +8,8 @@ import type {
 
 interface StrategicInsightsSectionProps {
   insights: AnalysisInsights;
+  sectionId?: string;
+  isActive?: boolean;
 }
 
 function formatPayoffs(payoffs: [number, number]): string {
@@ -132,14 +134,24 @@ function DominanceCard({
 
 export default function StrategicInsightsSection({
   insights,
+  sectionId = "analysis-insights",
+  isActive = false,
 }: StrategicInsightsSectionProps) {
   return (
     <section
-      className="rounded-2xl border border-border bg-card p-6 shadow-sm"
-      data-testid="strategic-insights"
+      id={sectionId}
+      className={cn(
+        "rounded-2xl border bg-card p-6 shadow-sm transition-colors scroll-mt-28",
+        isActive ? "border-primary ring-1 ring-primary/15" : "border-border",
+      )}
+      data-active-stage={isActive}
+      data-testid={sectionId}
+      tabIndex={-1}
     >
       <div className="space-y-2">
-        <p className="text-sm font-medium text-primary">5. Strategic insights</p>
+        <p className={cn("text-sm font-medium", isActive ? "text-primary" : "text-muted-foreground")}>
+          Strategic insights
+        </p>
         <h3 className="text-xl font-semibold text-foreground">
           Game-theory analysis
         </h3>

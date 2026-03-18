@@ -1,3 +1,6 @@
+import type { AnalysisWorkflow } from '@/services/analysis/analysis-workflow'
+import type { GuidedWorkflowStage } from '@/types/analysis'
+
 export type AnalysisAIIntent = 'answer' | 'edit'
 
 export interface AnalysisAIRenameAnalysisOperation {
@@ -32,12 +35,18 @@ export interface AnalysisAISetProfilePayoffsOperation {
   payoffs: [number | null, number | null]
 }
 
+export interface AnalysisAISetWorkflowStageOperation {
+  type: 'set-workflow-stage'
+  stage: GuidedWorkflowStage
+}
+
 export type AnalysisAIOperation =
   | AnalysisAIRenameAnalysisOperation
   | AnalysisAIRenamePlayerOperation
   | AnalysisAIAddStrategyOperation
   | AnalysisAIRenameStrategyOperation
   | AnalysisAISetProfilePayoffsOperation
+  | AnalysisAISetWorkflowStageOperation
 
 export type AnalysisAIPlannerResult =
   | {
@@ -51,4 +60,5 @@ export type AnalysisAIPlannerResult =
 
 export interface AnalysisAIContext {
   prompt: string
+  workflow: AnalysisWorkflow
 }

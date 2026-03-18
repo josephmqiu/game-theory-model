@@ -3,8 +3,11 @@ import {
   ANALYSIS_FILE_VERSION,
   type Analysis,
   type AnalysisFileV1,
+  type AnalysisWorkflowState,
 } from '@/types/analysis'
 import { normalizeAnalysis, getAnalysisProfileKey } from './analysis-normalization'
+import { normalizeAnalysisWorkflowState, isGuidedWorkflowStage } from './analysis-workflow'
+import { validateAnalysis } from './analysis-validation'
 
 export class AnalysisFileError extends Error {
   constructor(message: string) {
@@ -44,6 +47,16 @@ function assertAnalysisFileType(raw: Record<string, unknown>): void {
 
   if (raw.version !== ANALYSIS_FILE_VERSION) {
     throw new AnalysisFileError(`Unsupported analysis file version: ${String(raw.version)}.`)
+  }
+}
+
+function assertAnalysisWorkflowShape(rawWorkflow: unknown): asserts rawWorkflow is AnalysisWorkflowState {
+  if (!isRecord(rawWorkflow)) {
+    throw new AnalysisFileError('workflow must be an object.')
+  }
+
+  if (!isGuidedWorkflowStage(rawWorkflow.currentStage)) {
+    throw new AnalysisFileError('workflow.currentStage must be a valid guided workflow stage.')
   }
 }
 
@@ -177,16 +190,23 @@ function assertAnalysisShape(rawAnalysis: unknown): asserts rawAnalysis is Analy
   }
 }
 
-export function createAnalysisFile(analysis: Analysis): AnalysisFileV1 {
+export function createAnalysisFile(
+  analysis: Analysis,
+  workflow?: AnalysisWorkflowState,
+): AnalysisFileV1 {
   return {
     type: ANALYSIS_FILE_TYPE,
     version: ANALYSIS_FILE_VERSION,
     analysis: normalizeAnalysis(analysis),
+    ...(workflow ? { workflow } : {}),
   }
 }
 
-export function serializeAnalysisFile(analysis: Analysis): string {
-  return JSON.stringify(createAnalysisFile(analysis), null, 2)
+export function serializeAnalysisFile(
+  analysis: Analysis,
+  workflow?: AnalysisWorkflowState,
+): string {
+  return JSON.stringify(createAnalysisFile(analysis, workflow), null, 2)
 }
 
 export function parseAnalysisFileText(text: string): AnalysisFileV1 {
@@ -204,11 +224,23 @@ export function parseAnalysisFileText(text: string): AnalysisFileV1 {
 
   assertAnalysisFileType(raw)
   assertAnalysisShape(raw.analysis)
+  if (raw.workflow !== undefined) {
+    assertAnalysisWorkflowShape(raw.workflow)
+  }
+
+  const analysis = normalizeAnalysis(raw.analysis)
+  const validation = validateAnalysis(analysis)
+  const workflow = normalizeAnalysisWorkflowState(
+    analysis,
+    validation,
+    raw.workflow,
+  )
 
   return {
     type: ANALYSIS_FILE_TYPE,
     version: ANALYSIS_FILE_VERSION,
-    analysis: normalizeAnalysis(raw.analysis),
+    analysis,
+    workflow,
   }
 }
 

@@ -117,6 +117,26 @@ describe('analysis chat handlers', () => {
     expect(message).not.toContain('Planned changes')
   })
 
+  it('includes a workflow stage line in the success message when requested', () => {
+    const analysis = makeAnalysis()
+    const validation = validateAnalysis(analysis)
+    const summary = createAnalysisSummary(analysis, validation)
+
+    const message = buildAnalysisSuccessMessage(
+      [
+        {
+          type: 'set-workflow-stage',
+          stage: 'review',
+        },
+      ],
+      summary,
+      'review',
+    )
+
+    expect(message).toContain('Workflow moved to Review')
+    expect(message).toContain('Set workflow stage to review.')
+  })
+
   it('formats noop responses with the supplied error reason', () => {
     const message = buildAnalysisNoopMessage(
       'The analysis changed while AI was working; no changes were applied.',
@@ -164,6 +184,45 @@ describe('analysis chat handlers', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it('returns a stale snapshot noop when the workflow stage changes during planning', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(makeResponse(JSON.stringify({
+      kind: 'edit',
+      operations: [
+        {
+          type: 'set-workflow-stage',
+          stage: 'review',
+        },
+      ],
+    }))))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const analysis = makeAnalysis()
+    useAnalysisStore.setState({
+      analysis,
+      validation: validateAnalysis(analysis),
+      workflow: { currentStage: 'details' },
+      analysisRevision: 0,
+      workflowRevision: 0,
+    } as any)
+
+    const abortController = new AbortController()
+    const request = handleAnalysisRequest({
+      messageText: 'Set the workflow stage to review',
+      messages: [],
+      model: 'claude-sonnet-4-5-20250929',
+      provider: 'anthropic',
+      updateLastMessage: vi.fn(),
+      abortController,
+    })
+
+    useAnalysisStore.getState().setWorkflowStage('strategies')
+    const result = await request
+
+    expect(result).toContain('Stale analysis snapshot')
+    expect(useAnalysisStore.getState().workflow.currentStage).toBe('strategies')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('retries the planner once after invalid JSON and succeeds on the repaired response', async () => {
     const fetchMock = vi
       .fn()
@@ -202,6 +261,53 @@ describe('analysis chat handlers', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(result).toContain('Applied 1 analysis change')
     expect(useAnalysisStore.getState().analysis.name).toBe('Pricing Game')
+  })
+
+  it('applies workflow stage changes through the combined analysis-workflow commit path', async () => {
+    const analysis = makeAnalysis()
+    useAnalysisStore.setState({
+      analysis,
+      validation: validateAnalysis(analysis),
+      workflow: { currentStage: 'details' },
+      analysisRevision: 0,
+      workflowRevision: 0,
+    } as any)
+
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        makeResponse(
+          JSON.stringify({
+            kind: 'edit',
+            operations: [
+              {
+                type: 'rename-analysis',
+                name: 'Pricing Game',
+              },
+              {
+                type: 'set-workflow-stage',
+                stage: 'review',
+              },
+            ],
+          }),
+        ),
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await handleAnalysisRequest({
+      messageText: 'Rename the analysis and move it to review',
+      messages: [],
+      model: 'claude-sonnet-4-5-20250929',
+      provider: 'anthropic',
+      updateLastMessage: vi.fn(),
+      abortController: new AbortController(),
+    })
+
+    expect(useAnalysisStore.getState().analysis.name).toBe('Pricing Game')
+    expect(useAnalysisStore.getState().workflow.currentStage).toBe('review')
+    expect(useAnalysisStore.getState().analysisRevision).toBe(1)
+    expect(useAnalysisStore.getState().workflowRevision).toBe(1)
+    expect(result).toContain('Workflow moved to Review')
   })
 
   it('propagates apply failures for unsupported operations', async () => {

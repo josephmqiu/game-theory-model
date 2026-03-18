@@ -2,6 +2,7 @@ import type {
   AnalysisSummary,
   AnalysisSummaryStatus,
 } from "@/services/analysis/analysis-summary";
+import { cn } from "@/lib/utils";
 
 function getStatusDescription(status: AnalysisSummaryStatus): string {
   if (status === "complete") {
@@ -17,21 +18,38 @@ function getStatusDescription(status: AnalysisSummaryStatus): string {
 
 interface AnalysisReviewSectionProps {
   summary: AnalysisSummary;
+  sectionId?: string;
+  isActive?: boolean;
 }
 
 export default function AnalysisReviewSection({
   summary,
+  sectionId = "analysis-review",
+  isActive = false,
 }: AnalysisReviewSectionProps) {
   const remainingProfiles =
     summary.incompleteProfiles.length + summary.missingProfiles.length;
 
   return (
     <section
-      className="rounded-2xl border border-border bg-card p-6 shadow-sm"
-      data-testid="analysis-review"
+      id={sectionId}
+      className={cn(
+        "rounded-2xl border bg-card p-6 shadow-sm transition-colors scroll-mt-28",
+        isActive ? "border-primary ring-1 ring-primary/15" : "border-border",
+      )}
+      data-active-stage={isActive}
+      data-testid={sectionId}
+      tabIndex={-1}
     >
       <div className="space-y-2">
-        <p className="text-sm font-medium text-primary">4. Review and status</p>
+        <p
+          className={cn(
+            "text-sm font-medium",
+            isActive ? "text-primary" : "text-muted-foreground",
+          )}
+        >
+          Review and status
+        </p>
         <h3 className="text-xl font-semibold text-foreground">
           Manual modeling progress
         </h3>

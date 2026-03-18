@@ -11,7 +11,7 @@ type AnalysisInput = Partial<Analysis> & {
   profiles?: Array<Partial<AnalysisProfile>>
 }
 
-const DEFAULT_ANALYSIS_NAME = 'Untitled Analysis'
+export const DEFAULT_ANALYSIS_NAME = 'Untitled Analysis'
 const DEFAULT_PLAYER_COUNT = 2
 const DEFAULT_STRATEGY_COUNT = 2
 

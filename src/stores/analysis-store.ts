@@ -5,24 +5,38 @@ import type {
   AnalysisFileReference,
   AnalysisStrategy,
   AnalysisValidation,
+  AnalysisWorkflowState,
+  GuidedWorkflowStage,
 } from "@/types/analysis";
 import {
   createDefaultAnalysis,
   normalizeAnalysis,
 } from "@/services/analysis/analysis-normalization";
+import {
+  createDefaultAnalysisWorkflowState,
+  normalizeAnalysisWorkflowState,
+} from "@/services/analysis/analysis-workflow";
 import { validateAnalysis } from "@/services/analysis/analysis-validation";
 
 interface AnalysisStoreState extends AnalysisFileReference {
   analysis: Analysis;
+  workflow: AnalysisWorkflowState;
   validation: AnalysisValidation;
   analysisRevision: number;
+  workflowRevision: number;
   isDirty: boolean;
   newAnalysis: () => void;
   loadAnalysis: (
     analysis: Partial<Analysis>,
     source?: Partial<AnalysisFileReference>,
+    workflow?: Partial<AnalysisWorkflowState>,
   ) => void;
   replaceAnalysis: (analysis: Partial<Analysis>) => void;
+  commitAnalysisWorkflow: (payload: {
+    analysis?: Analysis;
+    workflow?: AnalysisWorkflowState;
+  }) => void;
+  setWorkflowStage: (stage: GuidedWorkflowStage) => void;
   renameAnalysis: (name: string) => void;
   renamePlayer: (playerId: string, name: string) => void;
   addStrategy: (playerId: string) => void;
@@ -40,6 +54,18 @@ interface AnalysisStoreState extends AnalysisFileReference {
   markDirty: () => void;
 }
 
+type WorkflowMode = "default" | "derive" | "preserve";
+
+interface CreateStoreStateOptions {
+  source?: Partial<AnalysisFileReference>;
+  workflowInput?: Partial<AnalysisWorkflowState>;
+  workflowMode?: WorkflowMode;
+  currentWorkflow?: AnalysisWorkflowState;
+  isDirty?: boolean;
+  analysisRevision?: number;
+  workflowRevision?: number;
+}
+
 function createAnalysisState(analysisInput?: Partial<Analysis>) {
   const analysis = analysisInput
     ? normalizeAnalysis(analysisInput)
@@ -51,23 +77,66 @@ function createAnalysisState(analysisInput?: Partial<Analysis>) {
   };
 }
 
+function resolveWorkflowState(
+  analysis: Analysis,
+  validation: AnalysisValidation,
+  options: CreateStoreStateOptions,
+): AnalysisWorkflowState {
+  if (options.workflowMode === "derive") {
+    return normalizeAnalysisWorkflowState(
+      analysis,
+      validation,
+      options.workflowInput,
+    );
+  }
+
+  if (options.workflowMode === "preserve") {
+    if (options.workflowInput) {
+      return normalizeAnalysisWorkflowState(
+        analysis,
+        validation,
+        options.workflowInput,
+      );
+    }
+
+    return options.currentWorkflow ?? createDefaultAnalysisWorkflowState();
+  }
+
+  return createDefaultAnalysisWorkflowState();
+}
+
 function createStoreState(
   analysisInput?: Partial<Analysis>,
-  source?: Partial<AnalysisFileReference>,
-  isDirty = false,
-  analysisRevision = 0,
+  options: CreateStoreStateOptions = {},
 ) {
   const { analysis, validation } = createAnalysisState(analysisInput);
+  const workflow = resolveWorkflowState(analysis, validation, options);
 
   return {
     analysis,
+    workflow,
     validation,
-    analysisRevision,
-    fileName: source?.fileName ?? null,
-    filePath: source?.filePath ?? null,
-    fileHandle: source?.fileHandle ?? null,
-    isDirty,
+    analysisRevision: options.analysisRevision ?? 0,
+    workflowRevision: options.workflowRevision ?? 0,
+    fileName: options.source?.fileName ?? null,
+    filePath: options.source?.filePath ?? null,
+    fileHandle: options.source?.fileHandle ?? null,
+    isDirty: options.isDirty ?? false,
   };
+}
+
+function createAnalysisMutationState(
+  state: AnalysisStoreState,
+  analysisInput: Partial<Analysis>,
+) {
+  return createStoreState(analysisInput, {
+    source: getAnalysisSource(state),
+    workflowMode: "preserve",
+    currentWorkflow: state.workflow,
+    isDirty: true,
+    analysisRevision: state.analysisRevision + 1,
+    workflowRevision: state.workflowRevision,
+  });
 }
 
 function getStrategyName(strategies: AnalysisStrategy[]): string {
@@ -92,100 +161,129 @@ export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
   ...createStoreState(),
 
   newAnalysis: () =>
-    set((state) => createStoreState(undefined, undefined, false, state.analysisRevision + 1)),
+    set((state) =>
+      createStoreState(undefined, {
+        workflowMode: "default",
+        isDirty: false,
+        analysisRevision: state.analysisRevision + 1,
+        workflowRevision: state.workflowRevision + 1,
+      }),
+    ),
 
-  loadAnalysis: (analysis, source) =>
-    set((state) => createStoreState(analysis, source, false, state.analysisRevision + 1)),
+  loadAnalysis: (analysis, source, workflow) =>
+    set((state) =>
+      createStoreState(analysis, {
+        source,
+        workflowInput: workflow,
+        workflowMode: "derive",
+        isDirty: false,
+        analysisRevision: state.analysisRevision + 1,
+        workflowRevision: state.workflowRevision + 1,
+      }),
+    ),
 
   replaceAnalysis: (analysis) =>
     set((state) =>
-      createStoreState(
-        {
-          ...state.analysis,
-          ...analysis,
-        },
-        getAnalysisSource(state),
-        true,
-        state.analysisRevision + 1,
-      ),
+      createAnalysisMutationState(state, {
+        ...state.analysis,
+        ...analysis,
+      }),
     ),
+
+  commitAnalysisWorkflow: (payload) =>
+    set((state) => {
+      const hasAnalysisChange = payload.analysis !== undefined;
+      const hasWorkflowChange =
+        payload.workflow !== undefined &&
+        payload.workflow.currentStage !== state.workflow.currentStage;
+
+      if (!hasAnalysisChange && !hasWorkflowChange) {
+        return state;
+      }
+
+      return createStoreState(payload.analysis ?? state.analysis, {
+        source: getAnalysisSource(state),
+        workflowInput: payload.workflow ?? state.workflow,
+        workflowMode: "preserve",
+        currentWorkflow: state.workflow,
+        isDirty: true,
+        analysisRevision:
+          state.analysisRevision + (hasAnalysisChange ? 1 : 0),
+        workflowRevision:
+          state.workflowRevision + (hasWorkflowChange ? 1 : 0),
+      });
+    }),
+
+  setWorkflowStage: (stage) =>
+    set((state) => {
+      if (state.workflow.currentStage === stage) {
+        return state;
+      }
+
+      return {
+        ...state,
+        workflow: {
+          currentStage: stage,
+        },
+        workflowRevision: state.workflowRevision + 1,
+        isDirty: true,
+      };
+    }),
 
   renameAnalysis: (name) =>
     set((state) =>
-      createStoreState(
-        {
-          ...state.analysis,
-          name,
-        },
-        getAnalysisSource(state),
-        true,
-        state.analysisRevision + 1,
-      ),
+      createAnalysisMutationState(state, {
+        ...state.analysis,
+        name,
+      }),
     ),
 
   renamePlayer: (playerId, name) =>
     set((state) =>
-      createStoreState(
-        {
-          ...state.analysis,
-          players: state.analysis.players.map((player) =>
-            player.id === playerId ? { ...player, name } : player,
-          ) as Analysis["players"],
-        },
-        getAnalysisSource(state),
-        true,
-        state.analysisRevision + 1,
-      ),
+      createAnalysisMutationState(state, {
+        ...state.analysis,
+        players: state.analysis.players.map((player) =>
+          player.id === playerId ? { ...player, name } : player,
+        ) as Analysis["players"],
+      }),
     ),
 
   addStrategy: (playerId) =>
     set((state) =>
-      createStoreState(
-        {
-          ...state.analysis,
-          players: state.analysis.players.map((player) =>
-            player.id === playerId
-              ? {
-                  ...player,
-                  strategies: [
-                    ...player.strategies,
-                    {
-                      id: nanoid(),
-                      name: getStrategyName(player.strategies),
-                    },
-                  ],
-                }
-              : player,
-          ) as Analysis["players"],
-        },
-        getAnalysisSource(state),
-        true,
-        state.analysisRevision + 1,
-      ),
+      createAnalysisMutationState(state, {
+        ...state.analysis,
+        players: state.analysis.players.map((player) =>
+          player.id === playerId
+            ? {
+                ...player,
+                strategies: [
+                  ...player.strategies,
+                  {
+                    id: nanoid(),
+                    name: getStrategyName(player.strategies),
+                  },
+                ],
+              }
+            : player,
+        ) as Analysis["players"],
+      }),
     ),
 
   renameStrategy: (playerId, strategyId, name) =>
     set((state) =>
-      createStoreState(
-        {
-          ...state.analysis,
-          players: state.analysis.players.map((player) =>
-            player.id === playerId
-              ? {
-                  ...player,
+      createAnalysisMutationState(state, {
+        ...state.analysis,
+        players: state.analysis.players.map((player) =>
+          player.id === playerId
+            ? {
+                ...player,
                 strategies: player.strategies.map((strategy) =>
-                    strategy.id === strategyId
-                      ? { ...strategy, name }
-                      : strategy,
-                  ),
-                }
-              : player,
-          ) as Analysis["players"],
-        },
-        getAnalysisSource(state),
-        true,
-        state.analysisRevision + 1,
-      ),
+                  strategy.id === strategyId ? { ...strategy, name } : strategy,
+                ),
+              }
+            : player,
+        ) as Analysis["players"],
+      }),
     ),
 
   removeStrategy: (playerId, strategyId) =>
@@ -203,15 +301,10 @@ export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
         };
       }) as Analysis["players"];
 
-      return createStoreState(
-        {
-          ...state.analysis,
-          players: nextPlayers,
-        },
-        getAnalysisSource(state),
-        true,
-        state.analysisRevision + 1,
-      );
+      return createAnalysisMutationState(state, {
+        ...state.analysis,
+        players: nextPlayers,
+      });
     }),
 
   setPayoff: (player1StrategyId, player2StrategyId, playerId, payoff) =>
@@ -221,32 +314,27 @@ export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
         return state;
       }
 
-      return createStoreState(
-        {
-          ...state.analysis,
-          profiles: state.analysis.profiles.map((profile) => {
-            if (
-              profile.player1StrategyId !== player1StrategyId ||
-              profile.player2StrategyId !== player2StrategyId
-            ) {
-              return profile;
-            }
+      return createAnalysisMutationState(state, {
+        ...state.analysis,
+        profiles: state.analysis.profiles.map((profile) => {
+          if (
+            profile.player1StrategyId !== player1StrategyId ||
+            profile.player2StrategyId !== player2StrategyId
+          ) {
+            return profile;
+          }
 
-            const payoffs: [number | null, number | null] =
-              playerIndex === 0
-                ? [payoff, profile.payoffs[1]]
-                : [profile.payoffs[0], payoff];
+          const payoffs: [number | null, number | null] =
+            playerIndex === 0
+              ? [payoff, profile.payoffs[1]]
+              : [profile.payoffs[0], payoff];
 
-            return {
-              ...profile,
-              payoffs,
-            };
-          }),
-        },
-        getAnalysisSource(state),
-        true,
-        state.analysisRevision + 1,
-      );
+          return {
+            ...profile,
+            payoffs,
+          };
+        }),
+      });
     }),
 
   setAnalysisFileReference: (source) =>

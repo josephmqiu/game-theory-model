@@ -36,6 +36,7 @@ describe('analysis store persistence state', () => {
     resetAnalysisForNewDocument()
 
     expect(useAnalysisStore.getState().analysis.name).toBe('Untitled Analysis')
+    expect(useAnalysisStore.getState().workflow.currentStage).toBe('details')
     expect(useAnalysisStore.getState().isDirty).toBe(false)
     expect(useAnalysisStore.getState().fileName).toBeNull()
     expect(useAnalysisStore.getState().filePath).toBeNull()
@@ -54,6 +55,7 @@ describe('analysis store persistence state', () => {
     })
 
     expect(useAnalysisStore.getState().analysis).toEqual(analysis)
+    expect(useAnalysisStore.getState().workflow.currentStage).toBe('payoffs')
     expect(useAnalysisStore.getState().fileName).toBe('pricing.gta')
     expect(useAnalysisStore.getState().filePath).toBe('/tmp/pricing.gta')
     expect(useAnalysisStore.getState().isDirty).toBe(false)
@@ -83,6 +85,7 @@ describe('analysis store persistence state', () => {
   it('commits a save by updating the file reference and clearing dirty state', () => {
     const state = useAnalysisStore.getState()
     state.renamePlayer(state.analysis.players[0].id, 'Incumbent')
+    state.setWorkflowStage('strategies')
 
     commitAnalysisSave({
       fileName: 'pricing.gta',
@@ -93,6 +96,7 @@ describe('analysis store persistence state', () => {
     expect(useAnalysisStore.getState().fileName).toBe('pricing.gta')
     expect(useAnalysisStore.getState().filePath).toBe('/tmp/pricing.gta')
     expect(useAnalysisStore.getState().isDirty).toBe(false)
+    expect(useAnalysisStore.getState().workflow.currentStage).toBe('strategies')
   })
 
   it('only discards dirty changes when the confirmation prompt accepts', async () => {

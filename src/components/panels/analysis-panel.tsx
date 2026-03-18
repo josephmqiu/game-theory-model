@@ -1,15 +1,90 @@
 import { Plus, X } from "lucide-react";
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { createAnalysisSummary } from "@/services/analysis/analysis-summary";
 import { createAnalysisInsights } from "@/services/analysis/analysis-insights";
+import {
+  createAnalysisWorkflow,
+  GUIDED_WORKFLOW_SECTION_IDS,
+} from "@/services/analysis/analysis-workflow";
 import { useAnalysisStore } from "@/stores/analysis-store";
-import PayoffMatrixSection from "./payoff-matrix-section";
+import type { GuidedWorkflowStage } from "@/types/analysis";
 import AnalysisReviewSection from "./analysis-review-section";
+import PayoffMatrixSection from "./payoff-matrix-section";
 import StrategicInsightsSection from "./strategic-insights-section";
+import { AnalysisWorkflowNavigator } from "./analysis-workflow-navigator";
+
+function WorkflowSection({
+  id,
+  isActive,
+  sectionLabel,
+  title,
+  description,
+  children,
+  testId,
+}: {
+  id: string;
+  isActive: boolean;
+  sectionLabel: string;
+  title: string;
+  description: string;
+  children: ReactNode;
+  testId?: string;
+}) {
+  return (
+    <section
+      id={id}
+      className={cn(
+        "rounded-2xl border bg-card p-6 shadow-sm transition-colors scroll-mt-28",
+        isActive ? "border-primary ring-1 ring-primary/15" : "border-border",
+      )}
+      data-active-stage={isActive}
+      data-testid={testId}
+      tabIndex={-1}
+    >
+      <div className="space-y-2">
+        <p
+          className={cn(
+            "text-sm font-medium",
+            isActive ? "text-primary" : "text-muted-foreground",
+          )}
+        >
+          {sectionLabel}
+        </p>
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground">
+          {title}
+        </h2>
+        <p className="max-w-3xl text-sm text-muted-foreground">{description}</p>
+      </div>
+
+      <div className="mt-6">{children}</div>
+    </section>
+  );
+}
+
+function focusWorkflowStage(stage: GuidedWorkflowStage) {
+  const sectionId = GUIDED_WORKFLOW_SECTION_IDS[stage];
+  const section = document.getElementById(sectionId);
+
+  if (!section) {
+    return;
+  }
+
+  if (typeof section.scrollIntoView === "function") {
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  if (typeof section.focus === "function") {
+    section.focus({ preventScroll: true });
+  }
+}
 
 export default function AnalysisPanel() {
   const analysis = useAnalysisStore((state) => state.analysis);
   const validation = useAnalysisStore((state) => state.validation);
+  const workflowState = useAnalysisStore((state) => state.workflow);
+  const setWorkflowStage = useAnalysisStore((state) => state.setWorkflowStage);
   const renameAnalysis = useAnalysisStore((state) => state.renameAnalysis);
   const renamePlayer = useAnalysisStore((state) => state.renamePlayer);
   const addStrategy = useAnalysisStore((state) => state.addStrategy);
@@ -17,31 +92,37 @@ export default function AnalysisPanel() {
   const removeStrategy = useAnalysisStore((state) => state.removeStrategy);
   const setPayoff = useAnalysisStore((state) => state.setPayoff);
 
-  // NOTE: useMemo skipped here — the jsdom test environment has a React
-  // dual-instance resolution issue that prevents direct React hook imports.
-  // The computation is lightweight for 2-player games and the top-bar already
-  // memoizes its own copy.
   const summary = createAnalysisSummary(analysis, validation);
   const insights = createAnalysisInsights(analysis, validation);
+  const workflow = createAnalysisWorkflow(
+    analysis,
+    validation,
+    summary,
+    insights,
+    workflowState.currentStage,
+  );
+
+  const handleStageChange = (stage: GuidedWorkflowStage) => {
+    setWorkflowStage(stage);
+    focusWorkflowStage(stage);
+  };
 
   return (
     <div className="flex flex-col gap-6">
-      <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-primary">
-            1. Analysis details
-          </p>
-          <h2 className="text-2xl font-semibold tracking-tight text-foreground">
-            Canonical manual model
-          </h2>
-          <p className="max-w-3xl text-sm text-muted-foreground">
-            Name the analysis and keep the workflow grounded in the current
-            two-player normal-form game before you move into strategies and
-            payoffs.
-          </p>
-        </div>
+      <AnalysisWorkflowNavigator
+        workflow={workflow}
+        onStageChange={handleStageChange}
+      />
 
-        <label className="mt-6 block max-w-3xl space-y-2">
+      <WorkflowSection
+        id={GUIDED_WORKFLOW_SECTION_IDS.details}
+        isActive={workflow.currentStage === "details"}
+        sectionLabel="Analysis details"
+        title="Canonical manual model"
+        description="Name the analysis and keep the workflow grounded in the current two-player normal-form game before you move into strategies and payoffs."
+        testId="analysis-details"
+      >
+        <label className="block max-w-3xl space-y-2">
           <span className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             Analysis title
           </span>
@@ -53,23 +134,17 @@ export default function AnalysisPanel() {
             placeholder="Untitled Analysis"
           />
         </label>
-      </section>
+      </WorkflowSection>
 
-      <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-primary">
-            2. Player and strategy setup
-          </p>
-          <h3 className="text-xl font-semibold text-foreground">
-            Players and strategies
-          </h3>
-          <p className="max-w-3xl text-sm text-muted-foreground">
-            Define who is playing and the ordered strategies that set the payoff
-            matrix axes.
-          </p>
-        </div>
-
-        <div className="mt-6 grid gap-6 xl:grid-cols-2">
+      <WorkflowSection
+        id={GUIDED_WORKFLOW_SECTION_IDS.strategies}
+        isActive={workflow.currentStage === "strategies"}
+        sectionLabel="Players and strategies"
+        title="Players and strategy setup"
+        description="Define who is playing and the ordered strategies that set the payoff matrix axes."
+        testId="analysis-strategies"
+      >
+        <div className="grid gap-6 xl:grid-cols-2">
           {analysis.players.map((player, playerIndex) => (
             <section
               key={player.id}
@@ -150,17 +225,27 @@ export default function AnalysisPanel() {
             </section>
           ))}
         </div>
-      </section>
+      </WorkflowSection>
 
       <PayoffMatrixSection
         analysis={analysis}
         setPayoff={setPayoff}
         insights={insights}
+        isActive={workflow.currentStage === "payoffs"}
+        sectionId={GUIDED_WORKFLOW_SECTION_IDS.payoffs}
       />
 
-      <AnalysisReviewSection summary={summary} />
+      <AnalysisReviewSection
+        summary={summary}
+        isActive={workflow.currentStage === "review"}
+        sectionId={GUIDED_WORKFLOW_SECTION_IDS.review}
+      />
 
-      <StrategicInsightsSection insights={insights} />
+      <StrategicInsightsSection
+        insights={insights}
+        isActive={workflow.currentStage === "insights"}
+        sectionId={GUIDED_WORKFLOW_SECTION_IDS.insights}
+      />
     </div>
   );
 }

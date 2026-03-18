@@ -24,6 +24,17 @@ export interface Analysis {
   profiles: AnalysisProfile[]
 }
 
+export type GuidedWorkflowStage =
+  | 'details'
+  | 'strategies'
+  | 'payoffs'
+  | 'review'
+  | 'insights'
+
+export interface AnalysisWorkflowState {
+  currentStage: GuidedWorkflowStage
+}
+
 export interface AnalysisValidationIssue {
   path: string
   message: string
@@ -46,6 +57,7 @@ export interface AnalysisFileV1 {
   type: typeof ANALYSIS_FILE_TYPE
   version: typeof ANALYSIS_FILE_VERSION
   analysis: Analysis
+  workflow?: AnalysisWorkflowState
 }
 
 export interface AnalysisFileReference {

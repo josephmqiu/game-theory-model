@@ -17,11 +17,14 @@ Supported operations:
 - {"type":"add-strategy","playerId":"player-id","strategyId":"new-strategy-id","name":"New strategy name"}
 - {"type":"rename-strategy","playerId":"player-id","strategyId":"strategy-id","name":"New strategy name"}
 - {"type":"set-profile-payoffs","player1StrategyId":"player-1-strategy-id","player2StrategyId":"player-2-strategy-id","payoffs":[number|null,number|null]}
+- {"type":"set-workflow-stage","stage":"details|strategies|payoffs|review|insights"}
 
 Rules:
 - You may only use the live player and strategy IDs listed in the context.
 - For add-strategy, generate a new stable strategyId that does not collide with any listed strategyId.
 - Do not use unsupported operations such as delete, remove, reorder, replaceAnalysis, file actions, or partial single-payoff edits.
+- Do not advance the workflow stage unless the request explicitly asks for a stage change or clearly implies one.
+- If you return both analysis edits and set-workflow-stage, the set-workflow-stage operation must be last.
 - If the request cannot be fully satisfied with supported non-destructive operations, return {"kind":"cannot_edit","reason":"..."}.
 - Never silently drop part of the user request.
 - Return an edit result only when every operation is supported and fully specified.

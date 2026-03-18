@@ -8,12 +8,15 @@ import { streamChat } from '@/services/ai/ai-service'
 import { CHAT_SYSTEM_PROMPT } from '@/services/ai/ai-prompts'
 import { ANALYSIS_CHAT_SYSTEM_PROMPT, ANALYSIS_EDIT_PLANNER_PROMPT } from '@/services/ai/analysis-ai-prompts'
 import {
-  applyAnalysisOperations,
+  applyAnalysisWorkflowOperations,
   buildAnalysisAIContext,
   classifyAnalysisIntent,
   parseAnalysisAIPlannerResult,
 } from '@/services/ai/analysis-ai-helpers'
-import type { AnalysisAIPlannerResult, AnalysisAIOperation } from '@/services/ai/analysis-ai-types'
+import type {
+  AnalysisAIPlannerResult,
+  AnalysisAIOperation,
+} from '@/services/ai/analysis-ai-types'
 import {
   generateDesign,
   generateDesignModification,
@@ -25,6 +28,10 @@ import {
   createAnalysisSummary,
   type AnalysisSummary,
 } from '@/services/analysis/analysis-summary'
+import {
+  GUIDED_WORKFLOW_STAGE_LABELS,
+} from '@/services/analysis/analysis-workflow'
+import type { GuidedWorkflowStage } from '@/types/analysis'
 import { trimChatHistory } from '@/services/ai/context-optimizer'
 import type { ChatMessage as ChatMessageType } from '@/services/ai/ai-types'
 import { CHAT_STREAM_THINKING_CONFIG } from '@/services/ai/ai-runtime-config'
@@ -151,20 +158,31 @@ function formatAnalysisOperation(operation: AnalysisAIOperation): string {
       return `Rename strategy ${operation.strategyId} for player ${operation.playerId} to "${operation.name}".`
     case 'set-profile-payoffs':
       return `Set payoffs for ${operation.player1StrategyId} vs ${operation.player2StrategyId} to [${String(operation.payoffs[0])}, ${String(operation.payoffs[1])}].`
+    case 'set-workflow-stage':
+      return `Set workflow stage to ${operation.stage}.`
   }
+}
+
+function formatWorkflowStage(stage: GuidedWorkflowStage): string {
+  return GUIDED_WORKFLOW_STAGE_LABELS[stage]
 }
 
 export function buildAnalysisSuccessMessage(
   operations: AnalysisAIOperation[],
   summary: AnalysisSummary,
+  workflowStage: GuidedWorkflowStage | null = null,
 ): string {
   const appliedLines = operations.map((operation) => `[done] ${formatAnalysisOperation(operation)}`)
+  const workflowLine = workflowStage
+    ? `<step title="Workflow stage" status="done">[done] Workflow moved to ${formatWorkflowStage(workflowStage)}.</step>`
+    : null
 
   return [
     `<step title="Applied changes" status="done">${appliedLines.join('\n')}</step>`,
     `<step title="Current analysis" status="done">[done] ${summary.statusLabel}\n[done] ${summary.progressLabel}</step>`,
+    workflowLine,
     `Applied ${operations.length} analysis change${operations.length === 1 ? '' : 's'}. ${summary.statusLabel}. ${summary.progressLabel}.`,
-  ].join('\n\n')
+  ].filter(Boolean).join('\n\n')
 }
 
 export function buildAnalysisNoopMessage(
@@ -180,6 +198,14 @@ export function buildAnalysisNoopMessage(
 
 function buildAnalysisAnswerSystemPrompt(contextPrompt: string): string {
   return `${ANALYSIS_CHAT_SYSTEM_PROMPT}\n\n${contextPrompt}`
+}
+
+function getWorkflowSnapshot() {
+  const state = useAnalysisStore.getState()
+  return {
+    currentStage: state.workflow.currentStage,
+    workflowRevision: state.workflowRevision,
+  }
 }
 
 export async function requestAnalysisPlannerResult(
@@ -291,6 +317,8 @@ export async function handleAnalysisRequest(args: {
   const analysisState = useAnalysisStore.getState()
   const analysisSnapshot = structuredClone(analysisState.analysis)
   const revisionAtStart = analysisState.analysisRevision
+  const workflowSnapshotAtStart = getWorkflowSnapshot()
+  const workflowRevisionAtStart = workflowSnapshotAtStart.workflowRevision
   const validationAtStart = analysisState.validation
   const summary = createAnalysisSummary(
     analysisSnapshot,
@@ -306,6 +334,7 @@ export async function handleAnalysisRequest(args: {
     summary,
     insights,
     revisionAtStart,
+    workflowSnapshotAtStart.currentStage,
   )
   const intent = classifyAnalysisIntent(messageText)
 
@@ -331,7 +360,34 @@ export async function handleAnalysisRequest(args: {
       )
     }
 
-    if (useAnalysisStore.getState().analysisRevision !== revisionAtStart) {
+    if (
+      useAnalysisStore.getState().analysisRevision !== revisionAtStart ||
+      getWorkflowSnapshot().workflowRevision !== workflowRevisionAtStart
+    ) {
+      return buildAnalysisNoopMessage(
+        'The analysis changed while AI was working; no changes were applied.',
+        'Stale analysis snapshot',
+      )
+    }
+
+    const appliedBatch = applyAnalysisWorkflowOperations(
+      analysisSnapshot,
+      plannerResult.operations,
+      workflowSnapshotAtStart.currentStage,
+    )
+    const workflowStageChanged = appliedBatch.workflowStageChanged
+    const workflowStage = appliedBatch.workflowStage
+
+    if (appliedBatch.analysisOperationCount === 0 && !workflowStageChanged) {
+      return buildAnalysisNoopMessage(
+        'The request did not change the analysis or workflow stage.',
+      )
+    }
+
+    if (
+      useAnalysisStore.getState().analysisRevision !== revisionAtStart ||
+      getWorkflowSnapshot().workflowRevision !== workflowRevisionAtStart
+    ) {
       return buildAnalysisNoopMessage(
         'The analysis changed while AI was working; no changes were applied.',
         'Stale analysis snapshot',
@@ -344,26 +400,41 @@ export async function handleAnalysisRequest(args: {
     ].join('\n\n')
     updateLastMessage(planningMessage)
 
-    const nextAnalysis = applyAnalysisOperations(
-      analysisSnapshot,
-      plannerResult.operations,
-    )
+    const nextAnalysis = appliedBatch.analysis
 
-    if (useAnalysisStore.getState().analysisRevision !== revisionAtStart) {
+    if (
+      useAnalysisStore.getState().analysisRevision !== revisionAtStart ||
+      getWorkflowSnapshot().workflowRevision !== workflowRevisionAtStart
+    ) {
       return buildAnalysisNoopMessage(
         'The analysis changed while AI was working; no changes were applied.',
         'Stale analysis snapshot',
       )
     }
 
-    useAnalysisStore.getState().replaceAnalysis(nextAnalysis)
+    if (workflowStageChanged && workflowStage) {
+      useAnalysisStore.getState().commitAnalysisWorkflow({
+        ...(appliedBatch.analysisOperationCount > 0 ? { analysis: nextAnalysis } : {}),
+        workflow: { currentStage: workflowStage },
+      })
+    } else if (appliedBatch.analysisOperationCount > 0) {
+      useAnalysisStore.getState().replaceAnalysis(nextAnalysis)
+    } else {
+      return buildAnalysisNoopMessage(
+        'The request did not change the analysis or workflow stage.',
+      )
+    }
     const nextState = useAnalysisStore.getState()
     const nextSummary = createAnalysisSummary(
       nextState.analysis,
       nextState.validation,
     )
 
-    return buildAnalysisSuccessMessage(plannerResult.operations, nextSummary)
+    return buildAnalysisSuccessMessage(
+      plannerResult.operations,
+      nextSummary,
+      workflowStageChanged ? workflowStage : null,
+    )
   }
 
   const chatHistory = messages.map((message) => ({
