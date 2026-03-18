@@ -1,0 +1,221 @@
+import { useState } from "react";
+import { RefreshCw, Search } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useEntityGraphStore } from "@/stores/entity-graph-store";
+import type { MethodologyPhase } from "@/types/methodology";
+import {
+  ALL_PHASES,
+  V1_PHASES,
+  PHASE_LABELS,
+  PHASE_NUMBERS,
+} from "@/types/methodology";
+
+// ── Props ──
+
+export interface PhaseSidebarProps {
+  onPhaseFilter: (phase: MethodologyPhase | null) => void;
+  onRerunPhase: (phase: MethodologyPhase) => void;
+  onSearch: (query: string) => void;
+  activeFilter: MethodologyPhase | null;
+}
+
+// ── Helpers ──
+
+const V1_PHASE_SET = new Set<MethodologyPhase>(V1_PHASES);
+
+function isV1Phase(phase: MethodologyPhase): boolean {
+  return V1_PHASE_SET.has(phase);
+}
+
+// ── Component ──
+
+export function PhaseSidebar({
+  onPhaseFilter,
+  onRerunPhase,
+  onSearch,
+  activeFilter,
+}: PhaseSidebarProps) {
+  const phases = useEntityGraphStore((s) => s.analysis.phases);
+  const entities = useEntityGraphStore((s) => s.analysis.entities);
+  const [hoveredPhase, setHoveredPhase] = useState<MethodologyPhase | null>(
+    null,
+  );
+  const [searchQuery, setSearchQuery] = useState("");
+
+  function getEntityCount(phase: MethodologyPhase): number {
+    return entities.filter((e) => e.phase === phase).length;
+  }
+
+  function getPhaseState(phase: MethodologyPhase) {
+    return phases.find((ps) => ps.phase === phase);
+  }
+
+  function handlePhaseClick(phase: MethodologyPhase) {
+    // Toggle: clicking active filter clears it
+    onPhaseFilter(activeFilter === phase ? null : phase);
+  }
+
+  function handleSearchChange(value: string) {
+    setSearchQuery(value);
+    onSearch(value);
+  }
+
+  return (
+    <aside className="flex h-full w-[200px] flex-col border-r border-zinc-700 bg-zinc-900">
+      {/* Phase list */}
+      <nav className="flex-1 overflow-y-auto px-2 py-3">
+        <ul className="space-y-0.5">
+          {ALL_PHASES.map((phase) => {
+            const v1 = isV1Phase(phase);
+            const phaseState = getPhaseState(phase);
+            const status = phaseState?.status ?? "pending";
+            const entityCount = getEntityCount(phase);
+            const isActive = activeFilter === phase;
+            const isHovered = hoveredPhase === phase;
+            const isRunning = status === "running";
+
+            if (v1) {
+              return (
+                <li key={phase}>
+                  <button
+                    type="button"
+                    onClick={() => handlePhaseClick(phase)}
+                    onMouseEnter={() => setHoveredPhase(phase)}
+                    onMouseLeave={() => setHoveredPhase(null)}
+                    className={cn(
+                      "group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+                      isActive
+                        ? "border-l-2 border-amber-500 bg-amber-500/10 pl-1.5"
+                        : "border-l-2 border-transparent pl-1.5",
+                      isRunning &&
+                        !isActive &&
+                        "border-l-2 border-amber-500 pl-1.5",
+                      "hover:bg-zinc-800",
+                    )}
+                  >
+                    {/* Phase number circle */}
+                    <span
+                      className={cn(
+                        "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
+                        isActive
+                          ? "bg-amber-500 text-zinc-950"
+                          : "bg-zinc-700 text-zinc-300",
+                      )}
+                    >
+                      {PHASE_NUMBERS[phase]}
+                    </span>
+
+                    {/* Phase name */}
+                    <span className="flex-1 truncate font-[Geist,sans-serif] text-[13px] font-medium text-zinc-200">
+                      {PHASE_LABELS[phase]}
+                    </span>
+
+                    {/* Status dot */}
+                    <StatusDot status={status} />
+
+                    {/* Entity count badge */}
+                    {entityCount > 0 && (
+                      <span className="shrink-0 font-[Geist,sans-serif] text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-400">
+                        {entityCount}
+                      </span>
+                    )}
+
+                    {/* Rerun button (visible on hover) */}
+                    {isHovered && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="ml-auto h-5 w-5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRerunPhase(phase);
+                            }}
+                          >
+                            <RefreshCw className="h-3 w-3 text-zinc-400" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="right">
+                          Rerun phase
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </button>
+                </li>
+              );
+            }
+
+            // Future phases (4-10): disabled
+            return (
+              <li key={phase}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 pl-[10px] opacity-60">
+                      {/* Phase number circle - muted */}
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[11px] font-semibold text-zinc-500">
+                        {PHASE_NUMBERS[phase]}
+                      </span>
+
+                      {/* Phase name - muted */}
+                      <span className="flex-1 truncate font-[Geist,sans-serif] text-[13px] font-medium text-zinc-500">
+                        {PHASE_LABELS[phase]}
+                      </span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">Coming soon</TooltipContent>
+                </Tooltip>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+
+      {/* Search input */}
+      <div className="border-t border-zinc-700 px-2 py-2">
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            placeholder="Search entities..."
+            className="h-8 w-full rounded-md border border-zinc-700 bg-zinc-800 pl-7 pr-2 font-[Geist,sans-serif] text-[13px] font-medium text-zinc-200 placeholder:text-zinc-500 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+          />
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+// ── Status dot sub-component ──
+
+function StatusDot({ status }: { status: string }) {
+  if (status === "running") {
+    return (
+      <span className="relative flex h-2.5 w-2.5 shrink-0">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-500 opacity-75" />
+        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500" />
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={cn(
+        "h-2 w-2 shrink-0 rounded-full",
+        status === "pending" && "bg-zinc-500",
+        status === "complete" && "bg-emerald-400",
+        status === "failed" && "bg-red-400",
+        status === "needs-revalidation" && "bg-amber-400",
+      )}
+    />
+  );
+}
