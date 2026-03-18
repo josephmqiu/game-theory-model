@@ -4,10 +4,17 @@ import TopBar from "./top-bar";
 import AgentSettingsDialog from "@/components/shared/agent-settings-dialog";
 import UpdateReadyBanner from "./update-ready-banner";
 import AnalysisPanel from "@/components/panels/analysis-panel";
+import AIChatPanelBase from "@/components/panels/ai-chat-panel";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
 import { useAnalysisStore } from "@/stores/analysis-store";
 import { useElectronMenu } from "@/hooks/use-electron-menu";
 import { initAppStorage } from "@/utils/app-storage";
+import type { ComponentType } from "react";
+
+const AIChatPanel = AIChatPanelBase as ComponentType<{
+  mode: "analysis";
+  presentation: "docked";
+}>;
 
 export default function EditorLayout() {
   const isDirty = useAnalysisStore((state) => state.isDirty);
@@ -63,11 +70,18 @@ export default function EditorLayout() {
               <p className="mt-3 max-w-3xl text-sm text-muted-foreground">
                 Build a complete two-player analysis manually. Create a new
                 analysis or open an existing `.gta` file to continue working
-                without AI.
+                with the analysis assistant.
               </p>
             </section>
 
-            <AnalysisPanel />
+            <div className="flex flex-col gap-6 xl:grid xl:grid-cols-[minmax(0,1fr)_400px] xl:items-start">
+              <div className="order-2 min-w-0 xl:order-1">
+                <AnalysisPanel />
+              </div>
+              <section className="order-1 rounded-2xl border border-border bg-card p-6 shadow-sm xl:sticky xl:top-6 xl:order-2 xl:h-fit">
+                <AIChatPanel mode="analysis" presentation="docked" />
+              </section>
+            </div>
           </div>
         </div>
         <AgentSettingsDialog />

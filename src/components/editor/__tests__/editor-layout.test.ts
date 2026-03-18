@@ -17,12 +17,20 @@ const englishLocalePath = fileURLToPath(
 );
 
 describe("Phase 4 shell assertions", () => {
-  it("keeps the editor layout analysis-first", () => {
+  it("keeps the editor layout analysis-first with a docked AI rail", () => {
     const source = readFileSync(editorLayoutPath, "utf8");
 
     expect(source).toContain("Manual Analysis");
     expect(source).toContain("Build a complete two-player analysis manually");
-    expect(source).toContain("<AnalysisPanel />");
+    expect(source).toContain("with the analysis assistant");
+    expect(source).toContain("AIChatPanel mode=\"analysis\" presentation=\"docked\"");
+    expect(source).toContain(
+      "xl:grid-cols-[minmax(0,1fr)_400px]",
+    );
+    expect(source).toContain("xl:sticky xl:top-6");
+    expect(source).toContain("order-2 min-w-0 xl:order-1");
+    expect(source).toContain("order-1 rounded-2xl border border-border bg-card p-6 shadow-sm xl:sticky xl:top-6 xl:order-2 xl:h-fit");
+    expect(source).not.toContain("without AI");
     expect(source).not.toContain("workspace");
     expect(source).not.toContain("design-tool");
   });

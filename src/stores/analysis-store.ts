@@ -15,6 +15,7 @@ import { validateAnalysis } from "@/services/analysis/analysis-validation";
 interface AnalysisStoreState extends AnalysisFileReference {
   analysis: Analysis;
   validation: AnalysisValidation;
+  analysisRevision: number;
   isDirty: boolean;
   newAnalysis: () => void;
   loadAnalysis: (
@@ -54,12 +55,14 @@ function createStoreState(
   analysisInput?: Partial<Analysis>,
   source?: Partial<AnalysisFileReference>,
   isDirty = false,
+  analysisRevision = 0,
 ) {
   const { analysis, validation } = createAnalysisState(analysisInput);
 
   return {
     analysis,
     validation,
+    analysisRevision,
     fileName: source?.fileName ?? null,
     filePath: source?.filePath ?? null,
     fileHandle: source?.fileHandle ?? null,
@@ -88,10 +91,11 @@ function getAnalysisSource(
 export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
   ...createStoreState(),
 
-  newAnalysis: () => set(createStoreState()),
+  newAnalysis: () =>
+    set((state) => createStoreState(undefined, undefined, false, state.analysisRevision + 1)),
 
   loadAnalysis: (analysis, source) =>
-    set(createStoreState(analysis, source, false)),
+    set((state) => createStoreState(analysis, source, false, state.analysisRevision + 1)),
 
   replaceAnalysis: (analysis) =>
     set((state) =>
@@ -102,6 +106,7 @@ export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
         },
         getAnalysisSource(state),
         true,
+        state.analysisRevision + 1,
       ),
     ),
 
@@ -114,6 +119,7 @@ export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
         },
         getAnalysisSource(state),
         true,
+        state.analysisRevision + 1,
       ),
     ),
 
@@ -128,6 +134,7 @@ export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
         },
         getAnalysisSource(state),
         true,
+        state.analysisRevision + 1,
       ),
     ),
 
@@ -153,6 +160,7 @@ export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
         },
         getAnalysisSource(state),
         true,
+        state.analysisRevision + 1,
       ),
     ),
 
@@ -165,7 +173,7 @@ export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
             player.id === playerId
               ? {
                   ...player,
-                  strategies: player.strategies.map((strategy) =>
+                strategies: player.strategies.map((strategy) =>
                     strategy.id === strategyId
                       ? { ...strategy, name }
                       : strategy,
@@ -176,6 +184,7 @@ export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
         },
         getAnalysisSource(state),
         true,
+        state.analysisRevision + 1,
       ),
     ),
 
@@ -201,6 +210,7 @@ export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
         },
         getAnalysisSource(state),
         true,
+        state.analysisRevision + 1,
       );
     }),
 
@@ -235,6 +245,7 @@ export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
         },
         getAnalysisSource(state),
         true,
+        state.analysisRevision + 1,
       );
     }),
 

@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useAIStore } from '@/stores/ai-store'
 import type { PanelCorner } from '@/stores/ai-store'
+import { useAnalysisStore } from '@/stores/analysis-store'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { useAgentSettingsStore } from '@/stores/agent-settings-store'
 import {
@@ -19,6 +20,9 @@ import CopilotLogo from '@/components/icons/copilot-logo'
 import ChatMessage from './chat-message'
 import { useChatHandlers } from './ai-chat-handlers'
 import { FixedChecklist } from './ai-chat-checklist'
+
+export type AIChatMode = 'design' | 'analysis'
+export type AIChatPresentation = 'floating' | 'docked'
 
 const PROVIDER_ICON: Record<AIProviderType, typeof ClaudeLogo> = {
   anthropic: ClaudeLogo,
@@ -43,6 +47,21 @@ const QUICK_ACTIONS = [
   {
     labelKey: 'ai.quickAction.colorPalette',
     prompt: 'Explain which connected agents and MCP tools are available right now and how they could help in this workspace.',
+  },
+]
+
+const ANALYSIS_QUICK_ACTIONS = [
+  {
+    label: 'Summarize the current analysis',
+    prompt: 'Summarize the current analysis and identify the biggest modeling gaps.',
+  },
+  {
+    label: 'Explain the strategic picture',
+    prompt: 'Explain the current best responses, dominant strategies, and any pure Nash equilibria.',
+  },
+  {
+    label: 'Suggest the next edit',
+    prompt: 'Based on the current analysis, suggest the single most useful next edit to make it more complete.',
   },
 ]
 
@@ -126,7 +145,13 @@ export function AIChatMinimizedBar() {
  * Expanded AI chat panel — floating, draggable.
  * Only renders when NOT minimized.
  */
-export default function AIChatPanel() {
+export default function AIChatPanel({
+  mode = 'design',
+  presentation = 'floating',
+}: {
+  mode?: AIChatMode
+  presentation?: AIChatPresentation
+}) {
   const { t } = useTranslation()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -163,11 +188,17 @@ export default function AIChatPanel() {
   const pendingAttachments = useAIStore((s) => s.pendingAttachments)
   const addPendingAttachment = useAIStore((s) => s.addPendingAttachment)
   const removePendingAttachment = useAIStore((s) => s.removePendingAttachment)
-  const { input, setInput, handleSend } = useChatHandlers()
+  const clearPendingAttachments = useAIStore((s) => s.clearPendingAttachments)
+  const { input, setInput, handleSend } = useChatHandlers({ mode })
   const noAvailableModels = !isLoadingModels && availableModels.length === 0
   const canUseModel = !isLoadingModels && availableModels.length > 0
-  const canSendMessage = canUseModel && !isStreaming && (!!input.trim() || pendingAttachments.length > 0)
+  const allowAttachments = mode === 'design'
+  const canSendMessage = canUseModel && !isStreaming && (!!input.trim() || (allowAttachments && pendingAttachments.length > 0))
   const quickActionsDisabled = !canUseModel || isStreaming
+  const isDocked = presentation === 'docked'
+  const isAnalysisMode = mode === 'analysis'
+  const analysisId = useAnalysisStore((state) => state.analysis.id)
+  const previousAnalysisIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -247,6 +278,20 @@ export default function AIChatPanel() {
       toggleMinimize()
     }
   }, [isStreaming, isMinimized, toggleMinimize])
+
+  useEffect(() => {
+    if (!isAnalysisMode) return
+
+    const previousAnalysisId = previousAnalysisIdRef.current
+    previousAnalysisIdRef.current = analysisId
+    if (previousAnalysisId === null || previousAnalysisId === analysisId) {
+      return
+    }
+
+    stopStreaming()
+    clearPendingAttachments()
+    clearMessages()
+  }, [analysisId, clearMessages, clearPendingAttachments, isAnalysisMode, stopStreaming])
 
   /* --- Drag-to-snap handlers --- */
 
@@ -473,46 +518,75 @@ export default function AIChatPanel() {
   }
 
   // Don't render when minimized — the minimized bar is rendered by parent
-  if (isMinimized) return null
+  if (!isDocked && isMinimized) return null
+
+  const quickActions = isAnalysisMode ? ANALYSIS_QUICK_ACTIONS : QUICK_ACTIONS
+  const emptyStateLabel = isAnalysisMode
+    ? 'Try an analysis prompt...'
+    : t('ai.tryExample')
+  const emptyStateHint = isAnalysisMode
+    ? 'Ask about the current game or request a supported non-destructive edit.'
+    : t('ai.tipSelectElements')
+  const inputPlaceholder = isStreaming
+    ? t('ai.generating')
+    : isAnalysisMode
+      ? 'Ask about this analysis or request a supported edit...'
+      : t('ai.designWithAgent')
+  const displayTitle = isAnalysisMode && messages.length === 0
+    ? 'Analysis Assistant'
+    : chatTitle
 
   return (
     <div
       ref={panelRef}
       className={cn(
-        'absolute z-50 flex w-[320px] flex-col overflow-hidden rounded-xl border border-border bg-card/95 shadow-2xl backdrop-blur-sm',
-        !dragStyle && CORNER_CLASSES[panelCorner],
+        isDocked
+          ? 'flex h-[480px] min-h-0 flex-col xl:h-[calc(100vh-12rem)]'
+          : 'absolute z-50 flex w-[320px] flex-col overflow-hidden rounded-xl border border-border bg-card/95 shadow-2xl backdrop-blur-sm',
+        !isDocked && !dragStyle && CORNER_CLASSES[panelCorner],
       )}
-        style={{ ...dragStyle, height: panelHeight }}
+      style={isDocked ? undefined : { ...dragStyle, height: panelHeight }}
     >
-      {/* --- Resize Handle (Top Edge) --- */}
-      <div
-        className="absolute -top-1.5 left-0 right-0 h-3 cursor-ns-resize z-50 hover:bg-primary/20 transition-colors group flex items-center justify-center"
-        onPointerDown={handleResizeStart}
-        onPointerMove={handleResizeMove}
-        onPointerUp={handleResizeEnd}
-      >
-         {/* Visual grip pill */}
-         <div className="w-8 h-1 rounded-full bg-border group-hover:bg-primary/50 transition-colors" />
-      </div>
+      {!isDocked && (
+        <div
+          className="absolute -top-1.5 left-0 right-0 z-50 flex h-3 cursor-ns-resize items-center justify-center transition-colors group hover:bg-primary/20"
+          onPointerDown={handleResizeStart}
+          onPointerMove={handleResizeMove}
+          onPointerUp={handleResizeEnd}
+        >
+          <div className="h-1 w-8 rounded-full bg-border transition-colors group-hover:bg-primary/50" />
+        </div>
+      )}
 
       {/* --- Header (draggable) --- */}
       <div
-        className="flex items-center justify-between px-1 py-1 border-b border-border cursor-grab active:cursor-grabbing select-none"
-        onPointerDown={handleDragStart}
-        onPointerMove={handleDragMove}
-        onPointerUp={handleDragEnd}
+        className={cn(
+          'flex items-center justify-between border-b border-border px-1 py-1 select-none',
+          isDocked ? '' : 'cursor-grab active:cursor-grabbing',
+        )}
+        onPointerDown={isDocked ? undefined : handleDragStart}
+        onPointerMove={isDocked ? undefined : handleDragMove}
+        onPointerUp={isDocked ? undefined : handleDragEnd}
       >
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={toggleMinimize}
-            title={t('ai.collapse')}
+          {!isDocked && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={toggleMinimize}
+              title={t('ai.collapse')}
+            >
+              <ChevronDown size={14} />
+            </Button>
+          )}
+          <span
+            className={cn(
+              'max-w-[160px] truncate overflow-hidden text-ellipsis text-sm font-medium text-foreground',
+              isDocked ? 'px-2' : '',
+            )}
+            title={displayTitle}
           >
-            <ChevronDown size={14} />
-          </Button>
-          <span className="text-sm font-medium text-foreground max-w-[100px] truncate overflow-hidden text-ellipsis" title={chatTitle}>
-            {chatTitle}
+            {displayTitle}
           </span>
           {isStreaming && <Loader2 size={13} className="animate-spin text-muted-foreground ml-2" />}
         </div>
@@ -527,16 +601,19 @@ export default function AIChatPanel() {
       </div>
 
       {/* --- Messages --- */}
-      <div className="min-h-0 flex-1 overflow-y-auto rounded-b-xl bg-background/80 px-3.5 py-3">
+      <div className={cn(
+        'min-h-0 flex-1 overflow-y-auto bg-background/80 px-3.5 py-3',
+        isDocked ? 'rounded-xl' : 'rounded-b-xl',
+      )}>
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-4">
             <p className="text-xs text-muted-foreground mb-4">
-              {t('ai.tryExample')}
+              {emptyStateLabel}
             </p>
             <div className="flex flex-col gap-2 w-full px-2">
-              {QUICK_ACTIONS.map((action) => (
+              {quickActions.map((action) => (
                 <button
-                  key={action.labelKey}
+                  key={'labelKey' in action ? action.labelKey : action.label}
                   type="button"
                   onClick={() => handleSend(action.prompt)}
                   className={cn(
@@ -546,12 +623,12 @@ export default function AIChatPanel() {
                       : 'hover:bg-secondary hover:text-foreground',
                   )}
                 >
-                  {t(action.labelKey)}
+                  {'labelKey' in action ? t(action.labelKey) : action.label}
                 </button>
               ))}
             </div>
             <p className="text-[10px] text-muted-foreground/50 mt-5">
-              {t('ai.tipSelectElements')}
+              {emptyStateHint}
             </p>
           </div>
         ) : (
@@ -573,18 +650,23 @@ export default function AIChatPanel() {
       <FixedChecklist messages={messages} isStreaming={isStreaming} />
 
       {/* --- Input area --- */}
-      <div className="relative border-t border-border bg-card rounded-b-xl">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          className="hidden"
-          onChange={handleFileSelect}
-        />
+      <div className={cn(
+        'relative border-t border-border bg-card',
+        isDocked ? 'rounded-xl' : 'rounded-b-xl',
+      )}>
+        {allowAttachments && (
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={handleFileSelect}
+          />
+        )}
 
         {/* Attachment preview strip */}
-        {pendingAttachments.length > 0 && (
+        {allowAttachments && pendingAttachments.length > 0 && (
           <div className="flex items-center gap-1.5 px-3 pt-2 pb-1 overflow-x-auto">
             {pendingAttachments.map((att) => (
               <div key={att.id} className="relative group shrink-0">
@@ -610,8 +692,8 @@ export default function AIChatPanel() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          placeholder={isStreaming ? t('ai.generating') : t('ai.designWithAgent')}
+          onPaste={allowAttachments ? handlePaste : undefined}
+          placeholder={inputPlaceholder}
           disabled={isStreaming}
           rows={2}
           className="w-full bg-transparent text-sm text-foreground placeholder-muted-foreground px-3.5 pt-3 pb-2 resize-none outline-none max-h-28 min-h-[52px]"
@@ -648,29 +730,33 @@ export default function AIChatPanel() {
 
           <div className="flex items-center gap-1 w-full">
             {/* Concurrency selector */}
-            <ConcurrencyButton />
+            {!isAnalysisMode && <ConcurrencyButton />}
 
-            <span
-              className={cn(
-                'ml-1 shrink-0 whitespace-nowrap text-[10px] select-none',
-                selectedIds.length > 0 ? 'text-muted-foreground/80' : 'text-muted-foreground/40',
-              )}
-            >
-              {t('common.selected', { count: selectedIds.length })}
-            </span>
+            {!isAnalysisMode && (
+              <span
+                className={cn(
+                  'ml-1 shrink-0 whitespace-nowrap text-[10px] select-none',
+                  selectedIds.length > 0 ? 'text-muted-foreground/80' : 'text-muted-foreground/40',
+                )}
+              >
+                {t('common.selected', { count: selectedIds.length })}
+              </span>
+            )}
 
             {/* Action icons */}
             <div className="ml-auto flex items-center gap-0.5">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isStreaming || pendingAttachments.length >= 4}
-                title={t('ai.attachImage')}
-                className="shrink-0 rounded-lg h-7 w-7"
-              >
-                <Paperclip size={13} />
-              </Button>
+              {allowAttachments && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isStreaming || pendingAttachments.length >= 4}
+                  title={t('ai.attachImage')}
+                  className="shrink-0 rounded-lg h-7 w-7"
+                >
+                  <Paperclip size={13} />
+                </Button>
+              )}
               {isStreaming ? (
                 <Button
                   variant="ghost"
