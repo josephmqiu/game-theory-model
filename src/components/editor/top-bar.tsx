@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ComponentType, SVGProps } from "react";
 import {
   Plus,
   FolderOpen,
   Save,
+  Download,
   Sun,
   Moon,
   Maximize,
@@ -18,7 +19,6 @@ import CopilotLogo from "@/components/icons/copilot-logo";
 import LanguageSelector from "@/components/shared/language-selector";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { createAnalysisSummary } from "@/services/analysis/analysis-summary";
 import {
   Tooltip,
   TooltipTrigger,
@@ -26,12 +26,12 @@ import {
 } from "@/components/ui/tooltip";
 import { appStorage, initAppStorage } from "@/utils/app-storage";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
-import { useAnalysisStore } from "@/stores/analysis-store";
+import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import {
-  newAnalysis as startNewAnalysis,
-  openAnalysis,
-  saveAnalysis,
+  saveEntityAnalysis,
+  openEntityAnalysis,
 } from "@/services/analysis/analysis-persistence";
+import { exportToMarkdown } from "@/services/entity/entity-export";
 import type { AIProviderType } from "@/types/agent-settings";
 
 /** Convert a computed CSS color value (oklch/rgb/etc.) to #rrggbb via an offscreen canvas. */
@@ -144,14 +144,9 @@ function AgentStatusButton() {
 
 export default function TopBar() {
   const { t } = useTranslation();
-  const analysis = useAnalysisStore((state) => state.analysis);
-  const validation = useAnalysisStore((state) => state.validation);
-  const fileName = useAnalysisStore((state) => state.fileName);
-  const isDirty = useAnalysisStore((state) => state.isDirty);
-  const summary = useMemo(
-    () => createAnalysisSummary(analysis, validation),
-    [analysis, validation],
-  );
+  const analysis = useEntityGraphStore((state) => state.analysis);
+  const fileName = useEntityGraphStore((state) => state.fileName);
+  const isDirty = useEntityGraphStore((state) => state.isDirty);
 
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -217,27 +212,47 @@ export default function TopBar() {
   }, []);
 
   const handleNewAnalysis = useCallback(() => {
-    void startNewAnalysis();
+    const state = useEntityGraphStore.getState();
+    if (state.isDirty) {
+      const confirmed = window.confirm(
+        "You have unsaved analysis changes. Discard them and start a new analysis?",
+      );
+      if (!confirmed) return;
+    }
+    useEntityGraphStore.getState().newAnalysis("");
   }, []);
 
   const handleOpenAnalysis = useCallback(() => {
-    void openAnalysis();
+    void openEntityAnalysis();
   }, []);
 
   const handleSaveAnalysis = useCallback(() => {
-    void saveAnalysis();
+    void saveEntityAnalysis();
   }, []);
 
-  const displayName = analysis.name.trim() || "Untitled Analysis";
+  const handleExportMarkdown = useCallback(() => {
+    const currentAnalysis = useEntityGraphStore.getState().analysis;
+    const markdown = exportToMarkdown(currentAnalysis);
+    const blob = new Blob([markdown], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${currentAnalysis.name || "analysis"}.md`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const displayName =
+    analysis.name.trim() || analysis.topic.trim() || "New Analysis";
   const fileStatusLabel = fileName ?? t("topbar.unsavedFile");
+  const entityCount = analysis.entities.length;
+  const completedPhases = analysis.phases.filter(
+    (ps) => ps.status === "complete",
+  ).length;
   const statusLabel =
-    summary.status === "complete"
-      ? t("topbar.complete")
-      : summary.status === "incomplete"
-        ? t("topbar.incomplete", {
-            count: summary.incompleteProfileCount + summary.missingProfileCount,
-          })
-        : t("topbar.issues", { count: summary.issueCount });
+    entityCount > 0
+      ? `${entityCount} entities / ${completedPhases} phases`
+      : "No entities";
 
   return (
     <div className="app-region-drag flex h-10 shrink-0 select-none items-center border-b border-border bg-card px-2">
@@ -295,6 +310,24 @@ export default function TopBar() {
             {t("topbar.tooltipSave")}
           </TooltipContent>
         </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label="Export to Markdown"
+              onClick={handleExportMarkdown}
+              className="h-8"
+            >
+              <Download size={16} strokeWidth={1.5} />
+              Export
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            Export analysis as Markdown
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-4">
@@ -311,11 +344,9 @@ export default function TopBar() {
         <span
           className={cn(
             "rounded-full px-2 py-0.5 text-[11px] font-medium",
-            validation.isValid
-              ? summary.status === "complete"
-                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"
-                : "bg-amber-500/15 text-amber-600 dark:text-amber-300"
-              : "bg-rose-500/15 text-rose-600 dark:text-rose-300",
+            entityCount > 0
+              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"
+              : "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
           )}
         >
           {statusLabel}

@@ -1,61 +1,69 @@
-import { useEffect } from 'react'
+import { useEffect } from "react";
+import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import {
-  newAnalysis as startNewAnalysis,
-  openAnalysis,
-  openAnalysisFromFilePath,
-  saveAnalysis,
-  saveAnalysisAs,
-} from '@/services/analysis/analysis-persistence'
+  saveEntityAnalysis,
+  saveEntityAnalysisAs,
+  openEntityAnalysis,
+} from "@/services/analysis/analysis-persistence";
 
 /**
  * Listens for Electron native menu actions and dispatches them into the
- * analysis persistence controller used by the live workspace.
+ * entity graph persistence controller used by the live workspace.
  */
 export function useElectronMenu() {
   useEffect(() => {
-    const api = window.electronAPI
-    if (!api) return
+    const api = window.electronAPI;
+    if (!api) return;
 
     const handleMenuAction = async (action: string) => {
-      if (action === 'new') {
-        await startNewAnalysis()
-        return
+      if (action === "new") {
+        const state = useEntityGraphStore.getState();
+        if (state.isDirty) {
+          const confirmed = window.confirm(
+            "You have unsaved analysis changes. Discard them and start a new analysis?",
+          );
+          if (!confirmed) return;
+        }
+        useEntityGraphStore.getState().newAnalysis("");
+        return;
       }
 
-      if (action === 'open') {
-        await openAnalysis()
-        return
+      if (action === "open") {
+        await openEntityAnalysis();
+        return;
       }
 
-      if (action === 'save') {
-        await saveAnalysis()
-        return
+      if (action === "save") {
+        await saveEntityAnalysis();
+        return;
       }
 
-      if (action === 'saveAs') {
-        await saveAnalysisAs()
+      if (action === "saveAs") {
+        await saveEntityAnalysisAs();
       }
-    }
+    };
 
     const disposeMenu =
       api.onMenuAction?.((action: string) => {
-        void handleMenuAction(action)
-      }) ?? null
+        void handleMenuAction(action);
+      }) ?? null;
 
     const disposeOpenFile =
-      api.onOpenFile?.((filePath: string) => {
-        void openAnalysisFromFilePath(filePath)
-      }) ?? null
+      api.onOpenFile?.((_filePath: string) => {
+        // Entity graph file opening from OS-level file association
+        // For now, delegate to the entity analysis opener
+        void openEntityAnalysis();
+      }) ?? null;
 
-    void api.getPendingFile?.().then((filePath) => {
-      if (filePath) {
-        void openAnalysisFromFilePath(filePath)
+    void api.getPendingFile?.().then((_filePath) => {
+      if (_filePath) {
+        void openEntityAnalysis();
       }
-    })
+    });
 
     return () => {
-      disposeMenu?.()
-      disposeOpenFile?.()
-    }
-  }, [])
+      disposeMenu?.();
+      disposeOpenFile?.();
+    };
+  }, []);
 }

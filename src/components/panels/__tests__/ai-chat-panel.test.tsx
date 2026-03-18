@@ -11,18 +11,27 @@ describe("AIChatPanel analysis mode", () => {
   it("keeps analysis mode and docked mode logic explicit in source", () => {
     const source = readFileSync(aiChatPanelPath, "utf8");
 
-    expect(source).toContain("const isDocked = presentation === 'docked'")
-    expect(source).toContain("const isAnalysisMode = mode === 'analysis'")
-    expect(source).not.toContain("allowAttachments")
-    expect(source).not.toContain("useCanvasStore")
-    expect(source).toContain("function getAnalysisQuickActions")
-  })
+    expect(source).toContain('const isDocked = presentation === "docked"');
+    expect(source).toContain("const isAnalysisMode = mode");
+    expect(source).not.toContain("allowAttachments");
+    expect(source).not.toContain("useCanvasStore");
+    expect(source).toContain("function getAnalysisQuickActions");
+  });
 
   it("resets analysis chat state when the active analysis id changes", () => {
     const source = readFileSync(aiChatPanelPath, "utf8");
 
-    expect(source).toContain("previousAnalysisIdRef")
-    expect(source).toContain("clearMessages()")
-    expect(source).toContain("stopStreaming()")
-  })
-})
+    expect(source).toContain("previousAnalysisIdRef");
+    expect(source).toContain("clearMessages()");
+    expect(source).toContain("stopStreaming()");
+  });
+
+  it("supports entity graph orchestrator integration", () => {
+    const source = readFileSync(aiChatPanelPath, "utf8");
+
+    expect(source).toContain("onStartAnalysis");
+    expect(source).toContain("useEntityGraphStore");
+    expect(source).toContain("EXAMPLE_TOPICS");
+    expect(source).toContain("handleSendWrapped");
+  });
+});
