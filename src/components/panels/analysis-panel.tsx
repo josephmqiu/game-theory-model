@@ -1,9 +1,11 @@
 import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createAnalysisSummary } from "@/services/analysis/analysis-summary";
+import { createAnalysisInsights } from "@/services/analysis/analysis-insights";
 import { useAnalysisStore } from "@/stores/analysis-store";
 import PayoffMatrixSection from "./payoff-matrix-section";
 import AnalysisReviewSection from "./analysis-review-section";
+import StrategicInsightsSection from "./strategic-insights-section";
 
 export default function AnalysisPanel() {
   const analysis = useAnalysisStore((state) => state.analysis);
@@ -20,6 +22,7 @@ export default function AnalysisPanel() {
   // The computation is lightweight for 2-player games and the top-bar already
   // memoizes its own copy.
   const summary = createAnalysisSummary(analysis, validation);
+  const insights = createAnalysisInsights(analysis, validation);
 
   return (
     <div className="flex flex-col gap-6">
@@ -149,9 +152,15 @@ export default function AnalysisPanel() {
         </div>
       </section>
 
-      <PayoffMatrixSection analysis={analysis} setPayoff={setPayoff} />
+      <PayoffMatrixSection
+        analysis={analysis}
+        setPayoff={setPayoff}
+        insights={insights}
+      />
 
       <AnalysisReviewSection summary={summary} />
+
+      <StrategicInsightsSection insights={insights} />
     </div>
   );
 }

@@ -1,5 +1,7 @@
 import type { Analysis } from "@/types/analysis";
 import type { useAnalysisStore } from "@/stores/analysis-store";
+import { cn } from "@/lib/utils";
+import type { AnalysisInsights } from "@/services/analysis/analysis-insights";
 
 function parsePayoffInput(value: string): number | null {
   if (value.trim().length === 0) {
@@ -13,13 +15,17 @@ function parsePayoffInput(value: string): number | null {
 interface PayoffMatrixSectionProps {
   analysis: Analysis;
   setPayoff: ReturnType<typeof useAnalysisStore.getState>["setPayoff"];
+  insights: AnalysisInsights;
 }
 
 export default function PayoffMatrixSection({
   analysis,
   setPayoff,
+  insights,
 }: PayoffMatrixSectionProps) {
   const [player1, player2] = analysis.players;
+  const pureNashKeys =
+    insights.status === "ready" ? new Set(insights.pureNashProfileKeys) : null;
 
   return (
     <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
@@ -37,6 +43,18 @@ export default function PayoffMatrixSection({
           {player1.name || "Player 1"}, {player2.name || "Player 2"}).
         </p>
       </div>
+
+      {insights.status === "ready" ? (
+        <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-foreground">
+          Highlighted cells mark pure Nash equilibria derived from the live
+          analysis data.
+        </div>
+      ) : (
+        <div className="mt-4 rounded-xl border border-border/70 bg-background/60 px-4 py-3 text-sm text-muted-foreground">
+          Strategic highlights appear after the analysis is valid and every
+          payoff cell is complete.
+        </div>
+      )}
 
       <div className="mt-6 overflow-x-auto">
         <table className="min-w-full border-separate border-spacing-2">
@@ -76,10 +94,21 @@ export default function PayoffMatrixSection({
                       candidate.player1StrategyId === player1Strategy.id &&
                       candidate.player2StrategyId === player2Strategy.id,
                   );
+                  const profileKey = `${player1Strategy.id}::${player2Strategy.id}`;
+                  const isPureNash = Boolean(
+                    pureNashKeys?.has(profileKey),
+                  );
 
                   return (
                     <td key={player2Strategy.id} className="align-top">
-                      <div className="rounded-xl border border-border/70 bg-background p-4">
+                      <div
+                        className={cn(
+                          "rounded-xl border bg-background p-4 transition-colors",
+                          isPureNash
+                            ? "border-amber-500/60 bg-amber-500/10 shadow-sm"
+                            : "border-border/70",
+                        )}
+                      >
                         <div className="mb-3 text-xs text-muted-foreground">
                           {player1Strategy.name.trim() ||
                             `Strategy ${rowIndex + 1}`}{" "}
