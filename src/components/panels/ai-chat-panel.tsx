@@ -24,10 +24,7 @@ import {
   PROVIDER_LABELS,
   isAllowedProvider,
 } from "@/services/ai/allowed-providers";
-// Architecture note: In this Electron app, renderer and main process share JS context.
-// The panel imports analysis-orchestrator directly for isRunning()/abort() — no IPC needed.
-// If the app moves to separate processes, these become IPC calls.
-import * as analysisOrchestrator from "@/services/ai/analysis-orchestrator";
+import * as analysisClient from "@/services/ai/analysis-client";
 import ClaudeLogo from "@/components/icons/claude-logo";
 import OpenAILogo from "@/components/icons/openai-logo";
 import OpenCodeLogo from "@/components/icons/opencode-logo";
@@ -223,7 +220,7 @@ export default function AIChatPanel({
   // Poll analysis orchestrator running state
   useEffect(() => {
     const interval = setInterval(() => {
-      const running = analysisOrchestrator.isRunning();
+      const running = analysisClient.isRunning();
       setAnalysisRunning((prev) => (prev !== running ? running : prev));
     }, 500);
     return () => clearInterval(interval);
@@ -231,7 +228,7 @@ export default function AIChatPanel({
 
   // Subscribe to analysis progress events for completion messages
   useEffect(() => {
-    const unsubscribe = analysisOrchestrator.onProgress((event) => {
+    const unsubscribe = analysisClient.onProgress((event) => {
       if (event.type === "analysis_completed") {
         const entities =
           useEntityGraphStore.getState().analysis.entities.length;
@@ -249,8 +246,8 @@ export default function AIChatPanel({
   // Enhanced stop handler: aborts analysis orchestrator if running,
   // otherwise falls through to regular chat stream abort
   const handleStop = useCallback(() => {
-    if (analysisOrchestrator.isRunning()) {
-      analysisOrchestrator.abort();
+    if (analysisClient.isRunning()) {
+      analysisClient.abort();
     }
     stopStreaming();
   }, [stopStreaming]);

@@ -201,6 +201,16 @@ export async function* streamChat(
               return;
             }
 
+            // Entity sync from chat — handle at transport layer
+            if (chunk.type === "entity_snapshot") {
+              if (chunk.analysis) {
+                import("./analysis-client").then((m) => {
+                  m.handleChatEntitySnapshot(chunk.analysis);
+                });
+              }
+              continue;
+            }
+
             // Keep-alive pings from server — reset activity timeout but don't yield
             if (chunk.type === "ping") {
               if (pingResetsTimeout) {

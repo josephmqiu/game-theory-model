@@ -1,9 +1,9 @@
-// Architecture note: In this Electron app, renderer and main process share JS context.
-// The store calls entity-graph-service directly (no IPC). subscribeToService() auto-wires
-// mutation event sync at module load. This is the documented projection model for Electron.
-// If the app moves to separate processes, this becomes IPC commands + SSE events.
+// Architecture: In browser mode, state comes via analysis-client SSE.
+// In Electron, local mutations still work.
+// This store is now purely a local state container — no server-side service imports.
 
 import { create } from "zustand";
+import { nanoid } from "nanoid";
 import type {
   AnalysisEntity,
   AnalysisFileReference,
@@ -12,7 +12,7 @@ import type {
 } from "@/types/entity";
 import { RELATIONSHIP_CATEGORY } from "@/types/entity";
 import type { MethodologyPhase, PhaseStatus } from "@/types/methodology";
-import * as entityGraphService from "@/services/ai/entity-graph-service";
+import { V1_PHASES } from "@/types/methodology";
 
 // ── State shape ──
 
@@ -59,8 +59,6 @@ interface EntityGraphStoreState extends AnalysisFileReference {
     fileHandle?: FileSystemFileHandle;
   }) => void;
   markDirty: () => void;
-  syncFromService: () => void;
-  subscribeToService: () => () => void;
 
   // SSE sync methods — used by analysis-client for renderer-side updates
   syncAnalysis: (analysis: Analysis) => void;
@@ -102,31 +100,32 @@ function bfsDownstream(
 }
 
 /**
- * Sync the store state from entity-graph-service (the source of truth).
+ * Create an empty analysis with default phase states.
  */
-function syncFromServiceState(): {
-  analysis: Analysis;
-  isDirty: boolean;
-  revision: number;
-} {
+function createEmptyAnalysis(topic: string): Analysis {
   return {
-    analysis: entityGraphService.getAnalysis() as Analysis,
-    isDirty: entityGraphService.getIsDirty(),
-    revision: entityGraphService.getRevision(),
+    id: nanoid(),
+    name: topic,
+    topic,
+    entities: [],
+    relationships: [],
+    phases: V1_PHASES.map((phase) => ({
+      phase,
+      status: "pending" as const,
+      entityIds: [],
+    })),
   };
 }
 
 // ── Store ──
-// This store is a PROJECTION of entity-graph-service.
-// Mutations route through service CRUD methods (createEntity, updateEntity, etc.)
-// so that provenance stamping and event emission happen in one place.
-// The store then syncs its state from the service.
-// Mutations that originate from the service (e.g. during AI analysis) sync
-// into the store via subscribeToService().
+// This store is a LOCAL state container for the renderer.
+// In browser mode, state arrives via analysis-client SSE (syncAnalysis / setPhaseStatusLocal).
+// Local mutations (addEntities, updateEntity, etc.) still work for Electron mode
+// and for offline/backward-compat scenarios.
 
 export const useEntityGraphStore = create<EntityGraphStoreState>(
   (set, get) => ({
-    analysis: entityGraphService.getAnalysis() as Analysis,
+    analysis: createEmptyAnalysis(""),
     isDirty: false,
     revision: 0,
     fileName: null,
@@ -135,9 +134,8 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
     pendingEdits: [],
 
     newAnalysis: (topic) => {
-      entityGraphService.newAnalysis(topic);
       set((state) => ({
-        analysis: entityGraphService.getAnalysis() as Analysis,
+        analysis: createEmptyAnalysis(topic),
         isDirty: false,
         revision: state.revision + 1,
         fileName: null,
@@ -148,9 +146,8 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
     },
 
     loadAnalysis: (analysis, source) => {
-      entityGraphService.loadAnalysis(analysis, source);
       set((state) => ({
-        analysis: entityGraphService.getAnalysis() as Analysis,
+        analysis,
         isDirty: false,
         revision: state.revision + 1,
         fileName: source?.fileName ?? null,
@@ -168,102 +165,82 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
         return;
       }
 
-      // Route through service CRUD methods for provenance stamping
-      const existingIds = new Set(
-        entityGraphService.getAnalysis().entities.map((e) => e.id),
-      );
+      set((state) => {
+        const existingIds = new Set(state.analysis.entities.map((e) => e.id));
+        const newEntities = entities.filter((e) => !existingIds.has(e.id));
+        const newRelationships = relationships ?? [];
 
-      // Build ID map: caller-provided ID -> service-generated ID
-      const idMap = new Map<string, string>();
-      for (const entity of entities) {
-        if (existingIds.has(entity.id)) continue; // dedup
-        const created = entityGraphService.createEntity(
-          {
-            type: entity.type,
-            phase: entity.phase,
-            data: entity.data,
-            position: entity.position,
-            confidence: entity.confidence,
-            source: entity.source,
-            rationale: entity.rationale,
-            revision: entity.revision,
-            stale: entity.stale,
+        return {
+          analysis: {
+            ...state.analysis,
+            entities: [...state.analysis.entities, ...newEntities],
+            relationships: [
+              ...state.analysis.relationships,
+              ...newRelationships,
+            ],
           },
-          {
-            source: entity.provenance?.source ?? "phase-derived",
-            runId: entity.provenance?.runId,
-            phase: entity.provenance?.phase,
-          },
-        );
-        idMap.set(entity.id, created.id);
-      }
-
-      if (relationships) {
-        for (const rel of relationships) {
-          const fromId = idMap.get(rel.fromEntityId) ?? rel.fromEntityId;
-          const toId = idMap.get(rel.toEntityId) ?? rel.toEntityId;
-          try {
-            entityGraphService.createRelationship({
-              type: rel.type,
-              fromEntityId: fromId,
-              toEntityId: toId,
-              metadata: rel.metadata,
-            });
-          } catch {
-            // Relationship may fail if entity IDs reference entities from
-            // a different phase that haven't been remapped in this batch.
-          }
-        }
-      }
-
-      // Sync from service
-      set((state) => ({
-        ...syncFromServiceState(),
-        revision: state.revision + 1,
-      }));
+          isDirty: true,
+          revision: state.revision + 1,
+        };
+      });
     },
 
     updateEntity: (id, updates, source) => {
-      entityGraphService.updateEntity(id, updates, {
-        source: source ?? "user-edited",
-      });
       set((state) => ({
-        ...syncFromServiceState(),
+        analysis: {
+          ...state.analysis,
+          entities: state.analysis.entities.map((e) => {
+            if (e.id !== id) return e;
+            const provenanceSource = source ?? "user-edited";
+            return {
+              ...e,
+              ...updates,
+              provenance: {
+                ...e.provenance,
+                source: provenanceSource,
+                timestamp: new Date().toISOString(),
+              },
+            };
+          }),
+        },
+        isDirty: true,
         revision: state.revision + 1,
       }));
     },
 
     removeEntity: (id) => {
-      entityGraphService.removeEntity(id);
       set((state) => ({
-        ...syncFromServiceState(),
+        analysis: {
+          ...state.analysis,
+          entities: state.analysis.entities.filter((e) => e.id !== id),
+          relationships: state.analysis.relationships.filter(
+            (r) => r.fromEntityId !== id && r.toEntityId !== id,
+          ),
+        },
+        isDirty: true,
         revision: state.revision + 1,
       }));
     },
 
     addRelationships: (relationships) => {
-      for (const rel of relationships) {
-        try {
-          entityGraphService.createRelationship({
-            type: rel.type,
-            fromEntityId: rel.fromEntityId,
-            toEntityId: rel.toEntityId,
-            metadata: rel.metadata,
-          });
-        } catch {
-          // Entity IDs may not exist if from a different batch
-        }
-      }
       set((state) => ({
-        ...syncFromServiceState(),
+        analysis: {
+          ...state.analysis,
+          relationships: [...state.analysis.relationships, ...relationships],
+        },
+        isDirty: true,
         revision: state.revision + 1,
       }));
     },
 
     setPhaseStatus: (phase, status) => {
-      entityGraphService.setPhaseStatus(phase, status);
       set((state) => ({
-        analysis: entityGraphService.getAnalysis() as Analysis,
+        analysis: {
+          ...state.analysis,
+          phases: state.analysis.phases.map((ps) =>
+            ps.phase === phase ? { ...ps, status } : ps,
+          ),
+        },
         isDirty: true,
         revision: state.revision + 1,
       }));
@@ -274,18 +251,28 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
     },
 
     markStale: (entityIds) => {
-      entityGraphService.markStale(entityIds);
+      const idSet = new Set(entityIds);
       set((state) => ({
-        analysis: entityGraphService.getAnalysis() as Analysis,
+        analysis: {
+          ...state.analysis,
+          entities: state.analysis.entities.map((e) =>
+            idSet.has(e.id) ? { ...e, stale: true } : e,
+          ),
+        },
         isDirty: true,
         revision: state.revision + 1,
       }));
     },
 
     clearStale: (entityIds) => {
-      entityGraphService.clearStale(entityIds);
+      const idSet = new Set(entityIds);
       set((state) => ({
-        analysis: entityGraphService.getAnalysis() as Analysis,
+        analysis: {
+          ...state.analysis,
+          entities: state.analysis.entities.map((e) =>
+            idSet.has(e.id) ? { ...e, stale: false } : e,
+          ),
+        },
         isDirty: true,
         revision: state.revision + 1,
       }));
@@ -302,7 +289,6 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
     },
 
     setFileReference: (source) => {
-      entityGraphService.setFileReference(source);
       set((state) => ({
         fileName:
           source.fileName === undefined ? state.fileName : source.fileName,
@@ -316,7 +302,6 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
     },
 
     commitSave: (source) => {
-      entityGraphService.commitSave(source);
       set((state) => ({
         fileName:
           source.fileName === undefined ? state.fileName : source.fileName,
@@ -331,31 +316,7 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
     },
 
     markDirty: () => {
-      entityGraphService.markDirty();
       set({ isDirty: true });
-    },
-
-    syncFromService: () => {
-      const analysis = entityGraphService.getAnalysis() as Analysis;
-      set((state) => ({
-        analysis,
-        isDirty: entityGraphService.getIsDirty(),
-        revision: state.revision + 1,
-      }));
-    },
-
-    subscribeToService: () => {
-      const unsubscribe = entityGraphService.onMutation(() => {
-        // On any mutation event from the service, sync the full state
-        const analysis = entityGraphService.getAnalysis() as Analysis;
-        set((state) => ({
-          analysis,
-          isDirty: entityGraphService.getIsDirty(),
-          revision: state.revision + 1,
-        }));
-      });
-
-      return unsubscribe;
     },
 
     // syncAnalysis: like loadAnalysis but preserves isDirty and file refs (for SSE sync)
@@ -379,7 +340,3 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
       })),
   }),
 );
-
-// Auto-wire: keep the Zustand projection in sync when the service is mutated
-// externally (e.g. by the analysis orchestrator during AI runs).
-useEntityGraphStore.getState().subscribeToService();

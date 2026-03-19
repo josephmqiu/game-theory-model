@@ -1,5 +1,16 @@
+// analysis-run.ts — Legacy analysis run types.
+// The renderer no longer manages AbortControllers or run promises directly;
+// analysis-client handles all of that via HTTP/SSE.
+// This file is kept for backward compat with test imports.
+
+import type { AnalysisEntity, AnalysisRelationship } from "@/types/entity";
 import type { RunLogger } from "@/services/ai/ai-logger";
-import type { AnalysisResult } from "@/services/ai/analysis-orchestrator";
+
+export interface AnalysisResult {
+  runId: string;
+  entities: AnalysisEntity[];
+  relationships: AnalysisRelationship[];
+}
 
 export interface ActiveAnalysisRun {
   controller: AbortController;

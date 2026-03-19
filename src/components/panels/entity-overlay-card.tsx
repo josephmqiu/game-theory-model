@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { PHASE_LABELS, PHASE_NUMBERS } from "@/types/methodology";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
-import * as orchestrator from "@/services/ai/analysis-orchestrator";
+import * as analysisClient from "@/services/ai/analysis-client";
 import type {
   AnalysisEntity,
   EntityType,
@@ -537,24 +537,20 @@ export default function EntityOverlayCard({
   }, [onClose, editing]);
 
   const handleSave = useCallback(() => {
-    const doUpdate = () => {
-      const store = useEntityGraphStore.getState();
-      store.updateEntity(entity.id, {
-        data: editData,
-        rationale: editRationale,
-        source: "human",
-        revision: entity.revision + 1,
-      });
-      // Downstream stale propagation is now handled automatically by
-      // entity-graph-service.updateEntity(), so no manual markStale needed.
+    const updates = {
+      data: editData,
+      rationale: editRationale,
+      source: "human" as const,
+      revision: entity.revision + 1,
     };
 
-    // During active analysis, queue the edit so it drains between phases
-    // rather than racing with AI-driven mutations.
-    if (orchestrator.isRunning()) {
-      orchestrator.queueEdit(doUpdate);
+    if (analysisClient.isRunning()) {
+      // During active analysis, route edit through the server endpoint
+      // which handles queueing and stale propagation server-side.
+      void analysisClient.updateEntity(entity.id, updates);
     } else {
-      doUpdate();
+      // No analysis running — apply locally
+      useEntityGraphStore.getState().updateEntity(entity.id, updates);
     }
 
     setEditing(false);

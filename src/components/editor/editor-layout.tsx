@@ -1,10 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { nanoid } from "nanoid";
+import { useCallback, useEffect, useState } from "react";
 import { PanelRight, PanelRightClose } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import TopBar from "./top-bar";
-import { abortAnalysisRun, type ActiveAnalysisRun } from "./analysis-run";
 import AgentSettingsDialog from "@/components/shared/agent-settings-dialog";
 import UpdateReadyBanner from "./update-ready-banner";
 import AnalysisCanvas from "./analysis-canvas";
@@ -17,8 +15,7 @@ import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useElectronMenu } from "@/hooks/use-electron-menu";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { initAppStorage } from "@/utils/app-storage";
-import { createRunLogger } from "@/services/ai/ai-logger";
-import * as analysisOrchestrator from "@/services/ai/analysis-orchestrator";
+import * as analysisClient from "@/services/ai/analysis-client";
 import {
   openAnalysis,
   openAnalysisFromPath,
@@ -28,7 +25,6 @@ import type { MethodologyPhase } from "@/types/methodology";
 
 export default function EditorLayout() {
   const isDirty = useEntityGraphStore((state) => state.isDirty);
-  const activeRunRef = useRef<ActiveAnalysisRun | null>(null);
 
   const [phaseFilter, setPhaseFilter] = useState<MethodologyPhase | null>(null);
   const [searchHighlight, setSearchHighlight] = useState<string[]>([]);
@@ -44,22 +40,9 @@ export default function EditorLayout() {
     setSelectedEntity(null);
   }, []);
 
-  const abortActiveRun = useCallback(async (reason: string) => {
-    const activeRun = activeRunRef.current;
-    if (!activeRun) {
-      return;
-    }
-
-    await abortAnalysisRun(activeRun, reason);
-
-    if (activeRunRef.current?.runId === activeRun.runId) {
-      activeRunRef.current = null;
-    }
-  }, []);
-
   const handleOpenAnalysis = useCallback(
     async (filePath?: string) => {
-      await abortActiveRun("open-analysis");
+      analysisClient.abort();
       const opened = filePath
         ? await openAnalysisFromPath(filePath)
         : await openAnalysis();
@@ -70,10 +53,10 @@ export default function EditorLayout() {
 
       clearEditorChrome();
     },
-    [abortActiveRun, clearEditorChrome],
+    [clearEditorChrome],
   );
 
-  const handleNewAnalysis = useCallback(async () => {
+  const handleNewAnalysis = useCallback(() => {
     const state = useEntityGraphStore.getState();
     if (state.isDirty) {
       const confirmed = window.confirm(
@@ -84,54 +67,37 @@ export default function EditorLayout() {
       }
     }
 
-    await abortActiveRun("new-analysis");
+    analysisClient.abort();
     clearEditorChrome();
     useEntityGraphStore.getState().newAnalysis("");
-  }, [abortActiveRun, clearEditorChrome]);
+  }, [clearEditorChrome]);
 
   const startOrchestrator = useCallback(
     (topic: string, provider?: string, model?: string) => {
       void (async () => {
-        await abortActiveRun("restart-analysis");
+        // Abort any existing run via the client (manages its own AbortController)
+        analysisClient.abort();
         clearEditorChrome();
         useEntityGraphStore.getState().newAnalysis(topic);
 
-        const controller = new AbortController();
-        const logger = createRunLogger(nanoid(8));
-
         try {
-          const { runId } = await analysisOrchestrator.runFull(
-            topic,
-            provider,
-            model,
-            controller.signal,
-          );
-
-          activeRunRef.current = {
-            controller,
-            promise: Promise.resolve({
-              runId,
-              entities: [],
-              relationships: [],
-            }),
-            runId,
-            logger,
-          };
+          await analysisClient.startAnalysis(topic, provider, model);
         } catch (err) {
-          logger.error("ui", "orchestrator-start-failed", {
-            error: err instanceof Error ? err.message : String(err),
-          });
+          console.error(
+            "[editor] analysis-start-failed",
+            err instanceof Error ? err.message : String(err),
+          );
         }
       })();
     },
-    [abortActiveRun, clearEditorChrome],
+    [clearEditorChrome],
   );
 
   useEffect(() => {
     return () => {
-      void abortActiveRun("component-unmount");
+      analysisClient.abort();
     };
-  }, [abortActiveRun]);
+  }, []);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -164,7 +130,8 @@ export default function EditorLayout() {
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      void activeRunRef.current?.logger.flush({ transport: "beacon" });
+      // Abort any running analysis on page unload
+      analysisClient.abort();
 
       if (!isDirty) {
         return;
