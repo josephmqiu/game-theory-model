@@ -3,6 +3,7 @@ import {
   getRequestHeader,
   readBody,
   setResponseHeaders,
+  setResponseStatus,
   type H3Event,
 } from "h3";
 import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
@@ -120,18 +121,22 @@ export default defineEventHandler(async (event) => {
   const runId = getRequestHeader(event, "x-run-id")?.trim() || undefined;
 
   if (!body?.messages || !body?.system) {
+    setResponseStatus(event, 400);
     setResponseHeaders(event, { "Content-Type": "application/json" });
     return { error: "Missing required fields: system, messages" };
   }
   if (!body.provider) {
+    setResponseStatus(event, 400);
     setResponseHeaders(event, { "Content-Type": "application/json" });
     return { error: "Missing provider. Provider fallback is disabled." };
   }
   if (!body.model?.trim()) {
+    setResponseStatus(event, 400);
     setResponseHeaders(event, { "Content-Type": "application/json" });
     return { error: "Missing model. Model fallback is disabled." };
   }
   if (!isAllowedProvider(body.provider)) {
+    setResponseStatus(event, 400);
     setResponseHeaders(event, { "Content-Type": "application/json" });
     return {
       error: "Missing or unsupported provider. Provider fallback is disabled.",

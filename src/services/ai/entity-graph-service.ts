@@ -342,6 +342,10 @@ export function removePhaseEntities(
     if (runId !== undefined) {
       // Only remove if provenance.runId matches
       if (e.provenance?.runId !== runId) return true;
+    } else {
+      // No runId: preserve user-edited and ai-edited entities
+      const source = e.provenance?.source;
+      if (source === "user-edited" || source === "ai-edited") return true;
     }
     removedIds.add(e.id);
     return false;

@@ -224,16 +224,37 @@ async function executeRevalidation(
   });
 
   for (const p of phases) {
-    // Remove old entities before re-running to prevent duplication
+    // Remove old phase-derived entities before re-running to prevent duplication
+    // (user-edited and ai-edited entities are preserved by removePhaseEntities
+    // when called without runId)
     entityGraphService.removePhaseEntities(p, undefined);
 
     emitProgress({ type: "phase_started", phase: p, runId });
     logger.log("revalidation", "phase-rerun", { phase: p, runId });
 
+    // Build prior context from entities in earlier completed phases
+    const completedPhases = V1_PHASES.slice(0, V1_PHASES.indexOf(p));
+    const priorEntities = analysis.entities
+      .filter((e) => completedPhases.includes(e.phase))
+      .map((e) => ({
+        id: e.id,
+        type: e.type,
+        name:
+          "name" in e.data
+            ? e.data.name
+            : "content" in e.data
+              ? e.data.content
+              : e.id,
+        phase: e.phase,
+      }));
+    const priorContext =
+      priorEntities.length > 0 ? JSON.stringify(priorEntities) : undefined;
+
     const phaseStart = Date.now();
     const result = await runPhase(p, topic, {
       provider: lastRunProvider,
       model: lastRunModel,
+      priorEntities: priorContext,
       logger,
     });
 
