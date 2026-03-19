@@ -198,7 +198,7 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
               provenance: {
                 ...e.provenance,
                 source: provenanceSource,
-                timestamp: new Date().toISOString(),
+                timestamp: Date.now(),
               },
             };
           }),
