@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   newAnalysis,
   createEntity,
@@ -12,7 +12,42 @@ import {
   handleGetRelationships,
   handleCreateRelationship,
   handleUpdateRelationship,
+  handleStartAnalysis,
+  handleGetAnalysisStatus,
+  handleGetAnalysisResult,
+  handleRevalidateEntities,
+  handleLayoutEntities,
+  handleFocusEntity,
+  handleGroupEntities,
 } from "@/mcp/server";
+
+// ── Mocks ──
+
+vi.mock("@/services/ai/analysis-orchestrator", () => ({
+  runFull: vi.fn().mockResolvedValue({ runId: "run-mock-123" }),
+  getStatus: vi.fn().mockReturnValue({
+    runId: "run-mock-123",
+    status: "running",
+    activePhase: "situational-grounding",
+    phasesCompleted: 1,
+    totalPhases: 3,
+  }),
+  getResult: vi.fn().mockReturnValue({
+    runId: "run-mock-123",
+    entities: [{ id: "e1", type: "fact" }],
+    relationships: [{ id: "r1", type: "supports" }],
+  }),
+}));
+
+vi.mock("@/services/ai/revalidation-service", () => ({
+  revalidate: vi.fn().mockResolvedValue({ runId: "reval-mock-456" }),
+}));
+
+vi.mock("@/services/ai/canvas-service", () => ({
+  layoutEntities: vi.fn(),
+  groupEntities: vi.fn(),
+  emitFocusEvent: vi.fn(),
+}));
 
 // ── Fixtures ──
 
@@ -66,6 +101,147 @@ const defaultProvenance = {
 beforeEach(() => {
   _resetForTest();
   newAnalysis("US-China trade war");
+  vi.clearAllMocks();
+});
+
+// ── start_analysis ──
+
+describe("handleStartAnalysis", () => {
+  it("calls orchestrator.runFull and returns runId with status", async () => {
+    const { runFull } = await import("@/services/ai/analysis-orchestrator");
+
+    const result = JSON.parse(
+      await handleStartAnalysis({ topic: "US-China semiconductor trade war" }),
+    );
+
+    expect(runFull).toHaveBeenCalledWith("US-China semiconductor trade war");
+    expect(result.runId).toBe("run-mock-123");
+    expect(result.status).toBe("started");
+    expect(result.estimatedPhases).toBe(3);
+  });
+});
+
+// ── get_analysis_status ──
+
+describe("handleGetAnalysisStatus", () => {
+  it("calls orchestrator.getStatus and returns status object", async () => {
+    const { getStatus } = await import("@/services/ai/analysis-orchestrator");
+
+    const result = JSON.parse(
+      handleGetAnalysisStatus({ runId: "run-mock-123" }),
+    );
+
+    expect(getStatus).toHaveBeenCalledWith("run-mock-123");
+    expect(result.runId).toBe("run-mock-123");
+    expect(result.status).toBe("running");
+    expect(result.activePhase).toBe("situational-grounding");
+    expect(result.phasesCompleted).toBe(1);
+    expect(result.totalPhases).toBe(3);
+  });
+});
+
+// ── get_analysis_result ──
+
+describe("handleGetAnalysisResult", () => {
+  it("calls orchestrator.getResult and returns entities/relationships", async () => {
+    const { getResult } = await import("@/services/ai/analysis-orchestrator");
+
+    const result = JSON.parse(
+      handleGetAnalysisResult({ runId: "run-mock-123" }),
+    );
+
+    expect(getResult).toHaveBeenCalledWith("run-mock-123");
+    expect(result.runId).toBe("run-mock-123");
+    expect(result.entities).toHaveLength(1);
+    expect(result.relationships).toHaveLength(1);
+  });
+});
+
+// ── revalidate_entities ──
+
+describe("handleRevalidateEntities", () => {
+  it("calls revalidationService.revalidate with entityIds and phase", async () => {
+    const { revalidate } = await import("@/services/ai/revalidation-service");
+
+    const result = JSON.parse(
+      await handleRevalidateEntities({
+        entityIds: ["e1", "e2"],
+        phase: "situational-grounding",
+      }),
+    );
+
+    expect(revalidate).toHaveBeenCalledWith(
+      ["e1", "e2"],
+      "situational-grounding",
+    );
+    expect(result.runId).toBe("reval-mock-456");
+    expect(result.status).toBe("started");
+  });
+
+  it("passes undefined when no entityIds or phase given", async () => {
+    const { revalidate } = await import("@/services/ai/revalidation-service");
+
+    await handleRevalidateEntities({});
+
+    expect(revalidate).toHaveBeenCalledWith(undefined, undefined);
+  });
+});
+
+// ── layout_entities ──
+
+describe("handleLayoutEntities", () => {
+  it("calls canvasService.layoutEntities and returns side-effect summary", async () => {
+    const { layoutEntities } = await import("@/services/ai/canvas-service");
+
+    const result = JSON.parse(handleLayoutEntities({ strategy: "column" }));
+
+    expect(layoutEntities).toHaveBeenCalledWith("column");
+    expect(result).toEqual({
+      created: [],
+      updated: [],
+      staleMarked: [],
+      grouped: [],
+    });
+  });
+});
+
+// ── focus_entity ──
+
+describe("handleFocusEntity", () => {
+  it("calls canvasService.emitFocusEvent and returns focused id", async () => {
+    const { emitFocusEvent } = await import("@/services/ai/canvas-service");
+
+    const result = JSON.parse(handleFocusEntity({ entityId: "entity-abc" }));
+
+    expect(emitFocusEvent).toHaveBeenCalledWith("entity-abc");
+    expect(result.focused).toBe("entity-abc");
+  });
+});
+
+// ── group_entities ──
+
+describe("handleGroupEntities", () => {
+  it("calls canvasService.groupEntities and returns side-effect summary", async () => {
+    const { groupEntities } = await import("@/services/ai/canvas-service");
+
+    const result = JSON.parse(
+      handleGroupEntities({
+        entityIds: ["e1", "e2", "e3"],
+        label: "Key Players",
+      }),
+    );
+
+    expect(groupEntities).toHaveBeenCalledWith(
+      ["e1", "e2", "e3"],
+      "Key Players",
+    );
+    expect(result).toEqual({
+      created: [],
+      updated: [],
+      staleMarked: [],
+      grouped: ["e1", "e2", "e3"],
+    });
+  });
 });
 
 // ── get_entities ──

@@ -22,6 +22,9 @@ import {
 } from "@/services/ai/entity-graph-service";
 import type { MethodologyPhase } from "@/types/methodology";
 import type { RelationshipType } from "@/types/entity";
+import * as analysisOrchestrator from "@/services/ai/analysis-orchestrator";
+import * as revalidationService from "@/services/ai/revalidation-service";
+import * as canvasService from "@/services/ai/canvas-service";
 import { handleOpenDocument } from "./tools/open-document";
 import { handleBatchGet } from "./tools/batch-get";
 import {
@@ -769,7 +772,7 @@ const TOOL_DEFINITIONS = [
 
   // --- Game Theory Analyzer product tools (13) ---
 
-  // Analysis tools (4) — stubs wired in Task 17
+  // Analysis tools (4)
   {
     name: "start_analysis",
     description:
@@ -985,7 +988,7 @@ const TOOL_DEFINITIONS = [
     },
   },
 
-  // Canvas tools (3) — stubs wired in Task 15
+  // Canvas tools (3)
   {
     name: "layout_entities",
     description: "Apply a layout strategy to arrange entities on the canvas.",
@@ -1033,26 +1036,33 @@ const TOOL_DEFINITIONS = [
 
 // --- Product tool handlers (exported for testing) ---
 
-const STUB_RESPONSE = JSON.stringify({ error: "Not yet implemented" });
-
-// Analysis stubs (4)
-export function handleStartAnalysis(_args: { topic: string }): string {
-  return STUB_RESPONSE;
+// Analysis tools (4)
+export async function handleStartAnalysis(args: {
+  topic: string;
+}): Promise<string> {
+  const { runId } = await analysisOrchestrator.runFull(args.topic);
+  return JSON.stringify({ runId, status: "started", estimatedPhases: 3 });
 }
 
-export function handleGetAnalysisStatus(_args: { runId: string }): string {
-  return STUB_RESPONSE;
+export function handleGetAnalysisStatus(args: { runId: string }): string {
+  const status = analysisOrchestrator.getStatus(args.runId);
+  return JSON.stringify(status);
 }
 
-export function handleGetAnalysisResult(_args: { runId: string }): string {
-  return STUB_RESPONSE;
+export function handleGetAnalysisResult(args: { runId: string }): string {
+  const result = analysisOrchestrator.getResult(args.runId);
+  return JSON.stringify(result);
 }
 
-export function handleRevalidateEntities(_args: {
+export async function handleRevalidateEntities(args: {
   entityIds?: string[];
   phase?: string;
-}): string {
-  return STUB_RESPONSE;
+}): Promise<string> {
+  const { runId } = await revalidationService.revalidate(
+    args.entityIds,
+    args.phase,
+  );
+  return JSON.stringify({ runId, status: "started" });
 }
 
 // Entity tools (3)
@@ -1174,20 +1184,33 @@ export function handleUpdateRelationship(args: {
   return JSON.stringify(result);
 }
 
-// Canvas stubs (3)
-export function handleLayoutEntities(_args: { strategy: string }): string {
-  return STUB_RESPONSE;
+// Canvas tools (3)
+export function handleLayoutEntities(args: { strategy: string }): string {
+  canvasService.layoutEntities(args.strategy);
+  return JSON.stringify({
+    created: [],
+    updated: [],
+    staleMarked: [],
+    grouped: [],
+  });
 }
 
-export function handleFocusEntity(_args: { entityId: string }): string {
-  return STUB_RESPONSE;
+export function handleFocusEntity(args: { entityId: string }): string {
+  canvasService.emitFocusEvent(args.entityId);
+  return JSON.stringify({ focused: args.entityId });
 }
 
-export function handleGroupEntities(_args: {
+export function handleGroupEntities(args: {
   entityIds: string[];
   label: string;
 }): string {
-  return STUB_RESPONSE;
+  canvasService.groupEntities(args.entityIds, args.label);
+  return JSON.stringify({
+    created: [],
+    updated: [],
+    staleMarked: [],
+    grouped: args.entityIds,
+  });
 }
 
 // --- Tool execution handler ---
@@ -1267,13 +1290,13 @@ async function handleToolCall(
 
     // Product tools (13)
     case "start_analysis":
-      return handleStartAnalysis(a);
+      return await handleStartAnalysis(a);
     case "get_analysis_status":
       return handleGetAnalysisStatus(a);
     case "get_analysis_result":
       return handleGetAnalysisResult(a);
     case "revalidate_entities":
-      return handleRevalidateEntities(a);
+      return await handleRevalidateEntities(a);
     case "get_entities":
       return handleGetEntities(a);
     case "create_entity":

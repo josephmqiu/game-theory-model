@@ -64,7 +64,9 @@ export async function createProductMcpServer() {
       "Start a new game-theoretic analysis",
       { topic: z.string() },
       async (args) => ({
-        content: [{ type: "text" as const, text: handleStartAnalysis(args) }],
+        content: [
+          { type: "text" as const, text: await handleStartAnalysis(args) },
+        ],
       }),
     ),
     tool(
@@ -96,7 +98,10 @@ export async function createProductMcpServer() {
       },
       async (args) => ({
         content: [
-          { type: "text" as const, text: handleRevalidateEntities(args) },
+          {
+            type: "text" as const,
+            text: await handleRevalidateEntities(args),
+          },
         ],
       }),
     ),
