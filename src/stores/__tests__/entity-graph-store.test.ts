@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
+import { _resetForTest as resetService } from "@/services/ai/entity-graph-service";
 import type { AnalysisEntity, AnalysisRelationship } from "@/types/entity";
 import type { MethodologyPhase } from "@/types/methodology";
 import { V1_PHASES } from "@/types/methodology";
@@ -44,10 +45,12 @@ function makeRelationship(
 
 describe("entity-graph-store", () => {
   beforeEach(() => {
+    resetService();
     useEntityGraphStore.setState(useEntityGraphStore.getInitialState(), true);
   });
 
   afterEach(() => {
+    resetService();
     useEntityGraphStore.setState(useEntityGraphStore.getInitialState(), true);
   });
 

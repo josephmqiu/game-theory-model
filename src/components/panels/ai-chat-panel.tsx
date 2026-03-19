@@ -20,6 +20,7 @@ import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
 import { PHASE_LABELS, V1_PHASES } from "@/types/methodology";
 import type { AIProviderType } from "@/types/agent-settings";
+import * as analysisOrchestrator from "@/services/ai/analysis-orchestrator";
 import ClaudeLogo from "@/components/icons/claude-logo";
 import OpenAILogo from "@/components/icons/openai-logo";
 import OpenCodeLogo from "@/components/icons/opencode-logo";
@@ -201,6 +202,8 @@ export default function AIChatPanel({
   const entityGraphEntities = useEntityGraphStore((s) => s.analysis.entities);
   const analysisId = useEntityGraphStore((s) => s.analysis.id);
 
+  const [analysisRunning, setAnalysisRunning] = useState(false);
+
   const noAvailableModels = !isLoadingModels && availableModels.length === 0;
   const canUseModel = !isLoadingModels && availableModels.length > 0;
   const canSendMessage = canUseModel && !isStreaming && !!input.trim();
@@ -209,6 +212,41 @@ export default function AIChatPanel({
   const isAnalysisMode = mode === "analysis";
   const hasOnStartAnalysis = typeof onStartAnalysis === "function";
   const previousAnalysisIdRef = useRef<string | null>(null);
+
+  // Poll analysis orchestrator running state
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const running = analysisOrchestrator.isRunning();
+      setAnalysisRunning((prev) => (prev !== running ? running : prev));
+    }, 500);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Subscribe to analysis progress events for completion messages
+  useEffect(() => {
+    const unsubscribe = analysisOrchestrator.onProgress((event) => {
+      if (event.type === "analysis_completed") {
+        const entities =
+          useEntityGraphStore.getState().analysis.entities.length;
+        useAIStore.getState().addMessage({
+          id: `analysis-done-${event.runId}`,
+          role: "assistant",
+          content: `Analysis complete. ${entities} entities created.`,
+          timestamp: Date.now(),
+        });
+      }
+    });
+    return unsubscribe;
+  }, []);
+
+  // Enhanced stop handler: aborts analysis orchestrator if running,
+  // otherwise falls through to regular chat stream abort
+  const handleStop = useCallback(() => {
+    if (analysisOrchestrator.isRunning()) {
+      analysisOrchestrator.abort();
+    }
+    stopStreaming();
+  }, [stopStreaming]);
 
   // Track entity graph phase changes and inject status messages into chat
   const prevEntityPhasesRef = useRef<string>("");
@@ -719,7 +757,19 @@ export default function AIChatPanel({
           {/* Model selector */}
           <button
             type="button"
-            onClick={() => setModelDropdownOpen((v) => !v)}
+            onClick={() => {
+              if (analysisRunning) {
+                useAIStore.getState().addMessage({
+                  id: `provider-blocked-${Date.now()}`,
+                  role: "assistant",
+                  content:
+                    "Cannot change model while analysis is running. Stop the analysis first.",
+                  timestamp: Date.now(),
+                });
+                return;
+              }
+              setModelDropdownOpen((v) => !v);
+            }}
             disabled={isLoadingModels || availableModels.length === 0}
             className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-1 rounded-md hover:bg-secondary"
           >
@@ -746,11 +796,11 @@ export default function AIChatPanel({
 
           <div className="flex items-center gap-1 w-full">
             <div className="ml-auto flex items-center gap-0.5">
-              {isStreaming ? (
+              {isStreaming || analysisRunning ? (
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  onClick={stopStreaming}
+                  onClick={handleStop}
                   title={t("ai.stopGenerating")}
                   className="shrink-0 rounded-lg h-7 w-7 text-destructive hover:text-destructive hover:scale-110 active:scale-95 transition-all duration-150"
                 >
