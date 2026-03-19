@@ -20,6 +20,13 @@ export interface OrchestratorConfig {
   callbacks: OrchestratorCallbacks;
 }
 
+// ── Provider resolution ──
+
+function resolveProvider(model: string): string | undefined {
+  const groups = useAIStore.getState().modelGroups ?? [];
+  return groups.find((g) => g.models.some((m) => m.value === model))?.provider;
+}
+
 // ── Prior context builder ──
 
 function buildPriorContext(
@@ -87,6 +94,7 @@ export async function runMethodologyAnalysis(
     const { system, user } = worker.buildPrompt(topic, priorContext);
 
     const model = useAIStore.getState().model;
+    const provider = resolveProvider(model);
 
     let succeeded = false;
     let lastError = "";
@@ -96,7 +104,7 @@ export async function runMethodologyAnalysis(
       if (signal.aborted) break;
 
       try {
-        const raw = await generateCompletion(system, user, model);
+        const raw = await generateCompletion(system, user, model, provider);
         const result = worker.parseResponse(raw);
 
         if (result.success) {
@@ -176,6 +184,7 @@ export async function revalidateStaleEntities(
 
   const topic = store.analysis.topic;
   const model = useAIStore.getState().model;
+  const provider = resolveProvider(model);
 
   for (const phase of phasesToRerun) {
     if (signal.aborted) break;
@@ -202,7 +211,7 @@ export async function revalidateStaleEntities(
       if (signal.aborted) break;
 
       try {
-        const raw = await generateCompletion(system, user, model);
+        const raw = await generateCompletion(system, user, model, provider);
         const result = worker.parseResponse(raw);
 
         if (result.success) {

@@ -54,8 +54,7 @@ export default function EditorLayout() {
         void entityCount;
       },
       onPhaseFailed: (phase, error) => {
-        void phase;
-        void error;
+        console.error(`[orchestrator] Phase ${phase} failed:`, error);
       },
       onComplete: () => {
         // Analysis complete
