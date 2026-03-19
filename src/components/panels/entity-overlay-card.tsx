@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { PHASE_LABELS, PHASE_NUMBERS } from "@/types/methodology";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
+import * as orchestrator from "@/services/ai/analysis-orchestrator";
 import type {
   AnalysisEntity,
   EntityType,
@@ -536,18 +537,26 @@ export default function EntityOverlayCard({
   }, [onClose, editing]);
 
   const handleSave = useCallback(() => {
-    const store = useEntityGraphStore.getState();
-    store.updateEntity(entity.id, {
-      data: editData,
-      rationale: editRationale,
-      source: "human",
-      revision: entity.revision + 1,
-    });
-    // Mark downstream entities stale
-    const downstream = store.getDownstreamEntityIds(entity.id);
-    if (downstream.length > 0) {
-      store.markStale(downstream);
+    const doUpdate = () => {
+      const store = useEntityGraphStore.getState();
+      store.updateEntity(entity.id, {
+        data: editData,
+        rationale: editRationale,
+        source: "human",
+        revision: entity.revision + 1,
+      });
+      // Downstream stale propagation is now handled automatically by
+      // entity-graph-service.updateEntity(), so no manual markStale needed.
+    };
+
+    // During active analysis, queue the edit so it drains between phases
+    // rather than racing with AI-driven mutations.
+    if (orchestrator.isRunning()) {
+      orchestrator.queueEdit(doUpdate);
+    } else {
+      doUpdate();
     }
+
     setEditing(false);
     onEdit(entity);
   }, [entity, editData, editRationale, onEdit]);

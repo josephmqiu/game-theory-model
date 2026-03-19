@@ -19,6 +19,7 @@ import {
   getRelationships,
   createRelationship,
   updateRelationship,
+  getStaleEntityIds,
 } from "@/services/ai/entity-graph-service";
 import type { MethodologyPhase } from "@/types/methodology";
 import type { RelationshipType } from "@/types/entity";
@@ -1063,10 +1064,56 @@ export async function handleStartAnalysis(args: {
   provider?: string;
   model?: string;
 }): Promise<string> {
+  // Provider/model affinity fallback: if the MCP caller (e.g. Claude adapter,
+  // Codex adapter) didn't fill provider/model in the tool args, resolve them
+  // from the app's current model selection. This ensures the analysis runs with
+  // the same provider that initiated the call.
+  let provider = args.provider;
+  let model = args.model;
+
+  if (!provider || !model) {
+    try {
+      // Dynamic import to avoid hard dependency from MCP server on UI stores.
+      // In Electron shared-context this resolves synchronously from cache.
+      const { useAIStore } = await import("@/stores/ai-store");
+      const { useAgentSettingsStore } =
+        await import("@/stores/agent-settings-store");
+      const aiState = useAIStore.getState();
+      const agentState = useAgentSettingsStore.getState();
+
+      if (!model) {
+        model = aiState.model || undefined;
+      }
+
+      if (!provider && model) {
+        // Resolve provider from model groups
+        const group = aiState.modelGroups.find((g) =>
+          g.models.some((m) => m.value === model),
+        );
+        if (group) {
+          provider = group.provider;
+        } else {
+          // Fallback: check which connected provider has this model
+          for (const [pType, pConfig] of Object.entries(agentState.providers)) {
+            if (
+              pConfig.isConnected &&
+              pConfig.models.some((m) => m.value === model)
+            ) {
+              provider = pType;
+              break;
+            }
+          }
+        }
+      }
+    } catch {
+      // Store not available (e.g. standalone MCP server mode) — proceed without
+    }
+  }
+
   const { runId } = await analysisOrchestrator.runFull(
     args.topic,
-    args.provider,
-    args.model,
+    provider,
+    model,
   );
   return JSON.stringify({ runId, status: "started", estimatedPhases: 3 });
 }
@@ -1091,7 +1138,14 @@ export function handleRevalidateEntities(args: {
   phase?: string;
 }): string {
   const { runId } = revalidationService.revalidate(args.entityIds, args.phase);
-  return JSON.stringify({ runId, status: "started" });
+  // Pass through actual status (running, deferred, completed) instead of
+  // hardcoding "started". The caller can distinguish deferred (analysis active)
+  // from running (revalidation in progress) or completed (no-op, nothing stale).
+  const status = revalidationService.getRevalStatus(runId);
+  return JSON.stringify({
+    runId,
+    status: status?.status ?? "running",
+  });
 }
 
 // Entity tools (3)
@@ -1150,6 +1204,12 @@ export function handleUpdateEntity(args: {
   [key: string]: unknown;
 }): string {
   const { id, runId, ...updates } = args;
+
+  // Capture stale IDs before the update so we can report newly stale entities.
+  // updateEntity() in entity-graph-service now auto-propagates staleness to
+  // downstream dependents, so we diff pre/post to find what was marked stale.
+  const staleBefore = new Set(getStaleEntityIds());
+
   const result = updateEntity(id, updates as any, {
     source: "ai-edited",
     ...(runId ? { runId } : {}),
@@ -1157,10 +1217,14 @@ export function handleUpdateEntity(args: {
   if (!result) {
     return JSON.stringify({ error: `Entity "${id}" not found` });
   }
+
+  const staleAfter = getStaleEntityIds();
+  const newlyStale = staleAfter.filter((sid) => !staleBefore.has(sid));
+
   return JSON.stringify({
     created: [],
     updated: [result],
-    staleMarked: [],
+    staleMarked: newlyStale,
     grouped: [],
   });
 }

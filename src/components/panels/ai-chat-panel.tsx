@@ -20,6 +20,9 @@ import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
 import { PHASE_LABELS, V1_PHASES } from "@/types/methodology";
 import type { AIProviderType } from "@/types/agent-settings";
+// Architecture note: In this Electron app, renderer and main process share JS context.
+// The panel imports analysis-orchestrator directly for isRunning()/abort() — no IPC needed.
+// If the app moves to separate processes, these become IPC calls.
 import * as analysisOrchestrator from "@/services/ai/analysis-orchestrator";
 import ClaudeLogo from "@/components/icons/claude-logo";
 import OpenAILogo from "@/components/icons/openai-logo";

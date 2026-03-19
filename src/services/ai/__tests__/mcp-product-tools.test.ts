@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   newAnalysis,
   createEntity,
+  createRelationship,
   getAnalysis,
   _resetForTest,
 } from "../entity-graph-service";
@@ -41,13 +42,37 @@ vi.mock("@/services/ai/analysis-orchestrator", () => ({
 
 vi.mock("@/services/ai/revalidation-service", () => ({
   revalidate: vi.fn().mockReturnValue({ runId: "reval-mock-456" }),
-  getRevalStatus: vi.fn().mockReturnValue(null),
+  getRevalStatus: vi.fn().mockImplementation((runId: string) => {
+    // Only return status for reval runIds, return null for analysis runIds
+    if (runId === "reval-mock-456") {
+      return { runId: "reval-mock-456", status: "running", phasesCompleted: 0 };
+    }
+    return null;
+  }),
 }));
 
 vi.mock("@/services/ai/canvas-service", () => ({
   layoutEntities: vi.fn(),
   groupEntities: vi.fn(),
   emitFocusEvent: vi.fn(),
+}));
+
+// Mock UI stores to prevent provider/model fallback from resolving in tests
+vi.mock("@/stores/ai-store", () => ({
+  useAIStore: {
+    getState: () => ({
+      model: "",
+      modelGroups: [],
+    }),
+  },
+}));
+
+vi.mock("@/stores/agent-settings-store", () => ({
+  useAgentSettingsStore: {
+    getState: () => ({
+      providers: {},
+    }),
+  },
 }));
 
 // ── Fixtures ──
@@ -196,7 +221,7 @@ describe("handleRevalidateEntities", () => {
       "situational-grounding",
     );
     expect(result.runId).toBe("reval-mock-456");
-    expect(result.status).toBe("started");
+    expect(result.status).toBe("running");
   });
 
   it("passes undefined when no entityIds or phase given", async () => {
@@ -438,6 +463,28 @@ describe("handleUpdateEntity", () => {
     const updated = result.updated[0];
     expect(updated.provenance.source).toBe("ai-edited");
     expect(updated.provenance.runId).toBe("run-99");
+  });
+
+  it("reports newly stale downstream entities in staleMarked", () => {
+    const e1 = createEntity(makeFactData(), defaultProvenance);
+    const e2 = createEntity(makeFactData(), defaultProvenance);
+
+    // e1 -> e2 via downstream relationship
+    createRelationship({
+      type: "depends-on",
+      fromEntityId: e1.id,
+      toEntityId: e2.id,
+    });
+
+    const result = JSON.parse(
+      handleUpdateEntity({
+        id: e1.id,
+        rationale: "updated with downstream",
+      }),
+    );
+
+    expect(result.updated).toHaveLength(1);
+    expect(result.staleMarked).toContain(e2.id);
   });
 });
 

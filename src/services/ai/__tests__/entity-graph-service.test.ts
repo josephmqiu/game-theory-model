@@ -176,6 +176,38 @@ describe("updateEntity", () => {
     );
     expect(updated!.id).toBe(entity.id);
   });
+
+  it("marks downstream dependents as stale after update", () => {
+    newAnalysis("test");
+    const e1 = createEntity(makeFactData(), defaultProvenance);
+    const e2 = createEntity(makeFactData(), defaultProvenance);
+    const e3 = createEntity(makeFactData(), defaultProvenance);
+
+    // e1 -> e2 (downstream: depends-on)
+    createRelationship({
+      type: "depends-on",
+      fromEntityId: e1.id,
+      toEntityId: e2.id,
+    });
+    // e2 -> e3 (downstream: derived-from)
+    createRelationship({
+      type: "derived-from",
+      fromEntityId: e2.id,
+      toEntityId: e3.id,
+    });
+
+    // Initially no entities are stale
+    expect(getStaleEntityIds()).toHaveLength(0);
+
+    // Update e1 — should propagate stale to e2 and e3
+    updateEntity(e1.id, { rationale: "changed" }, { source: "user-edited" });
+
+    const staleIds = getStaleEntityIds();
+    expect(staleIds).toContain(e2.id);
+    expect(staleIds).toContain(e3.id);
+    // e1 itself should NOT be marked stale
+    expect(staleIds).not.toContain(e1.id);
+  });
 });
 
 describe("createRelationship", () => {

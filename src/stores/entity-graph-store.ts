@@ -1,3 +1,8 @@
+// Architecture note: In this Electron app, renderer and main process share JS context.
+// The store calls entity-graph-service directly (no IPC). subscribeToService() auto-wires
+// mutation event sync at module load. This is the documented projection model for Electron.
+// If the app moves to separate processes, this becomes IPC commands + SSE events.
+
 import { create } from "zustand";
 import type {
   AnalysisEntity,

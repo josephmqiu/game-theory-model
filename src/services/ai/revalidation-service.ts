@@ -16,7 +16,11 @@ const DEBOUNCE_MS = 2000;
 
 // ── Revalidation run status tracking ──
 
-export type RevalRunStatusValue = "running" | "completed" | "failed";
+export type RevalRunStatusValue =
+  | "running"
+  | "completed"
+  | "failed"
+  | "deferred";
 
 export interface RevalRunStatus {
   runId: string;
@@ -144,7 +148,7 @@ export function revalidate(
     }
     revalRunStatuses.set(runId, {
       runId,
-      status: "completed",
+      status: "deferred",
       phasesCompleted: 0,
     });
     return { runId };

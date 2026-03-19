@@ -222,6 +222,12 @@ export function updateEntity(
   mutate();
   emit({ type: "entity_updated", entity: updated, previousProvenance });
 
+  // Propagate staleness to downstream dependents so revalidation picks them up
+  const downstream = bfsDownstream(id, analysis.relationships);
+  if (downstream.length > 0) {
+    markStale(downstream);
+  }
+
   return updated;
 }
 
