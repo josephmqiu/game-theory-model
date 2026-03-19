@@ -9,6 +9,7 @@ import * as entityGraphService from "@/services/ai/entity-graph-service";
 import * as orchestrator from "@/services/ai/analysis-orchestrator";
 import { runPhase } from "@/services/ai/analysis-service";
 import type { AnalysisProgressEvent } from "@/services/ai/analysis-events";
+import { createRunLogger, timer } from "./ai-logger";
 
 // ── Constants ──
 
@@ -101,6 +102,11 @@ function phasesFrom(startPhase: MethodologyPhase): MethodologyPhase[] {
  * deferred revalidation after the run completes.
  */
 export function scheduleRevalidation(staleIds: string[]): void {
+  const scheduleLogger = createRunLogger(`reval-sched-${Date.now()}`);
+  scheduleLogger.log("revalidation", "scheduled", {
+    staleIds,
+  });
+
   // Merge into pending set
   for (const id of staleIds) {
     pendingStaleIds.add(id);
@@ -111,12 +117,18 @@ export function scheduleRevalidation(staleIds: string[]): void {
     for (const id of staleIds) {
       deferredStaleIds.add(id);
     }
+    scheduleLogger.log("revalidation", "suppressed", {
+      deferredCount: deferredStaleIds.size,
+    });
     return;
   }
 
   // Reset debounce timer
   if (debounceTimer !== null) {
     clearTimeout(debounceTimer);
+    scheduleLogger.log("revalidation", "debounce-reset", {
+      pendingCount: pendingStaleIds.size,
+    });
   }
 
   debounceTimer = setTimeout(() => {
@@ -193,6 +205,9 @@ async function executeRevalidation(
   runId: string,
   startPhase: MethodologyPhase,
 ): Promise<void> {
+  const logger = createRunLogger(runId);
+  const revalTimer = timer();
+
   // Get the analysis topic for phase re-execution
   const analysis = entityGraphService.getAnalysis();
   const topic = analysis.topic;
@@ -201,16 +216,25 @@ async function executeRevalidation(
   const phases = phasesFrom(startPhase);
   let phasesCompleted = 0;
 
+  const staleCount = entityGraphService.getStaleEntityIds().length;
+  logger.log("revalidation", "start", {
+    runId,
+    phases: phases.length,
+    staleCount,
+  });
+
   for (const p of phases) {
     // Remove old entities before re-running to prevent duplication
     entityGraphService.removePhaseEntities(p, undefined);
 
     emitProgress({ type: "phase_started", phase: p, runId });
+    logger.log("revalidation", "phase-rerun", { phase: p, runId });
 
     const phaseStart = Date.now();
     const result = await runPhase(p, topic, {
       provider: lastRunProvider,
       model: lastRunModel,
+      logger,
     });
 
     if (result.success) {
@@ -296,6 +320,15 @@ async function executeRevalidation(
   }
 
   revalRunStatuses.set(runId, { runId, status: "completed", phasesCompleted });
+
+  const totalEntities = entityGraphService.getAnalysis().entities.length;
+  logger.log("revalidation", "complete", {
+    runId,
+    phasesRerun: phasesCompleted,
+    entitiesCreated: totalEntities,
+    elapsedMs: revalTimer.elapsed(),
+  });
+  await logger.flush();
 }
 
 /**

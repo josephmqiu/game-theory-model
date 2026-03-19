@@ -18,6 +18,8 @@ import {
   strategyDataSchema,
 } from "@/types/entity";
 import { PHASE_PROMPTS } from "./phase-prompts";
+import { createRunLogger } from "./ai-logger";
+import type { RunLogger } from "./ai-logger";
 
 // ── Public types ──
 
@@ -33,6 +35,7 @@ export interface PhaseContext {
   provider?: string;
   model?: string;
   signal?: AbortSignal;
+  logger?: RunLogger;
 }
 
 // ── Supported phase types ──
@@ -634,9 +637,19 @@ export async function runPhase(
     };
   }
 
+  // Use caller's logger if provided, otherwise create a per-call logger
+  const logger =
+    context?.logger ??
+    createRunLogger(
+      `svc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    );
+
   const { system, user } = buildPrompt(phase, topic, context?.priorEntities);
   const model = context?.model ?? "claude-sonnet-4-20250514";
+  const provider = context?.provider ?? "anthropic";
   const schema = buildOutputSchema(phase);
+
+  logger.log("analysis-service", "phase-start", { phase, provider, model });
 
   let adapter: AnalysisAdapter;
   try {
@@ -660,6 +673,8 @@ export async function runPhase(
     };
   }
 
+  logger.log("analysis-service", "adapter-call", { phase, provider });
+
   let adapterResult: unknown;
   try {
     adapterResult = await adapter.runAnalysisPhase(
@@ -680,11 +695,67 @@ export async function runPhase(
 
   // If the adapter returned a string (raw text), fall back to text parsing
   if (typeof adapterResult === "string") {
-    return parseTextResponse(adapterResult, phase);
+    logger.warn("analysis-service", "text-fallback", {
+      phase,
+      responseLength: adapterResult.length,
+    });
+    const textResult = parseTextResponse(adapterResult, phase);
+    if (textResult.success) {
+      logger.log("analysis-service", "validation-success", {
+        phase,
+        entities: textResult.entities.length,
+        relationships: textResult.relationships.length,
+      });
+    } else {
+      logger.warn("analysis-service", "validation-failed", {
+        phase,
+        error: textResult.error,
+      });
+      logger.capture("analysis-service", "raw-response", {
+        phase,
+        raw: adapterResult,
+      });
+    }
+    return textResult;
   }
 
   // Structured output — validate with Zod
-  return validatePhaseOutput(adapterResult, phase);
+  logger.log("analysis-service", "structured-output", {
+    phase,
+    entitiesCount:
+      typeof adapterResult === "object" &&
+      adapterResult !== null &&
+      "entities" in adapterResult &&
+      Array.isArray((adapterResult as Record<string, unknown>).entities)
+        ? (adapterResult as Record<string, unknown[]>).entities.length
+        : 0,
+    relationshipsCount:
+      typeof adapterResult === "object" &&
+      adapterResult !== null &&
+      "relationships" in adapterResult &&
+      Array.isArray((adapterResult as Record<string, unknown>).relationships)
+        ? (adapterResult as Record<string, unknown[]>).relationships.length
+        : 0,
+  });
+
+  const validated = validatePhaseOutput(adapterResult, phase);
+  if (validated.success) {
+    logger.log("analysis-service", "validation-success", {
+      phase,
+      entities: validated.entities.length,
+      relationships: validated.relationships.length,
+    });
+  } else {
+    logger.warn("analysis-service", "validation-failed", {
+      phase,
+      error: validated.error,
+    });
+    logger.capture("analysis-service", "raw-response", {
+      phase,
+      raw: JSON.stringify(adapterResult),
+    });
+  }
+  return validated;
 }
 
 // ── Exported for testing ──

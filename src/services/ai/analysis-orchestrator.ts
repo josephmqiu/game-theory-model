@@ -13,6 +13,8 @@ import type {
   PhaseSummary,
 } from "@/services/ai/analysis-events";
 import * as revalidationService from "@/services/ai/revalidation-service";
+import { createRunLogger, timer } from "./ai-logger";
+import type { RunLogger } from "./ai-logger";
 
 // ── Types ──
 
@@ -51,6 +53,7 @@ interface ActiveRun {
   phasesCompleted: MethodologyPhase[];
   abortController: AbortController;
   error?: string;
+  logger: RunLogger;
 }
 
 // ── Constants ──
@@ -113,6 +116,11 @@ export function classifyFailure(error: string): FailureClass {
 function drainEditQueue(): void {
   if (!activeRun) return;
   const queue = activeRun.editQueue.splice(0);
+  if (queue.length > 0) {
+    activeRun.logger.log("orchestrator", "edit-queue-drain", {
+      count: queue.length,
+    });
+  }
   for (const mutation of queue) {
     try {
       mutation();
@@ -174,6 +182,7 @@ async function executeSinglePhase(
   run.activePhase = phase;
   entityGraphService.setPhaseStatus(phase, "running");
   emitProgress({ type: "phase_started", phase, runId: run.runId });
+  run.logger.log("orchestrator", "phase-start", { phase });
 
   const priorContext = buildPriorContext(run.phasesCompleted);
 
@@ -188,12 +197,26 @@ async function executeSinglePhase(
 
     // Check run-level timeout before each attempt
     if (Date.now() - run.startTime >= RUN_TIMEOUT_MS) {
+      run.logger.error("orchestrator", "run-timeout", {
+        elapsedMs: Date.now() - run.startTime,
+        phase,
+      });
       entityGraphService.setPhaseStatus(phase, "failed");
       return { success: false, error: "Run-level timeout exceeded" };
     }
 
+    run.logger.log("orchestrator", "attempt-start", {
+      phase,
+      attempt: attempt + 1,
+      maxAttempts: MAX_RETRIES + 1,
+    });
+
     // Clear-before-retry: remove entities from the prior failed attempt
     if (attempt > 0) {
+      run.logger.log("orchestrator", "clear-before-retry", {
+        phase,
+        runId: run.runId,
+      });
       entityGraphService.removePhaseEntities(phase, run.runId);
     }
 
@@ -213,6 +236,7 @@ async function executeSinglePhase(
           provider: run.provider,
           model: run.model,
           signal: phaseAbort.signal,
+          logger: run.logger,
         }),
         new Promise<PhaseResult>((_, reject) => {
           phaseAbort.signal.addEventListener("abort", () => {
@@ -232,9 +256,21 @@ async function executeSinglePhase(
       lastError = err instanceof Error ? err.message : String(err);
       const classification = classifyFailure(lastError);
       if (classification === "terminal") {
+        run.logger.error("orchestrator", "phase-failed", {
+          phase,
+          elapsedMs: Date.now() - phaseStart,
+          failureKind: classification,
+          lastError,
+        });
         entityGraphService.setPhaseStatus(phase, "failed");
         return { success: false, error: lastError };
       }
+      run.logger.warn("orchestrator", "attempt-failed", {
+        phase,
+        attempt: attempt + 1,
+        error: lastError,
+        classification,
+      });
       continue;
     } finally {
       clearTimeout(phaseTimer);
@@ -282,6 +318,15 @@ async function executeSinglePhase(
 
       entityGraphService.setPhaseStatus(phase, "complete");
 
+      run.logger.log("orchestrator", "phase-complete", {
+        phase,
+        elapsedMs: Date.now() - phaseStart,
+        entities: result.entities.length,
+        relationships: result.relationships.length,
+        attemptsUsed: attempt + 1,
+      });
+      await run.logger.flush();
+
       const summary: PhaseSummary = {
         entitiesCreated: result.entities.length,
         relationshipsCreated: result.relationships.length,
@@ -305,13 +350,31 @@ async function executeSinglePhase(
     lastError = result.error ?? "Unknown validation error";
     const classification = classifyFailure(lastError);
     if (classification === "terminal") {
+      run.logger.error("orchestrator", "phase-failed", {
+        phase,
+        elapsedMs: Date.now() - phaseStart,
+        failureKind: classification,
+        lastError,
+      });
       entityGraphService.setPhaseStatus(phase, "failed");
       return { success: false, error: lastError };
     }
+    run.logger.warn("orchestrator", "attempt-failed", {
+      phase,
+      attempt: attempt + 1,
+      error: lastError,
+      classification,
+    });
     // Retryable — continue loop
   }
 
   // Exhausted retries
+  run.logger.error("orchestrator", "phase-failed", {
+    phase,
+    elapsedMs: Date.now() - phaseStart,
+    failureKind: "retries-exhausted",
+    lastError,
+  });
   entityGraphService.setPhaseStatus(phase, "failed");
   return { success: false, error: lastError };
 }
@@ -333,6 +396,8 @@ export async function runFull(
   }
 
   const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const logger = createRunLogger(runId);
+  const analysisTimer = timer();
   const abortController = new AbortController();
 
   // Run-level timeout: create a signal that fires after RUN_TIMEOUT_MS
@@ -362,7 +427,16 @@ export async function runFull(
     startTime: Date.now(),
     phasesCompleted: [],
     abortController,
+    logger,
   };
+
+  logger.log("orchestrator", "analysis-start", {
+    mode: "analysis",
+    topic,
+    model,
+    provider,
+    phases: SUPPORTED_PHASES.length,
+  });
 
   // Execute phases async — don't await here, return immediately
   const run = activeRun;
@@ -384,6 +458,10 @@ export async function runFull(
             if (runTimeoutSignal.aborted && !signal?.aborted) {
               run.status = "failed";
               run.error = "Run-level timeout exceeded";
+              run.logger.error("orchestrator", "run-timeout", {
+                elapsedMs: analysisTimer.elapsed(),
+                phase,
+              });
               emitProgress({
                 type: "analysis_failed",
                 runId: run.runId,
@@ -392,6 +470,9 @@ export async function runFull(
             } else {
               run.status = "interrupted";
               run.error = "Run was aborted";
+              run.logger.warn("orchestrator", "analysis-aborted", {
+                phasesCompleted: run.phasesCompleted.length,
+              });
             }
           } else {
             run.status = "failed";
@@ -412,6 +493,14 @@ export async function runFull(
         run.status = "completed";
         run.activePhase = null;
 
+        const snapshot2 = entityGraphService.getAnalysis();
+        run.logger.log("orchestrator", "analysis-finished", {
+          status: "success",
+          phasesCompleted: run.phasesCompleted.length,
+          totalEntities: snapshot2.entities.length,
+          elapsedMs: analysisTimer.elapsed(),
+        });
+
         // Snapshot the result so getResult(runId) returns point-in-time data
         const snapshot = entityGraphService.getAnalysis();
         if (resultSnapshots.size >= MAX_RESULT_SNAPSHOTS) {
@@ -430,6 +519,8 @@ export async function runFull(
       // Drain any remaining queued edits
       drainEditQueue();
       run.activePhase = null;
+      // Flush logger before clearing run state
+      await run.logger.flush();
       // Clear runPromise so new runs can start
       runPromise = null;
       // Flush deferred revalidations that were suppressed during this run
