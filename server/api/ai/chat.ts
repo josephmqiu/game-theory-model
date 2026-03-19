@@ -142,7 +142,10 @@ export default defineEventHandler(async (event) => {
   const provider = body.provider;
   const model = body.model;
   const systemLen = body.system.length;
-  const messageLen = body.messages.reduce((n, m) => n + m.content.length, 0);
+  const messageLen = body.messages.reduce(
+    (n, m) => n + (m.content?.length ?? 0),
+    0,
+  );
   serverLog(runId, "chat", "request-received", {
     provider,
     model,
