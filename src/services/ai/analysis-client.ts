@@ -86,6 +86,14 @@ export async function startAnalysis(
               store.setPhaseStatusLocal(event.phase, "running");
             } else if (event.type === "phase_completed") {
               store.setPhaseStatusLocal(event.phase, "complete");
+            } else if (event.type === "analysis_failed") {
+              // Mark any phase still "running" as "failed" so the UI
+              // shows the failure banner immediately (not only after snapshot).
+              for (const ps of store.analysis.phases) {
+                if (ps.status === "running") {
+                  store.setPhaseStatusLocal(ps.phase, "failed");
+                }
+              }
             }
             progressListeners.forEach((cb) => cb(event));
           } else if (event.channel === "snapshot") {

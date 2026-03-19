@@ -514,13 +514,25 @@ export async function runFull(
         });
 
         emitProgress({ type: "analysis_completed", runId: run.runId });
+      } else {
+        // Run ended with failure or interruption — log the terminal event
+        run.logger.log("orchestrator", "analysis-finished", {
+          status: run.status,
+          phasesCompleted: run.phasesCompleted.length,
+          error: run.error,
+          elapsedMs: analysisTimer.elapsed(),
+        });
       }
     } finally {
       // Drain any remaining queued edits
       drainEditQueue();
       run.activePhase = null;
       // Flush logger before clearing run state
-      await run.logger.flush();
+      try {
+        await run.logger.flush();
+      } catch {
+        // Logger flush must not prevent cleanup
+      }
       // Clear runPromise so new runs can start
       runPromise = null;
       // Flush deferred revalidations that were suppressed during this run

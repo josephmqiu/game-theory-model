@@ -155,40 +155,45 @@ function ProviderRow({ type }: { type: AIProviderType }) {
 
   const meta = PROVIDER_META[type];
 
-  const handleConnect = useCallback(async () => {
-    setIsConnecting(true);
-    setError(null);
-    setNotInstalled(false);
-    setInstallInfo(null);
-    const result = await connectAgent(meta.agent);
-    if (result.connected) {
-      connect(type, meta.agent, result.models);
-      persist();
-    } else if (result.notInstalled) {
-      setNotInstalled(true);
-    } else {
-      if (result.error?.startsWith("server_error_")) {
-        const status = result.error.replace("server_error_", "");
-        setError(t("agents.serverError", { status }));
-      } else if (result.error && result.error !== "connection_failed") {
-        setError(result.error);
+  const handleConnect = useCallback(
+    async (providerType: AIProviderType = type) => {
+      const agentName = PROVIDER_META[providerType].agent;
+      setIsConnecting(true);
+      setError(null);
+      setNotInstalled(false);
+      setInstallInfo(null);
+      const result = await connectAgent(agentName);
+      if (result.connected) {
+        connect(providerType, agentName, result.models);
+        persist();
+      } else if (result.notInstalled) {
+        setNotInstalled(true);
       } else {
-        setError(t("agents.connectionFailed"));
+        if (result.error?.startsWith("server_error_")) {
+          const status = result.error.replace("server_error_", "");
+          setError(t("agents.serverError", { status }));
+        } else if (result.error && result.error !== "connection_failed") {
+          setError(result.error);
+        } else {
+          setError(t("agents.connectionFailed"));
+        }
       }
-    }
-    setIsConnecting(false);
-  }, [type, meta.agent, connect, persist, t]);
+      setIsConnecting(false);
+    },
+    [type, connect, persist, t],
+  );
 
   const handleInstall = useCallback(async () => {
+    const agentName = PROVIDER_META[type].agent;
     setIsInstalling(true);
     setError(null);
     setInstallInfo(null);
-    const result = await installAgent(meta.agent);
+    const result = await installAgent(agentName);
     if (result.success) {
       // Auto-connect after successful install
       setIsInstalling(false);
       setNotInstalled(false);
-      handleConnect();
+      handleConnect(type);
     } else {
       setIsInstalling(false);
       setError(result.error || t("agents.installFailed"));
@@ -199,15 +204,18 @@ function ProviderRow({ type }: { type: AIProviderType }) {
         });
       }
     }
-  }, [meta.agent, handleConnect, t]);
+  }, [type, handleConnect, t]);
 
-  const handleDisconnect = useCallback(() => {
-    disconnect(type);
-    setError(null);
-    setNotInstalled(false);
-    setInstallInfo(null);
-    persist();
-  }, [type, disconnect, persist]);
+  const handleDisconnect = useCallback(
+    (providerType: AIProviderType = type) => {
+      disconnect(providerType);
+      setError(null);
+      setNotInstalled(false);
+      setInstallInfo(null);
+      persist();
+    },
+    [type, disconnect, persist],
+  );
 
   const { Icon } = meta;
 
@@ -218,7 +226,7 @@ function ProviderRow({ type }: { type: AIProviderType }) {
         <Button
           variant="ghost"
           size="sm"
-          onClick={handleDisconnect}
+          onClick={() => handleDisconnect(type)}
           className="h-7 px-2.5 text-[11px] text-muted-foreground hover:text-destructive shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
         >
           <Unplug size={11} className="mr-1" />
@@ -249,7 +257,7 @@ function ProviderRow({ type }: { type: AIProviderType }) {
     return (
       <Button
         size="sm"
-        onClick={handleConnect}
+        onClick={() => handleConnect(type)}
         disabled={isConnecting}
         className="h-7 px-3 text-[11px] shrink-0"
       >
