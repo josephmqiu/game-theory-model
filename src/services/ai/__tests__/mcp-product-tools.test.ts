@@ -115,10 +115,30 @@ describe("handleStartAnalysis", () => {
       await handleStartAnalysis({ topic: "US-China semiconductor trade war" }),
     );
 
-    expect(runFull).toHaveBeenCalledWith("US-China semiconductor trade war");
+    expect(runFull).toHaveBeenCalledWith(
+      "US-China semiconductor trade war",
+      undefined,
+      undefined,
+    );
     expect(result.runId).toBe("run-mock-123");
     expect(result.status).toBe("started");
     expect(result.estimatedPhases).toBe(3);
+  });
+
+  it("passes provider and model through to orchestrator.runFull", async () => {
+    const { runFull } = await import("@/services/ai/analysis-orchestrator");
+
+    const result = JSON.parse(
+      await handleStartAnalysis({
+        topic: "NATO expansion",
+        provider: "openai",
+        model: "gpt-4o",
+      }),
+    );
+
+    expect(runFull).toHaveBeenCalledWith("NATO expansion", "openai", "gpt-4o");
+    expect(result.runId).toBe("run-mock-123");
+    expect(result.status).toBe("started");
   });
 });
 

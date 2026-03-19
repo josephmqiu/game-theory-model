@@ -77,6 +77,13 @@ let activeRun: ActiveRun | null = null;
 let runPromise: Promise<void> | null = null;
 const progressListeners = new Set<(event: AnalysisProgressEvent) => void>();
 
+/** Capped snapshot store: completed run results keyed by runId */
+const MAX_RESULT_SNAPSHOTS = 10;
+const resultSnapshots = new Map<
+  string,
+  { entities: AnalysisEntity[]; relationships: AnalysisRelationship[] }
+>();
+
 // ── Progress event helpers ──
 
 function emitProgress(event: AnalysisProgressEvent): void {
@@ -404,6 +411,19 @@ export async function runFull(
       if (run.status === "running") {
         run.status = "completed";
         run.activePhase = null;
+
+        // Snapshot the result so getResult(runId) returns point-in-time data
+        const snapshot = entityGraphService.getAnalysis();
+        if (resultSnapshots.size >= MAX_RESULT_SNAPSHOTS) {
+          // Evict oldest entry
+          const oldestKey = resultSnapshots.keys().next().value;
+          if (oldestKey !== undefined) resultSnapshots.delete(oldestKey);
+        }
+        resultSnapshots.set(run.runId, {
+          entities: [...snapshot.entities],
+          relationships: [...snapshot.relationships],
+        });
+
         emitProgress({ type: "analysis_completed", runId: run.runId });
       }
     } finally {
@@ -445,6 +465,15 @@ export function getStatus(runId: string): RunStatus {
 }
 
 export function getResult(runId: string): AnalysisResult {
+  // Return snapshot if available (completed run), otherwise fall back to current graph
+  const snapshot = resultSnapshots.get(runId);
+  if (snapshot) {
+    return {
+      runId,
+      entities: snapshot.entities,
+      relationships: snapshot.relationships,
+    };
+  }
   const analysis = entityGraphService.getAnalysis();
   return {
     runId,
@@ -502,6 +531,7 @@ export function _resetForTest(): void {
   activeRun = null;
   runPromise = null;
   progressListeners.clear();
+  resultSnapshots.clear();
 }
 
 /** Expose activeRun for test assertions. */

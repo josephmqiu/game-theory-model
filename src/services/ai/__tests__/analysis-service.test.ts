@@ -170,9 +170,18 @@ describe("analysis-service", () => {
       expect(systemPrompt).toContain("Situational Grounding");
       // Model defaults
       expect(model).toBe("claude-sonnet-4-20250514");
-      // Schema is a JSON schema object
+      // Schema is a real JSON schema with entity-specific fields (not placeholder)
       expect(schema).toHaveProperty("type", "object");
       expect(schema).toHaveProperty("required");
+      // entities.items should have real schema fields, not just { type: "object" }
+      const entityItems = (schema as any).properties.entities.items;
+      expect(entityItems).toHaveProperty("properties");
+      expect(entityItems.properties).toHaveProperty("type");
+      expect(entityItems.properties).toHaveProperty("data");
+      // Relationship items should have typed enum
+      const relItems = (schema as any).properties.relationships.items;
+      expect(relItems.properties.type.enum).toContain("supports");
+      expect(relItems.properties.type.enum).toContain("precedes");
 
       expect(result.success).toBe(true);
     });
@@ -363,9 +372,15 @@ describe("analysis-service", () => {
       const objective = result.entities.find((e) => e.type === "objective");
       expect(objective).toBeDefined();
 
-      const [, systemPrompt] = mockClaudeAdapter.runAnalysisPhase.mock.calls[0];
+      const [, systemPrompt, , schema] =
+        mockClaudeAdapter.runAnalysisPhase.mock.calls[0];
       expect(systemPrompt).toContain("Phase 2");
       expect(systemPrompt).toContain("Player Identification");
+
+      // Phase 2 schema uses oneOf for player + objective entity types
+      const entityItems = (schema as any).properties.entities.items;
+      expect(entityItems).toHaveProperty("oneOf");
+      expect(entityItems.oneOf).toHaveLength(2);
     });
 
     it("works for phase 3 — baseline model", async () => {

@@ -223,6 +223,7 @@ export interface AnalysisEntity {
   rationale: string;
   revision: number;
   stale: boolean; // true when downstream of a human edit, pending revalidation
+  group?: string; // analytical group label assigned by canvas-service grouping
 }
 
 // ── Relationships ──

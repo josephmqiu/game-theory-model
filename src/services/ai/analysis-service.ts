@@ -309,23 +309,288 @@ async function getAdapter(provider?: string): Promise<AnalysisAdapter> {
 
 // ── JSON Schema for structured output ──
 
+const BASE_ENTITY_SCHEMA = {
+  id: { type: "string" },
+  position: {
+    type: "object",
+    properties: { x: { type: "number" }, y: { type: "number" } },
+    required: ["x", "y"],
+  },
+  confidence: { type: "string", enum: ["high", "medium", "low"] },
+  source: { type: "string", enum: ["ai", "human", "computed"] },
+  rationale: { type: "string" },
+  revision: { type: "number" },
+  stale: { type: "boolean" },
+} as const;
+
+const FACT_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["fact"] },
+    phase: { type: "string", enum: ["situational-grounding"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["fact"] },
+        date: { type: "string" },
+        source: { type: "string" },
+        content: { type: "string" },
+        category: {
+          type: "string",
+          enum: [
+            "capability",
+            "economic",
+            "position",
+            "impact",
+            "action",
+            "rule",
+          ],
+        },
+      },
+      required: ["type", "date", "source", "content", "category"],
+    },
+  },
+  required: [
+    "id",
+    "type",
+    "phase",
+    "data",
+    "position",
+    "confidence",
+    "rationale",
+    "revision",
+    "stale",
+  ],
+};
+
+const PLAYER_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["player"] },
+    phase: { type: "string", enum: ["player-identification"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["player"] },
+        name: { type: "string" },
+        playerType: {
+          type: "string",
+          enum: [
+            "primary",
+            "involuntary",
+            "background",
+            "internal",
+            "gatekeeper",
+          ],
+        },
+        knowledge: { type: "array", items: { type: "string" } },
+      },
+      required: ["type", "name", "playerType"],
+    },
+  },
+  required: [
+    "id",
+    "type",
+    "phase",
+    "data",
+    "position",
+    "confidence",
+    "rationale",
+    "revision",
+    "stale",
+  ],
+};
+
+const OBJECTIVE_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["objective"] },
+    phase: { type: "string", enum: ["player-identification"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["objective"] },
+        description: { type: "string" },
+        priority: {
+          type: "string",
+          enum: ["lexicographic", "high", "tradable"],
+        },
+        stability: {
+          type: "string",
+          enum: ["stable", "shifting", "unknown"],
+        },
+      },
+      required: ["type", "description", "priority"],
+    },
+  },
+  required: [
+    "id",
+    "type",
+    "phase",
+    "data",
+    "position",
+    "confidence",
+    "rationale",
+    "revision",
+    "stale",
+  ],
+};
+
+const GAME_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["game"] },
+    phase: { type: "string", enum: ["baseline-model"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["game"] },
+        name: { type: "string" },
+        gameType: {
+          type: "string",
+          enum: [
+            "chicken",
+            "prisoners-dilemma",
+            "coordination",
+            "war-of-attrition",
+            "bargaining",
+            "signaling",
+            "bayesian",
+            "coalition",
+            "domestic-political",
+            "economic-hostage",
+            "bertrand",
+            "hotelling",
+            "entry-deterrence",
+            "network-effects",
+          ],
+        },
+        timing: {
+          type: "string",
+          enum: ["simultaneous", "sequential", "repeated"],
+        },
+        description: { type: "string" },
+      },
+      required: ["type", "name", "gameType", "timing"],
+    },
+  },
+  required: [
+    "id",
+    "type",
+    "phase",
+    "data",
+    "position",
+    "confidence",
+    "rationale",
+    "revision",
+    "stale",
+  ],
+};
+
+const STRATEGY_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["strategy"] },
+    phase: { type: "string", enum: ["baseline-model"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["strategy"] },
+        name: { type: "string" },
+        feasibility: {
+          type: "string",
+          enum: [
+            "actual",
+            "requires-new-capability",
+            "rhetoric-only",
+            "dominated",
+          ],
+        },
+        description: { type: "string" },
+      },
+      required: ["type", "name", "feasibility"],
+    },
+  },
+  required: [
+    "id",
+    "type",
+    "phase",
+    "data",
+    "position",
+    "confidence",
+    "rationale",
+    "revision",
+    "stale",
+  ],
+};
+
+const RELATIONSHIP_SCHEMA = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    type: {
+      type: "string",
+      enum: [
+        "plays-in",
+        "has-objective",
+        "conflicts-with",
+        "has-strategy",
+        "supports",
+        "contradicts",
+        "produces",
+        "depends-on",
+        "invalidated-by",
+        "constrains",
+        "escalates-to",
+        "links",
+        "precedes",
+        "informed-by",
+        "derived-from",
+      ],
+    },
+    fromEntityId: { type: "string" },
+    toEntityId: { type: "string" },
+    metadata: { type: "object" },
+  },
+  required: ["id", "type", "fromEntityId", "toEntityId"],
+};
+
+/** Entity schemas per phase for structured output */
+const PHASE_ENTITY_JSON_SCHEMAS: Record<
+  SupportedPhase,
+  Record<string, unknown>[]
+> = {
+  "situational-grounding": [FACT_ENTITY_SCHEMA],
+  "player-identification": [PLAYER_ENTITY_SCHEMA, OBJECTIVE_ENTITY_SCHEMA],
+  "baseline-model": [GAME_ENTITY_SCHEMA, STRATEGY_ENTITY_SCHEMA],
+};
+
 /**
  * Build a JSON Schema representation of the phase output for structured output mode.
- * This is a simplified schema the adapter passes to the AI for structured generation.
+ * Uses real entity schemas per phase so providers can enforce structure natively.
  */
 function buildOutputSchema(phase: SupportedPhase): Record<string, unknown> {
+  const entitySchemas = PHASE_ENTITY_JSON_SCHEMAS[phase];
+  const entityItems =
+    entitySchemas.length === 1 ? entitySchemas[0] : { oneOf: entitySchemas };
+
   return {
     type: "object",
     properties: {
       entities: {
         type: "array",
         description: `Array of ${phase} entities`,
-        items: { type: "object" },
+        items: entityItems,
       },
       relationships: {
         type: "array",
         description: "Array of entity relationships",
-        items: { type: "object" },
+        items: RELATIONSHIP_SCHEMA,
       },
     },
     required: ["entities", "relationships"],

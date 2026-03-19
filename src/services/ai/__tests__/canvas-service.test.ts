@@ -134,6 +134,14 @@ describe("layoutEntities", () => {
     expect(getIsDirty()).toBe(true);
   });
 
+  it("uses ai-edited provenance source for layout mutations", () => {
+    const fact = makeFact();
+    layoutEntities("column");
+
+    const entity = getAnalysis().entities.find((e) => e.id === fact.id)!;
+    expect(entity.provenance?.source).toBe("ai-edited");
+  });
+
   it("throws on unknown layout strategy", () => {
     expect(() => layoutEntities("radial")).toThrow(
       'Unknown layout strategy: "radial"',
@@ -144,18 +152,27 @@ describe("layoutEntities", () => {
 // ── groupEntities ──
 
 describe("groupEntities", () => {
-  it("tags entities with the group label", () => {
+  it("tags entities with the group label (typed, no as-any cast)", () => {
     const f1 = makeFact("Fact 1");
     const f2 = makeFact("Fact 2");
 
     groupEntities([f1.id, f2.id], "Trade Wars");
 
     const entities = getAnalysis().entities;
-    const g1 = entities.find((e) => e.id === f1.id) as any;
-    const g2 = entities.find((e) => e.id === f2.id) as any;
+    const g1 = entities.find((e) => e.id === f1.id)!;
+    const g2 = entities.find((e) => e.id === f2.id)!;
 
+    // group is a typed field on AnalysisEntity, no cast needed
     expect(g1.group).toBe("Trade Wars");
     expect(g2.group).toBe("Trade Wars");
+  });
+
+  it("uses ai-edited provenance source for grouping", () => {
+    const f1 = makeFact("Fact 1");
+    groupEntities([f1.id], "Group A");
+
+    const entity = getAnalysis().entities.find((e) => e.id === f1.id)!;
+    expect(entity.provenance?.source).toBe("ai-edited");
   });
 
   it("marks the entity graph as dirty", () => {

@@ -199,29 +199,16 @@ function streamViaCodexAdapter(body: ChatBody, model?: string, runId?: string) {
           { runId },
         )) {
           clearInterval(pingTimer);
-          if (event.type === "text_delta") {
+          // Emit ChatEvent objects directly — client normalizeChunk() handles them
+          if (
+            event.type === "text_delta" ||
+            event.type === "tool_call_start" ||
+            event.type === "tool_call_result" ||
+            event.type === "tool_call_error" ||
+            event.type === "error"
+          ) {
             controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ type: "text", content: event.content })}\n\n`,
-              ),
-            );
-          } else if (event.type === "tool_call_start") {
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ type: "tool_call_start", toolName: event.toolName, input: event.input })}\n\n`,
-              ),
-            );
-          } else if (event.type === "tool_call_result") {
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ type: "tool_call_result", toolName: event.toolName, output: event.output })}\n\n`,
-              ),
-            );
-          } else if (event.type === "error") {
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ type: "error", content: event.message })}\n\n`,
-              ),
+              encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
             );
           }
           // turn_complete is handled after the loop
@@ -234,12 +221,12 @@ function streamViaCodexAdapter(body: ChatBody, model?: string, runId?: string) {
           ),
         );
       } catch (error) {
-        const content =
+        const message =
           error instanceof Error ? error.message : "Unknown error";
-        serverLog(runId, "chat", "stream-error", { error: content });
+        serverLog(runId, "chat", "stream-error", { error: message });
         controller.enqueue(
           encoder.encode(
-            `data: ${JSON.stringify({ type: "error", content })}\n\n`,
+            `data: ${JSON.stringify({ type: "error", message, recoverable: false })}\n\n`,
           ),
         );
       } finally {
@@ -303,29 +290,16 @@ function streamViaClaude(body: ChatBody, model?: string, runId?: string) {
           { runId },
         )) {
           clearInterval(pingTimer);
-          if (event.type === "text_delta") {
+          // Emit ChatEvent objects directly — client normalizeChunk() handles them
+          if (
+            event.type === "text_delta" ||
+            event.type === "tool_call_start" ||
+            event.type === "tool_call_result" ||
+            event.type === "tool_call_error" ||
+            event.type === "error"
+          ) {
             controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ type: "text", content: event.content })}\n\n`,
-              ),
-            );
-          } else if (event.type === "tool_call_start") {
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ type: "tool_call_start", toolName: event.toolName, input: event.input })}\n\n`,
-              ),
-            );
-          } else if (event.type === "tool_call_result") {
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ type: "tool_call_result", toolName: event.toolName, output: event.output })}\n\n`,
-              ),
-            );
-          } else if (event.type === "error") {
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ type: "error", content: event.message })}\n\n`,
-              ),
+              encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
             );
           }
           // turn_complete is handled after the loop
@@ -338,12 +312,12 @@ function streamViaClaude(body: ChatBody, model?: string, runId?: string) {
           ),
         );
       } catch (error) {
-        const content =
+        const message =
           error instanceof Error ? error.message : "Unknown error";
-        serverLog(runId, "chat", "stream-error", { error: content });
+        serverLog(runId, "chat", "stream-error", { error: message });
         controller.enqueue(
           encoder.encode(
-            `data: ${JSON.stringify({ type: "error", content })}\n\n`,
+            `data: ${JSON.stringify({ type: "error", message, recoverable: false })}\n\n`,
           ),
         );
       } finally {

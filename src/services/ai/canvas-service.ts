@@ -42,7 +42,7 @@ function applyColumnLayout(): void {
       updateEntity(
         ids[i],
         { position: { x, y: i * COLUMN_Y_SPACING + COLUMN_Y_START } },
-        { source: "phase-derived" },
+        { source: "ai-edited" },
       );
     }
   }
@@ -78,7 +78,7 @@ export function layoutEntities(strategy: string): void {
  */
 export function groupEntities(entityIds: string[], label: string): void {
   for (const id of entityIds) {
-    updateEntity(id, { group: label } as any, { source: "phase-derived" });
+    updateEntity(id, { group: label }, { source: "ai-edited" });
   }
   markDirty();
 }

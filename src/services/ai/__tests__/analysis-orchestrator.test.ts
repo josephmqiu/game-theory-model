@@ -654,11 +654,16 @@ describe("analysis-orchestrator", () => {
   });
 
   describe("getResult", () => {
-    it("returns entities and relationships from entity-graph-service", () => {
-      const mockEntities = [
-        { id: "e1", type: "fact", phase: "situational-grounding" },
+    it("returns snapshot for completed run (not current graph)", async () => {
+      const snapshotEntities = [
+        {
+          id: "e1",
+          type: "fact",
+          phase: "situational-grounding",
+          data: { type: "fact", content: "Snapshot fact" },
+        },
       ] as unknown as AnalysisEntity[];
-      const mockRelationships = [
+      const snapshotRelationships = [
         {
           id: "r1",
           type: "precedes",
@@ -666,19 +671,79 @@ describe("analysis-orchestrator", () => {
           toEntityId: "e2",
         },
       ] as unknown as AnalysisRelationship[];
+
+      // getAnalysis is called during buildPriorContext (for each subsequent phase)
+      // and at run completion for the snapshot. Use mockImplementation to keep
+      // returning the same data without polluting later tests.
+      const snapshotGraph = {
+        id: "test",
+        name: "test",
+        topic: "test",
+        entities: snapshotEntities,
+        relationships: snapshotRelationships,
+        phases: [],
+      };
+      mockEntityGraph.getAnalysis.mockImplementation(() => snapshotGraph);
+
+      mockRunPhase
+        .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
+        .mockResolvedValueOnce(makePhaseResult("player-identification"))
+        .mockResolvedValueOnce(makePhaseResult("baseline-model"));
+
+      const { runId } = await orchestrator.runFull("Test topic");
+      await flushAsync();
+
+      // Reset mock to return different data (simulating post-edit state)
+      const postEditGraph = {
+        id: "test",
+        name: "test",
+        topic: "test",
+        entities: [
+          {
+            id: "e1-edited",
+            type: "fact",
+            phase: "situational-grounding",
+            data: { type: "fact", content: "Edited fact" },
+          },
+        ] as unknown as AnalysisEntity[],
+        relationships: [],
+        phases: [],
+      };
+      mockEntityGraph.getAnalysis.mockImplementation(() => postEditGraph);
+
+      // getResult should return the snapshot, not the post-edit data
+      const result = orchestrator.getResult(runId);
+      expect(result.runId).toBe(runId);
+      expect(result.entities).toEqual(snapshotEntities);
+      expect(result.relationships).toEqual(snapshotRelationships);
+
+      // Restore default mock for subsequent tests
+      mockEntityGraph.getAnalysis.mockImplementation(() => ({
+        id: "test",
+        name: "test",
+        topic: "test",
+        entities: [] as AnalysisEntity[],
+        relationships: [] as AnalysisRelationship[],
+        phases: [],
+      }));
+    });
+
+    it("falls back to current graph for unknown runId", () => {
+      const mockEntities = [
+        { id: "e1", type: "fact", phase: "situational-grounding" },
+      ] as unknown as AnalysisEntity[];
       mockEntityGraph.getAnalysis.mockReturnValueOnce({
         id: "test",
         name: "test",
         topic: "test",
         entities: mockEntities,
-        relationships: mockRelationships,
+        relationships: [],
         phases: [],
       });
 
-      const result = orchestrator.getResult("test-run");
-      expect(result.runId).toBe("test-run");
+      const result = orchestrator.getResult("unknown-run-id");
+      expect(result.runId).toBe("unknown-run-id");
       expect(result.entities).toEqual(mockEntities);
-      expect(result.relationships).toEqual(mockRelationships);
     });
   });
 

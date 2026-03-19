@@ -784,6 +784,16 @@ const TOOL_DEFINITIONS = [
           type: "string",
           description: "The real-world topic to analyze",
         },
+        provider: {
+          type: "string",
+          description:
+            "AI provider to use for the analysis (e.g. anthropic, openai). Preserves provider affinity across phases.",
+        },
+        model: {
+          type: "string",
+          description:
+            "Model ID to use for the analysis (e.g. claude-sonnet-4-20250514, gpt-4o). Preserves model affinity across phases.",
+        },
       },
       required: ["topic"],
     },
@@ -1039,8 +1049,14 @@ const TOOL_DEFINITIONS = [
 // Analysis tools (4)
 export async function handleStartAnalysis(args: {
   topic: string;
+  provider?: string;
+  model?: string;
 }): Promise<string> {
-  const { runId } = await analysisOrchestrator.runFull(args.topic);
+  const { runId } = await analysisOrchestrator.runFull(
+    args.topic,
+    args.provider,
+    args.model,
+  );
   return JSON.stringify({ runId, status: "started", estimatedPhases: 3 });
 }
 
