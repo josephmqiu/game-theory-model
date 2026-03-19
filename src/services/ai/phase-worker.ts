@@ -31,7 +31,7 @@ const baseEntityFields = {
   id: z.string().min(1),
   position: positionSchema,
   confidence: entityConfidenceSchema,
-  source: entitySourceSchema,
+  source: entitySourceSchema.default("ai"),
   rationale: z.string(),
   revision: z.number(),
   stale: z.boolean(),
