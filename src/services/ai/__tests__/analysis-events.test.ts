@@ -170,6 +170,13 @@ describe("AnalysisMutationEvent", () => {
     expect(event.type).toBe("stale_marked");
     expect(event.entityIds).toHaveLength(3);
   });
+
+  it("represents state_changed", () => {
+    const event: AnalysisMutationEvent = {
+      type: "state_changed",
+    };
+    expect(event.type).toBe("state_changed");
+  });
 });
 
 describe("type guards", () => {
@@ -196,6 +203,7 @@ describe("type guards", () => {
     { type: "entity_updated", entity, previousProvenance: provenance },
     { type: "relationship_updated", relationship },
     { type: "stale_marked", entityIds: ["e-1"] },
+    { type: "state_changed" },
   ];
 
   it("isProgressEvent returns true for all progress variants", () => {
@@ -230,15 +238,16 @@ describe("AnalysisEvent union", () => {
       { type: "entity_created", entity },
       { type: "relationship_updated", relationship },
       { type: "stale_marked", entityIds: [] },
+      { type: "state_changed" },
       { type: "analysis_completed", runId: "r" },
     ];
     // All assignable to AnalysisEvent[]
-    expect(events).toHaveLength(5);
+    expect(events).toHaveLength(6);
     // Verify mixed array can be partitioned by guards
     const progress = events.filter(isProgressEvent);
     const mutations = events.filter(isMutationEvent);
     expect(progress).toHaveLength(2);
-    expect(mutations).toHaveLength(3);
+    expect(mutations).toHaveLength(4);
     expect(progress.length + mutations.length).toBe(events.length);
   });
 });

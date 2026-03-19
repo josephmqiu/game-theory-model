@@ -358,6 +358,7 @@ export function removePhaseEntities(
     relationships: remainingRelationships,
   };
   mutate();
+  emit({ type: "state_changed" });
 }
 
 export function setPhaseStatus(
@@ -371,6 +372,7 @@ export function setPhaseStatus(
     ),
   };
   mutate();
+  emit({ type: "state_changed" });
 }
 
 // ── Persistence ──

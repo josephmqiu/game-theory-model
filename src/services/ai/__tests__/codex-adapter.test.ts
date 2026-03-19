@@ -544,6 +544,128 @@ describe("codex-adapter", () => {
     });
   });
 
+  describe("streamChat threadId filtering", () => {
+    it("ignores notifications with a different threadId", async () => {
+      const { streamChat, _resetConnection } = await import("../codex-adapter");
+      _resetConnection();
+
+      setAutoResponder((method, id) => {
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitResponse(id, { threadId: "thread-1" });
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitResponse(id, { ok: true });
+          queueMicrotask(() => {
+            // This notification has a different threadId — should be skipped
+            emitNotification("item/agentMessage/delta", {
+              delta: "wrong thread",
+              threadId: "thread-other",
+            });
+            // This one matches — should be received
+            emitNotification("item/agentMessage/delta", {
+              delta: "correct thread",
+              threadId: "thread-1",
+            });
+            // This one has no threadId — should be accepted (best-effort)
+            emitNotification("item/agentMessage/delta", {
+              delta: " no filter",
+            });
+            emitNotification("turn/completed", {});
+          });
+        }
+      });
+
+      const events: ChatEvent[] = [];
+      for await (const ev of streamChat("hello", "system", "gpt-4o")) {
+        events.push(ev);
+      }
+
+      const textEvents = events.filter((e) => e.type === "text_delta");
+      expect(textEvents).toContainEqual({
+        type: "text_delta",
+        content: "correct thread",
+      });
+      expect(textEvents).toContainEqual({
+        type: "text_delta",
+        content: " no filter",
+      });
+      expect(textEvents).not.toContainEqual({
+        type: "text_delta",
+        content: "wrong thread",
+      });
+    });
+  });
+
+  describe("runAnalysisPhase tool isolation", () => {
+    it("rejects MCP tool calls during analysis", async () => {
+      const { serverWarn } = await import("../../../../server/utils/ai-logger");
+      const { runAnalysisPhase, _resetConnection } =
+        await import("../codex-adapter");
+      _resetConnection();
+
+      setAutoResponder((method, id) => {
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitResponse(id, { threadId: "thread-1" });
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitResponse(id, { ok: true });
+          queueMicrotask(() => {
+            emitNotification("item/tool/requestUserInput", {
+              id: "mcp-approval-1",
+              toolName: "get_entities",
+            });
+          });
+        }
+        if (method === "item/tool/approveUserInput" && id !== undefined) {
+          emitResponse(id, { ok: true });
+          queueMicrotask(() => {
+            emitNotification("turn/completed", {
+              structuredOutput: { entities: [] },
+            });
+          });
+        }
+      });
+
+      const result = await runAnalysisPhase(
+        "analyze this",
+        "system",
+        "gpt-4o",
+        {},
+      );
+
+      expect(result).toEqual({ entities: [] });
+
+      // Verify the MCP tool was rejected (not approved)
+      const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
+      const approvalWrite = calls
+        .map((c) => c[0])
+        .find((w) => w.includes("item/tool/approveUserInput"));
+      expect(approvalWrite).toBeDefined();
+      const approvalReq = JSON.parse(approvalWrite!.trim());
+      expect(approvalReq.params.approved).toBe(false);
+      expect(approvalReq.params.reason).toBe(
+        "Analysis profile does not permit tool use",
+      );
+
+      // Verify warning was logged
+      expect(serverWarn).toHaveBeenCalledWith(
+        undefined,
+        "codex-adapter",
+        "analysis-tool-rejected",
+        expect.objectContaining({
+          method: "item/tool/requestUserInput",
+          approvalId: "mcp-approval-1",
+        }),
+      );
+    });
+  });
+
   describe("stopAppServer", () => {
     it("kills subprocess", async () => {
       const {

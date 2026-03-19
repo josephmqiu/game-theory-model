@@ -37,7 +37,8 @@ export type AnalysisMutationEvent =
       previousProvenance: EntityProvenance;
     }
   | { type: "relationship_updated"; relationship: AnalysisRelationship }
-  | { type: "stale_marked"; entityIds: string[] };
+  | { type: "stale_marked"; entityIds: string[] }
+  | { type: "state_changed" };
 
 export type AnalysisEvent = AnalysisProgressEvent | AnalysisMutationEvent;
 
@@ -56,6 +57,7 @@ const MUTATION_TYPES = new Set([
   "entity_updated",
   "relationship_updated",
   "stale_marked",
+  "state_changed",
 ]);
 
 export function isProgressEvent(

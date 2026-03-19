@@ -66,6 +66,10 @@ interface AppServerConnection {
 
 let connection: AppServerConnection | null = null;
 
+// Thread filtering: tracks the active thread so notification handlers
+// only process events for their own session (Issue: cross-session fan-out).
+let currentThreadId: string | null = null;
+
 function sendRequest(
   conn: AppServerConnection,
   method: string,
@@ -384,6 +388,7 @@ export async function* streamChat(
       model,
     })) as { threadId: string };
     threadId = threadResult.threadId;
+    currentThreadId = threadId;
     serverLog(runId, "codex-adapter", "thread-started", { threadId });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -409,6 +414,11 @@ export async function* streamChat(
   }
 
   const removeListener = onNotification(conn, (method, params) => {
+    // Thread filtering: skip notifications for a different thread (best-effort).
+    // If the notification has no threadId, accept it.
+    const notifThreadId = params.threadId as string | undefined;
+    if (notifThreadId && notifThreadId !== threadId) return;
+
     // Text delta
     if (method === "item/agentMessage/delta") {
       const delta = typeof params.delta === "string" ? params.delta : "";
@@ -568,6 +578,7 @@ export async function* streamChat(
     }
   } finally {
     removeListener();
+    if (currentThreadId === threadId) currentThreadId = null;
   }
 }
 
@@ -597,6 +608,7 @@ export async function runAnalysisPhase<T = unknown>(
   })) as { threadId: string };
   const threadId = threadResult.threadId;
 
+  currentThreadId = threadId;
   serverLog(runId, "codex-adapter", "analysis-thread-started", { threadId });
 
   // Collect result from turn/completed
@@ -605,39 +617,37 @@ export async function runAnalysisPhase<T = unknown>(
   let completionError: string | null = null;
 
   const removeListener = onNotification(conn, (method, params) => {
+    // Thread filtering: skip notifications for a different thread (best-effort).
+    const notifThreadId = params.threadId as string | undefined;
+    if (notifThreadId && notifThreadId !== threadId) return;
+
     if (method === "turn/completed") {
       completed = true;
       result = params.structuredOutput ?? params.content ?? params.result;
     }
-    // Auto-approve MCP tool calls during analysis
-    if (method === MCP_TOOL_APPROVAL) {
-      const approvalId = params.id as string | undefined;
-      if (approvalId) {
-        sendRequest(conn, "item/tool/approveUserInput", {
-          id: approvalId,
-          approved: true,
-        }).catch(() => {});
-      }
-    }
-    // Reject file/command during analysis
-    // TODO: Forward to UI for user review instead of auto-rejecting
+    // Analysis profile: reject ALL tool approvals (MCP, file, command, permissions).
+    // Analysis is "prompt-in, structured-data-out" — no tool use permitted.
     if (
+      method === MCP_TOOL_APPROVAL ||
       method === FILE_CHANGE_APPROVAL ||
       method === COMMAND_APPROVAL ||
       method === PERMISSIONS_APPROVAL
     ) {
       const approvalId = params.id as string | undefined;
       if (approvalId) {
-        sendRequest(
-          conn,
-          method.replace("requestApproval", "respondApproval"),
-          {
-            id: approvalId,
-            approved: false,
-            reason:
-              "File/command operations are not permitted in the current trust tier",
-          },
-        ).catch(() => {});
+        const responseMethod = method.includes("requestUserInput")
+          ? "item/tool/approveUserInput"
+          : method.replace("requestApproval", "respondApproval");
+        serverWarn(runId, "codex-adapter", "analysis-tool-rejected", {
+          method,
+          approvalId,
+          toolName: params.toolName,
+        });
+        sendRequest(conn, responseMethod, {
+          id: approvalId,
+          approved: false,
+          reason: "Analysis profile does not permit tool use",
+        }).catch(() => {});
       }
     }
   });
@@ -683,6 +693,7 @@ export async function runAnalysisPhase<T = unknown>(
     return result as T;
   } finally {
     removeListener();
+    if (currentThreadId === threadId) currentThreadId = null;
   }
 }
 

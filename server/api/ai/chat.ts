@@ -192,9 +192,13 @@ function streamViaCodexAdapter(body: ChatBody, model?: string, runId?: string) {
           .find((m) => m.role === "user");
         const prompt = lastUserMsg?.content ?? "";
 
+        // Inject conversation history into system prompt so multi-turn
+        // context survives the single-prompt SDK limitation.
+        const effectiveSystemPrompt = buildEffectiveSystemPrompt(body);
+
         for await (const event of codexStreamChat(
           prompt,
-          body.system,
+          effectiveSystemPrompt,
           model ?? "o3-mini",
           { runId },
         )) {
@@ -283,9 +287,13 @@ function streamViaClaude(body: ChatBody, model?: string, runId?: string) {
             (prompt || "Describe what you see in the image.");
         }
 
+        // Inject conversation history into system prompt so multi-turn
+        // context survives the single-prompt SDK limitation.
+        const effectiveSystemPrompt = buildEffectiveSystemPrompt(body);
+
         for await (const event of claudeStreamChat(
           prompt,
-          body.system,
+          effectiveSystemPrompt,
           model ?? "claude-sonnet-4-6",
           { runId },
         )) {
@@ -335,6 +343,23 @@ function streamViaClaude(body: ChatBody, model?: string, runId?: string) {
 
 // Keep-alive ping interval (ms) — prevents client timeout while waiting for API TTFT
 const KEEPALIVE_INTERVAL_MS = 15_000;
+
+/**
+ * Inject conversation history into the system prompt so multi-turn context
+ * survives the single-prompt limitation of both the Claude Agent SDK and
+ * Codex app-server JSON-RPC interface.
+ */
+function buildEffectiveSystemPrompt(body: ChatBody): string {
+  // All messages except the last user message form the conversation context
+  const contextMessages = body.messages.slice(0, -1);
+  if (contextMessages.length === 0) return body.system;
+
+  const conversationContext = contextMessages
+    .map((m) => `${m.role}: ${m.content}`)
+    .join("\n\n");
+
+  return `${body.system}\n\n## Conversation History\n\n${conversationContext}`;
+}
 function getAgentThinkingConfig(
   body: ChatBody,
 ):

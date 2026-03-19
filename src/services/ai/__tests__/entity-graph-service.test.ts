@@ -673,6 +673,34 @@ describe("onMutation", () => {
     unsub();
   });
 
+  it("callback receives state_changed from setPhaseStatus", () => {
+    newAnalysis("test");
+    const events: AnalysisMutationEvent[] = [];
+    const unsub = onMutation((event) => events.push(event));
+
+    setPhaseStatus("situational-grounding", "running");
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("state_changed");
+
+    unsub();
+  });
+
+  it("callback receives state_changed from removePhaseEntities", () => {
+    newAnalysis("test");
+    createEntity(makeFactData(), defaultProvenance);
+
+    const events: AnalysisMutationEvent[] = [];
+    const unsub = onMutation((event) => events.push(event));
+
+    removePhaseEntities("situational-grounding");
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("state_changed");
+
+    unsub();
+  });
+
   it("unsubscribe stops receiving events", () => {
     newAnalysis("test");
     const events: AnalysisMutationEvent[] = [];
