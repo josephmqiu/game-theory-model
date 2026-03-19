@@ -24,6 +24,8 @@ export interface StreamChatOptions {
   runId?: string;
   /** Wall-clock timeout per chat turn in ms (default: 5 min) */
   timeoutMs?: number;
+  /** Abort signal — when aborted, closes the SDK query and ends the stream */
+  signal?: AbortSignal;
 }
 
 // Re-export McpSdkServerConfigWithInstance so callers don't import the SDK directly
@@ -308,6 +310,22 @@ export async function* streamChat(
     q.close();
   }, timeoutMs);
 
+  // Abort signal — when the client disconnects, close the SDK query
+  let aborted = false;
+  const signal = options?.signal;
+  const onAbort = () => {
+    aborted = true;
+    q.close();
+  };
+  if (signal) {
+    if (signal.aborted) {
+      aborted = true;
+      q.close();
+    } else {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+  }
+
   let lastAssistantText = "";
   let gotResult = false;
 
@@ -380,6 +398,11 @@ export async function* streamChat(
       }
     }
 
+    // If aborted (client disconnected), exit silently — no error needed
+    if (aborted) {
+      return;
+    }
+
     // If timeout fired, yield error and do NOT fall through to turn_complete
     if (timedOut) {
       yield {
@@ -398,10 +421,13 @@ export async function* streamChat(
       yield { type: "turn_complete" };
     }
   } catch (err) {
+    // Suppress errors caused by abort (client disconnect)
+    if (aborted) return;
     const msg = err instanceof Error ? err.message : String(err);
     yield { type: "error", message: msg, recoverable: false };
   } finally {
     clearTimeout(timeoutId);
+    if (signal) signal.removeEventListener("abort", onAbort);
     q.close();
   }
 }

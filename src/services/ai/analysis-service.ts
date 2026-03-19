@@ -307,7 +307,10 @@ async function getAdapter(provider?: string): Promise<AnalysisAdapter> {
   if (provider === "openai") {
     return import("./codex-adapter");
   }
-  return import("./claude-adapter");
+  if (provider === "anthropic" || !provider) {
+    return import("./claude-adapter");
+  }
+  throw new Error(`Unknown provider: ${provider}. Allowed: anthropic, openai`);
 }
 
 // ── JSON Schema for structured output ──

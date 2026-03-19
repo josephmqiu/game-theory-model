@@ -337,6 +337,21 @@ describe("analysis-service", () => {
       expect(result.success).toBe(true);
     });
 
+    it("throws for unknown provider instead of silently falling back", async () => {
+      const { runPhase } = await importService();
+      const result = await runPhase(
+        "situational-grounding",
+        "US-China trade war",
+        { provider: "copilot" },
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Unknown provider: copilot");
+      expect(result.error).toContain("Allowed: anthropic, openai");
+      expect(mockClaudeAdapter.runAnalysisPhase).not.toHaveBeenCalled();
+      expect(mockCodexAdapter.runAnalysisPhase).not.toHaveBeenCalled();
+    });
+
     it("uses custom model when provided in context", async () => {
       mockClaudeAdapter.runAnalysisPhase.mockResolvedValue(
         VALID_PHASE_1_STRUCTURED,

@@ -325,6 +325,51 @@ describe("codex-adapter", () => {
       );
     });
 
+    it("sends turn/interrupt and exits when signal is aborted", async () => {
+      const { streamChat, _resetConnection } = await import("../codex-adapter");
+      _resetConnection();
+
+      setAutoResponder((method, id) => {
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitResponse(id, { threadId: "thread-1" });
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitResponse(id, { ok: true });
+          // Don't send turn/completed — let abort handle it
+        }
+        if (method === "turn/interrupt" && id !== undefined) {
+          emitResponse(id, { ok: true });
+        }
+      });
+
+      const abortController = new AbortController();
+      const events: ChatEvent[] = [];
+
+      // Abort after a short delay
+      setTimeout(() => abortController.abort(), 50);
+
+      for await (const ev of streamChat("hello", "system", "gpt-4o", {
+        signal: abortController.signal,
+      })) {
+        events.push(ev);
+      }
+
+      // Should exit silently — no error events
+      expect(events).not.toContainEqual(
+        expect.objectContaining({ type: "error" }),
+      );
+
+      // Verify turn/interrupt was sent
+      const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
+      const interruptWrite = calls
+        .map((c) => c[0])
+        .find((w) => w.includes("turn/interrupt"));
+      expect(interruptWrite).toBeDefined();
+    });
+
     it("interrupts after 50 tool calls", async () => {
       const { streamChat, _resetConnection } = await import("../codex-adapter");
       _resetConnection();

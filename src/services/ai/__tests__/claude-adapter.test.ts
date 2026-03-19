@@ -420,6 +420,47 @@ describe("claude-adapter", () => {
       expect(events).toContainEqual({ type: "turn_complete" });
     });
 
+    it("closes query and exits silently when signal is aborted", async () => {
+      const { streamChat } = await import("../claude-adapter");
+
+      // Simulate: abort fires while query is running, q.close() ends the iterator
+      mockQuery.mockImplementation(() => {
+        let closeFn: (() => void) | null = null;
+        return {
+          close: () => {
+            closeFn?.();
+          },
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                return new Promise<IteratorResult<unknown>>((resolve) => {
+                  closeFn = () => resolve({ done: true, value: undefined });
+                });
+              },
+            };
+          },
+        };
+      });
+
+      const abortController = new AbortController();
+      const events: ChatEvent[] = [];
+
+      // Abort after a short delay
+      setTimeout(() => abortController.abort(), 10);
+
+      for await (const ev of streamChat("hello", "sys", "model", {
+        signal: abortController.signal,
+      })) {
+        events.push(ev);
+      }
+
+      // Should exit silently — no error, no turn_complete
+      expect(events).not.toContainEqual(
+        expect.objectContaining({ type: "error" }),
+      );
+      expect(events).not.toContainEqual({ type: "turn_complete" });
+    });
+
     it("emits tool_call_result from assistant content blocks", async () => {
       const { streamChat } = await import("../claude-adapter");
 

@@ -194,6 +194,42 @@ describe("entity-graph-store", () => {
       expect(state.revision).toBe(revBefore + 1);
       expect(state.isDirty).toBe(true);
     });
+
+    it("defaults to user-edited provenance when source is not provided", () => {
+      useEntityGraphStore.getState().newAnalysis("test");
+      const entity = makeEntity({
+        id: "e1",
+        type: "fact",
+        phase: "situational-grounding",
+      });
+      useEntityGraphStore.getState().addEntities([entity]);
+      const actualId = useEntityGraphStore.getState().analysis.entities[0].id;
+
+      useEntityGraphStore
+        .getState()
+        .updateEntity(actualId, { confidence: "high" });
+
+      const updated = useEntityGraphStore.getState().analysis.entities[0];
+      expect(updated.provenance?.source).toBe("user-edited");
+    });
+
+    it("uses ai-edited provenance when explicitly passed", () => {
+      useEntityGraphStore.getState().newAnalysis("test");
+      const entity = makeEntity({
+        id: "e1",
+        type: "fact",
+        phase: "situational-grounding",
+      });
+      useEntityGraphStore.getState().addEntities([entity]);
+      const actualId = useEntityGraphStore.getState().analysis.entities[0].id;
+
+      useEntityGraphStore
+        .getState()
+        .updateEntity(actualId, { confidence: "low" }, "ai-edited");
+
+      const updated = useEntityGraphStore.getState().analysis.entities[0];
+      expect(updated.provenance?.source).toBe("ai-edited");
+    });
   });
 
   // ── removeEntity ──

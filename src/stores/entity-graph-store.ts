@@ -35,7 +35,11 @@ interface EntityGraphStoreState extends AnalysisFileReference {
     entities: AnalysisEntity[],
     relationships?: AnalysisRelationship[],
   ) => void;
-  updateEntity: (id: string, updates: Partial<AnalysisEntity>) => void;
+  updateEntity: (
+    id: string,
+    updates: Partial<AnalysisEntity>,
+    source?: "ai-edited" | "user-edited",
+  ) => void;
   removeEntity: (id: string) => void;
   addRelationships: (relationships: AnalysisRelationship[]) => void;
   setPhaseStatus: (phase: MethodologyPhase, status: PhaseStatus) => void;
@@ -215,8 +219,10 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
       }));
     },
 
-    updateEntity: (id, updates) => {
-      entityGraphService.updateEntity(id, updates, { source: "ai-edited" });
+    updateEntity: (id, updates, source) => {
+      entityGraphService.updateEntity(id, updates, {
+        source: source ?? "user-edited",
+      });
       set((state) => ({
         ...syncFromServiceState(),
         revision: state.revision + 1,

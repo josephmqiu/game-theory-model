@@ -3,6 +3,7 @@ import {
   getRequestHeader,
   readBody,
   setResponseHeaders,
+  type H3Event,
 } from "h3";
 import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -159,8 +160,8 @@ export default defineEventHandler(async (event) => {
 
   // Route to allowed providers only; opencode/copilot are dormant — functions retained below
   if (body.provider === "anthropic")
-    return streamViaClaude(body, body.model, runId);
-  return streamViaCodexAdapter(body, body.model, runId);
+    return streamViaClaude(event, body, body.model, runId);
+  return streamViaCodexAdapter(event, body, body.model, runId);
 });
 
 // Dormant provider functions — retained for future reactivation, suppress noUnusedLocals
@@ -170,7 +171,14 @@ void streamViaAgentSDK;
 void streamViaCodex;
 
 /** Stream via Codex adapter — wraps codex-adapter.streamChat() into SSE */
-function streamViaCodexAdapter(body: ChatBody, model?: string, runId?: string) {
+function streamViaCodexAdapter(
+  event: H3Event,
+  body: ChatBody,
+  model?: string,
+  runId?: string,
+) {
+  const abortController = new AbortController();
+
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
@@ -186,6 +194,14 @@ function streamViaCodexAdapter(body: ChatBody, model?: string, runId?: string) {
         }
       }, KEEPALIVE_INTERVAL_MS);
 
+      // Detect client disconnect and cancel the adapter
+      const req = event.node?.req;
+      if (req) {
+        req.on("close", () => {
+          abortController.abort();
+        });
+      }
+
       try {
         const lastUserMsg = [...body.messages]
           .reverse()
@@ -196,23 +212,23 @@ function streamViaCodexAdapter(body: ChatBody, model?: string, runId?: string) {
         // context survives the single-prompt SDK limitation.
         const effectiveSystemPrompt = buildEffectiveSystemPrompt(body);
 
-        for await (const event of codexStreamChat(
+        for await (const ev of codexStreamChat(
           prompt,
           effectiveSystemPrompt,
           model ?? "o3-mini",
-          { runId },
+          { runId, signal: abortController.signal },
         )) {
           clearInterval(pingTimer);
           // Emit ChatEvent objects directly — client normalizeChunk() handles them
           if (
-            event.type === "text_delta" ||
-            event.type === "tool_call_start" ||
-            event.type === "tool_call_result" ||
-            event.type === "tool_call_error" ||
-            event.type === "error"
+            ev.type === "text_delta" ||
+            ev.type === "tool_call_start" ||
+            ev.type === "tool_call_result" ||
+            ev.type === "tool_call_error" ||
+            ev.type === "error"
           ) {
             controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
+              encoder.encode(`data: ${JSON.stringify(ev)}\n\n`),
             );
           }
           // turn_complete is handled after the loop
@@ -244,7 +260,14 @@ function streamViaCodexAdapter(body: ChatBody, model?: string, runId?: string) {
 }
 
 /** Stream via Claude adapter — wraps claude-adapter.streamChat() into SSE */
-function streamViaClaude(body: ChatBody, model?: string, runId?: string) {
+function streamViaClaude(
+  event: H3Event,
+  body: ChatBody,
+  model?: string,
+  runId?: string,
+) {
+  const abortController = new AbortController();
+
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
@@ -261,6 +284,14 @@ function streamViaClaude(body: ChatBody, model?: string, runId?: string) {
       }, KEEPALIVE_INTERVAL_MS);
 
       let attachTempDir: string | undefined;
+
+      // Detect client disconnect and cancel the adapter
+      const req = event.node?.req;
+      if (req) {
+        req.on("close", () => {
+          abortController.abort();
+        });
+      }
 
       try {
         const lastUserMsg = [...body.messages]
@@ -291,23 +322,23 @@ function streamViaClaude(body: ChatBody, model?: string, runId?: string) {
         // context survives the single-prompt SDK limitation.
         const effectiveSystemPrompt = buildEffectiveSystemPrompt(body);
 
-        for await (const event of claudeStreamChat(
+        for await (const ev of claudeStreamChat(
           prompt,
           effectiveSystemPrompt,
           model ?? "claude-sonnet-4-6",
-          { runId },
+          { runId, signal: abortController.signal },
         )) {
           clearInterval(pingTimer);
           // Emit ChatEvent objects directly — client normalizeChunk() handles them
           if (
-            event.type === "text_delta" ||
-            event.type === "tool_call_start" ||
-            event.type === "tool_call_result" ||
-            event.type === "tool_call_error" ||
-            event.type === "error"
+            ev.type === "text_delta" ||
+            ev.type === "tool_call_start" ||
+            ev.type === "tool_call_result" ||
+            ev.type === "tool_call_error" ||
+            ev.type === "error"
           ) {
             controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
+              encoder.encode(`data: ${JSON.stringify(ev)}\n\n`),
             );
           }
           // turn_complete is handled after the loop

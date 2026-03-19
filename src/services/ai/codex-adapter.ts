@@ -21,6 +21,8 @@ export interface StreamChatOptions {
   runId?: string;
   /** Wall-clock timeout per chat turn in ms (default: 5 min) */
   timeoutMs?: number;
+  /** Abort signal — when aborted, sends turn/interrupt and ends the stream */
+  signal?: AbortSignal;
 }
 
 interface JsonRpcRequest {
@@ -400,8 +402,12 @@ export async function* streamChat(
     return;
   }
 
+  // Abort signal — when the client disconnects, interrupt the turn
+  const signal = options?.signal;
+
   // Set up notification listener
   let turnCompleted = false;
+  let aborted = false;
   let toolCallCount = 0;
   const eventQueue: ChatEvent[] = [];
   let resolveWait: (() => void) | null = null;
@@ -531,11 +537,33 @@ export async function* streamChat(
     return;
   }
 
+  // Wire up abort signal to interrupt the turn
+  const onAbort = () => {
+    aborted = true;
+    sendRequest(conn, "turn/interrupt", { threadId }).catch(() => {});
+    // Wake the wait loop so it can exit
+    resolveWait?.();
+    resolveWait = null;
+  };
+  if (signal) {
+    if (signal.aborted) {
+      aborted = true;
+      sendRequest(conn, "turn/interrupt", { threadId }).catch(() => {});
+    } else {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+  }
+
   // Wall-clock timeout
   const startTime = Date.now();
 
   try {
     while (!turnCompleted) {
+      // Check abort
+      if (aborted) {
+        return;
+      }
+
       // Check timeout
       if (Date.now() - startTime > timeoutMs) {
         serverWarn(runId, "codex-adapter", "timeout", {
@@ -578,6 +606,7 @@ export async function* streamChat(
     }
   } finally {
     removeListener();
+    if (signal) signal.removeEventListener("abort", onAbort);
     if (currentThreadId === threadId) currentThreadId = null;
   }
 }
