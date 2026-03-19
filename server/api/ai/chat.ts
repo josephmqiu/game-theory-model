@@ -14,6 +14,7 @@ import {
   getClaudeAgentDebugFilePath,
 } from "../../utils/resolve-claude-agent-env";
 import { serverLog } from "../../utils/ai-logger";
+import { isAllowedProvider } from "../../../src/services/ai/allowed-providers";
 
 /** Pattern for detecting sensitive data in debug log output */
 export const SENSITIVE_LOG_PATTERN =
@@ -127,12 +128,7 @@ export default defineEventHandler(async (event) => {
     setResponseHeaders(event, { "Content-Type": "application/json" });
     return { error: "Missing model. Model fallback is disabled." };
   }
-  if (
-    body.provider !== "anthropic" &&
-    body.provider !== "openai" &&
-    body.provider !== "opencode" &&
-    body.provider !== "copilot"
-  ) {
+  if (!isAllowedProvider(body.provider)) {
     setResponseHeaders(event, { "Content-Type": "application/json" });
     return {
       error: "Missing or unsupported provider. Provider fallback is disabled.",
@@ -159,12 +155,15 @@ export default defineEventHandler(async (event) => {
     Connection: "keep-alive",
   });
 
+  // Route to allowed providers only; opencode/copilot are dormant — functions retained below
   if (body.provider === "anthropic")
     return streamViaAgentSDK(body, body.model, runId);
-  if (body.provider === "opencode") return streamViaOpenCode(body, body.model);
-  if (body.provider === "copilot") return streamViaCopilot(body, body.model);
   return streamViaCodex(body, body.model);
 });
+
+// Dormant provider functions — retained for future reactivation, suppress noUnusedLocals
+void streamViaOpenCode;
+void streamViaCopilot;
 
 // Keep-alive ping interval (ms) — prevents client timeout while waiting for API TTFT
 const KEEPALIVE_INTERVAL_MS = 15_000;
