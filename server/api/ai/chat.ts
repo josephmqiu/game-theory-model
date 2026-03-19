@@ -16,6 +16,7 @@ import {
 import { serverLog } from "../../utils/ai-logger";
 import { isAllowedProvider } from "../../../src/services/ai/allowed-providers";
 import { streamChat as claudeStreamChat } from "../../../src/services/ai/claude-adapter";
+import { streamChat as codexStreamChat } from "../../../src/services/ai/codex-adapter";
 
 /** Pattern for detecting sensitive data in debug log output */
 export const SENSITIVE_LOG_PATTERN =
@@ -159,13 +160,97 @@ export default defineEventHandler(async (event) => {
   // Route to allowed providers only; opencode/copilot are dormant — functions retained below
   if (body.provider === "anthropic")
     return streamViaClaude(body, body.model, runId);
-  return streamViaCodex(body, body.model);
+  return streamViaCodexAdapter(body, body.model, runId);
 });
 
 // Dormant provider functions — retained for future reactivation, suppress noUnusedLocals
 void streamViaOpenCode;
 void streamViaCopilot;
 void streamViaAgentSDK;
+void streamViaCodex;
+
+/** Stream via Codex adapter — wraps codex-adapter.streamChat() into SSE */
+function streamViaCodexAdapter(body: ChatBody, model?: string, runId?: string) {
+  const stream = new ReadableStream({
+    async start(controller) {
+      const encoder = new TextEncoder();
+      const pingTimer = setInterval(() => {
+        try {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "ping", content: "" })}\n\n`,
+            ),
+          );
+        } catch {
+          /* stream already closed */
+        }
+      }, KEEPALIVE_INTERVAL_MS);
+
+      try {
+        const lastUserMsg = [...body.messages]
+          .reverse()
+          .find((m) => m.role === "user");
+        const prompt = lastUserMsg?.content ?? "";
+
+        for await (const event of codexStreamChat(
+          prompt,
+          body.system,
+          model ?? "o3-mini",
+          { runId },
+        )) {
+          clearInterval(pingTimer);
+          if (event.type === "text_delta") {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "text", content: event.content })}\n\n`,
+              ),
+            );
+          } else if (event.type === "tool_call_start") {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "tool_call_start", toolName: event.toolName, input: event.input })}\n\n`,
+              ),
+            );
+          } else if (event.type === "tool_call_result") {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "tool_call_result", toolName: event.toolName, output: event.output })}\n\n`,
+              ),
+            );
+          } else if (event.type === "error") {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "error", content: event.message })}\n\n`,
+              ),
+            );
+          }
+          // turn_complete is handled after the loop
+        }
+
+        serverLog(runId, "chat", "stream-complete");
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ type: "done", content: "" })}\n\n`,
+          ),
+        );
+      } catch (error) {
+        const content =
+          error instanceof Error ? error.message : "Unknown error";
+        serverLog(runId, "chat", "stream-error", { error: content });
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ type: "error", content })}\n\n`,
+          ),
+        );
+      } finally {
+        clearInterval(pingTimer);
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream);
+}
 
 /** Stream via Claude adapter — wraps claude-adapter.streamChat() into SSE */
 function streamViaClaude(body: ChatBody, model?: string, runId?: string) {
@@ -676,6 +761,7 @@ async function* streamWithTimeout<T>(
   }
 }
 
+// @deprecated Replaced by codex-adapter.streamChat() via streamViaCodexAdapter()
 function streamViaCodex(body: ChatBody, model?: string) {
   const stream = new ReadableStream({
     async start(controller) {

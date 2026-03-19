@@ -1,0 +1,615 @@
+// Codex adapter — the ONLY file that communicates with the Codex app-server.
+// Provides two profiles: streamChat (interactive) and runAnalysisPhase (structured).
+// Uses JSON-RPC 2.0 over stdio to a persistent `codex app-server` subprocess.
+
+import { spawn, type ChildProcess } from "node:child_process";
+import { filterCodexEnv } from "../../../server/utils/codex-client";
+import { serverLog, serverWarn } from "../../../server/utils/ai-logger";
+import type { ChatEvent } from "./chat-events";
+
+// ── Types ──
+
+export interface StreamChatOptions {
+  runId?: string;
+  /** Wall-clock timeout per chat turn in ms (default: 5 min) */
+  timeoutMs?: number;
+}
+
+interface JsonRpcRequest {
+  jsonrpc: "2.0";
+  id: number;
+  method: string;
+  params?: Record<string, unknown>;
+}
+
+interface JsonRpcNotification {
+  jsonrpc: "2.0";
+  method: string;
+  params?: Record<string, unknown>;
+}
+
+interface JsonRpcResponse {
+  jsonrpc: "2.0";
+  id: number;
+  result?: unknown;
+  error?: { code: number; message: string; data?: unknown };
+}
+
+// ── JSON-RPC client ──
+
+type NotificationCallback = (
+  method: string,
+  params: Record<string, unknown>,
+) => void;
+
+let nextRequestId = 1;
+
+interface AppServerConnection {
+  process: ChildProcess;
+  pendingRequests: Map<
+    number,
+    {
+      resolve: (value: unknown) => void;
+      reject: (reason: Error) => void;
+    }
+  >;
+  notificationCallbacks: Set<NotificationCallback>;
+}
+
+let connection: AppServerConnection | null = null;
+
+function sendRequest(
+  conn: AppServerConnection,
+  method: string,
+  params?: Record<string, unknown>,
+): Promise<unknown> {
+  const id = nextRequestId++;
+  const request: JsonRpcRequest = {
+    jsonrpc: "2.0",
+    id,
+    method,
+    ...(params !== undefined ? { params } : {}),
+  };
+
+  return new Promise((resolve, reject) => {
+    conn.pendingRequests.set(id, { resolve, reject });
+    const line = JSON.stringify(request) + "\n";
+    const ok = conn.process.stdin?.write(line);
+    if (ok === false) {
+      conn.pendingRequests.delete(id);
+      reject(new Error("Failed to write to app-server stdin"));
+    }
+  });
+}
+
+function sendNotification(
+  conn: AppServerConnection,
+  method: string,
+  params?: Record<string, unknown>,
+): void {
+  const notification: JsonRpcNotification = {
+    jsonrpc: "2.0",
+    method,
+    ...(params !== undefined ? { params } : {}),
+  };
+  conn.process.stdin?.write(JSON.stringify(notification) + "\n");
+}
+
+function onNotification(
+  conn: AppServerConnection,
+  callback: NotificationCallback,
+): () => void {
+  conn.notificationCallbacks.add(callback);
+  return () => conn.notificationCallbacks.delete(callback);
+}
+
+function handleIncomingLine(conn: AppServerConnection, line: string): void {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(line) as Record<string, unknown>;
+  } catch {
+    return; // Ignore non-JSON lines (e.g. stderr leaking to stdout)
+  }
+
+  // Response to a pending request (has "id" field)
+  if ("id" in parsed && typeof parsed.id === "number") {
+    const pending = conn.pendingRequests.get(parsed.id);
+    if (pending) {
+      conn.pendingRequests.delete(parsed.id);
+      const response = parsed as unknown as JsonRpcResponse;
+      if (response.error) {
+        pending.reject(
+          new Error(
+            `JSON-RPC error ${response.error.code}: ${response.error.message}`,
+          ),
+        );
+      } else {
+        pending.resolve(response.result);
+      }
+    }
+    return;
+  }
+
+  // Server-sent notification (no "id" field, has "method")
+  if ("method" in parsed && typeof parsed.method === "string") {
+    const params = (parsed.params ?? {}) as Record<string, unknown>;
+    for (const cb of conn.notificationCallbacks) {
+      try {
+        cb(parsed.method, params);
+      } catch {
+        // Notification handlers must not crash the line parser
+      }
+    }
+  }
+}
+
+// ── App-server lifecycle ──
+
+const INITIALIZE_TIMEOUT_MS = 15_000;
+
+/**
+ * Spawn the `codex app-server` subprocess and perform the JSON-RPC initialize handshake.
+ * Returns the connection handle. Reuses an existing connection if alive.
+ */
+export async function startAppServer(
+  runId?: string,
+): Promise<AppServerConnection> {
+  if (connection && connection.process.exitCode === null) {
+    return connection;
+  }
+
+  const child = spawn("codex", ["app-server"], {
+    env: filterCodexEnv(process.env as Record<string, string | undefined>),
+    stdio: ["pipe", "pipe", "pipe"],
+    ...(process.platform === "win32" && { shell: true }),
+  });
+
+  serverLog(runId, "codex-adapter", "spawn", { pid: child.pid });
+
+  const conn: AppServerConnection = {
+    process: child,
+    pendingRequests: new Map(),
+    notificationCallbacks: new Set(),
+  };
+
+  // Wire up stdout line parser
+  let stdoutBuffer = "";
+  child.stdout?.on("data", (chunk: Buffer) => {
+    stdoutBuffer += chunk.toString("utf-8");
+    let idx = stdoutBuffer.indexOf("\n");
+    while (idx >= 0) {
+      const line = stdoutBuffer.slice(0, idx).trim();
+      stdoutBuffer = stdoutBuffer.slice(idx + 1);
+      if (line) handleIncomingLine(conn, line);
+      idx = stdoutBuffer.indexOf("\n");
+    }
+  });
+
+  // Log stderr but don't crash
+  child.stderr?.on("data", (chunk: Buffer) => {
+    serverWarn(runId, "codex-adapter", "stderr", {
+      preview: chunk.toString("utf-8").trim().slice(0, 500),
+    });
+  });
+
+  // Clean up on exit
+  child.on("close", (code) => {
+    serverLog(runId, "codex-adapter", "close", { exitCode: code ?? "unknown" });
+    // Reject any pending requests
+    for (const [, pending] of conn.pendingRequests) {
+      pending.reject(
+        new Error(`App-server exited with code ${code ?? "unknown"}`),
+      );
+    }
+    conn.pendingRequests.clear();
+    if (connection === conn) {
+      connection = null;
+    }
+  });
+
+  // Initialize handshake with timeout
+  const initPromise = sendRequest(conn, "initialize", {
+    protocolVersion: "1.0",
+    clientInfo: {
+      name: "game-theory-analyzer",
+      version: "1.0.0",
+    },
+  });
+
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(
+      () => reject(new Error("App-server initialize timed out")),
+      INITIALIZE_TIMEOUT_MS,
+    ),
+  );
+
+  try {
+    await Promise.race([initPromise, timeoutPromise]);
+  } catch (err) {
+    child.kill("SIGTERM");
+    throw err;
+  }
+
+  // Send initialized notification
+  sendNotification(conn, "initialized");
+
+  connection = conn;
+  serverLog(runId, "codex-adapter", "initialized");
+  return conn;
+}
+
+/**
+ * Gracefully stop the app-server subprocess.
+ */
+export async function stopAppServer(runId?: string): Promise<void> {
+  if (!connection) return;
+
+  const conn = connection;
+  connection = null;
+
+  serverLog(runId, "codex-adapter", "stopping");
+
+  // Try graceful shutdown, then force kill
+  conn.process.kill("SIGTERM");
+
+  // Give it 2 seconds to exit gracefully
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      if (conn.process.exitCode === null) {
+        conn.process.kill("SIGKILL");
+      }
+      resolve();
+    }, 2000);
+
+    conn.process.on("close", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
+// ── Chat profile ──
+
+const CHAT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_TOOL_CALLS_PER_TURN = 50;
+
+// Approval notification methods that require a response
+const MCP_TOOL_APPROVAL = "item/tool/requestUserInput";
+const FILE_CHANGE_APPROVAL = "item/fileChange/requestApproval";
+const COMMAND_APPROVAL = "item/commandExecution/requestApproval";
+const PERMISSIONS_APPROVAL = "item/permissions/requestApproval";
+
+/**
+ * Stream a chat turn using the Codex app-server.
+ * Yields normalized ChatEvent objects.
+ */
+export async function* streamChat(
+  prompt: string,
+  systemPrompt: string,
+  model: string,
+  options?: StreamChatOptions,
+): AsyncGenerator<ChatEvent> {
+  const runId = options?.runId;
+  const timeoutMs = options?.timeoutMs ?? CHAT_TIMEOUT_MS;
+
+  let conn: AppServerConnection;
+  try {
+    conn = await startAppServer(runId);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    yield {
+      type: "error",
+      message: `Failed to start app-server: ${msg}`,
+      recoverable: false,
+    };
+    return;
+  }
+
+  // Create a thread
+  let threadId: string;
+  try {
+    const threadResult = (await sendRequest(conn, "thread/start", {
+      systemPrompt,
+      model,
+    })) as { threadId: string };
+    threadId = threadResult.threadId;
+    serverLog(runId, "codex-adapter", "thread-started", { threadId });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    yield {
+      type: "error",
+      message: `Failed to create thread: ${msg}`,
+      recoverable: false,
+    };
+    return;
+  }
+
+  // Set up notification listener
+  let turnCompleted = false;
+  let toolCallCount = 0;
+  const eventQueue: ChatEvent[] = [];
+  let resolveWait: (() => void) | null = null;
+  let turnError: string | null = null;
+
+  function enqueueEvent(event: ChatEvent) {
+    eventQueue.push(event);
+    resolveWait?.();
+    resolveWait = null;
+  }
+
+  const removeListener = onNotification(conn, (method, params) => {
+    // Text delta
+    if (method === "item/agentMessage/delta") {
+      const delta = typeof params.delta === "string" ? params.delta : "";
+      if (delta) {
+        enqueueEvent({ type: "text_delta", content: delta });
+      }
+      return;
+    }
+
+    // Tool call progress
+    if (method === "item/mcpToolCall/progress") {
+      toolCallCount++;
+      const toolName =
+        typeof params.toolName === "string" ? params.toolName : "unknown";
+      enqueueEvent({
+        type: "tool_call_start",
+        toolName,
+        input: params.input ?? {},
+      });
+
+      // Guard: interrupt if too many tool calls
+      if (toolCallCount >= MAX_TOOL_CALLS_PER_TURN) {
+        serverWarn(runId, "codex-adapter", "tool-call-limit", {
+          count: toolCallCount,
+          threadId,
+        });
+        sendRequest(conn, "turn/interrupt", { threadId }).catch(() => {});
+        turnError = `Turn interrupted: exceeded ${MAX_TOOL_CALLS_PER_TURN} tool calls`;
+      }
+      return;
+    }
+
+    // Turn completed
+    if (method === "turn/completed") {
+      turnCompleted = true;
+      // Extract final content if present
+      if (typeof params.content === "string" && params.content) {
+        enqueueEvent({ type: "text_delta", content: params.content });
+      }
+      enqueueEvent({ type: "turn_complete" });
+      return;
+    }
+
+    // MCP tool approval — auto-approve
+    if (method === MCP_TOOL_APPROVAL) {
+      const approvalId = params.id as string | undefined;
+      if (approvalId) {
+        serverLog(runId, "codex-adapter", "mcp-tool-auto-approve", {
+          toolName: params.toolName,
+          approvalId,
+        });
+        sendRequest(conn, "item/tool/approveUserInput", {
+          id: approvalId,
+          approved: true,
+        }).catch(() => {});
+      }
+      return;
+    }
+
+    // File/command/permissions approval — auto-reject with warning
+    if (
+      method === FILE_CHANGE_APPROVAL ||
+      method === COMMAND_APPROVAL ||
+      method === PERMISSIONS_APPROVAL
+    ) {
+      const approvalId = params.id as string | undefined;
+      serverWarn(runId, "codex-adapter", "approval-rejected", {
+        method,
+        approvalId,
+        detail: params,
+      });
+      if (approvalId) {
+        sendRequest(
+          conn,
+          method.replace("requestApproval", "respondApproval"),
+          {
+            id: approvalId,
+            approved: false,
+            reason:
+              "Auto-rejected: file/command operations not permitted in this context",
+          },
+        ).catch(() => {});
+      }
+      return;
+    }
+  });
+
+  // Send the turn
+  try {
+    await sendRequest(conn, "turn/start", {
+      threadId,
+      prompt,
+    });
+  } catch (err) {
+    removeListener();
+    const msg = err instanceof Error ? err.message : String(err);
+    yield {
+      type: "error",
+      message: `Failed to start turn: ${msg}`,
+      recoverable: false,
+    };
+    return;
+  }
+
+  // Wall-clock timeout
+  const startTime = Date.now();
+
+  try {
+    while (!turnCompleted) {
+      // Check timeout
+      if (Date.now() - startTime > timeoutMs) {
+        serverWarn(runId, "codex-adapter", "timeout", {
+          elapsedMs: Date.now() - startTime,
+          threadId,
+        });
+        await sendRequest(conn, "turn/interrupt", { threadId }).catch(() => {});
+        yield {
+          type: "error",
+          message: `Turn timed out after ${Math.round(timeoutMs / 1000)}s`,
+          recoverable: false,
+        };
+        return;
+      }
+
+      // Drain queued events before checking error state
+      while (eventQueue.length > 0) {
+        yield eventQueue.shift()!;
+      }
+
+      // Check tool call error (after draining so queued events are yielded first)
+      if (turnError) {
+        yield { type: "error", message: turnError, recoverable: false };
+        return;
+      }
+
+      // Wait for next event or check timeout periodically
+      if (!turnCompleted && eventQueue.length === 0) {
+        await new Promise<void>((resolve) => {
+          resolveWait = resolve;
+          // Wake up periodically to check timeout
+          setTimeout(resolve, 1000);
+        });
+      }
+    }
+
+    // Drain any remaining events
+    while (eventQueue.length > 0) {
+      yield eventQueue.shift()!;
+    }
+  } finally {
+    removeListener();
+  }
+}
+
+// ── Analysis profile ──
+
+/**
+ * Run a single analysis phase using Codex with structured JSON output.
+ * Returns the parsed JSON result.
+ *
+ * Sends `turn/start` with `outputSchema`, waits for `turn/completed`,
+ * parses and returns the structured output.
+ */
+export async function runAnalysisPhase<T = unknown>(
+  prompt: string,
+  systemPrompt: string,
+  model: string,
+  schema: Record<string, unknown>,
+  runId?: string,
+): Promise<T> {
+  const conn = await startAppServer(runId);
+
+  // Create a thread
+  const threadResult = (await sendRequest(conn, "thread/start", {
+    systemPrompt,
+    model,
+  })) as { threadId: string };
+  const threadId = threadResult.threadId;
+
+  serverLog(runId, "codex-adapter", "analysis-thread-started", { threadId });
+
+  // Collect result from turn/completed
+  let result: unknown = undefined;
+  let completed = false;
+  let completionError: string | null = null;
+
+  const removeListener = onNotification(conn, (method, params) => {
+    if (method === "turn/completed") {
+      completed = true;
+      result = params.structuredOutput ?? params.content ?? params.result;
+    }
+    // Auto-approve MCP tool calls during analysis
+    if (method === MCP_TOOL_APPROVAL) {
+      const approvalId = params.id as string | undefined;
+      if (approvalId) {
+        sendRequest(conn, "item/tool/approveUserInput", {
+          id: approvalId,
+          approved: true,
+        }).catch(() => {});
+      }
+    }
+    // Reject file/command during analysis
+    if (
+      method === FILE_CHANGE_APPROVAL ||
+      method === COMMAND_APPROVAL ||
+      method === PERMISSIONS_APPROVAL
+    ) {
+      const approvalId = params.id as string | undefined;
+      if (approvalId) {
+        sendRequest(
+          conn,
+          method.replace("requestApproval", "respondApproval"),
+          {
+            id: approvalId,
+            approved: false,
+            reason: "Auto-rejected during analysis phase",
+          },
+        ).catch(() => {});
+      }
+    }
+  });
+
+  try {
+    // Send turn with output schema
+    await sendRequest(conn, "turn/start", {
+      threadId,
+      prompt,
+      outputSchema: schema,
+    });
+
+    // Wait for completion with timeout
+    const ANALYSIS_TIMEOUT_MS = 5 * 60 * 1000;
+    const startTime = Date.now();
+
+    while (!completed) {
+      if (Date.now() - startTime > ANALYSIS_TIMEOUT_MS) {
+        await sendRequest(conn, "turn/interrupt", { threadId }).catch(() => {});
+        throw new Error("Analysis phase timed out");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+
+    if (completionError) {
+      throw new Error(completionError);
+    }
+
+    // Parse result
+    if (result === undefined || result === null) {
+      throw new Error("Analysis phase returned empty result");
+    }
+
+    if (typeof result === "string") {
+      return JSON.parse(result) as T;
+    }
+
+    return result as T;
+  } finally {
+    removeListener();
+  }
+}
+
+// ── Exports for testing ──
+
+export { filterCodexEnv };
+
+/** Visible for testing — get the current connection */
+export function _getConnection(): AppServerConnection | null {
+  return connection;
+}
+
+/** Visible for testing — reset module state */
+export function _resetConnection(): void {
+  connection = null;
+  nextRequestId = 1;
+}
