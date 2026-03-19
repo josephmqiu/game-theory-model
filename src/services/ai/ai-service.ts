@@ -225,6 +225,14 @@ export async function* streamChat(
               resetActivityTimeout();
             }
 
+            // MCP tool activity keeps the connection alive
+            if (
+              chunk.type === "tool_call_start" ||
+              chunk.type === "tool_call_result"
+            ) {
+              resetActivityTimeout();
+            }
+
             yield chunk;
             if (chunk.type === "error") {
               clearTimeout(hardTimeout);

@@ -90,7 +90,7 @@ export default function EditorLayout() {
   }, [abortActiveRun, clearEditorChrome]);
 
   const startOrchestrator = useCallback(
-    (topic: string) => {
+    (topic: string, provider?: string, model?: string) => {
       void (async () => {
         await abortActiveRun("restart-analysis");
         clearEditorChrome();
@@ -102,8 +102,8 @@ export default function EditorLayout() {
         try {
           const { runId } = await analysisOrchestrator.runFull(
             topic,
-            undefined, // provider — resolved by orchestrator
-            undefined, // model — resolved by orchestrator
+            provider,
+            model,
             controller.signal,
           );
 

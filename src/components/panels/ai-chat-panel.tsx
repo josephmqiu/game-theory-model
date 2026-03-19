@@ -166,7 +166,7 @@ export default function AIChatPanel({
 }: {
   mode?: AIChatMode;
   presentation?: AIChatPresentation;
-  onStartAnalysis?: (topic: string) => void;
+  onStartAnalysis?: (topic: string, provider?: string, model?: string) => void;
 }) {
   const { t } = useTranslation();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -562,7 +562,13 @@ export default function AIChatPanel({
             .setChatTitle(
               topic.length > 30 ? `${topic.slice(0, 30)}...` : topic,
             );
-          onStartAnalysis!(topic);
+          // Pass currently selected model and its provider to the orchestrator
+          const currentModel = useAIStore.getState().model;
+          const currentModelGroups = useAIStore.getState().modelGroups ?? [];
+          const currentProvider = currentModelGroups.find((g) =>
+            g.models.some((m) => m.value === currentModel),
+          )?.provider;
+          onStartAnalysis!(topic, currentProvider, currentModel);
 
           // Clear stale messages from previous analysis, then add new ones.
           // This avoids the race where useEffect clears messages after we add them.
