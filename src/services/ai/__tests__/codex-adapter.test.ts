@@ -298,7 +298,7 @@ describe("codex-adapter", () => {
         }),
       );
 
-      // Verify rejection was sent
+      // Verify rejection was sent with the correct trust-tier message
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
       const rejectionWrite = calls
         .map((c) => c[0])
@@ -306,6 +306,9 @@ describe("codex-adapter", () => {
       expect(rejectionWrite).toBeDefined();
       const rejectionReq = JSON.parse(rejectionWrite!.trim());
       expect(rejectionReq.params.approved).toBe(false);
+      expect(rejectionReq.params.reason).toBe(
+        "File/command operations are not permitted in the current trust tier",
+      );
     });
 
     it("interrupts after 50 tool calls", async () => {

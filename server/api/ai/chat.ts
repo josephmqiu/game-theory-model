@@ -269,11 +269,32 @@ function streamViaClaude(body: ChatBody, model?: string, runId?: string) {
         }
       }, KEEPALIVE_INTERVAL_MS);
 
+      let attachTempDir: string | undefined;
+
       try {
         const lastUserMsg = [...body.messages]
           .reverse()
           .find((m) => m.role === "user");
-        const prompt = lastUserMsg?.content ?? "";
+        let prompt = lastUserMsg?.content ?? "";
+
+        // Save image attachments to temp files inside the project directory
+        // so Claude Code Agent SDK (which restricts reads to the project
+        // directory in plan mode) can access them — same logic as streamViaAgentSDK.
+        const attachments = getLastUserAttachments(body);
+        if (attachments.length > 0) {
+          const saved = await saveAttachmentsToTempFiles(attachments, true);
+          attachTempDir = saved.tempDir;
+          const imageRefs = saved.files
+            .map(
+              (f) =>
+                `First, use the Read tool to read the image file at "${f}". Then analyze it and respond to the user.`,
+            )
+            .join("\n");
+          prompt =
+            imageRefs +
+            "\n\n" +
+            (prompt || "Describe what you see in the image.");
+        }
 
         for await (const event of claudeStreamChat(
           prompt,
@@ -327,6 +348,9 @@ function streamViaClaude(body: ChatBody, model?: string, runId?: string) {
         );
       } finally {
         clearInterval(pingTimer);
+        if (attachTempDir) {
+          rm(attachTempDir, { recursive: true, force: true }).catch(() => {});
+        }
         controller.close();
       }
     },

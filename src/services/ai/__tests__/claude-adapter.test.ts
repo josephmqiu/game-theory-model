@@ -338,6 +338,47 @@ describe("claude-adapter", () => {
       });
     });
 
+    it("emits error (not turn_complete) on 5-minute timeout", async () => {
+      const { streamChat } = await import("../claude-adapter");
+
+      // Simulate: timeout fires, q.close() ends the iterator, no result event
+      mockQuery.mockImplementation(() => {
+        let closeFn: (() => void) | null = null;
+        return {
+          close: () => {
+            // When close is called (by timeout), resolve the pending next()
+            closeFn?.();
+          },
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                // Block until close() is called — simulates a hung query
+                return new Promise<IteratorResult<unknown>>((resolve) => {
+                  closeFn = () => resolve({ done: true, value: undefined });
+                });
+              },
+            };
+          },
+        };
+      });
+
+      const events: ChatEvent[] = [];
+      // Use a very short timeout to trigger it quickly in tests
+      for await (const ev of streamChat("hello", "sys", "model", {
+        timeoutMs: 10,
+      })) {
+        events.push(ev);
+      }
+
+      // Should get an error, NOT turn_complete
+      expect(events).toContainEqual({
+        type: "error",
+        message: "Chat turn timed out after 5 minutes",
+        recoverable: false,
+      });
+      expect(events).not.toContainEqual({ type: "turn_complete" });
+    });
+
     it("handles assistant fallback when no result event", async () => {
       const { streamChat } = await import("../claude-adapter");
 

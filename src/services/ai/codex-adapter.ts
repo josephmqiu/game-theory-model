@@ -282,6 +282,12 @@ const PERMISSIONS_APPROVAL = "item/permissions/requestApproval";
 /**
  * Stream a chat turn using the Codex app-server.
  * Yields normalized ChatEvent objects.
+ *
+ * Note on single-prompt limitation: Codex `turn/start` accepts a single
+ * `prompt` string, not a multi-turn message array. The caller (chat.ts)
+ * extracts only the last user message. Multi-turn conversation history
+ * and image attachments are not forwarded — this is a known limitation
+ * of the Codex app-server JSON-RPC interface.
  */
 export async function* streamChat(
   prompt: string,
@@ -397,7 +403,8 @@ export async function* streamChat(
       return;
     }
 
-    // File/command/permissions approval — auto-reject with warning
+    // File/command/permissions approval — auto-reject with warning.
+    // TODO: Forward to UI for user review instead of auto-rejecting
     if (
       method === FILE_CHANGE_APPROVAL ||
       method === COMMAND_APPROVAL ||
@@ -417,12 +424,19 @@ export async function* streamChat(
             id: approvalId,
             approved: false,
             reason:
-              "Auto-rejected: file/command operations not permitted in this context",
+              "File/command operations are not permitted in the current trust tier",
           },
         ).catch(() => {});
       }
       return;
     }
+
+    // Catch-all: log any unrecognized notification types for monitoring
+    // (covers non-MCP tool activity and future notification types)
+    serverWarn(runId, "codex-adapter", "unrecognized-notification", {
+      method,
+      params,
+    });
   });
 
   // Send the turn
@@ -540,6 +554,7 @@ export async function runAnalysisPhase<T = unknown>(
       }
     }
     // Reject file/command during analysis
+    // TODO: Forward to UI for user review instead of auto-rejecting
     if (
       method === FILE_CHANGE_APPROVAL ||
       method === COMMAND_APPROVAL ||
@@ -553,7 +568,8 @@ export async function runAnalysisPhase<T = unknown>(
           {
             id: approvalId,
             approved: false,
-            reason: "Auto-rejected during analysis phase",
+            reason:
+              "File/command operations are not permitted in the current trust tier",
           },
         ).catch(() => {});
       }

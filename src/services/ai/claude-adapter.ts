@@ -124,6 +124,7 @@ export async function createProductMcpServer() {
         source: z.string().optional(),
         rationale: z.string().optional(),
         revision: z.number().optional(),
+        runId: z.string().optional(),
       },
       async (args) => ({
         content: [
@@ -144,6 +145,7 @@ export async function createProductMcpServer() {
         source: z.string().optional(),
         rationale: z.string().optional(),
         revision: z.number().optional(),
+        runId: z.string().optional(),
       },
       async (args) => ({
         content: [
@@ -166,9 +168,9 @@ export async function createProductMcpServer() {
       "Create a relationship between entities",
       {
         type: z.string(),
-        fromEntityId: z.string(),
-        toEntityId: z.string(),
-        metadata: z.record(z.string(), z.unknown()).optional(),
+        from: z.string(),
+        to: z.string(),
+        meta: z.record(z.string(), z.unknown()).optional(),
       },
       async (args) => ({
         content: [
@@ -185,7 +187,7 @@ export async function createProductMcpServer() {
       {
         id: z.string(),
         type: z.string().optional(),
-        metadata: z.record(z.string(), z.unknown()).optional(),
+        meta: z.record(z.string(), z.unknown()).optional(),
       },
       async (args) => ({
         content: [
@@ -240,6 +242,12 @@ const CHAT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
  * Stream a chat turn using the Claude Agent SDK.
  * Yields normalized ChatEvent objects.
  *
+ * Note on single-prompt limitation: The Claude Agent SDK `query()` accepts a
+ * single `prompt` string, not a multi-turn message array. The caller (chat.ts)
+ * extracts only the last user message. This means multi-turn conversation
+ * history is not forwarded to the SDK — this is a known limitation of the
+ * Agent SDK interface, not a bug. Context is provided via the systemPrompt.
+ *
  * Chat profile:
  * - permissionMode: "bypassPermissions"
  * - maxTurns: 25
@@ -287,8 +295,13 @@ export async function* streamChat(
     },
   });
 
-  // Wall-clock timeout
-  const timeoutId = setTimeout(() => q.close(), timeoutMs);
+  // Wall-clock timeout — sets a flag and tears down the SDK session.
+  // The for-await loop will exit, and we yield an error instead of turn_complete.
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    q.close();
+  }, timeoutMs);
 
   let lastAssistantText = "";
   let gotResult = false;
@@ -360,6 +373,16 @@ export async function* streamChat(
           yield { type: "error", message: msg, recoverable: false };
         }
       }
+    }
+
+    // If timeout fired, yield error and do NOT fall through to turn_complete
+    if (timedOut) {
+      yield {
+        type: "error",
+        message: "Chat turn timed out after 5 minutes",
+        recoverable: false,
+      };
+      return;
     }
 
     // Fallback: SDK yielded assistant text but never a result event

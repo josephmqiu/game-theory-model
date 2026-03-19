@@ -895,6 +895,11 @@ const TOOL_DEFINITIONS = [
           type: "number",
           description: "Revision number (default 1)",
         },
+        runId: {
+          type: "string",
+          description:
+            "Active analysis run ID for provenance tracking (optional)",
+        },
       },
       required: ["type", "phase", "data"],
     },
@@ -915,6 +920,11 @@ const TOOL_DEFINITIONS = [
         source: { type: "string", enum: ["ai", "human", "computed"] },
         rationale: { type: "string", description: "Updated rationale" },
         revision: { type: "number", description: "Updated revision number" },
+        runId: {
+          type: "string",
+          description:
+            "Active analysis run ID for provenance tracking (optional)",
+        },
       },
       required: ["id"],
     },
@@ -951,14 +961,14 @@ const TOOL_DEFINITIONS = [
           description:
             "Relationship type: plays-in, has-objective, conflicts-with, has-strategy, supports, contradicts, produces, depends-on, invalidated-by, constrains, escalates-to, links, precedes, informed-by, derived-from",
         },
-        fromEntityId: { type: "string", description: "Source entity ID" },
-        toEntityId: { type: "string", description: "Target entity ID" },
-        metadata: {
+        from: { type: "string", description: "Source entity ID" },
+        to: { type: "string", description: "Target entity ID" },
+        meta: {
           type: "object",
           description: "Optional metadata for the relationship",
         },
       },
-      required: ["type", "fromEntityId", "toEntityId"],
+      required: ["type", "from", "to"],
     },
   },
   {
@@ -969,7 +979,7 @@ const TOOL_DEFINITIONS = [
       properties: {
         id: { type: "string", description: "Relationship ID to update" },
         type: { type: "string", description: "Updated relationship type" },
-        metadata: { type: "object", description: "Updated metadata" },
+        meta: { type: "object", description: "Updated metadata" },
       },
       required: ["id"],
     },
@@ -1071,6 +1081,7 @@ export function handleCreateEntity(args: {
   source?: string;
   rationale?: string;
   revision?: number;
+  runId?: string;
 }): string {
   const entity = createEntity(
     {
@@ -1084,21 +1095,35 @@ export function handleCreateEntity(args: {
       revision: args.revision ?? 1,
       stale: false,
     },
-    { source: "ai-edited" },
+    { source: "ai-edited", ...(args.runId ? { runId: args.runId } : {}) },
   );
-  return JSON.stringify(entity);
+  return JSON.stringify({
+    created: [entity],
+    updated: [],
+    staleMarked: [],
+    grouped: [],
+  });
 }
 
 export function handleUpdateEntity(args: {
   id: string;
+  runId?: string;
   [key: string]: unknown;
 }): string {
-  const { id, ...updates } = args;
-  const result = updateEntity(id, updates as any, { source: "ai-edited" }); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const { id, runId, ...updates } = args;
+  const result = updateEntity(id, updates as any, {
+    source: "ai-edited",
+    ...(runId ? { runId } : {}),
+  }); // eslint-disable-line @typescript-eslint/no-explicit-any
   if (!result) {
     return JSON.stringify({ error: `Entity "${id}" not found` });
   }
-  return JSON.stringify(result);
+  return JSON.stringify({
+    created: [],
+    updated: [result],
+    staleMarked: [],
+    grouped: [],
+  });
 }
 
 // Relationship tools (3)
@@ -1115,16 +1140,16 @@ export function handleGetRelationships(args: {
 
 export function handleCreateRelationship(args: {
   type: string;
-  fromEntityId: string;
-  toEntityId: string;
-  metadata?: Record<string, unknown>;
+  from: string;
+  to: string;
+  meta?: Record<string, unknown>;
 }): string {
   try {
     const result = createRelationship({
       type: args.type as RelationshipType,
-      fromEntityId: args.fromEntityId,
-      toEntityId: args.toEntityId,
-      metadata: args.metadata,
+      fromEntityId: args.from,
+      toEntityId: args.to,
+      metadata: args.meta,
     });
     return JSON.stringify(result);
   } catch (err) {
@@ -1136,12 +1161,15 @@ export function handleCreateRelationship(args: {
 
 export function handleUpdateRelationship(args: {
   id: string;
-  [key: string]: unknown;
+  type?: string;
+  meta?: Record<string, unknown>;
 }): string {
-  const { id, ...updates } = args;
-  const result = updateRelationship(id, updates as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const updates: Record<string, unknown> = {};
+  if (args.type !== undefined) updates.type = args.type;
+  if (args.meta !== undefined) updates.metadata = args.meta;
+  const result = updateRelationship(args.id, updates as any); // eslint-disable-line @typescript-eslint/no-explicit-any
   if (!result) {
-    return JSON.stringify({ error: `Relationship "${id}" not found` });
+    return JSON.stringify({ error: `Relationship "${args.id}" not found` });
   }
   return JSON.stringify(result);
 }
@@ -1447,7 +1475,16 @@ process.on("unhandledRejection", (err) => {
   console.error("MCP server unhandled rejection:", err);
 });
 
-main().catch((err) => {
-  console.error("MCP server failed to start:", err);
-  process.exit(1);
-});
+// Only run main() when this file is the entrypoint (not when imported as a module).
+// The Claude adapter imports handler functions from this file; running main()
+// as a side effect would start the MCP CLI server unintentionally.
+if (
+  typeof process !== "undefined" &&
+  process.argv[1] &&
+  import.meta.url.endsWith(process.argv[1])
+) {
+  main().catch((err) => {
+    console.error("MCP server failed to start:", err);
+    process.exit(1);
+  });
+}
