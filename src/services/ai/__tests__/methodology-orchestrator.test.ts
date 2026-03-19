@@ -24,17 +24,20 @@ vi.mock("@/services/ai/orchestrator-prompt-optimizer", () => ({
   })),
 }));
 
+// Stable stubs so tests can assert on store lifecycle calls
+const mockRunStoreActions = {
+  startRun: vi.fn(),
+  setPhase: vi.fn(),
+  setAttempt: vi.fn(),
+  failRun: vi.fn(),
+  abortRun: vi.fn(),
+  completeRun: vi.fn(),
+  reset: vi.fn(),
+};
+
 vi.mock("@/stores/analysis-run-store", () => ({
   useAnalysisRunStore: {
-    getState: () => ({
-      startRun: vi.fn(),
-      setPhase: vi.fn(),
-      setAttempt: vi.fn(),
-      failRun: vi.fn(),
-      abortRun: vi.fn(),
-      completeRun: vi.fn(),
-      reset: vi.fn(),
-    }),
+    getState: () => mockRunStoreActions,
   },
 }));
 
@@ -199,6 +202,7 @@ describe("methodology orchestrator", () => {
     useEntityGraphStore.setState(useEntityGraphStore.getInitialState(), true);
     useEntityGraphStore.getState().newAnalysis("Test topic");
     mockStreamChat.mockReset();
+    Object.values(mockRunStoreActions).forEach((fn) => fn.mockReset());
   });
 
   it("returns success after running all 3 phases in order", async () => {
