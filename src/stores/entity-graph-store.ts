@@ -61,6 +61,10 @@ interface EntityGraphStoreState extends AnalysisFileReference {
   markDirty: () => void;
   syncFromService: () => void;
   subscribeToService: () => () => void;
+
+  // SSE sync methods — used by analysis-client for renderer-side updates
+  syncAnalysis: (analysis: Analysis) => void;
+  setPhaseStatusLocal: (phase: string, status: PhaseStatus) => void;
 }
 
 // ── Helpers ──
@@ -353,6 +357,26 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
 
       return unsubscribe;
     },
+
+    // syncAnalysis: like loadAnalysis but preserves isDirty and file refs (for SSE sync)
+    syncAnalysis: (analysis) =>
+      set((state) => ({
+        analysis,
+        revision: state.revision + 1,
+        // Note: does NOT clear isDirty or file refs — those are for save/load lifecycle
+      })),
+
+    // setPhaseStatusLocal: local phase status update from SSE progress events
+    setPhaseStatusLocal: (phase, status) =>
+      set((state) => ({
+        analysis: {
+          ...state.analysis,
+          phases: state.analysis.phases.map((ps) =>
+            ps.phase === phase ? { ...ps, status } : ps,
+          ),
+        },
+        revision: state.revision + 1,
+      })),
   }),
 );
 
