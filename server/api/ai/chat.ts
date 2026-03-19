@@ -15,6 +15,7 @@ import {
 } from "../../utils/resolve-claude-agent-env";
 import { serverLog } from "../../utils/ai-logger";
 import { isAllowedProvider } from "../../../src/services/ai/allowed-providers";
+import { streamChat as claudeStreamChat } from "../../../src/services/ai/claude-adapter";
 
 /** Pattern for detecting sensitive data in debug log output */
 export const SENSITIVE_LOG_PATTERN =
@@ -157,13 +158,97 @@ export default defineEventHandler(async (event) => {
 
   // Route to allowed providers only; opencode/copilot are dormant — functions retained below
   if (body.provider === "anthropic")
-    return streamViaAgentSDK(body, body.model, runId);
+    return streamViaClaude(body, body.model, runId);
   return streamViaCodex(body, body.model);
 });
 
 // Dormant provider functions — retained for future reactivation, suppress noUnusedLocals
 void streamViaOpenCode;
 void streamViaCopilot;
+void streamViaAgentSDK;
+
+/** Stream via Claude adapter — wraps claude-adapter.streamChat() into SSE */
+function streamViaClaude(body: ChatBody, model?: string, runId?: string) {
+  const stream = new ReadableStream({
+    async start(controller) {
+      const encoder = new TextEncoder();
+      const pingTimer = setInterval(() => {
+        try {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "ping", content: "" })}\n\n`,
+            ),
+          );
+        } catch {
+          /* stream already closed */
+        }
+      }, KEEPALIVE_INTERVAL_MS);
+
+      try {
+        const lastUserMsg = [...body.messages]
+          .reverse()
+          .find((m) => m.role === "user");
+        const prompt = lastUserMsg?.content ?? "";
+
+        for await (const event of claudeStreamChat(
+          prompt,
+          body.system,
+          model ?? "claude-sonnet-4-6",
+          { runId },
+        )) {
+          clearInterval(pingTimer);
+          if (event.type === "text_delta") {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "text", content: event.content })}\n\n`,
+              ),
+            );
+          } else if (event.type === "tool_call_start") {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "tool_call_start", toolName: event.toolName, input: event.input })}\n\n`,
+              ),
+            );
+          } else if (event.type === "tool_call_result") {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "tool_call_result", toolName: event.toolName, output: event.output })}\n\n`,
+              ),
+            );
+          } else if (event.type === "error") {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "error", content: event.message })}\n\n`,
+              ),
+            );
+          }
+          // turn_complete is handled after the loop
+        }
+
+        serverLog(runId, "chat", "stream-complete");
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ type: "done", content: "" })}\n\n`,
+          ),
+        );
+      } catch (error) {
+        const content =
+          error instanceof Error ? error.message : "Unknown error";
+        serverLog(runId, "chat", "stream-error", { error: content });
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ type: "error", content })}\n\n`,
+          ),
+        );
+      } finally {
+        clearInterval(pingTimer);
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream);
+}
 
 // Keep-alive ping interval (ms) — prevents client timeout while waiting for API TTFT
 const KEEPALIVE_INTERVAL_MS = 15_000;
@@ -227,6 +312,7 @@ function stripNoToolsRestriction(systemPrompt: string): string {
     .replace(/\n{3,}/g, "\n\n");
 }
 
+// @deprecated Replaced by claude-adapter.streamChat()
 /** Stream via Claude Agent SDK (uses local Claude Code OAuth login, no API key needed) */
 function streamViaAgentSDK(body: ChatBody, model?: string, runId?: string) {
   const stream = new ReadableStream({
