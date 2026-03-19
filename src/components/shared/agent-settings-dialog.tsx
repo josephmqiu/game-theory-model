@@ -26,7 +26,10 @@ import type {
   MCPTransportMode,
   GroupedModel,
 } from "@/types/agent-settings";
-import { ALLOWED_PROVIDERS } from "@/services/ai/allowed-providers";
+import {
+  ALLOWED_PROVIDERS,
+  PROVIDER_LABELS,
+} from "@/services/ai/allowed-providers";
 import ClaudeLogo from "@/components/icons/claude-logo";
 import OpenAILogo from "@/components/icons/openai-logo";
 import OpenCodeLogo from "@/components/icons/opencode-logo";
@@ -35,36 +38,38 @@ import CopilotLogo from "@/components/icons/copilot-logo";
 /** MCP tools that correspond to allowed providers (claude-code → anthropic, codex-cli → openai) */
 const ALLOWED_MCP_TOOLS = new Set(["claude-code", "codex-cli"]);
 
-/** Provider display metadata — labels/descriptions are i18n keys resolved at render time */
+/** Provider display metadata — labels use PROVIDER_LABELS for allowed providers,
+ *  i18n keys for the rest. Descriptions are i18n keys resolved at render time. */
 const PROVIDER_META: Record<
   AIProviderType,
   {
-    labelKey: string;
+    /** Direct display label (not an i18n key) — sourced from PROVIDER_LABELS */
+    label: string;
     descriptionKey: string;
     agent: "claude-code" | "codex-cli" | "opencode" | "copilot";
     Icon: ComponentType<SVGProps<SVGSVGElement>>;
   }
 > = {
   anthropic: {
-    labelKey: "agents.claudeCode",
+    label: PROVIDER_LABELS.anthropic,
     descriptionKey: "agents.claudeModels",
     agent: "claude-code",
     Icon: ClaudeLogo,
   },
   openai: {
-    labelKey: "agents.codexCli",
+    label: PROVIDER_LABELS.openai,
     descriptionKey: "agents.openaiModels",
     agent: "codex-cli",
     Icon: OpenAILogo,
   },
   opencode: {
-    labelKey: "agents.opencode",
+    label: "OpenCode",
     descriptionKey: "agents.opencodeDesc",
     agent: "opencode",
     Icon: OpenCodeLogo,
   },
   copilot: {
-    labelKey: "agents.copilot",
+    label: "GitHub Copilot",
     descriptionKey: "agents.copilotDesc",
     agent: "copilot",
     Icon: CopilotLogo,
@@ -281,7 +286,7 @@ function ProviderRow({ type }: { type: AIProviderType }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-[13px] font-medium text-foreground leading-tight">
-              {t(meta.labelKey)}
+              {meta.label}
             </span>
             <span className="text-[10px] text-muted-foreground leading-tight hidden sm:inline">
               {t(meta.descriptionKey)}

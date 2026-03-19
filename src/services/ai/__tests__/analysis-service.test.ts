@@ -539,5 +539,104 @@ describe("analysis-service", () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain("relationships");
     });
+
+    // Regression: confidence must validate against "high"|"medium"|"low",
+    // not against the source enum "ai"|"human"|"computed" (ISSUE-001).
+    it("accepts entity with confidence: 'high' (not rejected by source enum)", async () => {
+      const { _validatePhaseOutput } = await importService();
+      const result = _validatePhaseOutput(
+        {
+          entities: [
+            {
+              id: "fact-regression",
+              type: "fact",
+              phase: "situational-grounding",
+              data: {
+                type: "fact",
+                date: "2025-01-01",
+                source: "Reuters",
+                content: "Test content",
+                category: "action",
+              },
+              position: { x: 0, y: 0 },
+              confidence: "high",
+              source: "ai",
+              rationale: "Test rationale",
+              revision: 1,
+              stale: false,
+            },
+          ],
+          relationships: [],
+        },
+        "situational-grounding",
+      );
+      expect(result.success).toBe(true);
+      expect(result.entities).toHaveLength(1);
+      expect(result.entities[0].confidence).toBe("high");
+    });
+
+    it("accepts entity without explicit source (defaults to 'ai')", async () => {
+      const { _validatePhaseOutput } = await importService();
+      const result = _validatePhaseOutput(
+        {
+          entities: [
+            {
+              id: "fact-no-source",
+              type: "fact",
+              phase: "situational-grounding",
+              data: {
+                type: "fact",
+                date: "2025-01-01",
+                source: "Bloomberg",
+                content: "Test content",
+                category: "economic",
+              },
+              position: { x: 0, y: 0 },
+              confidence: "medium",
+              // no source field — should default to "ai"
+              rationale: "Test",
+              revision: 1,
+              stale: false,
+            },
+          ],
+          relationships: [],
+        },
+        "situational-grounding",
+      );
+      expect(result.success).toBe(true);
+      expect(result.entities[0].source).toBe("ai");
+    });
+
+    it("rejects entity with invalid confidence value", async () => {
+      const { _validatePhaseOutput } = await importService();
+      const result = _validatePhaseOutput(
+        {
+          entities: [
+            {
+              id: "fact-bad-conf",
+              type: "fact",
+              phase: "situational-grounding",
+              data: {
+                type: "fact",
+                date: "2025-01-01",
+                source: "Test",
+                content: "Test",
+                category: "action",
+              },
+              position: { x: 0, y: 0 },
+              confidence: "ai", // wrong — this is a source value, not confidence
+              source: "ai",
+              rationale: "Test",
+              revision: 1,
+              stale: false,
+            },
+          ],
+          relationships: [],
+        },
+        "situational-grounding",
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Entity 0");
+    });
   });
 });

@@ -20,6 +20,10 @@ import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
 import { PHASE_LABELS, V1_PHASES } from "@/types/methodology";
 import type { AIProviderType } from "@/types/agent-settings";
+import {
+  PROVIDER_LABELS,
+  isAllowedProvider,
+} from "@/services/ai/allowed-providers";
 // Architecture note: In this Electron app, renderer and main process share JS context.
 // The panel imports analysis-orchestrator directly for isRunning()/abort() — no IPC needed.
 // If the app moves to separate processes, these become IPC calls.
@@ -322,16 +326,11 @@ export default function AIChatPanel({
     );
 
     if (connectedProviders.length > 0) {
-      // Build groups + flat list from stored models
-      const providerNames: Record<AIProviderType, string> = {
-        anthropic: "Anthropic",
-        openai: "OpenAI",
-        opencode: "OpenCode",
-        copilot: "GitHub Copilot",
-      };
+      // Build groups + flat list from stored models.
+      // Use PROVIDER_LABELS for allowed providers, fall back to raw provider id.
       const groups = connectedProviders.map((p) => ({
         provider: p,
-        providerName: providerNames[p],
+        providerName: isAllowedProvider(p) ? PROVIDER_LABELS[p] : p,
         models: providers[p].models,
       }));
       const flat = groups.flatMap((g) =>
@@ -388,9 +387,12 @@ export default function AIChatPanel({
       return;
     }
 
+    // Only stop streaming — don't clear messages here.
+    // Messages are cleared explicitly in handleSendWrapped before adding new
+    // analysis messages, avoiding a race where the useEffect fires after the
+    // new messages have already been added.
     stopStreaming();
-    clearMessages();
-  }, [analysisId, clearMessages, isAnalysisMode, stopStreaming]);
+  }, [analysisId, isAnalysisMode, stopStreaming]);
 
   /* --- Drag-to-snap handlers --- */
 
@@ -552,7 +554,19 @@ export default function AIChatPanel({
       ) {
         const topic = messageText.replace(/^analyze\s+/i, "").trim();
         if (topic) {
-          // Add user message to chat
+          // Clear input and start orchestrator first — this changes analysisId
+          // which would race with addMessage if we added messages before.
+          setInput("");
+          useAIStore
+            .getState()
+            .setChatTitle(
+              topic.length > 30 ? `${topic.slice(0, 30)}...` : topic,
+            );
+          onStartAnalysis!(topic);
+
+          // Clear stale messages from previous analysis, then add new ones.
+          // This avoids the race where useEffect clears messages after we add them.
+          clearMessages();
           useAIStore.getState().addMessage({
             id: `user-${Date.now()}`,
             role: "user",
@@ -565,13 +579,6 @@ export default function AIChatPanel({
             content: `Starting game-theoretic analysis of "${topic}"...`,
             timestamp: Date.now(),
           });
-          useAIStore
-            .getState()
-            .setChatTitle(
-              topic.length > 30 ? `${topic.slice(0, 30)}...` : topic,
-            );
-          setInput("");
-          onStartAnalysis!(topic);
           return;
         }
       }
@@ -586,6 +593,7 @@ export default function AIChatPanel({
       onStartAnalysis,
       handleSend,
       setInput,
+      clearMessages,
     ],
   );
 

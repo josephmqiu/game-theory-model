@@ -466,6 +466,82 @@ describe("codex-adapter", () => {
       const turnStartReq = JSON.parse(turnStartWrite!.trim());
       expect(turnStartReq.params.outputSchema).toEqual(schema);
     });
+
+    // Regression: turn/start must include threadId from thread/start response (ISSUE-002).
+    it("passes threadId from thread/start to turn/start", async () => {
+      const { runAnalysisPhase, _resetConnection } =
+        await import("../codex-adapter");
+      _resetConnection();
+
+      const EXPECTED_THREAD_ID = "thread-abc-123";
+
+      setAutoResponder((method, id) => {
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitResponse(id, { threadId: EXPECTED_THREAD_ID });
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitResponse(id, { ok: true });
+          queueMicrotask(() => {
+            emitNotification("turn/completed", {
+              structuredOutput: { entities: [] },
+            });
+          });
+        }
+      });
+
+      await runAnalysisPhase("test", "system", "gpt-4o", {});
+
+      // Find the turn/start request and verify threadId is present
+      const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
+      const turnStartWrite = calls
+        .map((c) => c[0])
+        .find((w) => w.includes('"turn/start"'));
+      expect(turnStartWrite).toBeDefined();
+      const turnStartReq = JSON.parse(turnStartWrite!.trim());
+      expect(turnStartReq.params.threadId).toBe(EXPECTED_THREAD_ID);
+    });
+  });
+
+  // Regression: streamChat must also pass threadId to turn/start (ISSUE-002).
+  describe("streamChat threadId", () => {
+    it("passes threadId from thread/start to turn/start", async () => {
+      const { streamChat, _resetConnection } = await import("../codex-adapter");
+      _resetConnection();
+
+      const EXPECTED_THREAD_ID = "thread-chat-456";
+
+      setAutoResponder((method, id) => {
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitResponse(id, { threadId: EXPECTED_THREAD_ID });
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitResponse(id, { ok: true });
+          queueMicrotask(() => {
+            emitNotification("turn/completed", {});
+          });
+        }
+      });
+
+      // Consume the generator
+      for await (const _ev of streamChat("hello", "system", "gpt-4o")) {
+        // drain
+      }
+
+      // Find the turn/start request and verify threadId
+      const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
+      const turnStartWrite = calls
+        .map((c) => c[0])
+        .find((w) => w.includes('"turn/start"'));
+      expect(turnStartWrite).toBeDefined();
+      const turnStartReq = JSON.parse(turnStartWrite!.trim());
+      expect(turnStartReq.params.threadId).toBe(EXPECTED_THREAD_ID);
+    });
   });
 
   describe("stopAppServer", () => {
