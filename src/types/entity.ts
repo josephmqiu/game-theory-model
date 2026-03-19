@@ -9,6 +9,17 @@ export type EntitySource = "ai" | "human" | "computed";
 export const entityConfidenceSchema = z.enum(["high", "medium", "low"]);
 export const entitySourceSchema = z.enum(["ai", "human", "computed"]);
 
+// ── Entity Provenance ──
+
+export interface EntityProvenance {
+  source: "phase-derived" | "ai-edited" | "user-edited";
+  runId?: string;
+  phase?: string;
+  timestamp: number;
+  webSearchAvailable?: boolean;
+  previousOrigin?: EntityProvenance;
+}
+
 // ── Entity Type Enum ──
 
 export type EntityType =
@@ -206,7 +217,9 @@ export interface AnalysisEntity {
   data: EntityData;
   position: { x: number; y: number };
   confidence: EntityConfidence;
+  /** @deprecated Use provenance.source instead */
   source: EntitySource;
+  provenance?: EntityProvenance;
   rationale: string;
   revision: number;
   stale: boolean; // true when downstream of a human edit, pending revalidation
