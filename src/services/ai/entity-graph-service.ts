@@ -245,6 +245,7 @@ export function updateRelationship(
     ),
   };
   mutate();
+  emit({ type: "relationship_updated", relationship: updated });
 
   return updated;
 }

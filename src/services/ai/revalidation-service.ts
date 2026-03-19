@@ -145,6 +145,9 @@ export async function revalidate(
   const phases = phasesFrom(startPhase);
 
   for (const p of phases) {
+    // Remove old entities before re-running to prevent duplication
+    entityGraphService.removePhaseEntities(p, undefined);
+
     emitProgress({ type: "phase_started", phase: p, runId });
 
     const phaseStart = Date.now();
@@ -243,6 +246,10 @@ export function unwire(): void {
     unsubscribeMutation = null;
   }
 }
+
+// ── Auto-wire on import ──
+
+wire();
 
 // ── Testing ──
 

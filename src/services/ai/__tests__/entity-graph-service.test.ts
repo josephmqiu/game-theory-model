@@ -616,6 +616,31 @@ describe("onMutation", () => {
     unsub();
   });
 
+  it("callback receives relationship_updated events", () => {
+    newAnalysis("test");
+    const e1 = createEntity(makeFactData(), defaultProvenance);
+    const e2 = createEntity(makeFactData(), defaultProvenance);
+    const rel = createRelationship({
+      type: "supports",
+      fromEntityId: e1.id,
+      toEntityId: e2.id,
+    });
+
+    const events: AnalysisMutationEvent[] = [];
+    const unsub = onMutation((event) => events.push(event));
+
+    updateRelationship(rel.id, { type: "contradicts" });
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("relationship_updated");
+    if (events[0].type === "relationship_updated") {
+      expect(events[0].relationship.id).toBe(rel.id);
+      expect(events[0].relationship.type).toBe("contradicts");
+    }
+
+    unsub();
+  });
+
   it("unsubscribe stops receiving events", () => {
     newAnalysis("test");
     const events: AnalysisMutationEvent[] = [];

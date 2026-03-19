@@ -49,6 +49,7 @@ const mockEntityGraph = {
     ...data,
     id: `gen-${Math.random().toString(36).slice(2, 6)}`,
   })),
+  removePhaseEntities: vi.fn(),
   markStale: vi.fn(),
   onMutation: vi.fn((_cb: (event: unknown) => void) => vi.fn()),
 };
@@ -437,5 +438,44 @@ describe("revalidation-service", () => {
 
     expect(result.runId).toMatch(/^reval-/);
     expect(mockRunPhase).not.toHaveBeenCalled();
+  });
+
+  // ── 15. revalidate removes old entities before re-running phases ──
+
+  it("calls removePhaseEntities before re-running each phase to prevent duplication", async () => {
+    mockEntityGraph.getAnalysis.mockReturnValue({
+      id: "test",
+      name: "test",
+      topic: "test topic",
+      entities: [makeEntity("e1", "situational-grounding", true)],
+      relationships: [],
+      phases: [],
+    });
+    mockRunPhase
+      .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
+      .mockResolvedValueOnce(makePhaseResult("player-identification"))
+      .mockResolvedValueOnce(makePhaseResult("baseline-model"));
+
+    await revalidation.revalidate(["e1"]);
+
+    // removePhaseEntities should be called once per phase, before runPhase
+    expect(mockEntityGraph.removePhaseEntities).toHaveBeenCalledTimes(3);
+    expect(mockEntityGraph.removePhaseEntities.mock.calls[0][0]).toBe(
+      "situational-grounding",
+    );
+    expect(mockEntityGraph.removePhaseEntities.mock.calls[1][0]).toBe(
+      "player-identification",
+    );
+    expect(mockEntityGraph.removePhaseEntities.mock.calls[2][0]).toBe(
+      "baseline-model",
+    );
+
+    // removePhaseEntities should be called BEFORE runPhase for each phase
+    const removeOrder =
+      mockEntityGraph.removePhaseEntities.mock.invocationCallOrder;
+    const runOrder = mockRunPhase.mock.invocationCallOrder;
+    for (let i = 0; i < 3; i++) {
+      expect(removeOrder[i]).toBeLessThan(runOrder[i]);
+    }
   });
 });

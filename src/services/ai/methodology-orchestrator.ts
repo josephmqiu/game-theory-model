@@ -8,7 +8,6 @@ import { createPhaseWorker } from "@/services/ai/phase-worker";
 import type { RunContext, RunLogger } from "@/services/ai/ai-logger";
 import { timer } from "@/services/ai/ai-logger";
 import { getOrchestratorTimeouts } from "@/services/ai/orchestrator-prompt-optimizer";
-import { useAnalysisRunStore } from "@/stores/analysis-run-store";
 
 export type AnalysisFailureKind = "timeout" | "parse-error" | "provider-error";
 
@@ -180,7 +179,6 @@ async function runSinglePhase(params: {
   }
 
   callbacks.onPhaseStart(phase);
-  useAnalysisRunStore.getState().setPhase(phase);
   useEntityGraphStore.getState().setPhaseStatus(phase, "running");
   run.logger.log("orchestrator", "phase-start", { phase });
 
@@ -194,7 +192,6 @@ async function runSinglePhase(params: {
     }
 
     const attemptNumber = attempt + 1;
-    useAnalysisRunStore.getState().setAttempt(attemptNumber);
     run.logger.log("orchestrator", "attempt-start", {
       phase,
       attempt: attemptNumber,
@@ -280,7 +277,6 @@ async function runSinglePhase(params: {
 
   useEntityGraphStore.getState().setPhaseStatus(phase, "failed");
   callbacks.onPhaseFailed(phase, lastError);
-  useAnalysisRunStore.getState().failRun(phase, lastFailureKind, lastError);
   run.logger.error("orchestrator", "phase-failed", {
     phase,
     elapsedMs: phaseTimer.elapsed(),
@@ -301,7 +297,6 @@ export async function runMethodologyAnalysis(
 ): Promise<AnalysisResult> {
   const { topic, signal, callbacks, run } = config;
   const analysisTimer = timer();
-  useAnalysisRunStore.getState().startRun(run.runId, MAX_RETRIES + 1);
   const completedPhases: MethodologyPhase[] = [];
   const model = useAIStore.getState().model;
   const provider = resolveProvider(model);
@@ -366,7 +361,6 @@ export async function runMethodologyAnalysis(
         totalEntities: getTotalEntityCount(),
         runId: run.runId,
       };
-      useAnalysisRunStore.getState().completeRun();
     } else if (signal.aborted && result.status !== "failed") {
       run.logger.warn("orchestrator", "analysis-aborted", {
         mode: "analysis",
@@ -378,7 +372,6 @@ export async function runMethodologyAnalysis(
         totalEntities: getTotalEntityCount(),
         runId: run.runId,
       };
-      useAnalysisRunStore.getState().abortRun();
     }
 
     return result;

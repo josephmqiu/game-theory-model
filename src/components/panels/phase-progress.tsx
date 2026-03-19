@@ -1,6 +1,5 @@
 import { cn } from "@/lib/utils";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
-import { useAnalysisRunStore } from "@/stores/analysis-run-store";
 import { V1_PHASES, PHASE_LABELS } from "@/types/methodology";
 import {
   getPhaseFailureLabel,
@@ -22,13 +21,6 @@ export function PhaseProgress({
 }: PhaseProgressProps) {
   const phases = useEntityGraphStore((s) => s.analysis.phases);
   const entities = useEntityGraphStore((s) => s.analysis.entities);
-  const {
-    status: runStatus,
-    attempt,
-    maxAttempts,
-    failureKind: runFailureKind,
-    activePhase: runActivePhase,
-  } = useAnalysisRunStore();
 
   // Only consider V1 phases
   const v1Phases = phases.filter((ps) =>
@@ -50,15 +42,8 @@ export function PhaseProgress({
     v1Phases.length > 0 && v1Phases.every((ps) => ps.status === "complete");
   const allPending = v1Phases.every((ps) => ps.status === "pending");
 
-  // Hidden when all phases are complete/pending (no active work), unless
-  // the run store indicates a failure that should remain visible.
-  const runStoreFailed = runStatus === "failed";
-  if (
-    !failedPhase &&
-    !runStoreFailed &&
-    !anyRunning &&
-    (allDone || allPending)
-  ) {
+  // Hidden when all phases are complete/pending (no active work)
+  if (!failedPhase && !anyRunning && (allDone || allPending)) {
     return null;
   }
 
@@ -66,46 +51,6 @@ export function PhaseProgress({
   const currentPhaseName = runningPhase
     ? PHASE_LABELS[runningPhase.phase]
     : null;
-
-  // Attempt suffix: shown when a retry is in progress (attempt > 1)
-  const attemptSuffix =
-    runStatus === "running" && attempt > 1
-      ? ` · Attempt ${attempt} of ${maxAttempts}`
-      : "";
-
-  // Run store failure fallback: used when the run store reports failed but no
-  // phase-level failure has been written to the entity graph yet.
-  if (!failedPhase && runStoreFailed && runActivePhase !== null) {
-    const phaseIndex = V1_PHASES.indexOf(runActivePhase) + 1;
-    const phaseName = PHASE_LABELS[runActivePhase];
-    const failureLabel = runFailureKind
-      ? getPhaseFailureLabel(runFailureKind)
-      : "provider error";
-
-    return (
-      <div
-        className={cn(
-          "flex items-center gap-3 rounded-md border border-red-500/40 bg-zinc-900/95 px-4 py-2 shadow-lg backdrop-blur",
-          className,
-        )}
-      >
-        <div className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-zinc-700">
-          <div
-            className="h-full rounded-full bg-red-500 transition-all duration-300 ease-in-out"
-            style={{ width: `${progressFraction * 100}%` }}
-          />
-        </div>
-
-        <p className="truncate font-[Geist,sans-serif] text-[13px] font-medium text-zinc-200">
-          <span className="text-red-400">
-            Phase {phaseIndex}: {phaseName} — failed
-          </span>
-          <span className="mx-1.5 text-zinc-600">&mdash;</span>
-          <span>{failureLabel}</span>
-        </p>
-      </div>
-    );
-  }
 
   if (failedPhase) {
     const failureLabel = failure
@@ -161,7 +106,6 @@ export function PhaseProgress({
               Phase{" "}
               {runningPhase ? V1_PHASES.indexOf(runningPhase.phase) + 1 : ""}:{" "}
               {currentPhaseName}
-              {attemptSuffix}
             </span>
             <span className="mx-1.5 text-zinc-600">&mdash;</span>
           </>

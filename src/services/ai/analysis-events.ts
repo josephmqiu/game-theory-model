@@ -36,6 +36,7 @@ export type AnalysisMutationEvent =
       entity: AnalysisEntity;
       previousProvenance: EntityProvenance;
     }
+  | { type: "relationship_updated"; relationship: AnalysisRelationship }
   | { type: "stale_marked"; entityIds: string[] };
 
 export type AnalysisEvent = AnalysisProgressEvent | AnalysisMutationEvent;
@@ -53,6 +54,7 @@ const MUTATION_TYPES = new Set([
   "entity_created",
   "relationship_created",
   "entity_updated",
+  "relationship_updated",
   "stale_marked",
 ]);
 

@@ -153,6 +153,15 @@ describe("AnalysisMutationEvent", () => {
     expect(event.previousProvenance.timestamp).toBeTypeOf("number");
   });
 
+  it("represents relationship_updated", () => {
+    const event: AnalysisMutationEvent = {
+      type: "relationship_updated",
+      relationship,
+    };
+    expect(event.type).toBe("relationship_updated");
+    expect(event.relationship.id).toBe("r-1");
+  });
+
   it("represents stale_marked", () => {
     const event: AnalysisMutationEvent = {
       type: "stale_marked",
@@ -185,6 +194,7 @@ describe("type guards", () => {
     { type: "entity_created", entity },
     { type: "relationship_created", relationship },
     { type: "entity_updated", entity, previousProvenance: provenance },
+    { type: "relationship_updated", relationship },
     { type: "stale_marked", entityIds: ["e-1"] },
   ];
 
@@ -218,16 +228,17 @@ describe("AnalysisEvent union", () => {
     const events: AnalysisEvent[] = [
       { type: "phase_started", phase: "baseline-model", runId: "r" },
       { type: "entity_created", entity },
+      { type: "relationship_updated", relationship },
       { type: "stale_marked", entityIds: [] },
       { type: "analysis_completed", runId: "r" },
     ];
     // All assignable to AnalysisEvent[]
-    expect(events).toHaveLength(4);
+    expect(events).toHaveLength(5);
     // Verify mixed array can be partitioned by guards
     const progress = events.filter(isProgressEvent);
     const mutations = events.filter(isMutationEvent);
     expect(progress).toHaveLength(2);
-    expect(mutations).toHaveLength(2);
+    expect(mutations).toHaveLength(3);
     expect(progress.length + mutations.length).toBe(events.length);
   });
 });

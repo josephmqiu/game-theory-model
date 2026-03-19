@@ -12,6 +12,7 @@ import type {
   AnalysisProgressEvent,
   PhaseSummary,
 } from "@/services/ai/analysis-events";
+import * as revalidationService from "@/services/ai/revalidation-service";
 
 // ── Types ──
 
@@ -234,9 +235,11 @@ async function executeSinglePhase(
     }
 
     if (result.success) {
-      // Store entities via entity-graph-service
+      // Store entities via entity-graph-service, building an ID mapping
+      // (AI-provided ID → service-generated ID) so relationships can be remapped.
+      const idMap = new Map<string, string>();
       for (const entity of result.entities) {
-        entityGraphService.createEntity(
+        const created = entityGraphService.createEntity(
           {
             type: entity.type,
             phase: entity.phase,
@@ -250,20 +253,23 @@ async function executeSinglePhase(
           },
           { source: "phase-derived", runId: run.runId, phase },
         );
+        if (entity.id) {
+          idMap.set(entity.id, created.id);
+        }
       }
       for (const rel of result.relationships) {
+        const fromId = idMap.get(rel.fromEntityId) ?? rel.fromEntityId;
+        const toId = idMap.get(rel.toEntityId) ?? rel.toEntityId;
         try {
           entityGraphService.createRelationship({
             type: rel.type,
-            fromEntityId: rel.fromEntityId,
-            toEntityId: rel.toEntityId,
+            fromEntityId: fromId,
+            toEntityId: toId,
             metadata: rel.metadata,
           });
         } catch {
-          // Relationship creation may fail if entity IDs don't match the
-          // generated IDs from createEntity (since createEntity assigns new IDs).
-          // This is expected during the pivot — will be addressed when the
-          // entity graph service uses the AI-provided IDs.
+          // Relationship may still fail if entity IDs reference entities from
+          // a different phase that haven't been remapped in this batch.
         }
       }
 
@@ -406,6 +412,8 @@ export async function runFull(
       run.activePhase = null;
       // Clear runPromise so new runs can start
       runPromise = null;
+      // Flush deferred revalidations that were suppressed during this run
+      revalidationService.onRunComplete();
     }
   };
 

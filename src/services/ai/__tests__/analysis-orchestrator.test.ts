@@ -48,6 +48,15 @@ const mockEntityGraph = {
 
 vi.mock("@/services/ai/entity-graph-service", () => mockEntityGraph);
 
+// ── Mock revalidation-service ──
+
+const mockRevalidation = {
+  onRunComplete: vi.fn(),
+  wire: vi.fn(),
+};
+
+vi.mock("@/services/ai/revalidation-service", () => mockRevalidation);
+
 // ── Test fixtures ──
 
 function makePhaseResult(
@@ -752,6 +761,113 @@ describe("analysis-orchestrator", () => {
         expect(context?.provider).toBe("openai");
         expect(context?.model).toBe("gpt-4o");
       }
+    });
+  });
+
+  // ── 13. Relationship ID remapping ──
+
+  describe("relationship ID remapping", () => {
+    it("remaps AI-provided entity IDs to service-generated IDs in relationships", async () => {
+      // createEntity mock returns predictable IDs
+      let entityCounter = 0;
+      mockEntityGraph.createEntity.mockImplementation(
+        (data: Record<string, unknown>) => ({
+          ...data,
+          id: `svc-entity-${++entityCounter}`,
+        }),
+      );
+
+      const phaseResult: PhaseResult = {
+        success: true,
+        entities: [
+          {
+            id: "ai-player-1",
+            type: "player" as const,
+            phase: "situational-grounding" as const,
+            data: {
+              type: "player" as const,
+              name: "Player A",
+              playerType: "primary" as const,
+              knowledge: [],
+            },
+            position: { x: 0, y: 0 },
+            confidence: "high" as const,
+            source: "ai" as const,
+            rationale: "Test",
+            revision: 1,
+            stale: false,
+          },
+          {
+            id: "ai-player-2",
+            type: "player" as const,
+            phase: "situational-grounding" as const,
+            data: {
+              type: "player" as const,
+              name: "Player B",
+              playerType: "primary" as const,
+              knowledge: [],
+            },
+            position: { x: 0, y: 0 },
+            confidence: "high" as const,
+            source: "ai" as const,
+            rationale: "Test",
+            revision: 1,
+            stale: false,
+          },
+        ],
+        relationships: [
+          {
+            id: "ai-rel-1",
+            type: "supports" as const,
+            fromEntityId: "ai-player-1",
+            toEntityId: "ai-player-2",
+          },
+        ],
+      };
+
+      mockRunPhase
+        .mockResolvedValueOnce(phaseResult)
+        .mockResolvedValueOnce(makePhaseResult("player-identification"))
+        .mockResolvedValueOnce(makePhaseResult("baseline-model"));
+
+      await orchestrator.runFull("Test topic");
+      await flushAsync();
+
+      // createRelationship should have been called with remapped IDs
+      expect(mockEntityGraph.createRelationship).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "supports",
+          fromEntityId: "svc-entity-1",
+          toEntityId: "svc-entity-2",
+        }),
+      );
+    });
+  });
+
+  // ── 14. onRunComplete wiring ──
+
+  describe("revalidation wiring", () => {
+    it("calls revalidationService.onRunComplete after run completes", async () => {
+      mockRunPhase
+        .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
+        .mockResolvedValueOnce(makePhaseResult("player-identification"))
+        .mockResolvedValueOnce(makePhaseResult("baseline-model"));
+
+      await orchestrator.runFull("Test topic");
+      await flushAsync();
+
+      expect(mockRevalidation.onRunComplete).toHaveBeenCalled();
+    });
+
+    it("calls revalidationService.onRunComplete even after failure", async () => {
+      mockRunPhase.mockResolvedValueOnce(
+        makeFailedResult("Unauthorized: invalid key"),
+      );
+
+      await orchestrator.runFull("Test topic");
+      await flushAsync();
+
+      expect(mockRevalidation.onRunComplete).toHaveBeenCalled();
     });
   });
 });
