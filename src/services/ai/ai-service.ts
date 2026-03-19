@@ -186,8 +186,10 @@ export async function* streamChat(
           const data = line.slice(6).trim();
           if (!data) continue;
           try {
-            const chunk = JSON.parse(data) as AIStreamChunk;
-            if (chunk.type === "done") {
+            const chunk = JSON.parse(data);
+
+            // Handle both legacy ("done") and new ChatEvent ("turn_complete") formats
+            if (chunk.type === "done" || chunk.type === "turn_complete") {
               clearTimeout(hardTimeout);
               clearNoTextTimeout();
               clearFirstTextTimeout();
@@ -207,19 +209,24 @@ export async function* streamChat(
               continue;
             }
 
+            // Normalize new ChatEvent "text_delta" to legacy "text" format
+            if (chunk.type === "text_delta") {
+              chunk.type = "text";
+            }
+
             if (chunk.type === "thinking" && !chunk.content) {
               continue;
             }
 
             // Any non-empty text counts as activity; thinking only resets
             // the timeout when thinkingResetsTimeout is true (default).
-            if (chunk.type === "text" && chunk.content.trim().length > 0) {
+            if (chunk.type === "text" && chunk.content?.trim().length > 0) {
               sawText = true;
               clearFirstTextTimeout();
               resetActivityTimeout();
             } else if (
               chunk.type === "thinking" &&
-              chunk.content.trim().length > 0 &&
+              chunk.content?.trim().length > 0 &&
               thinkingResetsTimeout
             ) {
               resetActivityTimeout();
@@ -233,8 +240,13 @@ export async function* streamChat(
               resetActivityTimeout();
             }
 
-            yield chunk;
+            // Normalize error: new ChatEvent uses "message", legacy uses "content"
             if (chunk.type === "error") {
+              const normalized: AIStreamChunk = {
+                type: "error",
+                content: chunk.content || chunk.message || "Unknown error",
+              };
+              yield normalized;
               clearTimeout(hardTimeout);
               clearNoTextTimeout();
               clearFirstTextTimeout();
@@ -245,6 +257,8 @@ export async function* streamChat(
               }
               return;
             }
+
+            yield chunk as AIStreamChunk;
           } catch {
             // Skip malformed lines
           }
@@ -257,12 +271,16 @@ export async function* streamChat(
       const data = buffer.slice(6).trim();
       if (data) {
         try {
-          const chunk = JSON.parse(data) as AIStreamChunk;
-          if (chunk.type === "done") {
+          const chunk = JSON.parse(data);
+          if (chunk.type === "done" || chunk.type === "turn_complete") {
             clearTimeout(hardTimeout);
             clearNoTextTimeout();
             clearFirstTextTimeout();
             return;
+          }
+          // Normalize new ChatEvent "text_delta" to legacy "text" format
+          if (chunk.type === "text_delta") {
+            chunk.type = "text";
           }
           if (chunk.type === "thinking" && !chunk.content) {
             clearTimeout(hardTimeout);
@@ -270,17 +288,22 @@ export async function* streamChat(
             clearFirstTextTimeout();
             return;
           }
-          if (chunk.type === "text" && chunk.content.trim().length > 0) {
+          if (chunk.type === "text" && chunk.content?.trim().length > 0) {
             sawText = true;
             clearFirstTextTimeout();
           }
           clearTimeout(hardTimeout);
           clearNoTextTimeout();
           clearFirstTextTimeout();
-          yield chunk;
+          // Normalize error format
           if (chunk.type === "error") {
+            yield {
+              type: "error",
+              content: chunk.content || chunk.message || "Unknown error",
+            } as AIStreamChunk;
             return;
           }
+          yield chunk as AIStreamChunk;
         } catch {
           // Skip
         }

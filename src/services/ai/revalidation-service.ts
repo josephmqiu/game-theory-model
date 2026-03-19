@@ -209,8 +209,7 @@ async function executeRevalidation(
   const revalTimer = timer();
 
   // Get the analysis topic for phase re-execution
-  const analysis = entityGraphService.getAnalysis();
-  const topic = analysis.topic;
+  const topic = entityGraphService.getAnalysis().topic;
 
   // Re-run from the earliest stale phase through the end
   const phases = phasesFrom(startPhase);
@@ -232,9 +231,12 @@ async function executeRevalidation(
     emitProgress({ type: "phase_started", phase: p, runId });
     logger.log("revalidation", "phase-rerun", { phase: p, runId });
 
+    // Get FRESH analysis state for prior context (includes newly regenerated earlier phases)
+    const freshAnalysis = entityGraphService.getAnalysis();
+
     // Build prior context from entities in earlier completed phases
     const completedPhases = V1_PHASES.slice(0, V1_PHASES.indexOf(p));
-    const priorEntities = analysis.entities
+    const priorEntities = freshAnalysis.entities
       .filter((e) => completedPhases.includes(e.phase))
       .map((e) => ({
         id: e.id,
