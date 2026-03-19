@@ -73,6 +73,7 @@ const RUN_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 // ── Module-level state ──
 
 let activeRun: ActiveRun | null = null;
+let runPromise: Promise<void> | null = null;
 const progressListeners = new Set<(event: AnalysisProgressEvent) => void>();
 
 // ── Progress event helpers ──
@@ -90,11 +91,13 @@ function emitProgress(event: AnalysisProgressEvent): void {
 // ── Retry classification ──
 
 export function classifyFailure(error: string): FailureClass {
-  if (/timeout/i.test(error)) return "terminal";
-  if (/auth|unauthorized|forbidden/i.test(error)) return "terminal";
-  if (/schema.*refus/i.test(error)) return "terminal";
-  // transport, parse, empty -> retryable
-  return "retryable";
+  // Only these specific patterns are retryable
+  if (/connect|ECONNR|network|socket|EPIPE/i.test(error)) return "retryable"; // transport
+  if (/empty.*(response|output)|no.*(content|output|text)/i.test(error))
+    return "retryable"; // empty
+  if (/parse|json|syntax|zod|validation/i.test(error)) return "retryable"; // parse
+  // Everything else is terminal (timeout, auth, schema refusal, unknown)
+  return "terminal";
 }
 
 // ── Edit queue ──
@@ -201,6 +204,7 @@ async function executeSinglePhase(
           priorEntities: priorContext,
           provider: run.provider,
           model: run.model,
+          signal: phaseAbort.signal,
         }),
         new Promise<PhaseResult>((_, reject) => {
           phaseAbort.signal.addEventListener("abort", () => {
@@ -307,19 +311,33 @@ export async function runFull(
   model?: string,
   signal?: AbortSignal,
 ): Promise<{ runId: string }> {
+  // Guard: check both status AND whether the async execution is still unwinding
   if (activeRun && activeRun.status === "running") {
+    throw new Error("A run is already active");
+  }
+  if (runPromise !== null) {
     throw new Error("A run is already active");
   }
 
   const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const abortController = new AbortController();
 
-  // If external signal fires, propagate to internal controller
-  if (signal) {
-    signal.addEventListener("abort", () => abortController.abort(), {
-      once: true,
-    });
-  }
+  // Run-level timeout: create a signal that fires after RUN_TIMEOUT_MS
+  const runTimeoutSignal = AbortSignal.timeout(RUN_TIMEOUT_MS);
+
+  // Combine all abort sources: user signal, run timeout, internal controller
+  const signals: AbortSignal[] = [abortController.signal, runTimeoutSignal];
+  if (signal) signals.push(signal);
+  const combinedSignal = AbortSignal.any(signals);
+
+  // When combined signal fires, propagate to internal controller
+  combinedSignal.addEventListener(
+    "abort",
+    () => {
+      if (!abortController.signal.aborted) abortController.abort();
+    },
+    { once: true },
+  );
 
   activeRun = {
     runId,
@@ -344,13 +362,24 @@ export async function runFull(
           phase,
           topic,
           run,
-          abortController.signal,
+          combinedSignal,
         );
 
         if (!result.success) {
-          if (abortController.signal.aborted || result.error === "Aborted") {
-            run.status = "interrupted";
-            run.error = "Run was aborted";
+          if (combinedSignal.aborted || result.error === "Aborted") {
+            // Distinguish run-level timeout from user abort
+            if (runTimeoutSignal.aborted && !signal?.aborted) {
+              run.status = "failed";
+              run.error = "Run-level timeout exceeded";
+              emitProgress({
+                type: "analysis_failed",
+                runId: run.runId,
+                error: "Run-level timeout exceeded",
+              });
+            } else {
+              run.status = "interrupted";
+              run.error = "Run was aborted";
+            }
           } else {
             run.status = "failed";
             run.error = result.error;
@@ -375,11 +404,13 @@ export async function runFull(
       // Drain any remaining queued edits
       drainEditQueue();
       run.activePhase = null;
+      // Clear runPromise so new runs can start
+      runPromise = null;
     }
   };
 
-  // Fire-and-forget — the caller monitors via getStatus/onProgress
-  executeAsync();
+  // Track the async execution so concurrent run guard works
+  runPromise = executeAsync();
 
   return { runId };
 }
@@ -415,7 +446,10 @@ export function getResult(runId: string): AnalysisResult {
 }
 
 export function isRunning(): boolean {
-  return activeRun !== null && activeRun.status === "running";
+  return (
+    (activeRun !== null && activeRun.status === "running") ||
+    runPromise !== null
+  );
 }
 
 export function abort(): void {
@@ -458,10 +492,16 @@ export function markOrphanedRunsFailed(): void {
 /** Reset all module state. Only for use in tests. */
 export function _resetForTest(): void {
   activeRun = null;
+  runPromise = null;
   progressListeners.clear();
 }
 
 /** Expose activeRun for test assertions. */
 export function _getActiveRun(): ActiveRun | null {
   return activeRun;
+}
+
+/** Expose runPromise for test assertions. */
+export function _getRunPromise(): Promise<void> | null {
+  return runPromise;
 }

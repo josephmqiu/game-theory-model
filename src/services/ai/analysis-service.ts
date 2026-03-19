@@ -32,6 +32,7 @@ export interface PhaseContext {
   priorEntities?: string;
   provider?: string;
   model?: string;
+  signal?: AbortSignal;
 }
 
 // ── Supported phase types ──
@@ -357,6 +358,16 @@ export async function runPhase(
     };
   }
 
+  // Check abort signal before starting work
+  if (context?.signal?.aborted) {
+    return {
+      success: false,
+      entities: [],
+      relationships: [],
+      error: "Aborted",
+    };
+  }
+
   const { system, user } = buildPrompt(phase, topic, context?.priorEntities);
   const model = context?.model ?? "claude-sonnet-4-20250514";
   const schema = buildOutputSchema(phase);
@@ -370,6 +381,16 @@ export async function runPhase(
       entities: [],
       relationships: [],
       error: `Failed to load adapter: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  // Check abort signal before adapter call
+  if (context?.signal?.aborted) {
+    return {
+      success: false,
+      entities: [],
+      relationships: [],
+      error: "Aborted",
     };
   }
 

@@ -6,14 +6,18 @@ import type { AnalysisEntity, AnalysisRelationship } from "@/types/entity";
 
 // ── Mock analysis-service ──
 
-const mockRunPhase =
-  vi.fn<
-    (
-      phase: MethodologyPhase,
-      topic: string,
-      context?: { priorEntities?: string; provider?: string; model?: string },
-    ) => Promise<PhaseResult>
-  >();
+const mockRunPhase = vi.fn<
+  (
+    phase: MethodologyPhase,
+    topic: string,
+    context?: {
+      priorEntities?: string;
+      provider?: string;
+      model?: string;
+      signal?: AbortSignal;
+    },
+  ) => Promise<PhaseResult>
+>();
 
 vi.mock("@/services/ai/analysis-service", () => ({
   runPhase: (...args: Parameters<typeof mockRunPhase>) => mockRunPhase(...args),
@@ -271,15 +275,51 @@ describe("analysis-orchestrator", () => {
   it("classifies transport errors as retryable", () => {
     expect(orchestrator.classifyFailure("ECONNRESET")).toBe("retryable");
     expect(orchestrator.classifyFailure("Network error")).toBe("retryable");
+    expect(orchestrator.classifyFailure("socket hang up")).toBe("retryable");
+    expect(orchestrator.classifyFailure("EPIPE: broken pipe")).toBe(
+      "retryable",
+    );
+  });
+
+  it("classifies empty-response errors as retryable", () => {
+    expect(orchestrator.classifyFailure("Empty response")).toBe("retryable");
+    expect(orchestrator.classifyFailure("empty output from model")).toBe(
+      "retryable",
+    );
+    expect(orchestrator.classifyFailure("no content returned")).toBe(
+      "retryable",
+    );
+  });
+
+  it("classifies parse/validation errors as retryable", () => {
     expect(orchestrator.classifyFailure("Invalid JSON in response")).toBe(
       "retryable",
     );
-    expect(orchestrator.classifyFailure("Empty response")).toBe("retryable");
+    expect(orchestrator.classifyFailure("Parse error")).toBe("retryable");
+    expect(orchestrator.classifyFailure("Syntax error at line 5")).toBe(
+      "retryable",
+    );
+    expect(orchestrator.classifyFailure("Zod validation failed")).toBe(
+      "retryable",
+    );
+    expect(orchestrator.classifyFailure("validation error")).toBe("retryable");
+  });
+
+  it("classifies unknown errors as terminal (not retryable)", () => {
+    expect(orchestrator.classifyFailure("Something went wrong")).toBe(
+      "terminal",
+    );
+    expect(orchestrator.classifyFailure("Internal server error")).toBe(
+      "terminal",
+    );
+    expect(orchestrator.classifyFailure("Rate limit exceeded")).toBe(
+      "terminal",
+    );
   });
 
   // ── 5. Clear-before-retry ──
 
-  it("calls removePhaseEntities before retry", async () => {
+  it("calls removePhaseEntities with phase AND runId before retry", async () => {
     mockRunPhase
       .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
       // Phase 2: fail twice (retryable), succeed on 3rd
@@ -295,9 +335,11 @@ describe("analysis-orchestrator", () => {
     const removePhaseEntityCalls =
       mockEntityGraph.removePhaseEntities.mock.calls;
     expect(removePhaseEntityCalls.length).toBe(2);
-    // Both calls for player-identification phase
+    // Both calls for player-identification phase WITH runId
     expect(removePhaseEntityCalls[0][0]).toBe("player-identification");
+    expect(removePhaseEntityCalls[0][1]).toBe(runId);
     expect(removePhaseEntityCalls[1][0]).toBe("player-identification");
+    expect(removePhaseEntityCalls[1][1]).toBe(runId);
 
     const status = orchestrator.getStatus(runId);
     expect(status.status).toBe("completed");
@@ -486,7 +528,7 @@ describe("analysis-orchestrator", () => {
 
   // ── 11. Run-level timeout ──
 
-  it("fails analysis after run-level timeout (15 minutes)", async () => {
+  it("fails analysis after run-level timeout, emits analysis_failed, and cancels in-flight work", async () => {
     // Phase 1 succeeds, phase 2 takes too long
     mockRunPhase
       .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
@@ -501,15 +543,64 @@ describe("analysis-orchestrator", () => {
           }),
       );
 
+    const events: AnalysisProgressEvent[] = [];
+    const unsubscribe = orchestrator.onProgress((event) => events.push(event));
+
     const { runId } = await orchestrator.runFull("Test topic");
 
     // Fast-forward past run-level timeout (15 min)
     await vi.advanceTimersByTimeAsync(16 * 60 * 1000);
     await flushAsync();
 
+    unsubscribe();
+
     const status = orchestrator.getStatus(runId);
-    // The run should be failed or interrupted due to timeout
-    expect(["failed", "interrupted"]).toContain(status.status);
+    // The run should be failed due to timeout
+    expect(status.status).toBe("failed");
+    expect(status.error).toContain("timeout");
+
+    // analysis_failed event should have been emitted
+    const failEvents = events.filter((e) => e.type === "analysis_failed");
+    expect(failEvents).toHaveLength(1);
+    expect(failEvents[0]).toMatchObject({
+      type: "analysis_failed",
+      runId,
+      error: expect.stringContaining("timeout"),
+    });
+
+    // In-flight work was cancelled — phase 2 did not complete
+    expect(status.phasesCompleted).toBe(1);
+  });
+
+  // ── 11b. Phase timeout (3 min) is terminal, not retried ──
+
+  it("treats phase timeout (3 min) as terminal — no retry", async () => {
+    // Phase 1 succeeds, phase 2 exceeds the 3-minute phase timeout
+    mockRunPhase
+      .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
+      .mockImplementation(
+        () =>
+          new Promise<PhaseResult>((resolve) => {
+            // Never resolves on its own — phase timeout (3 min) will fire
+            setTimeout(
+              () => resolve(makePhaseResult("player-identification")),
+              5 * 60 * 1000,
+            );
+          }),
+      );
+
+    const { runId } = await orchestrator.runFull("Test topic");
+
+    // Fast-forward past phase timeout (3 min) but not run timeout (15 min)
+    await vi.advanceTimersByTimeAsync(4 * 60 * 1000);
+    await flushAsync();
+
+    const status = orchestrator.getStatus(runId);
+    expect(status.status).toBe("failed");
+
+    // Phase timeout is terminal — should NOT have retried phase 2
+    // 1 (phase 1 success) + 1 (phase 2 timeout, no retry) = 2 calls
+    expect(mockRunPhase).toHaveBeenCalledTimes(2);
   });
 
   // ── 12. isRunning returns correct state ──
@@ -603,11 +694,12 @@ describe("analysis-orchestrator", () => {
       expect(status.status).toBe("failed");
       expect(status.error).toContain("interrupted");
 
-      expect(orchestrator.isRunning()).toBe(false);
-
-      // Clean up
+      // Resolve the pending phase so the async execution can unwind
       resolvePhase1(makePhaseResult("situational-grounding"));
       await flushAsync();
+
+      // After the execution settles, isRunning should be false
+      expect(orchestrator.isRunning()).toBe(false);
     });
 
     it("does nothing when no run is active", () => {
@@ -640,7 +732,7 @@ describe("analysis-orchestrator", () => {
   });
 
   describe("provider affinity", () => {
-    it("passes provider to each phase via context", async () => {
+    it("passes the SAME provider+model to every runPhase call in a run", async () => {
       mockRunPhase
         .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
         .mockResolvedValueOnce(makePhaseResult("player-identification"))
@@ -649,6 +741,10 @@ describe("analysis-orchestrator", () => {
       await orchestrator.runFull("Test topic", "openai", "gpt-4o");
       await flushAsync();
 
+      // All 3 phases must have been called
+      expect(mockRunPhase).toHaveBeenCalledTimes(3);
+
+      // Every call gets the same provider+model
       for (const call of mockRunPhase.mock.calls) {
         const context = call[2] as
           | { provider?: string; model?: string }
