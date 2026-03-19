@@ -28,8 +28,11 @@ export default function EditorLayout() {
 
   const [phaseFilter, setPhaseFilter] = useState<MethodologyPhase | null>(null);
   const [searchHighlight, setSearchHighlight] = useState<string[]>([]);
-  const [selectedEntity, setSelectedEntity] = useState<AnalysisEntity | null>(
-    null,
+  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+  const selectedEntity = useEntityGraphStore((state) =>
+    selectedEntityId
+      ? (state.analysis.entities.find((e) => e.id === selectedEntityId) ?? null)
+      : null,
   );
   const [overlayPosition, setOverlayPosition] = useState({ x: 0, y: 0 });
   const [chatCollapsed, setChatCollapsed] = useState(false);
@@ -37,7 +40,7 @@ export default function EditorLayout() {
   const clearEditorChrome = useCallback(() => {
     setPhaseFilter(null);
     setSearchHighlight([]);
-    setSelectedEntity(null);
+    setSelectedEntityId(null);
   }, []);
 
   const handleOpenAnalysis = useCallback(
@@ -168,7 +171,7 @@ export default function EditorLayout() {
   }, []);
 
   const handleEntitySelect = useCallback((entity: AnalysisEntity | null) => {
-    setSelectedEntity(entity);
+    setSelectedEntityId(entity?.id ?? null);
     if (!entity) {
       return;
     }
@@ -223,7 +226,7 @@ export default function EditorLayout() {
                 screenPosition={overlayPosition}
                 onEdit={() => {}}
                 onChallenge={() => {}}
-                onClose={() => setSelectedEntity(null)}
+                onClose={() => setSelectedEntityId(null)}
               />
             )}
           </div>

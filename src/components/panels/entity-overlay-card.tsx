@@ -493,12 +493,12 @@ export default function EntityOverlayCard({
   const [editData, setEditData] = useState<EntityData>(entity.data);
   const [editRationale, setEditRationale] = useState(entity.rationale);
 
-  // Reset edit state when the entity prop changes
+  // Reset edit state when the entity prop changes (id or data)
   useEffect(() => {
     setEditData(entity.data);
     setEditRationale(entity.rationale);
     setEditing(false);
-  }, [entity.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [entity.id, entity.data, entity.rationale]);
 
   // Dismiss on Escape (cancel edit if editing, otherwise close)
   useEffect(() => {

@@ -124,7 +124,10 @@ export default defineEventHandler(async (event) => {
         // Wait for completion, abort, or timeout
         await analysisPromise;
 
-        // Send final snapshot of the full entity graph
+        // Wait for edit queue to drain (orchestrator drains in finally block after emitting events)
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // Now send snapshot with queued edits applied
         emit({
           channel: "snapshot",
           analysis: entityGraphService.getAnalysis(),

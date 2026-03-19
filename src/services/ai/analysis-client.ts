@@ -137,7 +137,15 @@ export async function updateEntity(
     body: JSON.stringify({ action: "update", id, updates }),
   });
   if (!res.ok) return;
-  // Re-fetch full state to sync
+  const result = await res.json();
+  if (result.queued) {
+    // Optimistic local update — will be reconciled by final snapshot
+    const store = useEntityGraphStore.getState();
+    store.updateEntity(id, updates);
+    return;
+  }
+  if (result.error) return;
+  // Normal path: re-fetch full state to sync
   const stateRes = await fetch("/api/ai/entity", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

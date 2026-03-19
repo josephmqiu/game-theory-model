@@ -1,4 +1,5 @@
 import { defineEventHandler, readBody, setResponseStatus } from "h3";
+import type { H3Event } from "h3";
 import * as entityGraphService from "../../../src/services/ai/entity-graph-service";
 import * as analysisOrchestrator from "../../../src/services/ai/analysis-orchestrator";
 
@@ -20,15 +21,19 @@ export default defineEventHandler(async (event) => {
     return { queued: true };
   }
 
-  return executeAction(body);
+  return executeAction(body, event);
 });
 
-function executeAction(body: any) {
+function executeAction(body: any, event?: H3Event) {
   switch (body.action) {
     case "update": {
       const updated = entityGraphService.updateEntity(body.id, body.updates, {
         source: "user-edited",
       });
+      if (updated === null) {
+        if (event) setResponseStatus(event, 404);
+        return { error: "Entity not found" };
+      }
       return { updated, staleMarked: entityGraphService.getStaleEntityIds() };
     }
     case "get":
@@ -37,6 +42,7 @@ function executeAction(body: any) {
       entityGraphService.newAnalysis(body.topic || "");
       return { analysis: entityGraphService.getAnalysis() };
     default:
+      if (event) setResponseStatus(event, 400);
       return { error: `Unknown action: ${body.action}` };
   }
 }
