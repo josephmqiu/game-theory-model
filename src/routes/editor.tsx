@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import EditorLayout from "@/components/editor/editor-layout";
-import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 
 export const Route = createFileRoute("/editor")({
   component: EditorPage,
@@ -11,7 +10,5 @@ export const Route = createFileRoute("/editor")({
 });
 
 function EditorPage() {
-  useKeyboardShortcuts();
-
   return <EditorLayout />;
 }

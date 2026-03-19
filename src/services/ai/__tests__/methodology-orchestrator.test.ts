@@ -1,9 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { V1_PHASES } from "@/types/methodology";
+import { createRunLogger } from "@/services/ai/ai-logger";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import type { OrchestratorCallbacks } from "@/services/ai/methodology-orchestrator";
-
-// ── Mock AI service ──
 
 vi.mock("@/services/ai/ai-service", () => ({
   generateCompletion: vi.fn(),
@@ -11,19 +9,17 @@ vi.mock("@/services/ai/ai-service", () => ({
 
 vi.mock("@/stores/ai-store", () => ({
   useAIStore: {
-    getState: () => ({ model: "claude-sonnet-4-5-20250514" }),
+    getState: () => ({ model: "claude-sonnet-4-5-20250514", modelGroups: [] }),
   },
 }));
 
 import { generateCompletion } from "@/services/ai/ai-service";
 import {
-  runMethodologyAnalysis,
   revalidateStaleEntities,
+  runMethodologyAnalysis,
 } from "@/services/ai/methodology-orchestrator";
 
-const mockGenerateCompletion = generateCompletion as ReturnType<typeof vi.fn>;
-
-// ── Fixtures ──
+const mockGenerateCompletion = vi.mocked(generateCompletion);
 
 const PHASE_1_RESPONSE = JSON.stringify({
   entities: [
@@ -125,8 +121,6 @@ const EMPTY_PHASE_RESPONSE = JSON.stringify({
   relationships: [],
 });
 
-// ── Helpers ──
-
 function createCallbacks(
   overrides: Partial<OrchestratorCallbacks> = {},
 ): OrchestratorCallbacks {
@@ -134,20 +128,14 @@ function createCallbacks(
     onPhaseStart: vi.fn(),
     onPhaseComplete: vi.fn(),
     onPhaseFailed: vi.fn(),
-    onComplete: vi.fn(),
     ...overrides,
   };
 }
 
-function createOrchestratorCallbacks(
-  overrides: Partial<OrchestratorCallbacks> = {},
-): OrchestratorCallbacks {
+function createRunContext(runId = "test-run") {
   return {
-    onPhaseStart: vi.fn(),
-    onPhaseComplete: vi.fn(),
-    onPhaseFailed: vi.fn(),
-    onComplete: vi.fn(),
-    ...overrides,
+    runId,
+    logger: createRunLogger(runId),
   };
 }
 
@@ -156,8 +144,6 @@ function makeAbortSignal(): { signal: AbortSignal; abort: () => void } {
   return { signal: controller.signal, abort: () => controller.abort() };
 }
 
-// ── Tests ──
-
 describe("methodology orchestrator", () => {
   beforeEach(() => {
     useEntityGraphStore.setState(useEntityGraphStore.getInitialState(), true);
@@ -165,313 +151,284 @@ describe("methodology orchestrator", () => {
     mockGenerateCompletion.mockReset();
   });
 
-  describe("happy path", () => {
-    it("runs all 3 phases in order with correct callbacks", async () => {
-      mockGenerateCompletion
-        .mockResolvedValueOnce(PHASE_1_RESPONSE)
-        .mockResolvedValueOnce(PHASE_2_RESPONSE)
-        .mockResolvedValueOnce(PHASE_3_RESPONSE);
+  it("returns success after running all 3 phases in order", async () => {
+    mockGenerateCompletion
+      .mockResolvedValueOnce(PHASE_1_RESPONSE)
+      .mockResolvedValueOnce(PHASE_2_RESPONSE)
+      .mockResolvedValueOnce(PHASE_3_RESPONSE);
 
-      const callbacks = createCallbacks();
-      const { signal } = makeAbortSignal();
+    const callbacks = createCallbacks();
+    const { signal } = makeAbortSignal();
 
-      await runMethodologyAnalysis({
-        topic: "US-China trade war",
-        signal,
-        callbacks,
-      });
-
-      // All 3 phases started
-      expect(callbacks.onPhaseStart).toHaveBeenCalledTimes(3);
-      expect(callbacks.onPhaseStart).toHaveBeenNthCalledWith(
-        1,
-        "situational-grounding",
-      );
-      expect(callbacks.onPhaseStart).toHaveBeenNthCalledWith(
-        2,
-        "player-identification",
-      );
-      expect(callbacks.onPhaseStart).toHaveBeenNthCalledWith(
-        3,
-        "baseline-model",
-      );
-
-      // All 3 phases completed with entity counts
-      expect(callbacks.onPhaseComplete).toHaveBeenCalledTimes(3);
-      expect(callbacks.onPhaseComplete).toHaveBeenNthCalledWith(
-        1,
-        "situational-grounding",
-        1,
-      );
-      expect(callbacks.onPhaseComplete).toHaveBeenNthCalledWith(
-        2,
-        "player-identification",
-        2,
-      );
-      expect(callbacks.onPhaseComplete).toHaveBeenNthCalledWith(
-        3,
-        "baseline-model",
-        1,
-      );
-
-      // No failures
-      expect(callbacks.onPhaseFailed).not.toHaveBeenCalled();
-
-      // Final onComplete
-      expect(callbacks.onComplete).toHaveBeenCalledTimes(1);
-
-      // Entities in store
-      const { analysis } = useEntityGraphStore.getState();
-      expect(analysis.entities).toHaveLength(4); // 1 + 2 + 1
-
-      // Phase statuses all complete
-      for (const phase of V1_PHASES) {
-        const ps = analysis.phases.find((p) => p.phase === phase);
-        expect(ps?.status).toBe("complete");
-      }
+    const result = await runMethodologyAnalysis({
+      topic: "US-China trade war",
+      signal,
+      callbacks,
+      run: createRunContext(),
     });
+
+    expect(result).toEqual({
+      status: "success",
+      phasesCompleted: 3,
+      totalEntities: 4,
+      runId: "test-run",
+    });
+    expect(callbacks.onPhaseStart).toHaveBeenNthCalledWith(
+      1,
+      "situational-grounding",
+    );
+    expect(callbacks.onPhaseStart).toHaveBeenNthCalledWith(
+      2,
+      "player-identification",
+    );
+    expect(callbacks.onPhaseStart).toHaveBeenNthCalledWith(
+      3,
+      "baseline-model",
+    );
+    expect(callbacks.onPhaseComplete).toHaveBeenNthCalledWith(
+      1,
+      "situational-grounding",
+      1,
+    );
+    expect(callbacks.onPhaseComplete).toHaveBeenNthCalledWith(
+      2,
+      "player-identification",
+      2,
+    );
+    expect(callbacks.onPhaseComplete).toHaveBeenNthCalledWith(
+      3,
+      "baseline-model",
+      1,
+    );
+    expect(callbacks.onPhaseFailed).not.toHaveBeenCalled();
+
+    const { analysis } = useEntityGraphStore.getState();
+    expect(analysis.entities).toHaveLength(4);
+    expect(
+      analysis.phases
+        .filter((phase) => phase.status === "complete")
+        .map((phase) => phase.phase),
+    ).toEqual([
+      "situational-grounding",
+      "player-identification",
+      "baseline-model",
+    ]);
   });
 
-  describe("phase failure with retries", () => {
-    it("retries a failed phase up to 2 times then reports failed", async () => {
-      mockGenerateCompletion
-        .mockResolvedValueOnce(PHASE_1_RESPONSE) // Phase 1 succeeds
-        .mockRejectedValueOnce(new Error("Network error")) // Phase 2 attempt 1
-        .mockRejectedValueOnce(new Error("Network error")) // Phase 2 attempt 2
-        .mockRejectedValueOnce(new Error("Network error")); // Phase 2 attempt 3
+  it("returns failed after exhausting retries on a provider error", async () => {
+    mockGenerateCompletion
+      .mockResolvedValueOnce(PHASE_1_RESPONSE)
+      .mockRejectedValueOnce(new Error("Network error"))
+      .mockRejectedValueOnce(new Error("Network error"))
+      .mockRejectedValueOnce(new Error("Network error"));
 
-      const callbacks = createCallbacks();
-      const { signal } = makeAbortSignal();
+    const callbacks = createCallbacks();
+    const { signal } = makeAbortSignal();
 
-      await runMethodologyAnalysis({
-        topic: "Trade war",
-        signal,
-        callbacks,
-      });
-
-      // Phase 1 started + completed
-      expect(callbacks.onPhaseStart).toHaveBeenCalledWith(
-        "situational-grounding",
-      );
-      expect(callbacks.onPhaseComplete).toHaveBeenCalledWith(
-        "situational-grounding",
-        1,
-      );
-
-      // Phase 2 started but failed
-      expect(callbacks.onPhaseStart).toHaveBeenCalledWith(
-        "player-identification",
-      );
-      expect(callbacks.onPhaseFailed).toHaveBeenCalledWith(
-        "player-identification",
-        expect.stringContaining("Network error"),
-      );
-
-      // Phase 3 should not run after Phase 2 failure
-      expect(callbacks.onPhaseStart).not.toHaveBeenCalledWith("baseline-model");
-
-      // generateCompletion called 4 times: 1 (phase 1) + 3 (phase 2 retries)
-      expect(mockGenerateCompletion).toHaveBeenCalledTimes(4);
-
-      // Phase 2 status is failed in the store
-      const { analysis } = useEntityGraphStore.getState();
-      const p2 = analysis.phases.find(
-        (p) => p.phase === "player-identification",
-      );
-      expect(p2?.status).toBe("failed");
+    const result = await runMethodologyAnalysis({
+      topic: "Trade war",
+      signal,
+      callbacks,
+      run: createRunContext(),
     });
 
-    it("retries on parse failure then succeeds", async () => {
-      mockGenerateCompletion
-        .mockResolvedValueOnce(PHASE_1_RESPONSE) // Phase 1 succeeds
-        .mockResolvedValueOnce("not valid json") // Phase 2 attempt 1 (parse fail)
-        .mockResolvedValueOnce(PHASE_2_RESPONSE) // Phase 2 attempt 2 (succeeds)
-        .mockResolvedValueOnce(PHASE_3_RESPONSE); // Phase 3 succeeds
-
-      const callbacks = createCallbacks();
-      const { signal } = makeAbortSignal();
-
-      await runMethodologyAnalysis({
-        topic: "Trade war",
-        signal,
-        callbacks,
-      });
-
-      // All phases complete, no failures
-      expect(callbacks.onPhaseComplete).toHaveBeenCalledTimes(3);
-      expect(callbacks.onPhaseFailed).not.toHaveBeenCalled();
-
-      // 4 calls: 1 (phase 1) + 2 (phase 2 retry) + 1 (phase 3)
-      expect(mockGenerateCompletion).toHaveBeenCalledTimes(4);
+    expect(result).toEqual({
+      status: "failed",
+      phasesCompleted: 1,
+      totalEntities: 1,
+      runId: "test-run",
+      failedPhase: "player-identification",
+      failureKind: "provider-error",
     });
+    expect(callbacks.onPhaseFailed).toHaveBeenCalledWith(
+      "player-identification",
+      expect.stringContaining("Network error"),
+    );
+    expect(mockGenerateCompletion).toHaveBeenCalledTimes(4);
+    expect(
+      useEntityGraphStore
+        .getState()
+        .analysis.phases.find((phase) => phase.phase === "player-identification")
+        ?.status,
+    ).toBe("failed");
   });
 
-  describe("abort signal", () => {
-    it("stops cleanly when aborted before Phase 2", async () => {
-      const { signal, abort } = makeAbortSignal();
+  it("retries a parse failure and still returns success", async () => {
+    mockGenerateCompletion
+      .mockResolvedValueOnce(PHASE_1_RESPONSE)
+      .mockResolvedValueOnce("not valid json")
+      .mockResolvedValueOnce(PHASE_2_RESPONSE)
+      .mockResolvedValueOnce(PHASE_3_RESPONSE);
 
-      mockGenerateCompletion.mockImplementation(async () => {
-        // Abort after Phase 1 completes
+    const callbacks = createCallbacks();
+    const { signal } = makeAbortSignal();
+
+    const result = await runMethodologyAnalysis({
+      topic: "Trade war",
+      signal,
+      callbacks,
+      run: createRunContext(),
+    });
+
+    expect(result.status).toBe("success");
+    expect(callbacks.onPhaseComplete).toHaveBeenCalledTimes(3);
+    expect(callbacks.onPhaseFailed).not.toHaveBeenCalled();
+    expect(mockGenerateCompletion).toHaveBeenCalledTimes(4);
+  });
+
+  it("classifies timeout failures deterministically", async () => {
+    mockGenerateCompletion
+      .mockResolvedValueOnce(PHASE_1_RESPONSE)
+      .mockRejectedValueOnce(new Error("Request timed out after 30s"))
+      .mockRejectedValueOnce(new Error("Request timed out after 30s"))
+      .mockRejectedValueOnce(new Error("Request timed out after 30s"));
+
+    const callbacks = createCallbacks();
+    const { signal } = makeAbortSignal();
+
+    const result = await runMethodologyAnalysis({
+      topic: "Trade war",
+      signal,
+      callbacks,
+      run: createRunContext(),
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.failureKind).toBe("timeout");
+  });
+
+  it("returns aborted when the signal is aborted before the next phase begins", async () => {
+    const { signal, abort } = makeAbortSignal();
+
+    mockGenerateCompletion.mockImplementationOnce(async () => {
+      abort();
+      return PHASE_1_RESPONSE;
+    });
+
+    const callbacks = createCallbacks();
+
+    const result = await runMethodologyAnalysis({
+      topic: "Trade war",
+      signal,
+      callbacks,
+      run: createRunContext(),
+    });
+
+    expect(result).toEqual({
+      status: "aborted",
+      phasesCompleted: 1,
+      totalEntities: 1,
+      runId: "test-run",
+    });
+    expect(callbacks.onPhaseStart).toHaveBeenCalled();
+    expect(callbacks.onPhaseComplete).toHaveBeenCalledTimes(1);
+    expect(callbacks.onPhaseFailed).not.toHaveBeenCalled();
+    expect(mockGenerateCompletion).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns aborted when the active phase aborts mid-attempt", async () => {
+    const { signal, abort } = makeAbortSignal();
+
+    mockGenerateCompletion
+      .mockResolvedValueOnce(PHASE_1_RESPONSE)
+      .mockImplementationOnce(async () => {
         abort();
-        return PHASE_1_RESPONSE;
+        throw new DOMException("The operation was aborted.", "AbortError");
       });
 
-      const callbacks = createCallbacks();
+    const callbacks = createCallbacks();
 
-      await runMethodologyAnalysis({
-        topic: "Trade war",
-        signal,
-        callbacks,
-      });
-
-      // Phase 1 started and completed
-      expect(callbacks.onPhaseStart).toHaveBeenCalledWith(
-        "situational-grounding",
-      );
-      expect(callbacks.onPhaseComplete).toHaveBeenCalledWith(
-        "situational-grounding",
-        1,
-      );
-
-      // Phase 2 never started
-      expect(callbacks.onPhaseStart).not.toHaveBeenCalledWith(
-        "player-identification",
-      );
-
-      // onComplete still fires (clean stop)
-      expect(callbacks.onComplete).toHaveBeenCalledTimes(1);
-
-      // Only 1 AI call made
-      expect(mockGenerateCompletion).toHaveBeenCalledTimes(1);
+    const result = await runMethodologyAnalysis({
+      topic: "Trade war",
+      signal,
+      callbacks,
+      run: createRunContext(),
     });
 
-    it("stops when aborted mid-phase", async () => {
-      const { signal, abort } = makeAbortSignal();
-
-      mockGenerateCompletion
-        .mockResolvedValueOnce(PHASE_1_RESPONSE)
-        .mockImplementation(async () => {
-          abort();
-          throw new DOMException("The operation was aborted.", "AbortError");
-        });
-
-      const callbacks = createCallbacks();
-
-      await runMethodologyAnalysis({
-        topic: "Trade war",
-        signal,
-        callbacks,
-      });
-
-      // Phase 1 completed, Phase 2 started but aborted
-      expect(callbacks.onPhaseStart).toHaveBeenCalledTimes(2);
-      expect(callbacks.onPhaseComplete).toHaveBeenCalledTimes(1);
-
-      // No failure callback for aborted phases
-      expect(callbacks.onPhaseFailed).not.toHaveBeenCalled();
-
-      // onComplete fires on clean abort
-      expect(callbacks.onComplete).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      status: "aborted",
+      phasesCompleted: 1,
+      totalEntities: 1,
+      runId: "test-run",
     });
+    expect(callbacks.onPhaseStart).toHaveBeenCalled();
+    expect(callbacks.onPhaseComplete).toHaveBeenCalledTimes(1);
+    expect(callbacks.onPhaseFailed).not.toHaveBeenCalled();
   });
 
-  describe("prior context passing", () => {
-    it("Phase 2 receives Phase 1 entities as prior context", async () => {
-      mockGenerateCompletion
-        .mockResolvedValueOnce(PHASE_1_RESPONSE)
-        .mockResolvedValueOnce(PHASE_2_RESPONSE)
-        .mockResolvedValueOnce(PHASE_3_RESPONSE);
+  it("passes prior phase output into later prompts", async () => {
+    mockGenerateCompletion
+      .mockResolvedValueOnce(PHASE_1_RESPONSE)
+      .mockResolvedValueOnce(PHASE_2_RESPONSE)
+      .mockResolvedValueOnce(PHASE_3_RESPONSE);
 
-      const callbacks = createCallbacks();
-      const { signal } = makeAbortSignal();
+    const { signal } = makeAbortSignal();
 
-      await runMethodologyAnalysis({
-        topic: "Trade war",
-        signal,
-        callbacks,
-      });
-
-      // Phase 1 call: no prior context in user message
-      const phase1UserMsg = mockGenerateCompletion.mock.calls[0][1] as string;
-      expect(phase1UserMsg).not.toContain("Prior phase output");
-
-      // Phase 2 call: should contain Phase 1 entities as context
-      const phase2UserMsg = mockGenerateCompletion.mock.calls[1][1] as string;
-      expect(phase2UserMsg).toContain("Prior phase output");
-      expect(phase2UserMsg).toContain("fact-1");
-
-      // Phase 3 call: should contain Phase 1 + Phase 2 entities
-      const phase3UserMsg = mockGenerateCompletion.mock.calls[2][1] as string;
-      expect(phase3UserMsg).toContain("Prior phase output");
-      expect(phase3UserMsg).toContain("player-a");
+    await runMethodologyAnalysis({
+      topic: "Trade war",
+      signal,
+      callbacks: createCallbacks(),
+      run: createRunContext(),
     });
+
+    const phase1UserMessage = mockGenerateCompletion.mock.calls[0][1];
+    const phase2UserMessage = mockGenerateCompletion.mock.calls[1][1];
+    const phase3UserMessage = mockGenerateCompletion.mock.calls[2][1];
+
+    expect(phase1UserMessage).not.toContain("Prior phase output");
+    expect(phase2UserMessage).toContain("Prior phase output");
+    expect(phase2UserMessage).toContain("fact-1");
+    expect(phase3UserMessage).toContain("Prior phase output");
+    expect(phase3UserMessage).toContain("player-a");
   });
 
-  describe("empty phase output", () => {
-    it("marks phase complete even with 0 entities", async () => {
-      mockGenerateCompletion
-        .mockResolvedValueOnce(EMPTY_PHASE_RESPONSE) // Phase 1: 0 entities
-        .mockResolvedValueOnce(PHASE_2_RESPONSE)
-        .mockResolvedValueOnce(PHASE_3_RESPONSE);
+  it("marks a phase complete even when it returns zero entities", async () => {
+    mockGenerateCompletion
+      .mockResolvedValueOnce(EMPTY_PHASE_RESPONSE)
+      .mockResolvedValueOnce(PHASE_2_RESPONSE)
+      .mockResolvedValueOnce(PHASE_3_RESPONSE);
 
-      const callbacks = createCallbacks();
-      const { signal } = makeAbortSignal();
+    const callbacks = createCallbacks();
+    const { signal } = makeAbortSignal();
 
-      await runMethodologyAnalysis({
-        topic: "Trade war",
-        signal,
-        callbacks,
-      });
-
-      // Phase 1 completed with 0 entities
-      expect(callbacks.onPhaseComplete).toHaveBeenCalledWith(
-        "situational-grounding",
-        0,
-      );
-
-      // All 3 phases complete
-      expect(callbacks.onPhaseComplete).toHaveBeenCalledTimes(3);
-      expect(callbacks.onPhaseFailed).not.toHaveBeenCalled();
-
-      // Store has correct phase status
-      const { analysis } = useEntityGraphStore.getState();
-      const p1 = analysis.phases.find(
-        (p) => p.phase === "situational-grounding",
-      );
-      expect(p1?.status).toBe("complete");
+    const result = await runMethodologyAnalysis({
+      topic: "Trade war",
+      signal,
+      callbacks,
+      run: createRunContext(),
     });
+
+    expect(result.status).toBe("success");
+    expect(callbacks.onPhaseComplete).toHaveBeenCalledWith(
+      "situational-grounding",
+      0,
+    );
+    expect(
+      useEntityGraphStore
+        .getState()
+        .analysis.phases.find((phase) => phase.phase === "situational-grounding")
+        ?.status,
+    ).toBe("complete");
   });
 
   describe("revalidation", () => {
-    it("re-runs Phase 3 when baseline-model entities are stale, then clears stale", async () => {
-      // First, run a full analysis so all phases are complete
+    it("re-runs stale downstream phases and clears stale markers", async () => {
       mockGenerateCompletion
         .mockResolvedValueOnce(PHASE_1_RESPONSE)
         .mockResolvedValueOnce(PHASE_2_RESPONSE)
         .mockResolvedValueOnce(PHASE_3_RESPONSE);
 
-      const runCallbacks = createCallbacks();
-      const { signal: runSignal } = makeAbortSignal();
-
       await runMethodologyAnalysis({
         topic: "Trade war",
-        signal: runSignal,
-        callbacks: runCallbacks,
+        signal: makeAbortSignal().signal,
+        callbacks: createCallbacks(),
+        run: createRunContext(),
       });
 
-      // Verify game-1 entity exists
       const store = useEntityGraphStore.getState();
-      expect(
-        store.analysis.entities.find((e) => e.id === "game-1"),
-      ).toBeTruthy();
-
-      // Mark the Phase 3 entity as stale (simulating downstream of a human edit)
       store.markStale(["game-1"]);
-      expect(useEntityGraphStore.getState().getStaleEntityIds()).toEqual([
-        "game-1",
-      ]);
+      expect(store.getStaleEntityIds()).toEqual(["game-1"]);
 
-      // Set up new AI response for Phase 3 re-run
       const REVALIDATED_PHASE_3 = JSON.stringify({
         entities: [
           {
@@ -499,49 +456,56 @@ describe("methodology orchestrator", () => {
       mockGenerateCompletion.mockReset();
       mockGenerateCompletion.mockResolvedValueOnce(REVALIDATED_PHASE_3);
 
-      // Run revalidation
-      const revalCallbacks = createOrchestratorCallbacks();
-      const { signal: revalSignal } = makeAbortSignal();
+      const callbacks = createCallbacks();
 
-      await revalidateStaleEntities(revalSignal, revalCallbacks);
+      const result = await revalidateStaleEntities({
+        signal: makeAbortSignal().signal,
+        callbacks,
+        run: createRunContext("revalidation-run"),
+      });
 
-      // Phase 3 was re-run
-      expect(revalCallbacks.onPhaseStart).toHaveBeenCalledWith(
-        "baseline-model",
-      );
-      expect(revalCallbacks.onPhaseComplete).toHaveBeenCalledWith(
+      expect(result).toEqual({
+        status: "success",
+        phasesCompleted: 1,
+        totalEntities: 4,
+        runId: "revalidation-run",
+      });
+      expect(callbacks.onPhaseStart).toHaveBeenCalledWith("baseline-model");
+      expect(callbacks.onPhaseComplete).toHaveBeenCalledWith(
         "baseline-model",
         1,
       );
-      expect(revalCallbacks.onPhaseFailed).not.toHaveBeenCalled();
-      expect(revalCallbacks.onComplete).toHaveBeenCalledTimes(1);
-
-      // Only Phase 3 was re-run (not Phases 1 or 2)
-      expect(revalCallbacks.onPhaseStart).toHaveBeenCalledTimes(1);
+      expect(callbacks.onPhaseFailed).not.toHaveBeenCalled();
       expect(mockGenerateCompletion).toHaveBeenCalledTimes(1);
 
-      // Old entity removed, new entity present
       const finalStore = useEntityGraphStore.getState();
       expect(
-        finalStore.analysis.entities.find((e) => e.id === "game-1"),
+        finalStore.analysis.entities.find((entity) => entity.id === "game-1"),
       ).toBeFalsy();
       expect(
-        finalStore.analysis.entities.find((e) => e.id === "game-1-rev2"),
+        finalStore.analysis.entities.find(
+          (entity) => entity.id === "game-1-rev2",
+        ),
       ).toBeTruthy();
-
-      // Stale flag cleared
       expect(finalStore.getStaleEntityIds()).toEqual([]);
     });
 
-    it("does nothing when no entities are stale", async () => {
-      const revalCallbacks = createOrchestratorCallbacks();
-      const { signal } = makeAbortSignal();
+    it("returns success immediately when nothing is stale", async () => {
+      const callbacks = createCallbacks();
 
-      await revalidateStaleEntities(signal, revalCallbacks);
+      const result = await revalidateStaleEntities({
+        signal: makeAbortSignal().signal,
+        callbacks,
+        run: createRunContext("revalidation-run"),
+      });
 
-      // Only onComplete fires, no phases re-run
-      expect(revalCallbacks.onComplete).toHaveBeenCalledTimes(1);
-      expect(revalCallbacks.onPhaseStart).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        status: "success",
+        phasesCompleted: 0,
+        totalEntities: 0,
+        runId: "revalidation-run",
+      });
+      expect(callbacks.onPhaseStart).not.toHaveBeenCalled();
       expect(mockGenerateCompletion).not.toHaveBeenCalled();
     });
   });

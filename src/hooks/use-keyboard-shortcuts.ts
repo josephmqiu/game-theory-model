@@ -1,25 +1,22 @@
 import { useEffect } from "react";
-import { useEntityGraphStore } from "@/stores/entity-graph-store";
-import {
-  saveAnalysis,
-  openAnalysis,
-} from "@/services/analysis/analysis-persistence";
+import { saveAnalysis } from "@/services/analysis/analysis-persistence";
 
-export function useKeyboardShortcuts() {
+interface KeyboardShortcutOptions {
+  onNewAnalysis: () => void | Promise<void>;
+  onOpenAnalysis: () => void | Promise<void>;
+}
+
+export function useKeyboardShortcuts({
+  onNewAnalysis,
+  onOpenAnalysis,
+}: KeyboardShortcutOptions) {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const isMod = event.metaKey || event.ctrlKey;
 
       if (isMod && event.key.toLowerCase() === "n") {
         event.preventDefault();
-        const state = useEntityGraphStore.getState();
-        if (state.isDirty) {
-          const confirmed = window.confirm(
-            "You have unsaved analysis changes. Discard them and start a new analysis?",
-          );
-          if (!confirmed) return;
-        }
-        useEntityGraphStore.getState().newAnalysis("");
+        void onNewAnalysis();
         return;
       }
 
@@ -31,12 +28,12 @@ export function useKeyboardShortcuts() {
 
       if (isMod && event.key.toLowerCase() === "o") {
         event.preventDefault();
-        void openAnalysis();
+        void onOpenAnalysis();
         return;
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [onNewAnalysis, onOpenAnalysis]);
 }

@@ -15,6 +15,10 @@ import {
   PHASE_LABELS,
   PHASE_NUMBERS,
 } from "@/types/methodology";
+import {
+  getPhaseFailureLabel,
+  type PhaseFailureState,
+} from "@/components/panels/phase-failures";
 
 // ── Props ──
 
@@ -23,6 +27,7 @@ export interface PhaseSidebarProps {
   onRerunPhase: (phase: MethodologyPhase) => void;
   onSearch: (query: string) => void;
   activeFilter: MethodologyPhase | null;
+  phaseFailures?: PhaseFailureState;
 }
 
 // ── Helpers ──
@@ -40,6 +45,7 @@ export function PhaseSidebar({
   onRerunPhase,
   onSearch,
   activeFilter,
+  phaseFailures = {},
 }: PhaseSidebarProps) {
   const phases = useEntityGraphStore((s) => s.analysis.phases);
   const entities = useEntityGraphStore((s) => s.analysis.entities);
@@ -79,6 +85,11 @@ export function PhaseSidebar({
             const isActive = activeFilter === phase;
             const isHovered = hoveredPhase === phase;
             const isRunning = status === "running";
+            const failure =
+              status === "failed" ? phaseFailures[phase] : undefined;
+            const failureLabel = failure
+              ? getPhaseFailureLabel(failure.failureKind)
+              : null;
 
             if (v1) {
               return (
@@ -124,7 +135,24 @@ export function PhaseSidebar({
                     </span>
 
                     {/* Status dot */}
-                    <StatusDot status={status} />
+                    {failureLabel ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span
+                            tabIndex={0}
+                            aria-label={`Phase ${PHASE_NUMBERS[phase]} failed: ${failureLabel}`}
+                            className="shrink-0"
+                          >
+                            <StatusDot status={status} />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="right">
+                          {failureLabel}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <StatusDot status={status} />
+                    )}
 
                     {/* Entity count badge */}
                     {entityCount > 0 && (

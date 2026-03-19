@@ -1,4 +1,4 @@
-import { defineEventHandler, readBody, setResponseHeaders } from 'h3'
+import { defineEventHandler, getRequestHeader, readBody, setResponseHeaders } from 'h3'
 import { resolveClaudeCli } from '../../utils/resolve-claude-cli'
 import { runCodexExec } from '../../utils/codex-client'
 import {
@@ -6,6 +6,7 @@ import {
   getClaudeAgentDebugFilePath,
 } from '../../utils/resolve-claude-agent-env'
 import { formatOpenCodeError } from './chat'
+import { serverError, serverLog, serverWarn } from '../../utils/ai-logger'
 
 interface GenerateBody {
   system: string
@@ -23,35 +24,70 @@ interface GenerateBody {
  * Requires explicit provider and model; no fallback routing.
  */
 export default defineEventHandler(async (event) => {
-  const body = await readBody<GenerateBody>(event)
+  const runId = getRequestHeader(event, 'x-run-id')?.trim() || undefined
+  const startedAt = Date.now()
+  let body: GenerateBody | null = null
+  let bodyError: string | undefined
 
-  if (!body?.message || !body?.system) {
-    setResponseHeaders(event, { 'Content-Type': 'application/json' })
-    return { error: 'Missing required fields: system, message' }
-  }
-  if (!body.provider) {
-    setResponseHeaders(event, { 'Content-Type': 'application/json' })
-    return { error: 'Missing provider. Provider fallback is disabled.' }
-  }
-  if (!body.model?.trim()) {
-    setResponseHeaders(event, { 'Content-Type': 'application/json' })
-    return { error: 'Missing model. Model fallback is disabled.' }
+  try {
+    body = (await readBody<GenerateBody>(event)) ?? null
+  } catch (error) {
+    bodyError = error instanceof Error ? error.message : 'Failed to read request body.'
   }
 
-  if (body.provider === 'anthropic') {
-    return generateViaAgentSDK(body, body.model)
+  serverLog(runId, 'generate', 'request-received', {
+    provider: body?.provider,
+    model: body?.model,
+    systemLen: body?.system?.length ?? 0,
+    messageLen: body?.message?.length ?? 0,
+  })
+
+  let result: { text?: string; error?: string }
+
+  if (bodyError) {
+    result = { error: bodyError }
+  } else if (!body?.message || !body?.system) {
+    setResponseHeaders(event, { 'Content-Type': 'application/json' })
+    result = { error: 'Missing required fields: system, message' }
+  } else if (!body.provider) {
+    setResponseHeaders(event, { 'Content-Type': 'application/json' })
+    result = { error: 'Missing provider. Provider fallback is disabled.' }
+  } else if (!body.model?.trim()) {
+    setResponseHeaders(event, { 'Content-Type': 'application/json' })
+    result = { error: 'Missing model. Model fallback is disabled.' }
+  } else if (body.provider === 'anthropic') {
+    result = await generateViaAgentSDK(body, body.model, runId)
+  } else if (body.provider === 'opencode') {
+    result = await generateViaOpenCode(body, body.model, runId)
+  } else if (body.provider === 'openai') {
+    result = await generateViaCodex(body, body.model, runId)
+  } else {
+    result = { error: 'Missing or unsupported provider. Provider fallback is disabled.' }
   }
-  if (body.provider === 'opencode') {
-    return generateViaOpenCode(body, body.model)
-  }
-  if (body.provider === 'openai') {
-    return generateViaCodex(body, body.model)
-  }
-  return { error: 'Missing or unsupported provider. Provider fallback is disabled.' }
+
+  serverLog(runId, 'generate', 'response-sent', {
+    elapsedMs: Date.now() - startedAt,
+    provider: body?.provider,
+    hasText: Boolean(result.text),
+    error: result.error,
+  })
+
+  return result
 })
 
 /** Generate via Claude Agent SDK (uses local Claude Code OAuth login, no API key needed) */
-async function generateViaAgentSDK(body: GenerateBody, model?: string): Promise<{ text?: string; error?: string }> {
+async function generateViaAgentSDK(
+  body: GenerateBody,
+  model: string | undefined,
+  runId: string | undefined,
+): Promise<{ text?: string; error?: string }> {
+  const startedAt = Date.now()
+  serverLog(runId, 'generate', 'agent-sdk-start', {
+    model,
+    systemLen: body.system.length,
+    messageLen: body.message.length,
+  })
+
   const runQuery = async (): Promise<{ text?: string; error?: string }> => {
     const { query } = await import('@anthropic-ai/claude-agent-sdk')
 
@@ -79,14 +115,28 @@ async function generateViaAgentSDK(body: GenerateBody, model?: string): Promise<
 
     try {
       for await (const message of q) {
+        serverLog(runId, 'generate', 'agent-sdk-event', {
+          type: message.type,
+          subtype: 'subtype' in message ? String(message.subtype) : undefined,
+        })
+
         if (message.type === 'result') {
           const isErrorResult = 'is_error' in message && Boolean((message as { is_error?: boolean }).is_error)
           if (message.subtype === 'success' && !isErrorResult) {
+            serverLog(runId, 'generate', 'agent-sdk-result', {
+              subtype: message.subtype,
+              hasText: Boolean(message.result),
+            })
             return { text: message.result }
           }
           const errors = 'errors' in message ? (message.errors as string[]) : []
           const resultText = 'result' in message ? String(message.result ?? '') : ''
-          return { error: errors.join('; ') || resultText || `Query ended with: ${message.subtype}` }
+          const error = errors.join('; ') || resultText || `Query ended with: ${message.subtype}`
+          serverWarn(runId, 'generate', 'agent-sdk-result', {
+            subtype: message.subtype,
+            error,
+          })
+          return { error }
         }
       }
     } finally {
@@ -97,21 +147,50 @@ async function generateViaAgentSDK(body: GenerateBody, model?: string): Promise<
   }
 
   try {
-    return await runQuery()
+    const result = await runQuery()
+    serverLog(runId, 'generate', 'agent-sdk-complete', {
+      elapsedMs: Date.now() - startedAt,
+      hasText: Boolean(result.text),
+      error: result.error,
+    })
+    return result
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
+    serverError(runId, 'generate', 'agent-sdk-error', {
+      elapsedMs: Date.now() - startedAt,
+      error: message,
+    })
     return { error: message }
   }
 }
 
-async function generateViaCodex(body: GenerateBody, model?: string): Promise<{ text?: string; error?: string }> {
+async function generateViaCodex(
+  body: GenerateBody,
+  model: string | undefined,
+  runId: string | undefined,
+): Promise<{ text?: string; error?: string }> {
+  const startedAt = Date.now()
+  serverLog(runId, 'generate', 'codex-request-start', {
+    model,
+    systemLen: body.system.length,
+    messageLen: body.message.length,
+  })
+
   const result = await runCodexExec(body.message, {
     model,
     systemPrompt: body.system,
     thinkingMode: body.thinkingMode,
     thinkingBudgetTokens: body.thinkingBudgetTokens,
     effort: body.effort,
+    runId,
   })
+
+  serverLog(runId, 'generate', 'codex-request-complete', {
+    elapsedMs: Date.now() - startedAt,
+    hasText: Boolean(result.text),
+    error: result.error,
+  })
+
   return result.error ? { error: result.error } : { text: result.text ?? '' }
 }
 
@@ -166,6 +245,7 @@ async function promptOpenCodeWithThinking(
   ocClient: any,
   basePayload: Record<string, unknown>,
   body: GenerateBody,
+  runId: string | undefined,
 ): Promise<{ data: any; error: any }> {
   const reasoning = buildOpenCodeReasoning(body)
   if (!reasoning) {
@@ -178,13 +258,25 @@ async function promptOpenCodeWithThinking(
     return firstTry
   }
 
-  console.warn('[AI] OpenCode reasoning options rejected, retrying without reasoning.')
+  serverWarn(runId, 'generate', 'opencode-reasoning-rejected', {
+    promptKeys: Object.keys(basePayload),
+  })
   return await promptWithTimeout(ocClient, basePayload)
 }
 
 /** Generate via OpenCode SDK (connects to a running OpenCode server) */
-async function generateViaOpenCode(body: GenerateBody, model?: string): Promise<{ text?: string; error?: string }> {
+async function generateViaOpenCode(
+  body: GenerateBody,
+  model: string | undefined,
+  runId: string | undefined,
+): Promise<{ text?: string; error?: string }> {
   let ocServer: { close(): void } | undefined
+  const startedAt = Date.now()
+  serverLog(runId, 'generate', 'opencode-start', {
+    model,
+    systemLen: body.system.length,
+    messageLen: body.message.length,
+  })
   try {
     const { getOpencodeClient } = await import('../../utils/opencode-client')
     const oc = await getOpencodeClient()
@@ -212,7 +304,9 @@ async function generateViaOpenCode(body: GenerateBody, model?: string): Promise<
       const idx = model.indexOf('/')
       modelOption = { providerID: model.slice(0, idx), modelID: model.slice(idx + 1) }
     } else if (model) {
-      console.warn(`[AI] OpenCode generate: could not parse model string "${model}", sending without model override`)
+      serverWarn(runId, 'generate', 'opencode-model-parse-failed', {
+        model,
+      })
     }
 
     // Send main prompt and await full response
@@ -222,17 +316,21 @@ async function generateViaOpenCode(body: GenerateBody, model?: string): Promise<
       parts: [{ type: 'text', text: body.message }],
     }
 
-    console.log(`[AI] OpenCode generate: model=${model}, parsed=${JSON.stringify(modelOption)}`)
+    serverLog(runId, 'generate', 'opencode-model', {
+      model,
+      parsed: modelOption,
+    })
 
     const { data: result, error: promptError } = await promptOpenCodeWithThinking(
       ocClient,
       promptPayload,
       body,
+      runId,
     )
 
     if (promptError) {
       const errorDetail = formatOpenCodeError(promptError)
-      console.error('[AI] OpenCode generate error:', errorDetail)
+      serverWarn(runId, 'generate', 'opencode-error', { error: errorDetail })
       return { error: errorDetail }
     }
 
@@ -247,13 +345,23 @@ async function generateViaOpenCode(body: GenerateBody, model?: string): Promise<
     }
 
     if (texts.length === 0) {
-      console.warn('[AI] OpenCode generate returned no text parts. Response:', JSON.stringify(result).slice(0, 500))
+      serverWarn(runId, 'generate', 'opencode-empty-response', {
+        responsePreview: JSON.stringify(result).slice(0, 500),
+      })
       return { error: 'OpenCode returned an empty response. The model may not have generated any output.' }
     }
 
+    serverLog(runId, 'generate', 'opencode-complete', {
+      elapsedMs: Date.now() - startedAt,
+      hasText: true,
+    })
     return { text: texts.join('') }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
+    serverError(runId, 'generate', 'opencode-error', {
+      elapsedMs: Date.now() - startedAt,
+      error: message,
+    })
     return { error: message }
   } finally {
     const { releaseOpencodeServer } = await import('../../utils/opencode-client')

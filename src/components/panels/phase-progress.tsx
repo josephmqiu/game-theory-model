@@ -1,16 +1,24 @@
 import { cn } from "@/lib/utils";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { V1_PHASES, PHASE_LABELS } from "@/types/methodology";
+import {
+  getPhaseFailureLabel,
+  type PhaseFailureState,
+} from "@/components/panels/phase-failures";
 
 // ── Props ──
 
 export interface PhaseProgressProps {
   className?: string;
+  phaseFailures?: PhaseFailureState;
 }
 
 // ── Component ──
 
-export function PhaseProgress({ className }: PhaseProgressProps) {
+export function PhaseProgress({
+  className,
+  phaseFailures = {},
+}: PhaseProgressProps) {
   const phases = useEntityGraphStore((s) => s.analysis.phases);
   const entities = useEntityGraphStore((s) => s.analysis.entities);
 
@@ -23,6 +31,9 @@ export function PhaseProgress({ className }: PhaseProgressProps) {
   ).length;
   const totalCount = v1Phases.length;
   const totalEntities = entities.length;
+  const failedPhase = v1Phases.find((ps) => ps.status === "failed");
+  const failure =
+    failedPhase !== undefined ? phaseFailures[failedPhase.phase] : undefined;
 
   // Find the currently running phase (first running, or first non-complete)
   const runningPhase = v1Phases.find((ps) => ps.status === "running");
@@ -32,7 +43,7 @@ export function PhaseProgress({ className }: PhaseProgressProps) {
   const allPending = v1Phases.every((ps) => ps.status === "pending");
 
   // Hidden when all phases are complete/pending (no active work)
-  if (!anyRunning && (allDone || allPending)) {
+  if (!failedPhase && !anyRunning && (allDone || allPending)) {
     return null;
   }
 
@@ -40,6 +51,36 @@ export function PhaseProgress({ className }: PhaseProgressProps) {
   const currentPhaseName = runningPhase
     ? PHASE_LABELS[runningPhase.phase]
     : null;
+
+  if (failedPhase) {
+    const failureLabel = failure
+      ? getPhaseFailureLabel(failure.failureKind)
+      : "provider error";
+
+    return (
+      <div
+        className={cn(
+          "flex items-center gap-3 rounded-md border border-red-500/40 bg-zinc-900/95 px-4 py-2 shadow-lg backdrop-blur",
+          className,
+        )}
+      >
+        <div className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-zinc-700">
+          <div
+            className="h-full rounded-full bg-red-500 transition-all duration-300 ease-in-out"
+            style={{ width: `${progressFraction * 100}%` }}
+          />
+        </div>
+
+        <p className="truncate font-[Geist,sans-serif] text-[13px] font-medium text-zinc-200">
+          <span className="text-red-400">
+            Phase {V1_PHASES.indexOf(failedPhase.phase) + 1} failed
+          </span>
+          <span className="mx-1.5 text-zinc-600">&mdash;</span>
+          <span>{failureLabel}</span>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div

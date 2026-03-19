@@ -73,6 +73,17 @@ function getPickerAccept(): Record<string, string[]> {
   };
 }
 
+async function confirmDiscardBeforeOpen(): Promise<boolean> {
+  const entityState = useEntityGraphStore.getState();
+  if (!entityState.isDirty) {
+    return true;
+  }
+
+  return await getNativeConfirm()(
+    "You have unsaved analysis changes. Discard them and open another analysis?",
+  );
+}
+
 async function writeTextToFileHandle(
   handle: FileSystemFileHandle,
   text: string,
@@ -273,15 +284,41 @@ export function loadAnalysisFromText(
   });
 }
 
-export async function openAnalysis(): Promise<boolean> {
-  const entityState = useEntityGraphStore.getState();
-  if (entityState.isDirty) {
-    const confirmed = await getNativeConfirm()(
-      "You have unsaved analysis changes. Discard them and open another analysis?",
-    );
-    if (!confirmed) {
+export async function openAnalysisFromPath(filePath: string): Promise<boolean> {
+  if (!(await confirmDiscardBeforeOpen())) {
+    return false;
+  }
+
+  try {
+    const result = await window.electronAPI?.readFile?.(filePath);
+    if (!result) {
       return false;
     }
+
+    loadAnalysisFromText(result.content, {
+      fileName: getFileNameFromPath(result.filePath),
+      filePath: result.filePath,
+      fileHandle: null,
+    });
+    return true;
+  } catch (error) {
+    if (isUserAbortError(error)) {
+      return false;
+    }
+
+    showNativeAlert(
+      `Could not open analysis.\n\n${toErrorMessage(
+        error,
+        "The selected file is not a valid .gta analysis.",
+      )}`,
+    );
+    return false;
+  }
+}
+
+export async function openAnalysis(): Promise<boolean> {
+  if (!(await confirmDiscardBeforeOpen())) {
+    return false;
   }
 
   try {

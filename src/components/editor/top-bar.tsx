@@ -29,7 +29,6 @@ import { useAgentSettingsStore } from "@/stores/agent-settings-store";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import {
   saveAnalysis,
-  openAnalysis,
 } from "@/services/analysis/analysis-persistence";
 import { exportToMarkdown } from "@/services/entity/entity-export";
 import type { AIProviderType } from "@/types/agent-settings";
@@ -142,7 +141,15 @@ function AgentStatusButton() {
   );
 }
 
-export default function TopBar() {
+interface TopBarProps {
+  onNewAnalysis: () => void | Promise<void>;
+  onOpenAnalysis: () => void | Promise<void>;
+}
+
+export default function TopBar({
+  onNewAnalysis,
+  onOpenAnalysis,
+}: TopBarProps) {
   const { t } = useTranslation();
   const analysis = useEntityGraphStore((state) => state.analysis);
   const fileName = useEntityGraphStore((state) => state.fileName);
@@ -211,21 +218,6 @@ export default function TopBar() {
     document.documentElement.requestFullscreen();
   }, []);
 
-  const handleNewAnalysis = useCallback(() => {
-    const state = useEntityGraphStore.getState();
-    if (state.isDirty) {
-      const confirmed = window.confirm(
-        "You have unsaved analysis changes. Discard them and start a new analysis?",
-      );
-      if (!confirmed) return;
-    }
-    useEntityGraphStore.getState().newAnalysis("");
-  }, []);
-
-  const handleOpenAnalysis = useCallback(() => {
-    void openAnalysis();
-  }, []);
-
   const handleSaveAnalysis = useCallback(() => {
     void saveAnalysis();
   }, []);
@@ -263,7 +255,7 @@ export default function TopBar() {
               variant="outline"
               size="sm"
               aria-label="New analysis"
-              onClick={handleNewAnalysis}
+              onClick={() => void onNewAnalysis()}
               className="h-8"
             >
               <Plus size={16} strokeWidth={1.5} />
@@ -281,7 +273,7 @@ export default function TopBar() {
               variant="outline"
               size="sm"
               aria-label="Open analysis"
-              onClick={handleOpenAnalysis}
+              onClick={() => void onOpenAnalysis()}
               className="h-8"
             >
               <FolderOpen size={16} strokeWidth={1.5} />

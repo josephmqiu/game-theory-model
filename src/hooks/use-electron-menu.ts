@@ -1,35 +1,34 @@
 import { useEffect } from "react";
-import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import {
   saveAnalysis,
   saveAnalysisAs,
-  openAnalysis,
 } from "@/services/analysis/analysis-persistence";
+
+interface ElectronMenuOptions {
+  onNewAnalysis: () => void | Promise<void>;
+  onOpenAnalysis: (filePath?: string) => void | Promise<void>;
+}
 
 /**
  * Listens for Electron native menu actions and dispatches them into the
  * entity graph persistence controller used by the live workspace.
  */
-export function useElectronMenu() {
+export function useElectronMenu({
+  onNewAnalysis,
+  onOpenAnalysis,
+}: ElectronMenuOptions) {
   useEffect(() => {
     const api = window.electronAPI;
     if (!api) return;
 
     const handleMenuAction = async (action: string) => {
       if (action === "new") {
-        const state = useEntityGraphStore.getState();
-        if (state.isDirty) {
-          const confirmed = window.confirm(
-            "You have unsaved analysis changes. Discard them and start a new analysis?",
-          );
-          if (!confirmed) return;
-        }
-        useEntityGraphStore.getState().newAnalysis("");
+        await onNewAnalysis();
         return;
       }
 
       if (action === "open") {
-        await openAnalysis();
+        await onOpenAnalysis();
         return;
       }
 
@@ -49,15 +48,13 @@ export function useElectronMenu() {
       }) ?? null;
 
     const disposeOpenFile =
-      api.onOpenFile?.((_filePath: string) => {
-        // Entity graph file opening from OS-level file association
-        // For now, delegate to the entity analysis opener
-        void openAnalysis();
+      api.onOpenFile?.((filePath: string) => {
+        void onOpenAnalysis(filePath);
       }) ?? null;
 
-    void api.getPendingFile?.().then((_filePath) => {
-      if (_filePath) {
-        void openAnalysis();
+    void api.getPendingFile?.().then((filePath) => {
+      if (filePath) {
+        void onOpenAnalysis(filePath);
       }
     });
 
@@ -65,5 +62,5 @@ export function useElectronMenu() {
       disposeMenu?.();
       disposeOpenFile?.();
     };
-  }, []);
+  }, [onNewAnalysis, onOpenAnalysis]);
 }

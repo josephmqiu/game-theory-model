@@ -1,8 +1,7 @@
-// @vitest-environment jsdom
-
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { abortAnalysisRun } from "@/components/editor/analysis-run";
 
 const topBarPath = join(process.cwd(), "src/components/editor/top-bar.tsx");
 const landingPath = join(process.cwd(), "src/routes/index.tsx");
@@ -38,19 +37,63 @@ describe("editor layout", () => {
     );
     expect(editorRouteSource).toContain("Game Theory Analysis");
     expect(editorRouteSource).not.toContain("Workspace");
+    expect(editorRouteSource).not.toContain("useKeyboardShortcuts");
   });
 
-  it("shows the file actions in the top bar shell", () => {
+  it("wires new/open actions through top bar callbacks in source", () => {
     const source = readFileSync(topBarPath, "utf8");
 
     expect(source).toContain("topbar.newAnalysis");
-    expect(source).toContain("openAnalysis");
+    expect(source).toContain("onNewAnalysis");
+    expect(source).toContain("onOpenAnalysis");
     expect(source).toContain("topbar.save");
-    expect(source).not.toContain("Session only");
-    expect(source).not.toContain("Start a fresh in-memory analysis");
     expect(source).not.toContain("useDocumentStore");
-    expect(source).not.toContain("saveDocumentAs");
-    expect(source).not.toContain("openDocumentFS");
-    expect(source).not.toContain("writeToFilePath");
+  });
+
+  it("aborts the active run, waits for completion, and flushes logs", async () => {
+    const controller = new AbortController();
+    const logger = {
+      log: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      capture: vi.fn(),
+      flush: vi.fn().mockResolvedValue(true),
+      entries: () => [],
+    };
+    const onSettled = vi.fn();
+
+    const promise = new Promise<{
+      status: "aborted";
+      phasesCompleted: number;
+      totalEntities: number;
+      runId: string;
+    }>((resolve) => {
+      controller.signal.addEventListener("abort", () => {
+        onSettled();
+        resolve({
+          status: "aborted",
+          phasesCompleted: 0,
+          totalEntities: 0,
+          runId: "run-abort",
+        });
+      });
+    });
+
+    await abortAnalysisRun(
+      {
+        controller,
+        promise,
+        runId: "run-abort",
+        logger,
+      },
+      "new-analysis",
+    );
+
+    expect(controller.signal.aborted).toBe(true);
+    expect(onSettled).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith("ui", "abort-requested", {
+      reason: "new-analysis",
+    });
+    expect(logger.flush).toHaveBeenCalledTimes(1);
   });
 });

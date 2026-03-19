@@ -1,28 +1,43 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { nanoid } from "nanoid";
+import { PanelRight, PanelRightClose } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
 import TopBar from "./top-bar";
+import {
+  abortAnalysisRun,
+  type ActiveAnalysisRun,
+} from "./analysis-run";
 import AgentSettingsDialog from "@/components/shared/agent-settings-dialog";
 import UpdateReadyBanner from "./update-ready-banner";
 import AnalysisCanvas from "./analysis-canvas";
 import AIChatPanel from "@/components/panels/ai-chat-panel";
 import { PhaseSidebar } from "@/components/panels/phase-sidebar";
 import { PhaseProgress } from "@/components/panels/phase-progress";
+import type { PhaseFailureState } from "@/components/panels/phase-failures";
 import EntityOverlayCard from "@/components/panels/entity-overlay-card";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useElectronMenu } from "@/hooks/use-electron-menu";
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { initAppStorage } from "@/utils/app-storage";
-import { runMethodologyAnalysis } from "@/services/ai/methodology-orchestrator";
-import type { OrchestratorCallbacks } from "@/services/ai/methodology-orchestrator";
+import { createRunLogger } from "@/services/ai/ai-logger";
+import {
+  runMethodologyAnalysis,
+  type AnalysisResult,
+  type OrchestratorCallbacks,
+} from "@/services/ai/methodology-orchestrator";
+import {
+  openAnalysis,
+  openAnalysisFromPath,
+} from "@/services/analysis/analysis-persistence";
 import type { AnalysisEntity } from "@/types/entity";
 import type { MethodologyPhase } from "@/types/methodology";
-import { PanelRight, PanelRightClose } from "lucide-react";
-import { Button } from "@/components/ui/button";
 
 export default function EditorLayout() {
   const isDirty = useEntityGraphStore((state) => state.isDirty);
+  const activeRunRef = useRef<ActiveAnalysisRun | null>(null);
 
-  // ── Layout state ──
   const [phaseFilter, setPhaseFilter] = useState<MethodologyPhase | null>(null);
   const [searchHighlight, setSearchHighlight] = useState<string[]>([]);
   const [selectedEntity, setSelectedEntity] = useState<AnalysisEntity | null>(
@@ -30,52 +45,140 @@ export default function EditorLayout() {
   );
   const [overlayPosition, setOverlayPosition] = useState({ x: 0, y: 0 });
   const [chatCollapsed, setChatCollapsed] = useState(false);
+  const [phaseFailures, setPhaseFailures] = useState<PhaseFailureState>({});
 
-  // AbortController for orchestrator runs
-  const abortRef = useRef<AbortController | null>(null);
-
-  // ── Orchestrator start (called from chat panel) ──
-  const startOrchestrator = useCallback((topic: string) => {
-    // Abort any running orchestrator
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    // Reset analysis with the new topic
-    useEntityGraphStore.getState().newAnalysis(topic);
-
-    const callbacks: OrchestratorCallbacks = {
-      onPhaseStart: (phase) => {
-        // Chat panel listens to entity graph store phase status changes
-        void phase;
-      },
-      onPhaseComplete: (phase, entityCount) => {
-        void phase;
-        void entityCount;
-      },
-      onPhaseFailed: (phase, error) => {
-        console.error(`[orchestrator] Phase ${phase} failed:`, error);
-      },
-      onComplete: () => {
-        // Analysis complete
-      },
-    };
-
-    void runMethodologyAnalysis({
-      topic,
-      signal: controller.signal,
-      callbacks,
-    });
+  const clearEditorChrome = useCallback(() => {
+    setPhaseFilter(null);
+    setSearchHighlight([]);
+    setSelectedEntity(null);
   }, []);
 
-  // ── Cleanup orchestrator on unmount ──
+  const applyAnalysisFailure = useCallback((result: AnalysisResult) => {
+    if (
+      result.status !== "failed"
+      || !result.failedPhase
+      || !result.failureKind
+    ) {
+      return;
+    }
+
+    const failedPhase: MethodologyPhase = result.failedPhase;
+    const failureKind = result.failureKind;
+
+    setPhaseFailures((current) => ({
+      ...current,
+      [failedPhase]: {
+        failureKind,
+        runId: result.runId,
+      },
+    }));
+  }, []);
+
+  const abortActiveRun = useCallback(async (reason: string) => {
+    const activeRun = activeRunRef.current;
+    if (!activeRun) {
+      return;
+    }
+
+    await abortAnalysisRun(activeRun, reason);
+
+    if (activeRunRef.current?.runId === activeRun.runId) {
+      activeRunRef.current = null;
+    }
+  }, []);
+
+  const handleOpenAnalysis = useCallback(
+    async (filePath?: string) => {
+      await abortActiveRun("open-analysis");
+      const opened = filePath
+        ? await openAnalysisFromPath(filePath)
+        : await openAnalysis();
+
+      if (!opened) {
+        return;
+      }
+
+      clearEditorChrome();
+      setPhaseFailures({});
+    },
+    [abortActiveRun, clearEditorChrome],
+  );
+
+  const handleNewAnalysis = useCallback(async () => {
+    const state = useEntityGraphStore.getState();
+    if (state.isDirty) {
+      const confirmed = window.confirm(
+        "You have unsaved analysis changes. Discard them and start a new analysis?",
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    await abortActiveRun("new-analysis");
+    clearEditorChrome();
+    setPhaseFailures({});
+    useEntityGraphStore.getState().newAnalysis("");
+  }, [abortActiveRun, clearEditorChrome]);
+
+  const startOrchestrator = useCallback(
+    (topic: string) => {
+      void (async () => {
+        await abortActiveRun("restart-analysis");
+        clearEditorChrome();
+        setPhaseFailures({});
+        useEntityGraphStore.getState().newAnalysis(topic);
+
+        const controller = new AbortController();
+        const runId = nanoid(8);
+        const logger = createRunLogger(runId);
+        const run = { runId, logger };
+
+        const callbacks: OrchestratorCallbacks = {
+          onPhaseStart: (phase) => {
+            logger.log("ui", "phase-start", { phase });
+          },
+          onPhaseComplete: (phase, entityCount) => {
+            logger.log("ui", "phase-complete", { phase, entityCount });
+          },
+          onPhaseFailed: (phase, error) => {
+            logger.error("ui", "phase-failed", { phase, error });
+          },
+        };
+
+        const promise = runMethodologyAnalysis({
+          topic,
+          signal: controller.signal,
+          callbacks,
+          run,
+        });
+
+        activeRunRef.current = {
+          controller,
+          promise,
+          runId,
+          logger,
+        };
+
+        try {
+          const result = await promise;
+          applyAnalysisFailure(result);
+        } finally {
+          if (activeRunRef.current?.runId === runId) {
+            activeRunRef.current = null;
+          }
+        }
+      })();
+    },
+    [abortActiveRun, applyAnalysisFailure, clearEditorChrome],
+  );
+
   useEffect(() => {
     return () => {
-      abortRef.current?.abort();
+      void abortActiveRun("component-unmount");
     };
-  }, []);
+  }, [abortActiveRun]);
 
-  // ── Agent settings shortcut (Cmd+,) ──
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       const isMod = event.metaKey || event.ctrlKey;
@@ -90,19 +193,29 @@ export default function EditorLayout() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  useElectronMenu();
+  useElectronMenu({
+    onNewAnalysis: handleNewAnalysis,
+    onOpenAnalysis: handleOpenAnalysis,
+  });
+  useKeyboardShortcuts({
+    onNewAnalysis: handleNewAnalysis,
+    onOpenAnalysis: () => handleOpenAnalysis(),
+  });
 
-  // ── Hydrate app storage ──
   useEffect(() => {
-    initAppStorage().then(() => {
+    void initAppStorage().then(() => {
       useAgentSettingsStore.getState().hydrate();
     });
   }, []);
 
-  // ── Unsaved changes warning ──
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!isDirty) return;
+      void activeRunRef.current?.logger.flush({ transport: "beacon" });
+
+      if (!isDirty) {
+        return;
+      }
+
       event.preventDefault();
       event.returnValue = "";
     };
@@ -111,47 +224,47 @@ export default function EditorLayout() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [isDirty]);
 
-  // ── Search → highlight entities ──
   const handleSearch = useCallback((query: string) => {
     if (!query.trim()) {
       setSearchHighlight([]);
       return;
     }
+
     const normalized = query.toLowerCase();
     const entities = useEntityGraphStore.getState().analysis.entities;
     const matches = entities
-      .filter((e) => {
-        const d = e.data;
+      .filter((entity) => {
+        const data = entity.data;
         const text =
-          ("name" in d ? d.name : "") +
-          ("content" in d ? d.content : "") +
-          ("description" in d ? d.description : "") +
-          ("action" in d ? d.action : "");
+          ("name" in data ? data.name : "")
+          + ("content" in data ? data.content : "")
+          + ("description" in data ? data.description : "")
+          + ("action" in data ? data.action : "");
         return text.toLowerCase().includes(normalized);
       })
-      .map((e) => e.id);
+      .map((entity) => entity.id);
     setSearchHighlight(matches);
   }, []);
 
-  // ── Entity selection from canvas click ──
   const handleEntitySelect = useCallback((entity: AnalysisEntity | null) => {
     setSelectedEntity(entity);
-    if (entity) {
-      // Place overlay card near the entity's screen position
-      // Use a reasonable default position (right side of entity)
-      setOverlayPosition({
-        x: entity.position.x + 180,
-        y: entity.position.y + 40,
-      });
+    if (!entity) {
+      return;
     }
+
+    setOverlayPosition({
+      x: entity.position.x + 180,
+      y: entity.position.y + 40,
+    });
   }, []);
 
-  // ── Phase sidebar rerun ──
   const handleRerunPhase = useCallback(
     (_phase: MethodologyPhase) => {
       const topic = useEntityGraphStore.getState().analysis.topic;
-      if (!topic) return;
-      // For now, start the full orchestrator — individual phase rerun is future work
+      if (!topic) {
+        return;
+      }
+
       startOrchestrator(topic);
     },
     [startOrchestrator],
@@ -161,18 +274,20 @@ export default function EditorLayout() {
     <TooltipProvider delayDuration={300}>
       <div className="flex h-screen flex-col bg-background">
         <UpdateReadyBanner />
-        <TopBar />
+        <TopBar
+          onNewAnalysis={handleNewAnalysis}
+          onOpenAnalysis={() => handleOpenAnalysis()}
+        />
 
         <div className="flex min-h-0 flex-1">
-          {/* Phase sidebar */}
           <PhaseSidebar
             onPhaseFilter={setPhaseFilter}
             onRerunPhase={handleRerunPhase}
             onSearch={handleSearch}
             activeFilter={phaseFilter}
+            phaseFailures={phaseFailures}
           />
 
-          {/* Main canvas area */}
           <div className="relative flex min-w-0 flex-1 flex-col">
             <AnalysisCanvas
               onEntitySelect={handleEntitySelect}
@@ -180,26 +295,22 @@ export default function EditorLayout() {
               searchHighlight={searchHighlight}
             />
 
-            {/* Phase progress bar (bottom overlay) */}
-            <PhaseProgress className="absolute bottom-4 left-1/2 -translate-x-1/2" />
+            <PhaseProgress
+              className="absolute bottom-4 left-1/2 -translate-x-1/2"
+              phaseFailures={phaseFailures}
+            />
 
-            {/* Entity overlay card */}
             {selectedEntity && (
               <EntityOverlayCard
                 entity={selectedEntity}
                 screenPosition={overlayPosition}
-                onEdit={() => {
-                  // Future: open inline edit mode
-                }}
-                onChallenge={() => {
-                  // Future: send challenge to chat
-                }}
+                onEdit={() => {}}
+                onChallenge={() => {}}
                 onClose={() => setSelectedEntity(null)}
               />
             )}
           </div>
 
-          {/* Chat panel (collapsible) */}
           {chatCollapsed ? (
             <div className="flex w-10 flex-col items-center border-l border-border bg-card pt-2">
               <Button

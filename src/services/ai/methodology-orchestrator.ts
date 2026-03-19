@@ -4,30 +4,81 @@ import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useAIStore } from "@/stores/ai-store";
 import { generateCompletion } from "@/services/ai/ai-service";
 import { createPhaseWorker } from "@/services/ai/phase-worker";
+import type { RunContext } from "@/services/ai/ai-logger";
+import { timer } from "@/services/ai/ai-logger";
 
-// ── Types ──
+export type AnalysisFailureKind =
+  | "timeout"
+  | "parse-error"
+  | "provider-error";
+
+export interface AnalysisResult {
+  status: "success" | "failed" | "aborted";
+  phasesCompleted: number;
+  totalEntities: number;
+  runId: string;
+  failedPhase?: MethodologyPhase;
+  failureKind?: AnalysisFailureKind;
+}
 
 export interface OrchestratorCallbacks {
   onPhaseStart: (phase: MethodologyPhase) => void;
   onPhaseComplete: (phase: MethodologyPhase, entityCount: number) => void;
   onPhaseFailed: (phase: MethodologyPhase, error: string) => void;
-  onComplete: () => void;
 }
 
 export interface OrchestratorConfig {
   topic: string;
   signal: AbortSignal;
   callbacks: OrchestratorCallbacks;
+  run: RunContext;
 }
 
-// ── Provider resolution ──
+export interface RevalidationConfig {
+  signal: AbortSignal;
+  callbacks: OrchestratorCallbacks;
+  run: RunContext;
+}
+
+type SupportedPhase = Extract<
+  MethodologyPhase,
+  "situational-grounding" | "player-identification" | "baseline-model"
+>;
+
+interface PhaseSuccessResult {
+  status: "success";
+  entityCount: number;
+  attemptsUsed: number;
+}
+
+interface PhaseFailureResult {
+  status: "failed";
+  error: string;
+  failureKind: AnalysisFailureKind;
+}
+
+interface PhaseAbortResult {
+  status: "aborted";
+}
+
+type PhaseExecutionResult =
+  | PhaseSuccessResult
+  | PhaseFailureResult
+  | PhaseAbortResult;
+
+const SUPPORTED_PHASES: SupportedPhase[] = V1_PHASES.filter(
+  (p): p is SupportedPhase =>
+    p === "situational-grounding"
+    || p === "player-identification"
+    || p === "baseline-model",
+);
+
+const MAX_RETRIES = 2;
 
 function resolveProvider(model: string): string | undefined {
   const groups = useAIStore.getState().modelGroups ?? [];
   return groups.find((g) => g.models.some((m) => m.value === model))?.provider;
 }
-
-// ── Prior context builder ──
 
 function buildPriorContext(
   completedPhases: MethodologyPhase[],
@@ -56,195 +107,384 @@ function buildPriorContext(
   return JSON.stringify(summary);
 }
 
-// ── Supported phases (matches phase-worker.ts) ──
+function getTotalEntityCount(): number {
+  return useEntityGraphStore.getState().analysis.entities.length;
+}
 
-type SupportedPhase = Extract<
-  MethodologyPhase,
-  "situational-grounding" | "player-identification" | "baseline-model"
->;
+function classifyFailureKind(
+  message: string,
+  fallback: AnalysisFailureKind = "provider-error",
+): AnalysisFailureKind {
+  return /timed?\s*out|timeout/i.test(message) ? "timeout" : fallback;
+}
 
-const SUPPORTED_PHASES: SupportedPhase[] = V1_PHASES.filter(
-  (p): p is SupportedPhase =>
-    p === "situational-grounding" ||
-    p === "player-identification" ||
-    p === "baseline-model",
-);
+async function runSinglePhase(params: {
+  phase: SupportedPhase;
+  topic: string;
+  priorPhases: MethodologyPhase[];
+  model: string;
+  provider?: string;
+  signal: AbortSignal;
+  callbacks: OrchestratorCallbacks;
+  run: RunContext;
+}): Promise<PhaseExecutionResult> {
+  const {
+    phase,
+    topic,
+    priorPhases,
+    model,
+    provider,
+    signal,
+    callbacks,
+    run,
+  } = params;
 
-const MAX_RETRIES = 2; // 2 retries = 3 total attempts
+  const phaseTimer = timer();
+  const worker = createPhaseWorker(phase);
+  const priorContext = buildPriorContext(priorPhases);
+  const { system, user } = worker.buildPrompt(topic, priorContext);
 
-// ── Orchestrator ──
+  if (signal.aborted) {
+    return { status: "aborted" };
+  }
+
+  callbacks.onPhaseStart(phase);
+  useEntityGraphStore.getState().setPhaseStatus(phase, "running");
+  run.logger.log("orchestrator", "phase-start", { phase });
+
+  let lastError = "";
+  let lastFailureKind: AnalysisFailureKind = "provider-error";
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (signal.aborted) {
+      useEntityGraphStore.getState().setPhaseStatus(phase, "pending");
+      return { status: "aborted" };
+    }
+
+    const attemptNumber = attempt + 1;
+    const attemptTimer = timer();
+    run.logger.log("orchestrator", "attempt-start", {
+      phase,
+      attempt: attemptNumber,
+      maxAttempts: MAX_RETRIES + 1,
+    });
+
+    try {
+      const raw = await generateCompletion(system, user, model, provider, run);
+      run.logger.log("orchestrator", "completion-received", {
+        phase,
+        attempt: attemptNumber,
+        elapsedMs: attemptTimer.elapsed(),
+        rawLength: raw.length,
+      });
+      run.logger.log("orchestrator", "raw-preview", {
+        phase,
+        attempt: attemptNumber,
+        preview: raw.slice(0, 200),
+      });
+
+      const result = worker.parseResponse(raw);
+      if (result.success) {
+        const { entities, relationships } = result.data;
+        useEntityGraphStore.getState().addEntities(entities, relationships);
+        useEntityGraphStore.getState().setPhaseStatus(phase, "complete");
+
+        callbacks.onPhaseComplete(phase, entities.length);
+        run.logger.log("orchestrator", "parse-success", {
+          phase,
+          attempt: attemptNumber,
+          entities: entities.length,
+          relationships: relationships.length,
+        });
+        run.logger.log("orchestrator", "phase-complete", {
+          phase,
+          elapsedMs: phaseTimer.elapsed(),
+          entities: entities.length,
+          attemptsUsed: attemptNumber,
+        });
+        await run.logger.flush();
+        return {
+          status: "success",
+          entityCount: entities.length,
+          attemptsUsed: attemptNumber,
+        };
+      }
+
+      lastError = result.error;
+      lastFailureKind = "parse-error";
+      run.logger.capture("orchestrator", "raw-response", {
+        phase,
+        attempt: attemptNumber,
+        raw,
+      });
+      run.logger.warn("orchestrator", "parse-failed", {
+        phase,
+        attempt: attemptNumber,
+        error: lastError,
+      });
+    } catch (error) {
+      if (signal.aborted) {
+        useEntityGraphStore.getState().setPhaseStatus(phase, "pending");
+        return { status: "aborted" };
+      }
+
+      lastError = error instanceof Error ? error.message : "Unknown error";
+      lastFailureKind = classifyFailureKind(lastError);
+      run.logger.error("orchestrator", "attempt-error", {
+        phase,
+        attempt: attemptNumber,
+        error: lastError,
+      });
+    }
+  }
+
+  useEntityGraphStore.getState().setPhaseStatus(phase, "failed");
+  callbacks.onPhaseFailed(phase, lastError);
+  run.logger.error("orchestrator", "phase-failed", {
+    phase,
+    elapsedMs: phaseTimer.elapsed(),
+    failureKind: lastFailureKind,
+    lastError,
+  });
+  await run.logger.flush();
+
+  return {
+    status: "failed",
+    error: lastError,
+    failureKind: lastFailureKind,
+  };
+}
 
 export async function runMethodologyAnalysis(
   config: OrchestratorConfig,
-): Promise<void> {
-  const { topic, signal, callbacks } = config;
+): Promise<AnalysisResult> {
+  const { topic, signal, callbacks, run } = config;
+  const analysisTimer = timer();
   const completedPhases: MethodologyPhase[] = [];
+  const model = useAIStore.getState().model;
+  const provider = resolveProvider(model);
+  let result: AnalysisResult = {
+    status: "aborted",
+    phasesCompleted: 0,
+    totalEntities: getTotalEntityCount(),
+    runId: run.runId,
+  };
 
-  for (const phase of SUPPORTED_PHASES) {
-    // Check abort before starting each phase
-    if (signal.aborted) break;
+  run.logger.log("orchestrator", "analysis-start", {
+    mode: "analysis",
+    topic: topic.slice(0, 80),
+    model,
+    provider: provider ?? "unknown",
+    phases: SUPPORTED_PHASES.length,
+  });
 
-    callbacks.onPhaseStart(phase);
+  try {
+    for (const phase of SUPPORTED_PHASES) {
+      const phaseResult = await runSinglePhase({
+        phase,
+        topic,
+        priorPhases: completedPhases,
+        model,
+        provider,
+        signal,
+        callbacks,
+        run,
+      });
 
-    const store = useEntityGraphStore.getState();
-    store.setPhaseStatus(phase, "running");
-
-    const worker = createPhaseWorker(phase);
-    const priorContext = buildPriorContext(completedPhases);
-    const { system, user } = worker.buildPrompt(topic, priorContext);
-
-    const model = useAIStore.getState().model;
-    const provider = resolveProvider(model);
-
-    let succeeded = false;
-    let lastError = "";
-
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      // Check abort between retries
-      if (signal.aborted) break;
-
-      try {
-        const raw = await generateCompletion(system, user, model, provider);
-        const result = worker.parseResponse(raw);
-
-        if (result.success) {
-          const { entities, relationships } = result.data;
-          // Add entities + relationships to the store
-          useEntityGraphStore.getState().addEntities(entities, relationships);
-          useEntityGraphStore.getState().setPhaseStatus(phase, "complete");
-
-          callbacks.onPhaseComplete(phase, entities.length);
-          completedPhases.push(phase);
-          succeeded = true;
-          break;
-        } else {
-          lastError = result.error;
-          // Parse failure — retry unless we've exhausted attempts
-        }
-      } catch (error) {
-        // If aborted, exit cleanly without marking as failed
-        if (signal.aborted) break;
-
-        lastError = error instanceof Error ? error.message : "Unknown error";
-        // Network/API failure — retry unless we've exhausted attempts
+      if (phaseResult.status === "success") {
+        completedPhases.push(phase);
+        continue;
       }
-    }
 
-    // If aborted mid-phase, stop the loop
-    if (signal.aborted) break;
+      if (phaseResult.status === "failed") {
+        result = {
+          status: "failed",
+          phasesCompleted: completedPhases.length,
+          totalEntities: getTotalEntityCount(),
+          runId: run.runId,
+          failedPhase: phase,
+          failureKind: phaseResult.failureKind,
+        };
+        break;
+      }
 
-    if (!succeeded) {
-      useEntityGraphStore.getState().setPhaseStatus(phase, "failed");
-      callbacks.onPhaseFailed(phase, lastError);
-      // Stop the pipeline on phase failure — downstream phases depend on earlier output
+      result = {
+        status: "aborted",
+        phasesCompleted: completedPhases.length,
+        totalEntities: getTotalEntityCount(),
+        runId: run.runId,
+      };
       break;
     }
-  }
 
-  callbacks.onComplete();
+    if (completedPhases.length === SUPPORTED_PHASES.length) {
+      result = {
+        status: "success",
+        phasesCompleted: completedPhases.length,
+        totalEntities: getTotalEntityCount(),
+        runId: run.runId,
+      };
+    } else if (signal.aborted && result.status !== "failed") {
+      run.logger.warn("orchestrator", "analysis-aborted", {
+        mode: "analysis",
+        phasesCompleted: completedPhases.length,
+      });
+      result = {
+        status: "aborted",
+        phasesCompleted: completedPhases.length,
+        totalEntities: getTotalEntityCount(),
+        runId: run.runId,
+      };
+    }
+
+    return result;
+  } finally {
+    run.logger.log("orchestrator", "analysis-finished", {
+      mode: "analysis",
+      status: result.status,
+      phasesCompleted: result.phasesCompleted,
+      totalEntities: result.totalEntities,
+      failedPhase: result.failedPhase,
+      failureKind: result.failureKind,
+      elapsedMs: analysisTimer.elapsed(),
+    });
+    await run.logger.flush();
+  }
 }
 
-// ── Revalidation ──
-
-/**
- * Identify the earliest phase that contains stale entities, re-run that phase
- * (and all subsequent supported phases), then clear stale flags on affected entities.
- * Designed to be called after a human edit triggers downstream staleness.
- */
 export async function revalidateStaleEntities(
-  signal: AbortSignal,
-  callbacks: OrchestratorCallbacks,
-): Promise<void> {
+  config: RevalidationConfig,
+): Promise<AnalysisResult> {
+  const { signal, callbacks, run } = config;
+  const analysisTimer = timer();
   const store = useEntityGraphStore.getState();
   const staleIds = store.getStaleEntityIds();
-
-  if (staleIds.length === 0) {
-    callbacks.onComplete();
-    return;
-  }
-
-  // Find the earliest phase that has stale entities
-  const staleEntities = store.analysis.entities.filter((e) => e.stale);
-  const stalePhases = new Set(staleEntities.map((e) => e.phase));
-  const earliestPhase = SUPPORTED_PHASES.find((p) => stalePhases.has(p));
-
-  if (!earliestPhase) {
-    // Stale entities exist but none in supported phases — just clear them
-    store.clearStale(staleIds);
-    callbacks.onComplete();
-    return;
-  }
-
-  // Re-run from the earliest stale phase through all subsequent supported phases
-  const startIndex = SUPPORTED_PHASES.indexOf(earliestPhase);
-  const phasesToRerun = SUPPORTED_PHASES.slice(startIndex);
-
-  // Collect all prior phases (before the ones we're re-running) for context
-  const priorPhases = SUPPORTED_PHASES.slice(0, startIndex);
-
   const topic = store.analysis.topic;
   const model = useAIStore.getState().model;
   const provider = resolveProvider(model);
+  let result: AnalysisResult = {
+    status: "aborted",
+    phasesCompleted: 0,
+    totalEntities: getTotalEntityCount(),
+    runId: run.runId,
+  };
 
-  for (const phase of phasesToRerun) {
-    if (signal.aborted) break;
+  run.logger.log("orchestrator", "analysis-start", {
+    mode: "revalidation",
+    topic: topic.slice(0, 80),
+    model,
+    provider: provider ?? "unknown",
+  });
 
-    callbacks.onPhaseStart(phase);
-    useEntityGraphStore.getState().setPhaseStatus(phase, "running");
-
-    // Remove old entities from this phase before re-running
-    // Read fresh state each iteration — prior iterations mutate the store
-    const currentEntities = useEntityGraphStore.getState().analysis.entities;
-    const oldPhaseEntities = currentEntities.filter((e) => e.phase === phase);
-    for (const ent of oldPhaseEntities) {
-      useEntityGraphStore.getState().removeEntity(ent.id);
+  try {
+    if (staleIds.length === 0) {
+      result = {
+        status: "success",
+        phasesCompleted: 0,
+        totalEntities: getTotalEntityCount(),
+        runId: run.runId,
+      };
+      return result;
     }
 
-    const worker = createPhaseWorker(phase);
-    const priorContext = buildPriorContext(priorPhases);
-    const { system, user } = worker.buildPrompt(topic, priorContext);
+    const staleEntities = store.analysis.entities.filter((e) => e.stale);
+    const stalePhases = new Set(staleEntities.map((e) => e.phase));
+    const earliestPhase = SUPPORTED_PHASES.find((p) => stalePhases.has(p));
 
-    let succeeded = false;
-    let lastError = "";
+    if (!earliestPhase) {
+      store.clearStale(staleIds);
+      result = {
+        status: "success",
+        phasesCompleted: 0,
+        totalEntities: getTotalEntityCount(),
+        runId: run.runId,
+      };
+      return result;
+    }
 
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      if (signal.aborted) break;
+    const startIndex = SUPPORTED_PHASES.indexOf(earliestPhase);
+    const phasesToRerun = SUPPORTED_PHASES.slice(startIndex);
+    const priorPhases = SUPPORTED_PHASES.slice(0, startIndex);
 
-      try {
-        const raw = await generateCompletion(system, user, model, provider);
-        const result = worker.parseResponse(raw);
-
-        if (result.success) {
-          const { entities, relationships } = result.data;
-          useEntityGraphStore.getState().addEntities(entities, relationships);
-          useEntityGraphStore.getState().setPhaseStatus(phase, "complete");
-
-          callbacks.onPhaseComplete(phase, entities.length);
-          priorPhases.push(phase);
-          succeeded = true;
-          break;
-        } else {
-          lastError = result.error;
-        }
-      } catch (error) {
-        if (signal.aborted) break;
-        lastError = error instanceof Error ? error.message : "Unknown error";
+    for (const phase of phasesToRerun) {
+      if (signal.aborted) {
+        result = {
+          status: "aborted",
+          phasesCompleted: priorPhases.length - startIndex,
+          totalEntities: getTotalEntityCount(),
+          runId: run.runId,
+        };
+        break;
       }
+
+      const currentEntities = useEntityGraphStore.getState().analysis.entities;
+      const oldPhaseEntities = currentEntities.filter((e) => e.phase === phase);
+      for (const entity of oldPhaseEntities) {
+        useEntityGraphStore.getState().removeEntity(entity.id);
+      }
+
+      const phaseResult = await runSinglePhase({
+        phase,
+        topic,
+        priorPhases,
+        model,
+        provider,
+        signal,
+        callbacks,
+        run,
+      });
+
+      if (phaseResult.status === "success") {
+        priorPhases.push(phase);
+        continue;
+      }
+
+      if (phaseResult.status === "failed") {
+        result = {
+          status: "failed",
+          phasesCompleted: priorPhases.length - startIndex,
+          totalEntities: getTotalEntityCount(),
+          runId: run.runId,
+          failedPhase: phase,
+          failureKind: phaseResult.failureKind,
+        };
+        return result;
+      }
+
+      run.logger.warn("orchestrator", "analysis-aborted", {
+        mode: "revalidation",
+        phasesCompleted: priorPhases.length - startIndex,
+      });
+      result = {
+        status: "aborted",
+        phasesCompleted: priorPhases.length - startIndex,
+        totalEntities: getTotalEntityCount(),
+        runId: run.runId,
+      };
+      return result;
     }
 
-    if (signal.aborted) break;
-
-    if (!succeeded) {
-      useEntityGraphStore.getState().setPhaseStatus(phase, "failed");
-      callbacks.onPhaseFailed(phase, lastError);
-      // Don't clear stale flags — revalidation failed
-      callbacks.onComplete();
-      return;
+    if (!signal.aborted) {
+      useEntityGraphStore.getState().clearStale(staleIds);
+      result = {
+        status: "success",
+        phasesCompleted: phasesToRerun.length,
+        totalEntities: getTotalEntityCount(),
+        runId: run.runId,
+      };
     }
+
+    return result;
+  } finally {
+    run.logger.log("orchestrator", "analysis-finished", {
+      mode: "revalidation",
+      status: result.status,
+      phasesCompleted: result.phasesCompleted,
+      totalEntities: result.totalEntities,
+      failedPhase: result.failedPhase,
+      failureKind: result.failureKind,
+      elapsedMs: analysisTimer.elapsed(),
+    });
+    await run.logger.flush();
   }
-
-  // Only clear stale flags when all phases re-ran successfully
-  useEntityGraphStore.getState().clearStale(staleIds);
-
-  callbacks.onComplete();
 }

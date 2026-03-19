@@ -7,15 +7,15 @@ const useElectronMenuPath = fileURLToPath(
 );
 
 describe("use-electron-menu", () => {
-  it("handles the entity graph persistence menu actions", () => {
+  it("routes native menu actions through editor callbacks", () => {
     const source = readFileSync(useElectronMenuPath, "utf8");
 
     expect(source).toContain('action === "new"');
     expect(source).toContain('action === "open"');
     expect(source).toContain('action === "save"');
     expect(source).toContain('action === "saveAs"');
-    expect(source).toContain("useEntityGraphStore");
-    expect(source).toContain("openAnalysis");
+    expect(source).toContain("onNewAnalysis");
+    expect(source).toContain("onOpenAnalysis");
     expect(source).toContain("saveAnalysis");
   });
 });

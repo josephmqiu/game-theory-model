@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { serverError, serverLog, serverWarn } from './ai-logger'
 
 type ThinkingMode = 'adaptive' | 'disabled' | 'enabled'
 type ThinkingEffort = 'low' | 'medium' | 'high' | 'max'
@@ -13,6 +14,7 @@ interface CodexExecOptions {
   thinkingBudgetTokens?: number
   effort?: ThinkingEffort
   timeoutMs?: number
+  runId?: string
   /** Paths to temporary image files to reference in the prompt */
   imageFiles?: string[]
 }
@@ -81,6 +83,7 @@ export async function runCodexExec(
     const runResult = await executeCodexCommand(
       args,
       options.timeoutMs ?? DEFAULT_CODEX_TIMEOUT_MS,
+      options.runId,
     )
     const finalText = await readFile(outputPath, 'utf-8').catch(() => '')
     const normalizedText = finalText.trim() || runResult.text.trim()
@@ -146,14 +149,22 @@ function resolveCodexEffort(
 async function executeCodexCommand(
   args: string[],
   timeoutMs: number,
+  runId?: string,
 ): Promise<{ text: string; errors: string[] }> {
   return await new Promise((resolve, reject) => {
+    const start = Date.now()
     const child = spawn('codex', args, {
       env: filterCodexEnv(process.env as Record<string, string | undefined>),
       stdio: ['ignore', 'pipe', 'pipe'],
       // On Windows, npm-installed CLIs are .cmd scripts — need shell to resolve them
       ...(process.platform === 'win32' && { shell: true }),
     })
+    if (runId) {
+      serverLog(runId, 'codex-cli', 'spawn', {
+        argsCount: args.length,
+        timeoutMs,
+      })
+    }
 
     let stdoutBuffer = ''
     let stderrBuffer = ''
@@ -163,6 +174,11 @@ async function executeCodexCommand(
     const flushStdoutLine = (line: string) => {
       const event = parseCodexJsonLine(line)
       if (!event) return
+      if (runId) {
+        serverLog(runId, 'codex-cli', 'event', {
+          type: event.type,
+        })
+      }
       if (event.text) {
         textAccumulator += event.text
       }
@@ -173,6 +189,11 @@ async function executeCodexCommand(
 
     const timer = setTimeout(() => {
       child.kill('SIGTERM')
+      if (runId) {
+        serverWarn(runId, 'codex-cli', 'timeout-kill', {
+          elapsedMs: Date.now() - start,
+        })
+      }
       reject(new Error(`Codex request timed out after ${Math.round(timeoutMs / 1000)}s.`))
     }, timeoutMs)
 
@@ -193,6 +214,11 @@ async function executeCodexCommand(
 
     child.on('error', (err) => {
       clearTimeout(timer)
+      if (runId) {
+        serverError(runId, 'codex-cli', 'error', {
+          message: err.message,
+        })
+      }
       reject(err)
     })
 
@@ -202,6 +228,17 @@ async function executeCodexCommand(
       const tail = stdoutBuffer.trim()
       if (tail) {
         flushStdoutLine(tail)
+      }
+      if (runId) {
+        serverLog(runId, 'codex-cli', 'close', {
+          exitCode: code ?? 'unknown',
+          textLength: textAccumulator.length,
+          errorCount: errors.length,
+          elapsedMs: Date.now() - start,
+        })
+        serverWarn(runId, 'codex-cli', 'stderr', {
+          preview: stderrBuffer.trim().slice(0, 500),
+        })
       }
 
       if (code === 0) {
@@ -224,7 +261,7 @@ async function executeCodexCommand(
 
 function parseCodexJsonLine(
   line: string,
-): { text?: string; error?: string } | null {
+): { type: string; text?: string; error?: string } | null {
   let parsed: Record<string, unknown>
   try {
     parsed = JSON.parse(line) as Record<string, unknown>
@@ -235,7 +272,7 @@ function parseCodexJsonLine(
   const type = typeof parsed.type === 'string' ? parsed.type : ''
   if (type === 'error') {
     const message = getStringField(parsed, ['message'])
-    return { error: message || 'Codex returned an unknown error.' }
+    return { type, error: message || 'Codex returned an unknown error.' }
   }
 
   // Common Codex JSONL stream events include deltas in "delta" or "text".
@@ -244,8 +281,8 @@ function parseCodexJsonLine(
     || getStringField(parsed, ['text'])
     || getStringField(parsed, ['content'])
 
-  if (!text) return null
-  return { text }
+  if (!text) return { type: type || 'unknown' }
+  return { type: type || 'unknown', text }
 }
 
 function getStringField(

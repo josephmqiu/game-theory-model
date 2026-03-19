@@ -6,6 +6,8 @@ import {
   DEFAULT_STREAM_NO_TEXT_TIMEOUT_MS,
   STREAM_TIMEOUT_MIN_MS,
 } from './ai-runtime-config'
+import type { RunContext } from './ai-logger'
+import { timer } from './ai-logger'
 
 interface StreamChatOptions {
   hardTimeoutMs?: number
@@ -307,7 +309,17 @@ export async function generateCompletion(
   userMessage: string,
   model?: string,
   provider?: string,
+  run?: RunContext,
 ): Promise<string> {
+  const requestTimer = timer()
+  run?.logger.log('completion', 'request-start', {
+    model: model ?? 'missing',
+    provider: provider ?? 'missing',
+    systemLen: systemPrompt.length,
+    messageLen: userMessage.length,
+    timeoutMs: DEFAULT_GENERATE_TIMEOUT_MS,
+  })
+
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), DEFAULT_GENERATE_TIMEOUT_MS)
 
@@ -315,29 +327,53 @@ export async function generateCompletion(
   try {
     response = await fetch('/api/ai/generate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(run ? { 'X-Run-Id': run.runId } : {}),
+      },
       body: JSON.stringify({ system: systemPrompt, message: userMessage, model, provider }),
       signal: controller.signal,
     })
   } catch (error) {
     clearTimeout(timeout)
     if (controller.signal.aborted) {
+      run?.logger.warn('completion', 'request-timeout', {
+        elapsedMs: requestTimer.elapsed(),
+        timeoutMs: DEFAULT_GENERATE_TIMEOUT_MS,
+      })
       throw new Error('AI generation request timed out. Please retry.')
     }
+    run?.logger.error('completion', 'fetch-error', {
+      elapsedMs: requestTimer.elapsed(),
+      error: error instanceof Error ? error.message : 'Unknown fetch error',
+    })
     throw error
   } finally {
     clearTimeout(timeout)
   }
 
   if (!response.ok) {
+    run?.logger.error('completion', 'server-error', {
+      elapsedMs: requestTimer.elapsed(),
+      status: response.status,
+    })
     throw new Error(`Server error: ${response.status}`)
   }
 
   const data = await response.json()
   if (data.error) {
+    run?.logger.error('completion', 'server-error', {
+      elapsedMs: requestTimer.elapsed(),
+      error: data.error,
+    })
     throw new Error(data.error)
   }
-  return data.text ?? ''
+  const text = data.text ?? ''
+  run?.logger.log('completion', 'response-ok', {
+    elapsedMs: requestTimer.elapsed(),
+    textLength: text.length,
+  })
+  return text
 }
 
 /**
