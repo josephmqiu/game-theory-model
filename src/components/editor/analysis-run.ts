@@ -1,5 +1,5 @@
 import type { RunLogger } from "@/services/ai/ai-logger";
-import type { AnalysisResult } from "@/services/ai/methodology-orchestrator";
+import type { AnalysisResult } from "@/services/ai/analysis-orchestrator";
 
 export interface ActiveAnalysisRun {
   controller: AbortController;

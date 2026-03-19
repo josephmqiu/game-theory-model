@@ -433,7 +433,7 @@ export async function runFull(
       // Clear runPromise so new runs can start
       runPromise = null;
       // Flush deferred revalidations that were suppressed during this run
-      revalidationService.onRunComplete();
+      revalidationService.onRunComplete(run.provider, run.model);
     }
   };
 

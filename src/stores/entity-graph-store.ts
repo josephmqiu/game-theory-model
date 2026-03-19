@@ -344,3 +344,7 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
     },
   }),
 );
+
+// Auto-wire: keep the Zustand projection in sync when the service is mutated
+// externally (e.g. by the analysis orchestrator during AI runs).
+useEntityGraphStore.getState().subscribeToService();

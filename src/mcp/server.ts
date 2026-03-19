@@ -66,6 +66,10 @@ import { MCP_DEFAULT_PORT } from "@/constants/app";
 
 // --- Tool definitions (shared across all Server instances) ---
 
+// When PRODUCT_ONLY is set (e.g. by Codex adapter), expose only the 13 product
+// tools — not the 28 OpenPencil design tools.
+const PRODUCT_ONLY = process.env.PRODUCT_ONLY === "1";
+
 const TOOL_DEFINITIONS = [
   {
     name: "open_document",
@@ -769,9 +773,11 @@ const TOOL_DEFINITIONS = [
     },
   },
   ...LAYERED_DESIGN_TOOLS,
+];
 
-  // --- Game Theory Analyzer product tools (13) ---
+// --- Game Theory Analyzer product tools (13) ---
 
+const PRODUCT_TOOL_DEFINITIONS = [
   // Analysis tools (4)
   {
     name: "start_analysis",
@@ -1043,6 +1049,11 @@ const TOOL_DEFINITIONS = [
     },
   },
 ];
+
+// Merged set: OpenPencil tools + product tools (full profile), or product-only
+const ALL_TOOL_DEFINITIONS = PRODUCT_ONLY
+  ? PRODUCT_TOOL_DEFINITIONS
+  : [...TOOL_DEFINITIONS, ...PRODUCT_TOOL_DEFINITIONS];
 
 // --- Product tool handlers (exported for testing) ---
 
@@ -1341,7 +1352,7 @@ async function handleToolCall(
 /** Register tool handlers on a Server instance. */
 function registerTools(server: Server): void {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: TOOL_DEFINITIONS,
+    tools: ALL_TOOL_DEFINITIONS,
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {

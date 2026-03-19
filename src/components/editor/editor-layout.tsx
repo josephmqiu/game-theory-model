@@ -18,10 +18,7 @@ import { useElectronMenu } from "@/hooks/use-electron-menu";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { initAppStorage } from "@/utils/app-storage";
 import { createRunLogger } from "@/services/ai/ai-logger";
-import {
-  runMethodologyAnalysis,
-  type OrchestratorCallbacks,
-} from "@/services/ai/methodology-orchestrator";
+import * as analysisOrchestrator from "@/services/ai/analysis-orchestrator";
 import {
   openAnalysis,
   openAnalysisFromPath,
@@ -100,42 +97,30 @@ export default function EditorLayout() {
         useEntityGraphStore.getState().newAnalysis(topic);
 
         const controller = new AbortController();
-        const runId = nanoid(8);
-        const logger = createRunLogger(runId);
-        const run = { runId, logger };
-
-        const callbacks: OrchestratorCallbacks = {
-          onPhaseStart: (phase) => {
-            logger.log("ui", "phase-start", { phase });
-          },
-          onPhaseComplete: (phase, entityCount) => {
-            logger.log("ui", "phase-complete", { phase, entityCount });
-          },
-          onPhaseFailed: (phase, error) => {
-            logger.error("ui", "phase-failed", { phase, error });
-          },
-        };
-
-        const promise = runMethodologyAnalysis({
-          topic,
-          signal: controller.signal,
-          callbacks,
-          run,
-        });
-
-        activeRunRef.current = {
-          controller,
-          promise,
-          runId,
-          logger,
-        };
+        const logger = createRunLogger(nanoid(8));
 
         try {
-          await promise;
-        } finally {
-          if (activeRunRef.current?.runId === runId) {
-            activeRunRef.current = null;
-          }
+          const { runId } = await analysisOrchestrator.runFull(
+            topic,
+            undefined, // provider — resolved by orchestrator
+            undefined, // model — resolved by orchestrator
+            controller.signal,
+          );
+
+          activeRunRef.current = {
+            controller,
+            promise: Promise.resolve({
+              runId,
+              entities: [],
+              relationships: [],
+            }),
+            runId,
+            logger,
+          };
+        } catch (err) {
+          logger.error("ui", "orchestrator-start-failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
       })();
     },

@@ -34,6 +34,10 @@ const progressListeners = new Set<(event: AnalysisProgressEvent) => void>();
 let unsubscribeMutation: (() => void) | null = null;
 const revalRunStatuses = new Map<string, RevalRunStatus>();
 
+/** Provider/model from the most recent analysis run, used for revalidation continuity. */
+let lastRunProvider: string | undefined;
+let lastRunModel: string | undefined;
+
 // ── Progress event helpers ──
 
 function emitProgress(event: AnalysisProgressEvent): void {
@@ -132,6 +136,20 @@ export function revalidate(
 ): { runId: string } {
   const runId = `reval-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+  // Concurrency guard: if an analysis run is active, defer for later
+  if (orchestrator.isRunning()) {
+    const ids = staleEntityIds ?? [];
+    for (const id of ids) {
+      deferredStaleIds.add(id);
+    }
+    revalRunStatuses.set(runId, {
+      runId,
+      status: "completed",
+      phasesCompleted: 0,
+    });
+    return { runId };
+  }
+
   // Determine starting phase synchronously so we can return early if nothing to do
   let startPhase: MethodologyPhase | null = null;
 
@@ -186,7 +204,10 @@ async function executeRevalidation(
     emitProgress({ type: "phase_started", phase: p, runId });
 
     const phaseStart = Date.now();
-    const result = await runPhase(p, topic);
+    const result = await runPhase(p, topic, {
+      provider: lastRunProvider,
+      model: lastRunModel,
+    });
 
     if (result.success) {
       // Clear stale on entities from this phase
@@ -282,10 +303,14 @@ export function getRevalStatus(runId: string): RevalRunStatus | null {
 }
 
 /**
- * Called by the orchestrator when a run finishes. If there are pending staleIds
- * from suppressed revalidation, triggers revalidation now.
+ * Called by the orchestrator when a run finishes. Captures provider/model
+ * for revalidation continuity. If there are pending staleIds from suppressed
+ * revalidation, triggers revalidation now.
  */
-export function onRunComplete(): void {
+export function onRunComplete(provider?: string, model?: string): void {
+  if (provider !== undefined) lastRunProvider = provider;
+  if (model !== undefined) lastRunModel = model;
+
   if (deferredStaleIds.size > 0) {
     const ids = Array.from(deferredStaleIds);
     deferredStaleIds.clear();
@@ -341,6 +366,8 @@ export function _resetForTest(): void {
   deferredStaleIds.clear();
   progressListeners.clear();
   revalRunStatuses.clear();
+  lastRunProvider = undefined;
+  lastRunModel = undefined;
   unwire();
 }
 

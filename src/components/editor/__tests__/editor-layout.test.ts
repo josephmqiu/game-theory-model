@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { abortAnalysisRun } from "@/components/editor/analysis-run";
+import type { AnalysisResult } from "@/services/ai/analysis-orchestrator";
 
 const topBarPath = join(process.cwd(), "src/components/editor/top-bar.tsx");
 const landingPath = join(process.cwd(), "src/routes/index.tsx");
@@ -62,19 +63,13 @@ describe("editor layout", () => {
     };
     const onSettled = vi.fn();
 
-    const promise = new Promise<{
-      status: "aborted";
-      phasesCompleted: number;
-      totalEntities: number;
-      runId: string;
-    }>((resolve) => {
+    const promise = new Promise<AnalysisResult>((resolve) => {
       controller.signal.addEventListener("abort", () => {
         onSettled();
         resolve({
-          status: "aborted",
-          phasesCompleted: 0,
-          totalEntities: 0,
           runId: "run-abort",
+          entities: [],
+          relationships: [],
         });
       });
     });

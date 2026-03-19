@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { abortAnalysisRun } from "@/components/editor/analysis-run";
-import type { AnalysisResult } from "@/services/ai/methodology-orchestrator";
+import type { AnalysisResult } from "@/services/ai/analysis-orchestrator";
 import type { RunLogger } from "@/services/ai/ai-logger";
 
 function createDeferred<T>() {
@@ -49,10 +49,9 @@ describe("abortAnalysisRun", () => {
     expect(order).toEqual(["warn"]);
 
     deferred.resolve({
-      status: "aborted",
-      phasesCompleted: 0,
-      totalEntities: 0,
       runId: "run-123",
+      entities: [],
+      relationships: [],
     });
 
     await abortPromise;

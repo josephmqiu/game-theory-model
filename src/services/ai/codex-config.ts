@@ -89,6 +89,7 @@ function mcpEntryLines(command: string, args: string[]): string[] {
     `args = [${argsStr}]`,
     `startup_timeout_sec = 10`,
     `tool_timeout_sec = 120`,
+    `env = { PRODUCT_ONLY = "1" }`,
     "",
   ];
 }

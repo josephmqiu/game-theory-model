@@ -1,5 +1,6 @@
-import type { AnalysisFailureKind } from "@/services/ai/methodology-orchestrator";
 import type { MethodologyPhase } from "@/types/methodology";
+
+export type AnalysisFailureKind = "timeout" | "parse-error" | "provider-error";
 
 export type PhaseFailureState = Partial<
   Record<
