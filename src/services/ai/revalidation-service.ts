@@ -14,6 +14,17 @@ import type { AnalysisProgressEvent } from "@/services/ai/analysis-events";
 
 const DEBOUNCE_MS = 2000;
 
+// ── Revalidation run status tracking ──
+
+export type RevalRunStatusValue = "running" | "completed" | "failed";
+
+export interface RevalRunStatus {
+  runId: string;
+  status: RevalRunStatusValue;
+  phasesCompleted: number;
+  error?: string;
+}
+
 // ── Module-level state ──
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -21,6 +32,7 @@ let pendingStaleIds = new Set<string>();
 let deferredStaleIds = new Set<string>();
 const progressListeners = new Set<(event: AnalysisProgressEvent) => void>();
 let unsubscribeMutation: (() => void) | null = null;
+const revalRunStatuses = new Map<string, RevalRunStatus>();
 
 // ── Progress event helpers ──
 
@@ -110,17 +122,17 @@ export function scheduleRevalidation(staleIds: string[]): void {
 }
 
 /**
- * Run revalidation. Determines which phases need re-running from entity provenance
- * (or uses the explicit phase parameter), then re-runs from the earliest stale phase
- * through the end of the pipeline.
+ * Run revalidation asynchronously. Returns immediately with { runId }.
+ * The actual phase re-runs execute via a microtask so the caller can
+ * poll status via getRevalStatus(runId).
  */
-export async function revalidate(
+export function revalidate(
   staleEntityIds?: string[],
   phase?: string,
-): Promise<{ runId: string }> {
+): { runId: string } {
   const runId = `reval-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-  // Determine starting phase
+  // Determine starting phase synchronously so we can return early if nothing to do
   let startPhase: MethodologyPhase | null = null;
 
   if (phase) {
@@ -134,15 +146,38 @@ export async function revalidate(
   }
 
   if (!startPhase) {
+    revalRunStatuses.set(runId, {
+      runId,
+      status: "completed",
+      phasesCompleted: 0,
+    });
     return { runId };
   }
 
+  // Register as running before async work begins
+  revalRunStatuses.set(runId, { runId, status: "running", phasesCompleted: 0 });
+
+  // Execute phase re-runs asynchronously
+  const capturedStartPhase = startPhase;
+  Promise.resolve().then(() => executeRevalidation(runId, capturedStartPhase));
+
+  return { runId };
+}
+
+/**
+ * Internal: execute the revalidation phases. Called asynchronously from revalidate().
+ */
+async function executeRevalidation(
+  runId: string,
+  startPhase: MethodologyPhase,
+): Promise<void> {
   // Get the analysis topic for phase re-execution
   const analysis = entityGraphService.getAnalysis();
   const topic = analysis.topic;
 
   // Re-run from the earliest stale phase through the end
   const phases = phasesFrom(startPhase);
+  let phasesCompleted = 0;
 
   for (const p of phases) {
     // Remove old entities before re-running to prevent duplication
@@ -161,9 +196,10 @@ export async function revalidate(
         entityGraphService.clearStale(phaseEntityIds);
       }
 
-      // Store new entities
+      // Store new entities, building an ID map for relationship remapping
+      const idMap = new Map<string, string>();
       for (const entity of result.entities) {
-        entityGraphService.createEntity(
+        const created = entityGraphService.createEntity(
           {
             type: entity.type,
             phase: entity.phase,
@@ -177,7 +213,34 @@ export async function revalidate(
           },
           { source: "phase-derived", runId, phase: p },
         );
+        if (entity.id) {
+          idMap.set(entity.id, created.id);
+        }
       }
+
+      // H2 fix: recreate relationships from re-run phases with ID remapping
+      for (const rel of result.relationships) {
+        const fromId = idMap.get(rel.fromEntityId) ?? rel.fromEntityId;
+        const toId = idMap.get(rel.toEntityId) ?? rel.toEntityId;
+        try {
+          entityGraphService.createRelationship({
+            type: rel.type,
+            fromEntityId: fromId,
+            toEntityId: toId,
+            metadata: rel.metadata,
+          });
+        } catch {
+          // Relationship may fail if entity IDs reference entities from
+          // a different phase that haven't been remapped in this batch.
+        }
+      }
+
+      phasesCompleted++;
+      revalRunStatuses.set(runId, {
+        runId,
+        status: "running",
+        phasesCompleted,
+      });
 
       emitProgress({
         type: "phase_completed",
@@ -191,16 +254,31 @@ export async function revalidate(
         },
       });
     } else {
+      const error = result.error ?? "Revalidation phase failed";
+      revalRunStatuses.set(runId, {
+        runId,
+        status: "failed",
+        phasesCompleted,
+        error,
+      });
       emitProgress({
         type: "analysis_failed",
         runId,
-        error: result.error ?? "Revalidation phase failed",
+        error,
       });
-      break;
+      return;
     }
   }
 
-  return { runId };
+  revalRunStatuses.set(runId, { runId, status: "completed", phasesCompleted });
+}
+
+/**
+ * Get the status of a revalidation run by its runId.
+ * Returns null if the runId is not found.
+ */
+export function getRevalStatus(runId: string): RevalRunStatus | null {
+  return revalRunStatuses.get(runId) ?? null;
 }
 
 /**
@@ -262,6 +340,7 @@ export function _resetForTest(): void {
   pendingStaleIds.clear();
   deferredStaleIds.clear();
   progressListeners.clear();
+  revalRunStatuses.clear();
   unwire();
 }
 

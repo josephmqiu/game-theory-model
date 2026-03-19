@@ -3,8 +3,16 @@
 // Uses JSON-RPC 2.0 over stdio to a persistent `codex app-server` subprocess.
 
 import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { filterCodexEnv } from "../../../server/utils/codex-client";
 import { serverLog, serverWarn } from "../../../server/utils/ai-logger";
+import {
+  installMcpServer,
+  uninstallMcpServer,
+  registerCleanupHandler,
+} from "./codex-config";
 import type { ChatEvent } from "./chat-events";
 
 // ── Types ──
@@ -143,6 +151,41 @@ function handleIncomingLine(conn: AppServerConnection, line: string): void {
   }
 }
 
+// ── MCP server path resolution ──
+
+// ESM-compatible __dirname polyfill
+const _codexAdapterFilename = fileURLToPath(import.meta.url);
+const _codexAdapterDirname = dirname(_codexAdapterFilename);
+
+/**
+ * Resolve the MCP server script path.
+ * Same resolution order as server/utils/mcp-server-manager.ts.
+ */
+function resolveMcpServerScript(): string {
+  // Electron production: extraResources
+  const electronResources = process.env.ELECTRON_RESOURCES_PATH;
+  if (electronResources) {
+    const p = resolve(electronResources, "mcp-server.cjs");
+    if (existsSync(p)) return p;
+  }
+  // dev + web build (from cwd)
+  const fromCwd = resolve(process.cwd(), "dist", "mcp-server.cjs");
+  if (existsSync(fromCwd)) return fromCwd;
+  // Fallback: relative to this file
+  const fromFile = resolve(
+    _codexAdapterDirname,
+    "..",
+    "..",
+    "..",
+    "dist",
+    "mcp-server.cjs",
+  );
+  if (existsSync(fromFile)) return fromFile;
+  return fromCwd;
+}
+
+let cleanupMcpHandler: (() => void) | null = null;
+
 // ── App-server lifecycle ──
 
 const INITIALIZE_TIMEOUT_MS = 15_000;
@@ -150,6 +193,9 @@ const INITIALIZE_TIMEOUT_MS = 15_000;
 /**
  * Spawn the `codex app-server` subprocess and perform the JSON-RPC initialize handshake.
  * Returns the connection handle. Reuses an existing connection if alive.
+ *
+ * H5: Installs MCP server config before spawning so that the Codex app-server
+ * picks up the product tools automatically.
  */
 export async function startAppServer(
   runId?: string,
@@ -157,6 +203,12 @@ export async function startAppServer(
   if (connection && connection.process.exitCode === null) {
     return connection;
   }
+
+  // H5: Install MCP config so codex picks up our product tools
+  const mcpServerPath = resolveMcpServerScript();
+  installMcpServer("node", [mcpServerPath]);
+  cleanupMcpHandler = registerCleanupHandler();
+  serverLog(runId, "codex-adapter", "mcp-installed", { mcpServerPath });
 
   const child = spawn("codex", ["app-server"], {
     env: filterCodexEnv(process.env as Record<string, string | undefined>),
@@ -233,6 +285,11 @@ export async function startAppServer(
   // Send initialized notification
   sendNotification(conn, "initialized");
 
+  // H5: Tell the app-server to reload MCP config so it picks up the new entry
+  sendRequest(conn, "config/mcpServer/reload", {}).catch(() => {
+    serverWarn(runId, "codex-adapter", "mcp-reload-failed", {});
+  });
+
   connection = conn;
   serverLog(runId, "codex-adapter", "initialized");
   return conn;
@@ -240,6 +297,7 @@ export async function startAppServer(
 
 /**
  * Gracefully stop the app-server subprocess.
+ * H5: Also uninstalls MCP server config and removes cleanup handlers.
  */
 export async function stopAppServer(runId?: string): Promise<void> {
   if (!connection) return;
@@ -248,6 +306,13 @@ export async function stopAppServer(runId?: string): Promise<void> {
   connection = null;
 
   serverLog(runId, "codex-adapter", "stopping");
+
+  // H5: Uninstall MCP config and remove cleanup handler
+  uninstallMcpServer();
+  if (cleanupMcpHandler) {
+    cleanupMcpHandler();
+    cleanupMcpHandler = null;
+  }
 
   // Try graceful shutdown, then force kill
   conn.process.kill("SIGTERM");
@@ -520,6 +585,7 @@ export async function runAnalysisPhase<T = unknown>(
   systemPrompt: string,
   model: string,
   schema: Record<string, unknown>,
+  signal?: AbortSignal,
   runId?: string,
 ): Promise<T> {
   const conn = await startAppServer(runId);
@@ -589,6 +655,11 @@ export async function runAnalysisPhase<T = unknown>(
     const startTime = Date.now();
 
     while (!completed) {
+      // Check abort signal
+      if (signal?.aborted) {
+        await sendRequest(conn, "turn/interrupt", { threadId }).catch(() => {});
+        throw new Error("Aborted");
+      }
       if (Date.now() - startTime > ANALYSIS_TIMEOUT_MS) {
         await sendRequest(conn, "turn/interrupt", { threadId }).catch(() => {});
         throw new Error("Analysis phase timed out");

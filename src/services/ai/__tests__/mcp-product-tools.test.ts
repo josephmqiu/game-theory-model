@@ -40,7 +40,8 @@ vi.mock("@/services/ai/analysis-orchestrator", () => ({
 }));
 
 vi.mock("@/services/ai/revalidation-service", () => ({
-  revalidate: vi.fn().mockResolvedValue({ runId: "reval-mock-456" }),
+  revalidate: vi.fn().mockReturnValue({ runId: "reval-mock-456" }),
+  getRevalStatus: vi.fn().mockReturnValue(null),
 }));
 
 vi.mock("@/services/ai/canvas-service", () => ({
@@ -164,7 +165,7 @@ describe("handleRevalidateEntities", () => {
     const { revalidate } = await import("@/services/ai/revalidation-service");
 
     const result = JSON.parse(
-      await handleRevalidateEntities({
+      handleRevalidateEntities({
         entityIds: ["e1", "e2"],
         phase: "situational-grounding",
       }),
@@ -181,7 +182,7 @@ describe("handleRevalidateEntities", () => {
   it("passes undefined when no entityIds or phase given", async () => {
     const { revalidate } = await import("@/services/ai/revalidation-service");
 
-    await handleRevalidateEntities({});
+    handleRevalidateEntities({});
 
     expect(revalidate).toHaveBeenCalledWith(undefined, undefined);
   });

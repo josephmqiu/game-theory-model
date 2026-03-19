@@ -295,6 +295,7 @@ interface AnalysisAdapter {
     systemPrompt: string,
     model: string,
     schema: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<T>;
 }
 
@@ -396,7 +397,13 @@ export async function runPhase(
 
   let adapterResult: unknown;
   try {
-    adapterResult = await adapter.runAnalysisPhase(user, system, model, schema);
+    adapterResult = await adapter.runAnalysisPhase(
+      user,
+      system,
+      model,
+      schema,
+      context?.signal,
+    );
   } catch (err) {
     return {
       success: false,

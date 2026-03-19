@@ -49,6 +49,10 @@ const mockEntityGraph = {
     ...data,
     id: `gen-${Math.random().toString(36).slice(2, 6)}`,
   })),
+  createRelationship: vi.fn((data: Record<string, unknown>) => ({
+    ...data,
+    id: `rel-${Math.random().toString(36).slice(2, 6)}`,
+  })),
   removePhaseEntities: vi.fn(),
   markStale: vi.fn(),
   onMutation: vi.fn((_cb: (event: unknown) => void) => vi.fn()),
@@ -260,9 +264,12 @@ describe("revalidation-service", () => {
       .mockResolvedValueOnce(makePhaseResult("player-identification"))
       .mockResolvedValueOnce(makePhaseResult("baseline-model"));
 
-    const result = await revalidation.revalidate(["e1", "e2"]);
+    const result = revalidation.revalidate(["e1", "e2"]);
 
     expect(result.runId).toMatch(/^reval-/);
+
+    // Flush microtasks to let async execution complete
+    await vi.advanceTimersByTimeAsync(0);
 
     // Should run from player-identification (earliest) through baseline-model
     expect(mockRunPhase).toHaveBeenCalledTimes(2);
@@ -283,9 +290,12 @@ describe("revalidation-service", () => {
     });
     mockRunPhase.mockResolvedValueOnce(makePhaseResult("baseline-model"));
 
-    const result = await revalidation.revalidate(undefined, "baseline-model");
+    const result = revalidation.revalidate(undefined, "baseline-model");
 
     expect(result.runId).toMatch(/^reval-/);
+
+    // Flush microtasks to let async execution complete
+    await vi.advanceTimersByTimeAsync(0);
 
     // Should only run baseline-model (last phase, nothing after it in V1)
     expect(mockRunPhase).toHaveBeenCalledTimes(1);
@@ -294,8 +304,8 @@ describe("revalidation-service", () => {
 
   // ── 7. Returns runId ──
 
-  it("revalidate returns a runId", async () => {
-    const result = await revalidation.revalidate();
+  it("revalidate returns a runId", () => {
+    const result = revalidation.revalidate();
     expect(result.runId).toMatch(/^reval-/);
   });
 
@@ -318,7 +328,10 @@ describe("revalidation-service", () => {
     const events: AnalysisProgressEvent[] = [];
     const unsubscribe = revalidation.onProgress((event) => events.push(event));
 
-    await revalidation.revalidate(["e1"]);
+    revalidation.revalidate(["e1"]);
+
+    // Flush microtasks to let async execution complete
+    await vi.advanceTimersByTimeAsync(0);
 
     unsubscribe();
 
@@ -350,7 +363,10 @@ describe("revalidation-service", () => {
     const events: AnalysisProgressEvent[] = [];
     const unsubscribe = revalidation.onProgress((event) => events.push(event));
 
-    await revalidation.revalidate(["e1"]);
+    revalidation.revalidate(["e1"]);
+
+    // Flush microtasks to let async execution complete
+    await vi.advanceTimersByTimeAsync(0);
 
     unsubscribe();
 
@@ -434,10 +450,18 @@ describe("revalidation-service", () => {
     });
     mockEntityGraph.getStaleEntityIds.mockReturnValue([]);
 
-    const result = await revalidation.revalidate();
+    const result = revalidation.revalidate();
+
+    // Flush microtasks
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(result.runId).toMatch(/^reval-/);
     expect(mockRunPhase).not.toHaveBeenCalled();
+
+    // H1: status should be "completed" for no-op revalidation
+    const status = revalidation.getRevalStatus(result.runId);
+    expect(status).not.toBeNull();
+    expect(status!.status).toBe("completed");
   });
 
   // ── 15. revalidate removes old entities before re-running phases ──
@@ -456,7 +480,10 @@ describe("revalidation-service", () => {
       .mockResolvedValueOnce(makePhaseResult("player-identification"))
       .mockResolvedValueOnce(makePhaseResult("baseline-model"));
 
-    await revalidation.revalidate(["e1"]);
+    revalidation.revalidate(["e1"]);
+
+    // Flush microtasks to let async execution complete
+    await vi.advanceTimersByTimeAsync(0);
 
     // removePhaseEntities should be called once per phase, before runPhase
     expect(mockEntityGraph.removePhaseEntities).toHaveBeenCalledTimes(3);
@@ -477,5 +504,80 @@ describe("revalidation-service", () => {
     for (let i = 0; i < 3; i++) {
       expect(removeOrder[i]).toBeLessThan(runOrder[i]);
     }
+  });
+
+  // ── 16. getRevalStatus returns status for tracked runs ──
+
+  it("getRevalStatus returns running/completed status", async () => {
+    mockEntityGraph.getAnalysis.mockReturnValue({
+      id: "test",
+      name: "test",
+      topic: "test topic",
+      entities: [makeEntity("e1", "situational-grounding", true)],
+      relationships: [],
+      phases: [],
+    });
+    mockRunPhase
+      .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
+      .mockResolvedValueOnce(makePhaseResult("player-identification"))
+      .mockResolvedValueOnce(makePhaseResult("baseline-model"));
+
+    const { runId } = revalidation.revalidate(["e1"]);
+
+    // Before microtask flush, status should be "running"
+    const statusBefore = revalidation.getRevalStatus(runId);
+    expect(statusBefore).not.toBeNull();
+    expect(statusBefore!.status).toBe("running");
+
+    // Flush microtasks
+    await vi.advanceTimersByTimeAsync(0);
+
+    // After completion, status should be "completed"
+    const statusAfter = revalidation.getRevalStatus(runId);
+    expect(statusAfter).not.toBeNull();
+    expect(statusAfter!.status).toBe("completed");
+    expect(statusAfter!.phasesCompleted).toBe(3);
+  });
+
+  // ── 17. getRevalStatus returns null for unknown runIds ──
+
+  it("getRevalStatus returns null for unknown runId", () => {
+    expect(revalidation.getRevalStatus("unknown-id")).toBeNull();
+  });
+
+  // ── 18. Revalidation creates relationships from re-run phases ──
+
+  it("creates relationships from re-run phases with ID remapping", async () => {
+    mockEntityGraph.getAnalysis.mockReturnValue({
+      id: "test",
+      name: "test",
+      topic: "test topic",
+      entities: [makeEntity("e1", "situational-grounding", true)],
+      relationships: [],
+      phases: [],
+    });
+
+    const phaseResult: PhaseResult = {
+      success: true,
+      entities: [makeEntity("fact-1", "situational-grounding")],
+      relationships: [
+        {
+          id: "rel-1",
+          type: "precedes",
+          fromEntityId: "fact-1",
+          toEntityId: "fact-1",
+        },
+      ] as AnalysisRelationship[],
+    };
+    mockRunPhase
+      .mockResolvedValueOnce(phaseResult)
+      .mockResolvedValueOnce(makePhaseResult("player-identification"))
+      .mockResolvedValueOnce(makePhaseResult("baseline-model"));
+
+    revalidation.revalidate(["e1"]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // createRelationship should have been called for the relationship
+    expect(mockEntityGraph.createRelationship).toHaveBeenCalled();
   });
 });

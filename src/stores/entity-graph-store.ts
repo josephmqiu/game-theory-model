@@ -89,19 +89,27 @@ function bfsDownstream(
 }
 
 /**
- * Push the store's current analysis state to the entity-graph-service.
- * This keeps the service in sync after local mutations.
+ * Sync the store state from entity-graph-service (the source of truth).
  */
-function pushToService(analysis: Analysis): void {
-  entityGraphService.loadAnalysis(analysis);
+function syncFromServiceState(): {
+  analysis: Analysis;
+  isDirty: boolean;
+  revision: number;
+} {
+  return {
+    analysis: entityGraphService.getAnalysis() as Analysis,
+    isDirty: entityGraphService.getIsDirty(),
+    revision: entityGraphService.getRevision(),
+  };
 }
 
 // ── Store ──
 // This store is a PROJECTION of entity-graph-service.
-// Mutations that originate from the store do local updates first (for backward
-// compat with callers that rely on specific entity IDs), then push the result
-// to the service via loadAnalysis(). Mutations that originate from the service
-// (e.g. during AI analysis) sync into the store via subscribeToService().
+// Mutations route through service CRUD methods (createEntity, updateEntity, etc.)
+// so that provenance stamping and event emission happen in one place.
+// The store then syncs its state from the service.
+// Mutations that originate from the service (e.g. during AI analysis) sync
+// into the store via subscribeToService().
 
 export const useEntityGraphStore = create<EntityGraphStoreState>(
   (set, get) => ({
@@ -147,92 +155,95 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
         return;
       }
 
-      set((state) => {
-        const existingIds = new Set(state.analysis.entities.map((e) => e.id));
-        const deduped = entities.filter((e) => !existingIds.has(e.id));
+      // Route through service CRUD methods for provenance stamping
+      const existingIds = new Set(
+        entityGraphService.getAnalysis().entities.map((e) => e.id),
+      );
 
-        // Nothing new to add
-        if (
-          deduped.length === 0 &&
-          (!relationships || relationships.length === 0)
-        ) {
-          return state;
+      // Build ID map: caller-provided ID -> service-generated ID
+      const idMap = new Map<string, string>();
+      for (const entity of entities) {
+        if (existingIds.has(entity.id)) continue; // dedup
+        const created = entityGraphService.createEntity(
+          {
+            type: entity.type,
+            phase: entity.phase,
+            data: entity.data,
+            position: entity.position,
+            confidence: entity.confidence,
+            source: entity.source,
+            rationale: entity.rationale,
+            revision: entity.revision,
+            stale: entity.stale,
+          },
+          {
+            source: entity.provenance?.source ?? "phase-derived",
+            runId: entity.provenance?.runId,
+            phase: entity.provenance?.phase,
+          },
+        );
+        idMap.set(entity.id, created.id);
+      }
+
+      if (relationships) {
+        for (const rel of relationships) {
+          const fromId = idMap.get(rel.fromEntityId) ?? rel.fromEntityId;
+          const toId = idMap.get(rel.toEntityId) ?? rel.toEntityId;
+          try {
+            entityGraphService.createRelationship({
+              type: rel.type,
+              fromEntityId: fromId,
+              toEntityId: toId,
+              metadata: rel.metadata,
+            });
+          } catch {
+            // Relationship may fail if entity IDs reference entities from
+            // a different phase that haven't been remapped in this batch.
+          }
         }
+      }
 
-        const nextAnalysis = {
-          ...state.analysis,
-          entities: [...state.analysis.entities, ...deduped],
-          relationships: relationships
-            ? [...state.analysis.relationships, ...relationships]
-            : state.analysis.relationships,
-        };
-
-        // Sync to service
-        pushToService(nextAnalysis);
-
-        return {
-          analysis: nextAnalysis,
-          isDirty: true,
-          revision: state.revision + 1,
-        };
-      });
+      // Sync from service
+      set((state) => ({
+        ...syncFromServiceState(),
+        revision: state.revision + 1,
+      }));
     },
 
-    updateEntity: (id, updates) =>
-      set((state) => {
-        const nextAnalysis = {
-          ...state.analysis,
-          entities: state.analysis.entities.map((e) =>
-            e.id === id ? { ...e, ...updates, id } : e,
-          ),
-        };
+    updateEntity: (id, updates) => {
+      entityGraphService.updateEntity(id, updates, { source: "ai-edited" });
+      set((state) => ({
+        ...syncFromServiceState(),
+        revision: state.revision + 1,
+      }));
+    },
 
-        // Sync to service
-        pushToService(nextAnalysis);
+    removeEntity: (id) => {
+      entityGraphService.removeEntity(id);
+      set((state) => ({
+        ...syncFromServiceState(),
+        revision: state.revision + 1,
+      }));
+    },
 
-        return {
-          analysis: nextAnalysis,
-          isDirty: true,
-          revision: state.revision + 1,
-        };
-      }),
-
-    removeEntity: (id) =>
-      set((state) => {
-        const nextAnalysis = {
-          ...state.analysis,
-          entities: state.analysis.entities.filter((e) => e.id !== id),
-          relationships: state.analysis.relationships.filter(
-            (r) => r.fromEntityId !== id && r.toEntityId !== id,
-          ),
-        };
-
-        // Sync to service
-        pushToService(nextAnalysis);
-
-        return {
-          analysis: nextAnalysis,
-          isDirty: true,
-          revision: state.revision + 1,
-        };
-      }),
-
-    addRelationships: (relationships) =>
-      set((state) => {
-        const nextAnalysis = {
-          ...state.analysis,
-          relationships: [...state.analysis.relationships, ...relationships],
-        };
-
-        // Sync to service
-        pushToService(nextAnalysis);
-
-        return {
-          analysis: nextAnalysis,
-          isDirty: true,
-          revision: state.revision + 1,
-        };
-      }),
+    addRelationships: (relationships) => {
+      for (const rel of relationships) {
+        try {
+          entityGraphService.createRelationship({
+            type: rel.type,
+            fromEntityId: rel.fromEntityId,
+            toEntityId: rel.toEntityId,
+            metadata: rel.metadata,
+          });
+        } catch {
+          // Entity IDs may not exist if from a different batch
+        }
+      }
+      set((state) => ({
+        ...syncFromServiceState(),
+        revision: state.revision + 1,
+      }));
+    },
 
     setPhaseStatus: (phase, status) => {
       entityGraphService.setPhaseStatus(phase, status);

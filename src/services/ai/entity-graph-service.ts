@@ -310,6 +310,21 @@ export function getDownstreamEntityIds(entityId: string): string[] {
   return bfsDownstream(entityId, analysis.relationships);
 }
 
+export function removeEntity(id: string): boolean {
+  const exists = analysis.entities.some((e) => e.id === id);
+  if (!exists) return false;
+
+  analysis = {
+    ...analysis,
+    entities: analysis.entities.filter((e) => e.id !== id),
+    relationships: analysis.relationships.filter(
+      (r) => r.fromEntityId !== id && r.toEntityId !== id,
+    ),
+  };
+  mutate();
+  return true;
+}
+
 export function removePhaseEntities(
   phase: MethodologyPhase,
   runId?: string,

@@ -1045,6 +1045,11 @@ export async function handleStartAnalysis(args: {
 }
 
 export function handleGetAnalysisStatus(args: { runId: string }): string {
+  // Check revalidation status first (reval IDs are not tracked by the orchestrator)
+  const revalStatus = revalidationService.getRevalStatus(args.runId);
+  if (revalStatus) {
+    return JSON.stringify(revalStatus);
+  }
   const status = analysisOrchestrator.getStatus(args.runId);
   return JSON.stringify(status);
 }
@@ -1054,14 +1059,11 @@ export function handleGetAnalysisResult(args: { runId: string }): string {
   return JSON.stringify(result);
 }
 
-export async function handleRevalidateEntities(args: {
+export function handleRevalidateEntities(args: {
   entityIds?: string[];
   phase?: string;
-}): Promise<string> {
-  const { runId } = await revalidationService.revalidate(
-    args.entityIds,
-    args.phase,
-  );
+}): string {
+  const { runId } = revalidationService.revalidate(args.entityIds, args.phase);
   return JSON.stringify({ runId, status: "started" });
 }
 
@@ -1296,7 +1298,7 @@ async function handleToolCall(
     case "get_analysis_result":
       return handleGetAnalysisResult(a);
     case "revalidate_entities":
-      return await handleRevalidateEntities(a);
+      return handleRevalidateEntities(a);
     case "get_entities":
       return handleGetEntities(a);
     case "create_entity":

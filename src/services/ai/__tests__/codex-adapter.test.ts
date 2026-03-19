@@ -68,6 +68,20 @@ vi.mock("../../../../server/utils/ai-logger", () => ({
   serverError: vi.fn(),
 }));
 
+vi.mock("../codex-config", () => ({
+  installMcpServer: vi.fn(),
+  uninstallMcpServer: vi.fn(),
+  registerCleanupHandler: vi.fn(() => vi.fn()),
+}));
+
+vi.mock("node:fs", async () => {
+  const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+  return {
+    ...actual,
+    existsSync: vi.fn(() => true),
+  };
+});
+
 // ── Helpers ──
 
 /** Simulate the app-server sending a JSON-RPC response */

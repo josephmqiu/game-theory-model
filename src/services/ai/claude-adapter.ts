@@ -100,7 +100,7 @@ export async function createProductMcpServer() {
         content: [
           {
             type: "text" as const,
-            text: await handleRevalidateEntities(args),
+            text: handleRevalidateEntities(args),
           },
         ],
       }),
@@ -426,6 +426,7 @@ export async function runAnalysisPhase<T = unknown>(
   systemPrompt: string,
   model: string,
   schema: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<T> {
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
   const { buildClaudeAgentEnv, getClaudeAgentDebugFilePath } =
@@ -457,8 +458,32 @@ export async function runAnalysisPhase<T = unknown>(
     },
   });
 
+  // Close query on abort signal
+  if (signal) {
+    const onAbort = () => q.close();
+    signal.addEventListener("abort", onAbort, { once: true });
+    // Clean up listener when we're done (in finally)
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    try {
+      return await _runAnalysisQuery<T>(q, signal);
+    } finally {
+      cleanup();
+    }
+  }
+
+  return _runAnalysisQuery<T>(q);
+}
+
+/** Internal: consume the query iterator and extract the result. */
+async function _runAnalysisQuery<T>(
+  q: { close: () => void } & AsyncIterable<any>,
+  signal?: AbortSignal,
+): Promise<T> {
   try {
     for await (const message of q) {
+      if (signal?.aborted) {
+        throw new Error("Aborted");
+      }
       if (message.type === "result") {
         const isError =
           "is_error" in message && Boolean((message as any).is_error);
@@ -480,6 +505,9 @@ export async function runAnalysisPhase<T = unknown>(
             `Analysis ended with: ${message.subtype}`,
         );
       }
+    }
+    if (signal?.aborted) {
+      throw new Error("Aborted");
     }
     throw new Error("Analysis phase completed without result");
   } finally {

@@ -424,9 +424,12 @@ describe("methodology orchestrator", () => {
 
     expect(phase1UserMessage).not.toContain("Prior phase output");
     expect(phase2UserMessage).toContain("Prior phase output");
-    expect(phase2UserMessage).toContain("fact-1");
+    // Entity IDs are service-generated, so check for entity content instead
+    expect(phase2UserMessage).toContain(
+      "Country A imposed tariffs on Country B",
+    );
     expect(phase3UserMessage).toContain("Prior phase output");
-    expect(phase3UserMessage).toContain("player-a");
+    expect(phase3UserMessage).toContain("Country A");
   });
 
   it("marks a phase complete even when it returns zero entities", async () => {
@@ -473,9 +476,14 @@ describe("methodology orchestrator", () => {
         run: createRunContext(),
       });
 
+      // Find the baseline-model entity (service-generated ID)
       const store = useEntityGraphStore.getState();
-      store.markStale(["game-1"]);
-      expect(store.getStaleEntityIds()).toEqual(["game-1"]);
+      const gameEntity = store.analysis.entities.find((e) => e.type === "game");
+      expect(gameEntity).toBeTruthy();
+      const gameEntityId = gameEntity!.id;
+
+      store.markStale([gameEntityId]);
+      expect(store.getStaleEntityIds()).toEqual([gameEntityId]);
 
       const REVALIDATED_PHASE_3 = JSON.stringify({
         entities: [
@@ -529,13 +537,15 @@ describe("methodology orchestrator", () => {
       expect(mockStreamChat).toHaveBeenCalledTimes(1);
 
       const finalStore = useEntityGraphStore.getState();
-      expect(
-        finalStore.analysis.entities.find((entity) => entity.id === "game-1"),
-      ).toBeFalsy();
+      // Old entity should be replaced (removed and re-added with new ID)
       expect(
         finalStore.analysis.entities.find(
-          (entity) => entity.id === "game-1-rev2",
+          (entity) => entity.id === gameEntityId,
         ),
+      ).toBeFalsy();
+      // A new game entity should exist
+      expect(
+        finalStore.analysis.entities.find((entity) => entity.type === "game"),
       ).toBeTruthy();
       expect(finalStore.getStaleEntityIds()).toEqual([]);
     });
