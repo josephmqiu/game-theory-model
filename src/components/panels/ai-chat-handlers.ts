@@ -5,8 +5,84 @@ import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { streamChat } from "@/services/ai/ai-service";
 import { trimChatHistory } from "@/services/ai/context-optimizer";
 import type { ChatMessage as ChatMessageType } from "@/services/ai/ai-types";
+import type { AIStreamChunk } from "@/services/ai/ai-types";
 import { CHAT_STREAM_THINKING_CONFIG } from "@/services/ai/ai-runtime-config";
 import type { AIProviderType } from "@/types/agent-settings";
+import type { ChatEvent } from "@/services/ai/chat-events";
+
+// ---------------------------------------------------------------------------
+// Normalized internal chunk — both legacy AIStreamChunk and new ChatEvent
+// get mapped into this before the handler processes them.
+// ---------------------------------------------------------------------------
+
+type NormalizedChunk =
+  | { kind: "text"; content: string }
+  | { kind: "thinking"; content: string }
+  | { kind: "tool_start"; toolName: string }
+  | { kind: "tool_result"; toolName: string; output: unknown }
+  | { kind: "tool_error"; toolName: string; error: string }
+  | { kind: "done" }
+  | { kind: "error"; content: string };
+
+/**
+ * Normalizes either a legacy AIStreamChunk or a new ChatEvent into a
+ * NormalizedChunk.  Unknown shapes are silently skipped (returns null).
+ */
+function normalizeChunk(
+  raw: AIStreamChunk | ChatEvent,
+): NormalizedChunk | null {
+  const t = (raw as { type: string }).type;
+
+  // --- Legacy AIStreamChunk types ---
+  if (t === "text" && "content" in raw) {
+    return { kind: "text", content: (raw as AIStreamChunk).content };
+  }
+  if (t === "thinking" && "content" in raw) {
+    return { kind: "thinking", content: (raw as AIStreamChunk).content };
+  }
+  if (t === "done") {
+    return { kind: "done" };
+  }
+  if (t === "ping") {
+    return null; // handled by streamChat internally
+  }
+
+  // --- New ChatEvent types ---
+  if (t === "text_delta" && "content" in raw) {
+    return {
+      kind: "text",
+      content: (raw as ChatEvent & { type: "text_delta" }).content,
+    };
+  }
+  if (t === "tool_call_start" && "toolName" in raw) {
+    const ev = raw as ChatEvent & { type: "tool_call_start" };
+    return { kind: "tool_start", toolName: ev.toolName };
+  }
+  if (t === "tool_call_result" && "toolName" in raw) {
+    const ev = raw as ChatEvent & { type: "tool_call_result" };
+    return { kind: "tool_result", toolName: ev.toolName, output: ev.output };
+  }
+  if (t === "tool_call_error" && "toolName" in raw) {
+    const ev = raw as ChatEvent & { type: "tool_call_error" };
+    return { kind: "tool_error", toolName: ev.toolName, error: ev.error };
+  }
+  if (t === "turn_complete") {
+    return { kind: "done" };
+  }
+
+  // error — legacy uses `content`, ChatEvent uses `message`
+  if (t === "error") {
+    const content =
+      "message" in raw
+        ? (raw as ChatEvent & { type: "error" }).message
+        : "content" in raw
+          ? (raw as AIStreamChunk).content
+          : "Unknown error";
+    return { kind: "error", content };
+  }
+
+  return null;
+}
 
 const ENTITY_GRAPH_CHAT_SYSTEM_PROMPT = `You are a game theory analyst assistant. You help the user understand the entity graph analysis displayed on the canvas.
 
@@ -106,6 +182,10 @@ export function useChatHandlers() {
       const abortController = new AbortController();
       useAIStore.getState().setAbortController(abortController);
 
+      // Track in-flight tool calls so we can update their status messages
+      // when results arrive.  Maps toolName -> message id in the store.
+      const pendingToolMsgIds = new Map<string, string>();
+
       try {
         const context = buildEntityGraphContext();
         const systemPrompt = `${ENTITY_GRAPH_CHAT_SYSTEM_PROMPT}\n\n${context}`;
@@ -125,7 +205,7 @@ export function useChatHandlers() {
         const trimmedHistory = trimChatHistory(chatHistory);
         let chatThinking = "";
 
-        for await (const chunk of streamChat(
+        for await (const rawChunk of streamChat(
           systemPrompt,
           trimmedHistory,
           model,
@@ -133,21 +213,78 @@ export function useChatHandlers() {
           currentProvider,
           abortController.signal,
         )) {
-          if (chunk.type === "thinking") {
-            chatThinking += chunk.content;
-            const thinkingStep = `<step title="Thinking">${chatThinking}</step>`;
-            updateLastMessage(
-              thinkingStep + (accumulated ? `\n${accumulated}` : ""),
-            );
-          } else if (chunk.type === "text") {
-            accumulated += chunk.content;
-            const thinkingPrefix = chatThinking
-              ? `<step title="Thinking">${chatThinking}</step>\n`
-              : "";
-            updateLastMessage(thinkingPrefix + accumulated);
-          } else if (chunk.type === "error") {
-            accumulated += `\n\n**Error:** ${chunk.content}`;
-            updateLastMessage(accumulated);
+          const chunk = normalizeChunk(rawChunk);
+          if (!chunk) continue;
+
+          switch (chunk.kind) {
+            case "thinking": {
+              chatThinking += chunk.content;
+              const thinkingStep = `<step title="Thinking">${chatThinking}</step>`;
+              updateLastMessage(
+                thinkingStep + (accumulated ? `\n${accumulated}` : ""),
+              );
+              break;
+            }
+            case "text": {
+              accumulated += chunk.content;
+              const thinkingPrefix = chatThinking
+                ? `<step title="Thinking">${chatThinking}</step>\n`
+                : "";
+              updateLastMessage(thinkingPrefix + accumulated);
+              break;
+            }
+            case "tool_start": {
+              const toolMsgId = `tool-${chunk.toolName}-${nanoid(6)}`;
+              pendingToolMsgIds.set(chunk.toolName, toolMsgId);
+              addMessage({
+                id: toolMsgId,
+                role: "assistant",
+                content: `Using ${chunk.toolName}...`,
+                timestamp: Date.now(),
+                isStreaming: true,
+              });
+              break;
+            }
+            case "tool_result": {
+              const msgId = pendingToolMsgIds.get(chunk.toolName);
+              if (msgId) {
+                useAIStore.setState((s) => {
+                  const msgs = [...s.messages];
+                  const msg = msgs.find((m) => m.id === msgId);
+                  if (msg) {
+                    msg.content = `Used ${chunk.toolName}`;
+                    msg.isStreaming = false;
+                  }
+                  return { messages: msgs };
+                });
+                pendingToolMsgIds.delete(chunk.toolName);
+              }
+              break;
+            }
+            case "tool_error": {
+              const msgId = pendingToolMsgIds.get(chunk.toolName);
+              if (msgId) {
+                useAIStore.setState((s) => {
+                  const msgs = [...s.messages];
+                  const msg = msgs.find((m) => m.id === msgId);
+                  if (msg) {
+                    msg.content = `Tool ${chunk.toolName} failed: ${chunk.error}`;
+                    msg.isStreaming = false;
+                  }
+                  return { messages: msgs };
+                });
+                pendingToolMsgIds.delete(chunk.toolName);
+              }
+              break;
+            }
+            case "error": {
+              accumulated += `\n\n**Error:** ${chunk.content}`;
+              updateLastMessage(accumulated);
+              break;
+            }
+            case "done":
+              // Stream finished — nothing to do here, cleanup is in finally.
+              break;
           }
         }
       } catch (error) {
@@ -160,6 +297,16 @@ export function useChatHandlers() {
       } finally {
         useAIStore.getState().setAbortController(null);
         setStreaming(false);
+
+        // Clean up any tool messages still marked as streaming
+        for (const msgId of pendingToolMsgIds.values()) {
+          useAIStore.setState((s) => {
+            const msgs = [...s.messages];
+            const msg = msgs.find((m) => m.id === msgId);
+            if (msg) msg.isStreaming = false;
+            return { messages: msgs };
+          });
+        }
       }
 
       useAIStore.setState((state) => {

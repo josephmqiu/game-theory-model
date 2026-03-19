@@ -8,6 +8,8 @@ import {
   MessageSquare,
   Loader2,
   Square,
+  Wrench,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
@@ -60,6 +62,64 @@ function resolveNextModel(
   if (models.some((m) => m.value === currentModel)) return currentModel;
   if (models.some((m) => m.value === preferredModel)) return preferredModel;
   return models[0].value;
+}
+
+// ---------------------------------------------------------------------------
+// Tool-call status message — compact inline display for MCP tool activity
+// ---------------------------------------------------------------------------
+
+function isToolMessage(id: string): boolean {
+  return id.startsWith("tool-");
+}
+
+type ToolStatus = "running" | "done" | "error";
+
+function getToolStatus(content: string, isStreaming?: boolean): ToolStatus {
+  if (isStreaming || content.endsWith("...")) return "running";
+  if (content.startsWith("Tool ") && content.includes("failed:"))
+    return "error";
+  return "done";
+}
+
+function ToolStatusMessage({
+  content,
+  isStreaming,
+}: {
+  content: string;
+  isStreaming?: boolean;
+}) {
+  const status = getToolStatus(content, isStreaming);
+
+  return (
+    <div className="flex items-center gap-2 py-1 px-2 my-0.5">
+      <div
+        className={cn(
+          "flex items-center justify-center w-4 h-4 rounded shrink-0",
+          status === "running" && "text-muted-foreground",
+          status === "done" && "text-emerald-500/80",
+          status === "error" && "text-destructive/80",
+        )}
+      >
+        {status === "running" ? (
+          <Loader2 size={12} className="animate-spin" />
+        ) : status === "done" ? (
+          <Wrench size={12} />
+        ) : (
+          <AlertCircle size={12} />
+        )}
+      </div>
+      <span
+        className={cn(
+          "text-[11px] font-medium",
+          status === "running" && "text-muted-foreground",
+          status === "done" && "text-muted-foreground/80",
+          status === "error" && "text-destructive/80",
+        )}
+      >
+        {content}
+      </span>
+    </div>
+  );
 }
 
 /**
@@ -612,15 +672,23 @@ export default function AIChatPanel({
             </p>
           </div>
         ) : (
-          messages.map((msg) => (
-            <ChatMessage
-              key={msg.id}
-              role={msg.role}
-              content={msg.content}
-              isStreaming={msg.isStreaming && isStreaming}
-              attachments={msg.attachments}
-            />
-          ))
+          messages.map((msg) =>
+            isToolMessage(msg.id) ? (
+              <ToolStatusMessage
+                key={msg.id}
+                content={msg.content}
+                isStreaming={msg.isStreaming && isStreaming}
+              />
+            ) : (
+              <ChatMessage
+                key={msg.id}
+                role={msg.role}
+                content={msg.content}
+                isStreaming={msg.isStreaming && isStreaming}
+                attachments={msg.attachments}
+              />
+            ),
+          )
         )}
         <div ref={messagesEndRef} />
       </div>
