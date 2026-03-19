@@ -2,15 +2,15 @@ import type { MethodologyPhase } from "@/types/methodology";
 import { V1_PHASES } from "@/types/methodology";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useAIStore } from "@/stores/ai-store";
-import { generateCompletion } from "@/services/ai/ai-service";
+import { streamChat } from "@/services/ai/ai-service";
+import type { AIStreamChunk } from "@/services/ai/ai-types";
 import { createPhaseWorker } from "@/services/ai/phase-worker";
-import type { RunContext } from "@/services/ai/ai-logger";
+import type { RunContext, RunLogger } from "@/services/ai/ai-logger";
 import { timer } from "@/services/ai/ai-logger";
+import { getOrchestratorTimeouts } from "@/services/ai/orchestrator-prompt-optimizer";
+import { useAnalysisRunStore } from "@/stores/analysis-run-store";
 
-export type AnalysisFailureKind =
-  | "timeout"
-  | "parse-error"
-  | "provider-error";
+export type AnalysisFailureKind = "timeout" | "parse-error" | "provider-error";
 
 export interface AnalysisResult {
   status: "success" | "failed" | "aborted";
@@ -68,9 +68,9 @@ type PhaseExecutionResult =
 
 const SUPPORTED_PHASES: SupportedPhase[] = V1_PHASES.filter(
   (p): p is SupportedPhase =>
-    p === "situational-grounding"
-    || p === "player-identification"
-    || p === "baseline-model",
+    p === "situational-grounding" ||
+    p === "player-identification" ||
+    p === "baseline-model",
 );
 
 const MAX_RETRIES = 2;
@@ -118,6 +118,45 @@ function classifyFailureKind(
   return /timed?\s*out|timeout/i.test(message) ? "timeout" : fallback;
 }
 
+async function accumulateStream(
+  stream: AsyncGenerator<AIStreamChunk>,
+  logger: RunLogger,
+  phase: MethodologyPhase,
+  attempt: number,
+  signal?: AbortSignal,
+): Promise<string> {
+  let accumulated = "";
+  let chunkCount = 0;
+
+  for await (const chunk of stream) {
+    if (chunk.type === "text") {
+      accumulated += chunk.content;
+      chunkCount++;
+    } else if (chunk.type === "thinking") {
+      logger.log("orchestrator", "thinking-chunk", {
+        phase,
+        attempt,
+        thinkingLen: chunk.content.length,
+      });
+    } else if (chunk.type === "error") {
+      throw new Error(chunk.content);
+    }
+  }
+
+  if (signal?.aborted) {
+    throw new DOMException("Stream aborted", "AbortError");
+  }
+
+  logger.log("orchestrator", "stream-complete", {
+    phase,
+    attempt,
+    totalChunks: chunkCount,
+    accumulatedLen: accumulated.length,
+  });
+
+  return accumulated;
+}
+
 async function runSinglePhase(params: {
   phase: SupportedPhase;
   topic: string;
@@ -128,16 +167,8 @@ async function runSinglePhase(params: {
   callbacks: OrchestratorCallbacks;
   run: RunContext;
 }): Promise<PhaseExecutionResult> {
-  const {
-    phase,
-    topic,
-    priorPhases,
-    model,
-    provider,
-    signal,
-    callbacks,
-    run,
-  } = params;
+  const { phase, topic, priorPhases, model, provider, signal, callbacks, run } =
+    params;
 
   const phaseTimer = timer();
   const worker = createPhaseWorker(phase);
@@ -149,6 +180,7 @@ async function runSinglePhase(params: {
   }
 
   callbacks.onPhaseStart(phase);
+  useAnalysisRunStore.getState().setPhase(phase);
   useEntityGraphStore.getState().setPhaseStatus(phase, "running");
   run.logger.log("orchestrator", "phase-start", { phase });
 
@@ -162,7 +194,7 @@ async function runSinglePhase(params: {
     }
 
     const attemptNumber = attempt + 1;
-    const attemptTimer = timer();
+    useAnalysisRunStore.getState().setAttempt(attemptNumber);
     run.logger.log("orchestrator", "attempt-start", {
       phase,
       attempt: attemptNumber,
@@ -170,18 +202,26 @@ async function runSinglePhase(params: {
     });
 
     try {
-      const raw = await generateCompletion(system, user, model, provider, run);
-      run.logger.log("orchestrator", "completion-received", {
+      const timeouts = getOrchestratorTimeouts(
+        system.length + user.length,
+        model,
+      );
+      const stream = streamChat(
+        system,
+        [{ role: "user", content: user }],
+        model,
+        timeouts,
+        provider,
+        signal,
+        run.runId,
+      );
+      const raw = await accumulateStream(
+        stream,
+        run.logger,
         phase,
-        attempt: attemptNumber,
-        elapsedMs: attemptTimer.elapsed(),
-        rawLength: raw.length,
-      });
-      run.logger.log("orchestrator", "raw-preview", {
-        phase,
-        attempt: attemptNumber,
-        preview: raw.slice(0, 200),
-      });
+        attemptNumber,
+        signal,
+      );
 
       const result = worker.parseResponse(raw);
       if (result.success) {
@@ -240,6 +280,7 @@ async function runSinglePhase(params: {
 
   useEntityGraphStore.getState().setPhaseStatus(phase, "failed");
   callbacks.onPhaseFailed(phase, lastError);
+  useAnalysisRunStore.getState().failRun(phase, lastFailureKind, lastError);
   run.logger.error("orchestrator", "phase-failed", {
     phase,
     elapsedMs: phaseTimer.elapsed(),
@@ -260,6 +301,7 @@ export async function runMethodologyAnalysis(
 ): Promise<AnalysisResult> {
   const { topic, signal, callbacks, run } = config;
   const analysisTimer = timer();
+  useAnalysisRunStore.getState().startRun(run.runId, MAX_RETRIES + 1);
   const completedPhases: MethodologyPhase[] = [];
   const model = useAIStore.getState().model;
   const provider = resolveProvider(model);
@@ -324,6 +366,7 @@ export async function runMethodologyAnalysis(
         totalEntities: getTotalEntityCount(),
         runId: run.runId,
       };
+      useAnalysisRunStore.getState().completeRun();
     } else if (signal.aborted && result.status !== "failed") {
       run.logger.warn("orchestrator", "analysis-aborted", {
         mode: "analysis",
@@ -335,6 +378,7 @@ export async function runMethodologyAnalysis(
         totalEntities: getTotalEntityCount(),
         runId: run.runId,
       };
+      useAnalysisRunStore.getState().abortRun();
     }
 
     return result;

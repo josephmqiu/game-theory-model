@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createRunLogger } from "@/services/ai/ai-logger";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import type { OrchestratorCallbacks } from "@/services/ai/methodology-orchestrator";
+import type { AIStreamChunk } from "@/services/ai/ai-types";
 
 vi.mock("@/services/ai/ai-service", () => ({
-  generateCompletion: vi.fn(),
+  streamChat: vi.fn(),
 }));
 
 vi.mock("@/stores/ai-store", () => ({
@@ -13,13 +14,62 @@ vi.mock("@/stores/ai-store", () => ({
   },
 }));
 
-import { generateCompletion } from "@/services/ai/ai-service";
+vi.mock("@/services/ai/orchestrator-prompt-optimizer", () => ({
+  getOrchestratorTimeouts: vi.fn(() => ({
+    hardTimeoutMs: 300_000,
+    noTextTimeoutMs: 150_000,
+    thinkingResetsTimeout: true,
+    pingResetsTimeout: false,
+    firstTextTimeoutMs: 300_000,
+  })),
+}));
+
+vi.mock("@/stores/analysis-run-store", () => ({
+  useAnalysisRunStore: {
+    getState: () => ({
+      startRun: vi.fn(),
+      setPhase: vi.fn(),
+      setAttempt: vi.fn(),
+      failRun: vi.fn(),
+      abortRun: vi.fn(),
+      completeRun: vi.fn(),
+      reset: vi.fn(),
+    }),
+  },
+}));
+
+import { streamChat } from "@/services/ai/ai-service";
 import {
   revalidateStaleEntities,
   runMethodologyAnalysis,
 } from "@/services/ai/methodology-orchestrator";
 
-const mockGenerateCompletion = vi.mocked(generateCompletion);
+const mockStreamChat = vi.mocked(streamChat);
+
+// ── Stream mock helpers ──
+
+function mockStreamResponse(
+  jsonResponse: string,
+): AsyncGenerator<AIStreamChunk> {
+  return (async function* () {
+    const chunkSize = Math.ceil(jsonResponse.length / 3);
+    for (let i = 0; i < jsonResponse.length; i += chunkSize) {
+      yield {
+        type: "text" as const,
+        content: jsonResponse.slice(i, i + chunkSize),
+      };
+    }
+    yield { type: "done" as const, content: "" };
+  })();
+}
+
+function mockStreamError(errorMessage: string): AsyncGenerator<AIStreamChunk> {
+  return (async function* () {
+    yield { type: "error" as const, content: errorMessage };
+  })();
+}
+
+// ── Test data ──
 
 const PHASE_1_RESPONSE = JSON.stringify({
   entities: [
@@ -148,14 +198,14 @@ describe("methodology orchestrator", () => {
   beforeEach(() => {
     useEntityGraphStore.setState(useEntityGraphStore.getInitialState(), true);
     useEntityGraphStore.getState().newAnalysis("Test topic");
-    mockGenerateCompletion.mockReset();
+    mockStreamChat.mockReset();
   });
 
   it("returns success after running all 3 phases in order", async () => {
-    mockGenerateCompletion
-      .mockResolvedValueOnce(PHASE_1_RESPONSE)
-      .mockResolvedValueOnce(PHASE_2_RESPONSE)
-      .mockResolvedValueOnce(PHASE_3_RESPONSE);
+    mockStreamChat
+      .mockReturnValueOnce(mockStreamResponse(PHASE_1_RESPONSE))
+      .mockReturnValueOnce(mockStreamResponse(PHASE_2_RESPONSE))
+      .mockReturnValueOnce(mockStreamResponse(PHASE_3_RESPONSE));
 
     const callbacks = createCallbacks();
     const { signal } = makeAbortSignal();
@@ -181,10 +231,7 @@ describe("methodology orchestrator", () => {
       2,
       "player-identification",
     );
-    expect(callbacks.onPhaseStart).toHaveBeenNthCalledWith(
-      3,
-      "baseline-model",
-    );
+    expect(callbacks.onPhaseStart).toHaveBeenNthCalledWith(3, "baseline-model");
     expect(callbacks.onPhaseComplete).toHaveBeenNthCalledWith(
       1,
       "situational-grounding",
@@ -216,11 +263,11 @@ describe("methodology orchestrator", () => {
   });
 
   it("returns failed after exhausting retries on a provider error", async () => {
-    mockGenerateCompletion
-      .mockResolvedValueOnce(PHASE_1_RESPONSE)
-      .mockRejectedValueOnce(new Error("Network error"))
-      .mockRejectedValueOnce(new Error("Network error"))
-      .mockRejectedValueOnce(new Error("Network error"));
+    mockStreamChat
+      .mockReturnValueOnce(mockStreamResponse(PHASE_1_RESPONSE))
+      .mockReturnValueOnce(mockStreamError("Network error"))
+      .mockReturnValueOnce(mockStreamError("Network error"))
+      .mockReturnValueOnce(mockStreamError("Network error"));
 
     const callbacks = createCallbacks();
     const { signal } = makeAbortSignal();
@@ -244,21 +291,22 @@ describe("methodology orchestrator", () => {
       "player-identification",
       expect.stringContaining("Network error"),
     );
-    expect(mockGenerateCompletion).toHaveBeenCalledTimes(4);
+    expect(mockStreamChat).toHaveBeenCalledTimes(4);
     expect(
       useEntityGraphStore
         .getState()
-        .analysis.phases.find((phase) => phase.phase === "player-identification")
-        ?.status,
+        .analysis.phases.find(
+          (phase) => phase.phase === "player-identification",
+        )?.status,
     ).toBe("failed");
   });
 
   it("retries a parse failure and still returns success", async () => {
-    mockGenerateCompletion
-      .mockResolvedValueOnce(PHASE_1_RESPONSE)
-      .mockResolvedValueOnce("not valid json")
-      .mockResolvedValueOnce(PHASE_2_RESPONSE)
-      .mockResolvedValueOnce(PHASE_3_RESPONSE);
+    mockStreamChat
+      .mockReturnValueOnce(mockStreamResponse(PHASE_1_RESPONSE))
+      .mockReturnValueOnce(mockStreamResponse("not valid json"))
+      .mockReturnValueOnce(mockStreamResponse(PHASE_2_RESPONSE))
+      .mockReturnValueOnce(mockStreamResponse(PHASE_3_RESPONSE));
 
     const callbacks = createCallbacks();
     const { signal } = makeAbortSignal();
@@ -273,15 +321,15 @@ describe("methodology orchestrator", () => {
     expect(result.status).toBe("success");
     expect(callbacks.onPhaseComplete).toHaveBeenCalledTimes(3);
     expect(callbacks.onPhaseFailed).not.toHaveBeenCalled();
-    expect(mockGenerateCompletion).toHaveBeenCalledTimes(4);
+    expect(mockStreamChat).toHaveBeenCalledTimes(4);
   });
 
   it("classifies timeout failures deterministically", async () => {
-    mockGenerateCompletion
-      .mockResolvedValueOnce(PHASE_1_RESPONSE)
-      .mockRejectedValueOnce(new Error("Request timed out after 30s"))
-      .mockRejectedValueOnce(new Error("Request timed out after 30s"))
-      .mockRejectedValueOnce(new Error("Request timed out after 30s"));
+    mockStreamChat
+      .mockReturnValueOnce(mockStreamResponse(PHASE_1_RESPONSE))
+      .mockReturnValueOnce(mockStreamError("Request timed out after 30s"))
+      .mockReturnValueOnce(mockStreamError("Request timed out after 30s"))
+      .mockReturnValueOnce(mockStreamError("Request timed out after 30s"));
 
     const callbacks = createCallbacks();
     const { signal } = makeAbortSignal();
@@ -300,12 +348,24 @@ describe("methodology orchestrator", () => {
   it("returns aborted when the signal is aborted before the next phase begins", async () => {
     const { signal, abort } = makeAbortSignal();
 
-    mockGenerateCompletion.mockImplementationOnce(async () => {
+    // Phase 1 completes normally, then abort fires before phase 2 can start
+    mockStreamChat
+      .mockReturnValueOnce(mockStreamResponse(PHASE_1_RESPONSE))
+      .mockImplementationOnce(function* () {
+        // This generator is created but the signal check in runSinglePhase
+        // catches the abort before iterating
+        abort();
+        yield { type: "done" as const, content: "" };
+      } as unknown as typeof streamChat);
+
+    // Abort after phase 1 stream finishes but before phase 2 stream is consumed
+    const origOnPhaseComplete = vi.fn((_phase, _count) => {
       abort();
-      return PHASE_1_RESPONSE;
     });
 
-    const callbacks = createCallbacks();
+    const callbacks = createCallbacks({
+      onPhaseComplete: origOnPhaseComplete,
+    });
 
     const result = await runMethodologyAnalysis({
       topic: "Trade war",
@@ -323,18 +383,18 @@ describe("methodology orchestrator", () => {
     expect(callbacks.onPhaseStart).toHaveBeenCalled();
     expect(callbacks.onPhaseComplete).toHaveBeenCalledTimes(1);
     expect(callbacks.onPhaseFailed).not.toHaveBeenCalled();
-    expect(mockGenerateCompletion).toHaveBeenCalledTimes(1);
+    expect(mockStreamChat).toHaveBeenCalledTimes(1);
   });
 
   it("returns aborted when the active phase aborts mid-attempt", async () => {
     const { signal, abort } = makeAbortSignal();
 
-    mockGenerateCompletion
-      .mockResolvedValueOnce(PHASE_1_RESPONSE)
-      .mockImplementationOnce(async () => {
+    mockStreamChat
+      .mockReturnValueOnce(mockStreamResponse(PHASE_1_RESPONSE))
+      .mockImplementationOnce(function* () {
         abort();
-        throw new DOMException("The operation was aborted.", "AbortError");
-      });
+        yield { type: "error" as const, content: "The operation was aborted." };
+      } as unknown as typeof streamChat);
 
     const callbacks = createCallbacks();
 
@@ -357,10 +417,10 @@ describe("methodology orchestrator", () => {
   });
 
   it("passes prior phase output into later prompts", async () => {
-    mockGenerateCompletion
-      .mockResolvedValueOnce(PHASE_1_RESPONSE)
-      .mockResolvedValueOnce(PHASE_2_RESPONSE)
-      .mockResolvedValueOnce(PHASE_3_RESPONSE);
+    mockStreamChat
+      .mockReturnValueOnce(mockStreamResponse(PHASE_1_RESPONSE))
+      .mockReturnValueOnce(mockStreamResponse(PHASE_2_RESPONSE))
+      .mockReturnValueOnce(mockStreamResponse(PHASE_3_RESPONSE));
 
     const { signal } = makeAbortSignal();
 
@@ -371,9 +431,10 @@ describe("methodology orchestrator", () => {
       run: createRunContext(),
     });
 
-    const phase1UserMessage = mockGenerateCompletion.mock.calls[0][1];
-    const phase2UserMessage = mockGenerateCompletion.mock.calls[1][1];
-    const phase3UserMessage = mockGenerateCompletion.mock.calls[2][1];
+    // streamChat receives messages array as 2nd arg: [{ role: 'user', content: '...' }]
+    const phase1UserMessage = mockStreamChat.mock.calls[0][1][0].content;
+    const phase2UserMessage = mockStreamChat.mock.calls[1][1][0].content;
+    const phase3UserMessage = mockStreamChat.mock.calls[2][1][0].content;
 
     expect(phase1UserMessage).not.toContain("Prior phase output");
     expect(phase2UserMessage).toContain("Prior phase output");
@@ -383,10 +444,10 @@ describe("methodology orchestrator", () => {
   });
 
   it("marks a phase complete even when it returns zero entities", async () => {
-    mockGenerateCompletion
-      .mockResolvedValueOnce(EMPTY_PHASE_RESPONSE)
-      .mockResolvedValueOnce(PHASE_2_RESPONSE)
-      .mockResolvedValueOnce(PHASE_3_RESPONSE);
+    mockStreamChat
+      .mockReturnValueOnce(mockStreamResponse(EMPTY_PHASE_RESPONSE))
+      .mockReturnValueOnce(mockStreamResponse(PHASE_2_RESPONSE))
+      .mockReturnValueOnce(mockStreamResponse(PHASE_3_RESPONSE));
 
     const callbacks = createCallbacks();
     const { signal } = makeAbortSignal();
@@ -406,17 +467,18 @@ describe("methodology orchestrator", () => {
     expect(
       useEntityGraphStore
         .getState()
-        .analysis.phases.find((phase) => phase.phase === "situational-grounding")
-        ?.status,
+        .analysis.phases.find(
+          (phase) => phase.phase === "situational-grounding",
+        )?.status,
     ).toBe("complete");
   });
 
   describe("revalidation", () => {
     it("re-runs stale downstream phases and clears stale markers", async () => {
-      mockGenerateCompletion
-        .mockResolvedValueOnce(PHASE_1_RESPONSE)
-        .mockResolvedValueOnce(PHASE_2_RESPONSE)
-        .mockResolvedValueOnce(PHASE_3_RESPONSE);
+      mockStreamChat
+        .mockReturnValueOnce(mockStreamResponse(PHASE_1_RESPONSE))
+        .mockReturnValueOnce(mockStreamResponse(PHASE_2_RESPONSE))
+        .mockReturnValueOnce(mockStreamResponse(PHASE_3_RESPONSE));
 
       await runMethodologyAnalysis({
         topic: "Trade war",
@@ -453,8 +515,10 @@ describe("methodology orchestrator", () => {
         relationships: [],
       });
 
-      mockGenerateCompletion.mockReset();
-      mockGenerateCompletion.mockResolvedValueOnce(REVALIDATED_PHASE_3);
+      mockStreamChat.mockReset();
+      mockStreamChat.mockReturnValueOnce(
+        mockStreamResponse(REVALIDATED_PHASE_3),
+      );
 
       const callbacks = createCallbacks();
 
@@ -476,7 +540,7 @@ describe("methodology orchestrator", () => {
         1,
       );
       expect(callbacks.onPhaseFailed).not.toHaveBeenCalled();
-      expect(mockGenerateCompletion).toHaveBeenCalledTimes(1);
+      expect(mockStreamChat).toHaveBeenCalledTimes(1);
 
       const finalStore = useEntityGraphStore.getState();
       expect(
@@ -506,7 +570,7 @@ describe("methodology orchestrator", () => {
         runId: "revalidation-run",
       });
       expect(callbacks.onPhaseStart).not.toHaveBeenCalled();
-      expect(mockGenerateCompletion).not.toHaveBeenCalled();
+      expect(mockStreamChat).not.toHaveBeenCalled();
     });
   });
 });

@@ -4,17 +4,13 @@ import { PanelRight, PanelRightClose } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import TopBar from "./top-bar";
-import {
-  abortAnalysisRun,
-  type ActiveAnalysisRun,
-} from "./analysis-run";
+import { abortAnalysisRun, type ActiveAnalysisRun } from "./analysis-run";
 import AgentSettingsDialog from "@/components/shared/agent-settings-dialog";
 import UpdateReadyBanner from "./update-ready-banner";
 import AnalysisCanvas from "./analysis-canvas";
 import AIChatPanel from "@/components/panels/ai-chat-panel";
 import { PhaseSidebar } from "@/components/panels/phase-sidebar";
 import { PhaseProgress } from "@/components/panels/phase-progress";
-import type { PhaseFailureState } from "@/components/panels/phase-failures";
 import EntityOverlayCard from "@/components/panels/entity-overlay-card";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
@@ -24,7 +20,6 @@ import { initAppStorage } from "@/utils/app-storage";
 import { createRunLogger } from "@/services/ai/ai-logger";
 import {
   runMethodologyAnalysis,
-  type AnalysisResult,
   type OrchestratorCallbacks,
 } from "@/services/ai/methodology-orchestrator";
 import {
@@ -45,33 +40,11 @@ export default function EditorLayout() {
   );
   const [overlayPosition, setOverlayPosition] = useState({ x: 0, y: 0 });
   const [chatCollapsed, setChatCollapsed] = useState(false);
-  const [phaseFailures, setPhaseFailures] = useState<PhaseFailureState>({});
 
   const clearEditorChrome = useCallback(() => {
     setPhaseFilter(null);
     setSearchHighlight([]);
     setSelectedEntity(null);
-  }, []);
-
-  const applyAnalysisFailure = useCallback((result: AnalysisResult) => {
-    if (
-      result.status !== "failed"
-      || !result.failedPhase
-      || !result.failureKind
-    ) {
-      return;
-    }
-
-    const failedPhase: MethodologyPhase = result.failedPhase;
-    const failureKind = result.failureKind;
-
-    setPhaseFailures((current) => ({
-      ...current,
-      [failedPhase]: {
-        failureKind,
-        runId: result.runId,
-      },
-    }));
   }, []);
 
   const abortActiveRun = useCallback(async (reason: string) => {
@@ -99,7 +72,6 @@ export default function EditorLayout() {
       }
 
       clearEditorChrome();
-      setPhaseFailures({});
     },
     [abortActiveRun, clearEditorChrome],
   );
@@ -117,7 +89,6 @@ export default function EditorLayout() {
 
     await abortActiveRun("new-analysis");
     clearEditorChrome();
-    setPhaseFailures({});
     useEntityGraphStore.getState().newAnalysis("");
   }, [abortActiveRun, clearEditorChrome]);
 
@@ -126,7 +97,6 @@ export default function EditorLayout() {
       void (async () => {
         await abortActiveRun("restart-analysis");
         clearEditorChrome();
-        setPhaseFailures({});
         useEntityGraphStore.getState().newAnalysis(topic);
 
         const controller = new AbortController();
@@ -161,8 +131,7 @@ export default function EditorLayout() {
         };
 
         try {
-          const result = await promise;
-          applyAnalysisFailure(result);
+          await promise;
         } finally {
           if (activeRunRef.current?.runId === runId) {
             activeRunRef.current = null;
@@ -170,7 +139,7 @@ export default function EditorLayout() {
         }
       })();
     },
-    [abortActiveRun, applyAnalysisFailure, clearEditorChrome],
+    [abortActiveRun, clearEditorChrome],
   );
 
   useEffect(() => {
@@ -236,10 +205,10 @@ export default function EditorLayout() {
       .filter((entity) => {
         const data = entity.data;
         const text =
-          ("name" in data ? data.name : "")
-          + ("content" in data ? data.content : "")
-          + ("description" in data ? data.description : "")
-          + ("action" in data ? data.action : "");
+          ("name" in data ? data.name : "") +
+          ("content" in data ? data.content : "") +
+          ("description" in data ? data.description : "") +
+          ("action" in data ? data.action : "");
         return text.toLowerCase().includes(normalized);
       })
       .map((entity) => entity.id);
@@ -285,7 +254,6 @@ export default function EditorLayout() {
             onRerunPhase={handleRerunPhase}
             onSearch={handleSearch}
             activeFilter={phaseFilter}
-            phaseFailures={phaseFailures}
           />
 
           <div className="relative flex min-w-0 flex-1 flex-col">
@@ -295,10 +263,7 @@ export default function EditorLayout() {
               searchHighlight={searchHighlight}
             />
 
-            <PhaseProgress
-              className="absolute bottom-4 left-1/2 -translate-x-1/2"
-              phaseFailures={phaseFailures}
-            />
+            <PhaseProgress className="absolute bottom-4 left-1/2 -translate-x-1/2" />
 
             {selectedEntity && (
               <EntityOverlayCard
