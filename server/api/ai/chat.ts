@@ -17,6 +17,7 @@ import {
 } from "../../utils/resolve-claude-agent-env";
 import { serverLog } from "../../utils/ai-logger";
 import { isAllowedProvider } from "../../../src/services/ai/allowed-providers";
+import * as entityGraphService from "../../../src/services/ai/entity-graph-service";
 import { streamChat as claudeStreamChat } from "../../../src/services/ai/claude-adapter";
 import { streamChat as codexStreamChat } from "../../../src/services/ai/codex-adapter";
 
@@ -240,6 +241,14 @@ function streamViaCodexAdapter(
         }
 
         serverLog(runId, "chat", "stream-complete");
+        const codexAnalysis = entityGraphService.getAnalysis();
+        if (codexAnalysis.entities.length > 0) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "entity_snapshot", analysis: codexAnalysis })}\n\n`,
+            ),
+          );
+        }
         controller.enqueue(
           encoder.encode(
             `data: ${JSON.stringify({ type: "done", content: "" })}\n\n`,
@@ -350,6 +359,14 @@ function streamViaClaude(
         }
 
         serverLog(runId, "chat", "stream-complete");
+        const claudeAnalysis = entityGraphService.getAnalysis();
+        if (claudeAnalysis.entities.length > 0) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "entity_snapshot", analysis: claudeAnalysis })}\n\n`,
+            ),
+          );
+        }
         controller.enqueue(
           encoder.encode(
             `data: ${JSON.stringify({ type: "done", content: "" })}\n\n`,
