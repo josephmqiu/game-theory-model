@@ -1,45 +1,45 @@
-import type { AIStreamChunk } from './ai-types'
-import type { AIModelInfo } from '@/stores/ai-store'
+import type { AIStreamChunk } from "./ai-types";
+import type { AIModelInfo } from "@/stores/ai-store";
 import {
   DEFAULT_GENERATE_TIMEOUT_MS,
   DEFAULT_STREAM_HARD_TIMEOUT_MS,
   DEFAULT_STREAM_NO_TEXT_TIMEOUT_MS,
   STREAM_TIMEOUT_MIN_MS,
-} from './ai-runtime-config'
-import type { RunContext } from './ai-logger'
-import { timer } from './ai-logger'
+} from "./ai-runtime-config";
+import type { RunContext } from "./ai-logger";
+import { timer } from "./ai-logger";
 
-interface StreamChatOptions {
-  hardTimeoutMs?: number
-  noTextTimeoutMs?: number
+export interface StreamChatOptions {
+  hardTimeoutMs?: number;
+  noTextTimeoutMs?: number;
   /**
    * Whether thinking events should reset the no-text timeout.
    * Default: true (backward compatible). Set to false for fast calls
    * where thinking should NOT prevent the no-text timeout from firing.
    */
-  thinkingResetsTimeout?: boolean
+  thinkingResetsTimeout?: boolean;
   /**
    * Whether keep-alive ping events reset the no-text timeout.
    * Default: true (backward compatible). Set to false to avoid endless
    * waiting when the server only emits pings.
    */
-  pingResetsTimeout?: boolean
+  pingResetsTimeout?: boolean;
   /**
    * Max time to wait for the first non-empty text token.
    * This timeout is independent from keep-alive pings/thinking chunks.
    */
-  firstTextTimeoutMs?: number
+  firstTextTimeoutMs?: number;
   /**
    * Controls provider thinking mode.
    * - adaptive: model decides thinking depth
    * - disabled: disable extended thinking for faster first text
    * - enabled: explicitly enable extended thinking
    */
-  thinkingMode?: 'adaptive' | 'disabled' | 'enabled'
+  thinkingMode?: "adaptive" | "disabled" | "enabled";
   /** Thinking budget (used when thinkingMode === 'enabled'). */
-  thinkingBudgetTokens?: number
+  thinkingBudgetTokens?: number;
   /** Model effort level (low is usually faster). */
-  effort?: 'low' | 'medium' | 'high' | 'max'
+  effort?: "low" | "medium" | "high" | "max";
 }
 
 /**
@@ -48,71 +48,89 @@ interface StreamChatOptions {
  */
 export async function* streamChat(
   systemPrompt: string,
-  messages: Array<{ role: 'user' | 'assistant'; content: string; attachments?: Array<{ name: string; mediaType: string; data: string }> }>,
+  messages: Array<{
+    role: "user" | "assistant";
+    content: string;
+    attachments?: Array<{ name: string; mediaType: string; data: string }>;
+  }>,
   model?: string,
   options?: StreamChatOptions,
   provider?: string,
   abortSignal?: AbortSignal,
+  runId?: string,
 ): AsyncGenerator<AIStreamChunk> {
-  const hardTimeoutMs = Math.max(STREAM_TIMEOUT_MIN_MS, options?.hardTimeoutMs ?? DEFAULT_STREAM_HARD_TIMEOUT_MS)
-  const noTextTimeoutMs = Math.max(STREAM_TIMEOUT_MIN_MS, options?.noTextTimeoutMs ?? DEFAULT_STREAM_NO_TEXT_TIMEOUT_MS)
-  const thinkingResetsTimeout = options?.thinkingResetsTimeout ?? true
-  const pingResetsTimeout = options?.pingResetsTimeout ?? true
+  const hardTimeoutMs = Math.max(
+    STREAM_TIMEOUT_MIN_MS,
+    options?.hardTimeoutMs ?? DEFAULT_STREAM_HARD_TIMEOUT_MS,
+  );
+  const noTextTimeoutMs = Math.max(
+    STREAM_TIMEOUT_MIN_MS,
+    options?.noTextTimeoutMs ?? DEFAULT_STREAM_NO_TEXT_TIMEOUT_MS,
+  );
+  const thinkingResetsTimeout = options?.thinkingResetsTimeout ?? true;
+  const pingResetsTimeout = options?.pingResetsTimeout ?? true;
   const firstTextTimeoutMs = options?.firstTextTimeoutMs
     ? Math.max(STREAM_TIMEOUT_MIN_MS, options.firstTextTimeoutMs)
-    : null
+    : null;
 
-  const controller = new AbortController()
-  let abortReason: 'hard_timeout' | 'no_text_timeout' | 'first_text_timeout' | null = null
-  let noTextTimeout: ReturnType<typeof setTimeout> | null = null
-  let firstTextTimeout: ReturnType<typeof setTimeout> | null = null
-  let sawText = false
+  const controller = new AbortController();
+  let abortReason:
+    | "hard_timeout"
+    | "no_text_timeout"
+    | "first_text_timeout"
+    | null = null;
+  let noTextTimeout: ReturnType<typeof setTimeout> | null = null;
+  let firstTextTimeout: ReturnType<typeof setTimeout> | null = null;
+  let sawText = false;
 
   const clearNoTextTimeout = () => {
     if (noTextTimeout) {
-      clearTimeout(noTextTimeout)
-      noTextTimeout = null
+      clearTimeout(noTextTimeout);
+      noTextTimeout = null;
     }
-  }
+  };
 
   const clearFirstTextTimeout = () => {
     if (firstTextTimeout) {
-      clearTimeout(firstTextTimeout)
-      firstTextTimeout = null
+      clearTimeout(firstTextTimeout);
+      firstTextTimeout = null;
     }
-  }
+  };
 
   const resetActivityTimeout = () => {
-    clearNoTextTimeout()
+    clearNoTextTimeout();
     noTextTimeout = setTimeout(() => {
-      abortReason = 'no_text_timeout'
-      controller.abort()
-    }, noTextTimeoutMs)
-  }
+      abortReason = "no_text_timeout";
+      controller.abort();
+    }, noTextTimeoutMs);
+  };
 
   const hardTimeout = setTimeout(() => {
-    abortReason = 'hard_timeout'
-    controller.abort()
-  }, hardTimeoutMs)
+    abortReason = "hard_timeout";
+    controller.abort();
+  }, hardTimeoutMs);
 
   if (firstTextTimeoutMs) {
     firstTextTimeout = setTimeout(() => {
-      if (sawText) return
-      abortReason = 'first_text_timeout'
-      controller.abort()
-    }, firstTextTimeoutMs)
+      if (sawText) return;
+      abortReason = "first_text_timeout";
+      controller.abort();
+    }, firstTextTimeoutMs);
   }
 
-  resetActivityTimeout()
+  resetActivityTimeout();
 
   try {
     const fetchSignal = abortSignal
       ? AbortSignal.any([controller.signal, abortSignal])
-      : controller.signal
+      : controller.signal;
 
-    const response = await fetch('/api/ai/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const response = await fetch("/api/ai/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(runId ? { "X-Run-Id": runId } : {}),
+      },
       body: JSON.stringify({
         system: systemPrompt,
         messages: messages.map((m) => ({
@@ -127,90 +145,97 @@ export async function* streamChat(
         effort: options?.effort,
       }),
       signal: fetchSignal,
-    })
+    });
 
     if (!response.ok) {
-      const errBody = await response.text()
-      yield { type: 'error', content: `Server error: ${response.status} ${errBody}` }
-      clearTimeout(hardTimeout)
-      clearNoTextTimeout()
-      clearFirstTextTimeout()
-      return
+      const errBody = await response.text();
+      yield {
+        type: "error",
+        content: `Server error: ${response.status} ${errBody}`,
+      };
+      clearTimeout(hardTimeout);
+      clearNoTextTimeout();
+      clearFirstTextTimeout();
+      return;
     }
 
-    const reader = response.body?.getReader()
+    const reader = response.body?.getReader();
     if (!reader) {
-      yield { type: 'error', content: 'No response stream available' }
-      clearTimeout(hardTimeout)
-      clearNoTextTimeout()
-      clearFirstTextTimeout()
-      return
+      yield { type: "error", content: "No response stream available" };
+      clearTimeout(hardTimeout);
+      clearNoTextTimeout();
+      clearFirstTextTimeout();
+      return;
     }
 
-    const decoder = new TextDecoder()
-    let buffer = ''
+    const decoder = new TextDecoder();
+    let buffer = "";
 
     while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
+      const { done, value } = await reader.read();
+      if (done) break;
 
-      buffer += decoder.decode(value, { stream: true })
+      buffer += decoder.decode(value, { stream: true });
 
       // Parse SSE events from the buffer
-      const lines = buffer.split('\n')
-      buffer = lines.pop() ?? ''
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
 
       for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6).trim()
-          if (!data) continue
+        if (line.startsWith("data: ")) {
+          const data = line.slice(6).trim();
+          if (!data) continue;
           try {
-            const chunk = JSON.parse(data) as AIStreamChunk
-            if (chunk.type === 'done') {
-              clearTimeout(hardTimeout)
-              clearNoTextTimeout()
-              clearFirstTextTimeout()
+            const chunk = JSON.parse(data) as AIStreamChunk;
+            if (chunk.type === "done") {
+              clearTimeout(hardTimeout);
+              clearNoTextTimeout();
+              clearFirstTextTimeout();
               try {
-                await reader.cancel()
+                await reader.cancel();
               } catch {
                 // ignore cancellation errors
               }
-              return
+              return;
             }
 
             // Keep-alive pings from server — reset activity timeout but don't yield
-            if (chunk.type === 'ping') {
+            if (chunk.type === "ping") {
               if (pingResetsTimeout) {
-                resetActivityTimeout()
+                resetActivityTimeout();
               }
-              continue
+              continue;
             }
 
-            if (chunk.type === 'thinking' && !chunk.content) {
-              continue
+            if (chunk.type === "thinking" && !chunk.content) {
+              continue;
             }
 
             // Any non-empty text counts as activity; thinking only resets
             // the timeout when thinkingResetsTimeout is true (default).
-            if (chunk.type === 'text' && chunk.content.trim().length > 0) {
-              sawText = true
-              clearFirstTextTimeout()
-              resetActivityTimeout()
-            } else if (chunk.type === 'thinking' && chunk.content.trim().length > 0 && thinkingResetsTimeout) {
-              resetActivityTimeout()
+            if (chunk.type === "text" && chunk.content.trim().length > 0) {
+              sawText = true;
+              clearFirstTextTimeout();
+              resetActivityTimeout();
+            } else if (
+              chunk.type === "thinking" &&
+              chunk.content.trim().length > 0 &&
+              thinkingResetsTimeout
+            ) {
+              resetActivityTimeout();
             }
 
-            yield chunk
-            if (chunk.type === 'error') {
-              clearTimeout(hardTimeout)
-              clearNoTextTimeout()
-              clearFirstTextTimeout()
+            yield chunk;
+            if (chunk.type === "error") {
+              clearTimeout(hardTimeout);
+              clearNoTextTimeout();
+              clearFirstTextTimeout();
               try {
-                await reader.cancel()
+                await reader.cancel();
               } catch {
                 // ignore cancellation errors
               }
-              return
+              return;
             }
           } catch {
             // Skip malformed lines
@@ -220,33 +245,33 @@ export async function* streamChat(
     }
 
     // Process remaining buffer
-    if (buffer.startsWith('data: ')) {
-      const data = buffer.slice(6).trim()
+    if (buffer.startsWith("data: ")) {
+      const data = buffer.slice(6).trim();
       if (data) {
         try {
-          const chunk = JSON.parse(data) as AIStreamChunk
-          if (chunk.type === 'done') {
-            clearTimeout(hardTimeout)
-            clearNoTextTimeout()
-            clearFirstTextTimeout()
-            return
+          const chunk = JSON.parse(data) as AIStreamChunk;
+          if (chunk.type === "done") {
+            clearTimeout(hardTimeout);
+            clearNoTextTimeout();
+            clearFirstTextTimeout();
+            return;
           }
-          if (chunk.type === 'thinking' && !chunk.content) {
-            clearTimeout(hardTimeout)
-            clearNoTextTimeout()
-            clearFirstTextTimeout()
-            return
+          if (chunk.type === "thinking" && !chunk.content) {
+            clearTimeout(hardTimeout);
+            clearNoTextTimeout();
+            clearFirstTextTimeout();
+            return;
           }
-          if (chunk.type === 'text' && chunk.content.trim().length > 0) {
-            sawText = true
-            clearFirstTextTimeout()
+          if (chunk.type === "text" && chunk.content.trim().length > 0) {
+            sawText = true;
+            clearFirstTextTimeout();
           }
-          clearTimeout(hardTimeout)
-          clearNoTextTimeout()
-          clearFirstTextTimeout()
-          yield chunk
-          if (chunk.type === 'error') {
-            return
+          clearTimeout(hardTimeout);
+          clearNoTextTimeout();
+          clearFirstTextTimeout();
+          yield chunk;
+          if (chunk.type === "error") {
+            return;
           }
         } catch {
           // Skip
@@ -256,47 +281,49 @@ export async function* streamChat(
   } catch (error) {
     // User-initiated stop via external abort signal
     if (abortSignal?.aborted && !abortReason) {
-      clearTimeout(hardTimeout)
-      clearNoTextTimeout()
-      clearFirstTextTimeout()
-      return
+      clearTimeout(hardTimeout);
+      clearNoTextTimeout();
+      clearFirstTextTimeout();
+      return;
     }
 
     if (controller.signal.aborted) {
-      if (abortReason === 'no_text_timeout') {
+      if (abortReason === "no_text_timeout") {
         yield {
-          type: 'error',
-          content: 'AI has been thinking too long without output. Request stopped, please retry.',
-        }
-      } else if (abortReason === 'hard_timeout') {
+          type: "error",
+          content:
+            "AI has been thinking too long without output. Request stopped, please retry.",
+        };
+      } else if (abortReason === "hard_timeout") {
         yield {
-          type: 'error',
-          content: 'AI request timed out. Please retry.',
-        }
-      } else if (abortReason === 'first_text_timeout') {
+          type: "error",
+          content: "AI request timed out. Please retry.",
+        };
+      } else if (abortReason === "first_text_timeout") {
         yield {
-          type: 'error',
-          content: 'AI spent too long thinking without producing output. Request stopped, please retry.',
-        }
+          type: "error",
+          content:
+            "AI spent too long thinking without producing output. Request stopped, please retry.",
+        };
       } else {
         yield {
-          type: 'error',
-          content: 'AI request was aborted.',
-        }
+          type: "error",
+          content: "AI request was aborted.",
+        };
       }
-      clearTimeout(hardTimeout)
-      clearNoTextTimeout()
-      clearFirstTextTimeout()
-      return
+      clearTimeout(hardTimeout);
+      clearNoTextTimeout();
+      clearFirstTextTimeout();
+      return;
     }
 
     const message =
-      error instanceof Error ? error.message : 'Unknown error occurred'
-    yield { type: 'error', content: message }
+      error instanceof Error ? error.message : "Unknown error occurred";
+    yield { type: "error", content: message };
   } finally {
-    clearTimeout(hardTimeout)
-    clearNoTextTimeout()
-    clearFirstTextTimeout()
+    clearTimeout(hardTimeout);
+    clearNoTextTimeout();
+    clearFirstTextTimeout();
   }
 }
 
@@ -311,69 +338,77 @@ export async function generateCompletion(
   provider?: string,
   run?: RunContext,
 ): Promise<string> {
-  const requestTimer = timer()
-  run?.logger.log('completion', 'request-start', {
-    model: model ?? 'missing',
-    provider: provider ?? 'missing',
+  const requestTimer = timer();
+  run?.logger.log("completion", "request-start", {
+    model: model ?? "missing",
+    provider: provider ?? "missing",
     systemLen: systemPrompt.length,
     messageLen: userMessage.length,
     timeoutMs: DEFAULT_GENERATE_TIMEOUT_MS,
-  })
+  });
 
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), DEFAULT_GENERATE_TIMEOUT_MS)
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    DEFAULT_GENERATE_TIMEOUT_MS,
+  );
 
-  let response: Response
+  let response: Response;
   try {
-    response = await fetch('/api/ai/generate', {
-      method: 'POST',
+    response = await fetch("/api/ai/generate", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        ...(run ? { 'X-Run-Id': run.runId } : {}),
+        "Content-Type": "application/json",
+        ...(run ? { "X-Run-Id": run.runId } : {}),
       },
-      body: JSON.stringify({ system: systemPrompt, message: userMessage, model, provider }),
+      body: JSON.stringify({
+        system: systemPrompt,
+        message: userMessage,
+        model,
+        provider,
+      }),
       signal: controller.signal,
-    })
+    });
   } catch (error) {
-    clearTimeout(timeout)
+    clearTimeout(timeout);
     if (controller.signal.aborted) {
-      run?.logger.warn('completion', 'request-timeout', {
+      run?.logger.warn("completion", "request-timeout", {
         elapsedMs: requestTimer.elapsed(),
         timeoutMs: DEFAULT_GENERATE_TIMEOUT_MS,
-      })
-      throw new Error('AI generation request timed out. Please retry.')
+      });
+      throw new Error("AI generation request timed out. Please retry.");
     }
-    run?.logger.error('completion', 'fetch-error', {
+    run?.logger.error("completion", "fetch-error", {
       elapsedMs: requestTimer.elapsed(),
-      error: error instanceof Error ? error.message : 'Unknown fetch error',
-    })
-    throw error
+      error: error instanceof Error ? error.message : "Unknown fetch error",
+    });
+    throw error;
   } finally {
-    clearTimeout(timeout)
+    clearTimeout(timeout);
   }
 
   if (!response.ok) {
-    run?.logger.error('completion', 'server-error', {
+    run?.logger.error("completion", "server-error", {
       elapsedMs: requestTimer.elapsed(),
       status: response.status,
-    })
-    throw new Error(`Server error: ${response.status}`)
+    });
+    throw new Error(`Server error: ${response.status}`);
   }
 
-  const data = await response.json()
+  const data = await response.json();
   if (data.error) {
-    run?.logger.error('completion', 'server-error', {
+    run?.logger.error("completion", "server-error", {
       elapsedMs: requestTimer.elapsed(),
       error: data.error,
-    })
-    throw new Error(data.error)
+    });
+    throw new Error(data.error);
   }
-  const text = data.text ?? ''
-  run?.logger.log('completion', 'response-ok', {
+  const text = data.text ?? "";
+  run?.logger.log("completion", "response-ok", {
     elapsedMs: requestTimer.elapsed(),
     textLength: text.length,
-  })
-  return text
+  });
+  return text;
 }
 
 /**
@@ -382,11 +417,11 @@ export async function generateCompletion(
  */
 export async function fetchAvailableModels(): Promise<AIModelInfo[]> {
   try {
-    const response = await fetch('/api/ai/models')
-    if (!response.ok) return []
-    const data = await response.json()
-    return data.models ?? []
+    const response = await fetch("/api/ai/models");
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.models ?? [];
   } catch {
-    return []
+    return [];
   }
 }
