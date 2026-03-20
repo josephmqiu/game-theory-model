@@ -1,17 +1,17 @@
-export const CHAT_PRODUCT_TOOL_NAMES = [
+export const CHAT_TOOL_NAMES = [
+  "get_entity",
+  "query_entities",
+  "query_relationships",
+  "request_loopback",
   "start_analysis",
   "get_analysis_status",
-  "get_analysis_result",
-  "revalidate_entities",
-  "get_entities",
   "create_entity",
   "update_entity",
-  "get_relationships",
+  "delete_entity",
   "create_relationship",
-  "update_relationship",
-  "layout_entities",
-  "focus_entity",
-  "group_entities",
+  "delete_relationship",
+  "rerun_phases",
+  "abort_analysis",
 ] as const;
 
 export const ANALYSIS_TOOL_NAMES = [
@@ -21,5 +21,5 @@ export const ANALYSIS_TOOL_NAMES = [
   "request_loopback",
 ] as const;
 
-export type ChatProductToolName = (typeof CHAT_PRODUCT_TOOL_NAMES)[number];
+export type ChatToolName = (typeof CHAT_TOOL_NAMES)[number];
 export type AnalysisToolName = (typeof ANALYSIS_TOOL_NAMES)[number];

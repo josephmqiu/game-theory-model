@@ -580,6 +580,21 @@ export function getStatus(runId: string): RunStatus {
   };
 }
 
+export function getActiveStatus(): RunStatus | null {
+  if (!activeRun || activeRun.status !== "running") {
+    return null;
+  }
+
+  return {
+    runId: activeRun.runId,
+    status: activeRun.status,
+    activePhase: activeRun.activePhase,
+    phasesCompleted: activeRun.phasesCompleted.length,
+    totalPhases: SUPPORTED_PHASES.length,
+    error: activeRun.error,
+  };
+}
+
 export function getResult(runId: string): AnalysisResult {
   // Return snapshot if available (completed run), otherwise fall back to current graph
   const snapshot = resultSnapshots.get(runId);

@@ -358,6 +358,18 @@ export function getRevalStatus(runId: string): RevalRunStatus | null {
   return revalRunStatuses.get(runId) ?? null;
 }
 
+export function getActiveRevalStatus(): RevalRunStatus | null {
+  const statuses = Array.from(revalRunStatuses.values());
+  for (let index = statuses.length - 1; index >= 0; index -= 1) {
+    const status = statuses[index];
+    if (status.status === "running" || status.status === "deferred") {
+      return status;
+    }
+  }
+
+  return null;
+}
+
 /**
  * Called by the orchestrator when a run finishes. Captures provider/model
  * for revalidation continuity. If there are pending staleIds from suppressed

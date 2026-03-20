@@ -12,14 +12,12 @@ import {
 
 import pkg from "../../package.json";
 import {
-  getAnalysis,
   createEntity,
   updateEntity,
-  getEntitiesByPhase,
-  getRelationships,
   createRelationship,
-  updateRelationship,
   getStaleEntityIds,
+  removeEntity,
+  removeRelationship,
 } from "../../server/services/entity-graph-service";
 import {
   getEntity,
@@ -31,7 +29,7 @@ import type { MethodologyPhase } from "../../shared/types/methodology";
 import type { RelationshipType } from "../../shared/types/entity";
 import * as analysisOrchestrator from "../../server/agents/analysis-agent";
 import * as revalidationService from "../../server/services/revalidation-service";
-import * as canvasService from "../../server/services/canvas-service";
+import { ALL_PHASES, V1_PHASES } from "../../src/types/methodology";
 import { handleOpenDocument } from "./tools/open-document";
 import { handleBatchGet } from "./tools/batch-get";
 import {
@@ -76,6 +74,12 @@ import { MCP_DEFAULT_PORT } from "@/constants/app";
 // When PRODUCT_ONLY is set (e.g. by the Codex adapter), expose only the
 // product-facing tool surface — not the OpenPencil design tools.
 const PRODUCT_ONLY = process.env.PRODUCT_ONLY === "1";
+
+interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
 
 const TOOL_DEFINITIONS = [
   {
@@ -782,81 +786,9 @@ const TOOL_DEFINITIONS = [
   ...LAYERED_DESIGN_TOOLS,
 ];
 
-// --- Game Theory Analyzer product tools (13) ---
+// --- Game Theory Analyzer product tools ---
 
-const PRODUCT_TOOL_DEFINITIONS = [
-  // Analysis tools (4)
-  {
-    name: "start_analysis",
-    description:
-      "Start a new game-theoretic analysis of a real-world topic. Returns a run ID for tracking progress.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        topic: {
-          type: "string",
-          description: "The real-world topic to analyze",
-        },
-        provider: {
-          type: "string",
-          description:
-            "AI provider to use for the analysis (e.g. anthropic, openai). Preserves provider affinity across phases.",
-        },
-        model: {
-          type: "string",
-          description:
-            "Model ID to use for the analysis (e.g. claude-sonnet-4-20250514, gpt-4o). Preserves model affinity across phases.",
-        },
-      },
-      required: ["topic"],
-    },
-  },
-  {
-    name: "get_analysis_status",
-    description:
-      "Get the current status of an analysis run (phases completed, running, pending).",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        runId: { type: "string", description: "The analysis run ID" },
-      },
-      required: ["runId"],
-    },
-  },
-  {
-    name: "get_analysis_result",
-    description:
-      "Get the full result of a completed analysis run (entities, relationships, phases).",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        runId: { type: "string", description: "The analysis run ID" },
-      },
-      required: ["runId"],
-    },
-  },
-  {
-    name: "revalidate_entities",
-    description:
-      "Trigger revalidation of entities that may be stale after edits. Optionally scope to specific entity IDs or a phase.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        entityIds: {
-          type: "array",
-          items: { type: "string" },
-          description: "Specific entity IDs to revalidate (omit for all stale)",
-        },
-        phase: {
-          type: "string",
-          description: "Revalidate all entities in this phase",
-        },
-      },
-      required: [],
-    },
-  },
-
-  // Analysis-mode read tools (4)
+export const ANALYSIS_MODE_TOOL_DEFINITIONS = [
   {
     name: "get_entity",
     description: "Get a single analysis entity by ID.",
@@ -931,29 +863,42 @@ const PRODUCT_TOOL_DEFINITIONS = [
       required: ["trigger_type", "justification"],
     },
   },
+] as const;
 
-  // Entity & relationship tools (6) — functional via entity-graph-service
+export const CHAT_MODE_TOOL_DEFINITIONS = [
+  ...ANALYSIS_MODE_TOOL_DEFINITIONS,
   {
-    name: "get_entities",
+    name: "start_analysis",
     description:
-      "Get analysis entities, optionally filtered by phase or entity type.",
+      "Start a new game-theoretic analysis of a real-world topic. Returns a run ID for tracking progress.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        phase: {
+        topic: {
+          type: "string",
+          description: "The real-world topic to analyze",
+        },
+        provider: {
           type: "string",
           description:
-            "Filter by methodology phase (e.g. situational-grounding)",
+            "AI provider to use for the analysis (e.g. anthropic, openai). Preserves provider affinity across phases.",
         },
-        type: {
+        model: {
           type: "string",
-          description: "Filter by entity type (e.g. fact, player, objective)",
-        },
-        filters: {
-          type: "object",
-          description: "Additional filters (reserved for future use)",
+          description:
+            "Model ID to use for the analysis (e.g. claude-sonnet-4-20250514, gpt-4o). Preserves model affinity across phases.",
         },
       },
+      required: ["topic"],
+    },
+  },
+  {
+    name: "get_analysis_status",
+    description:
+      "Get the current status of the active analysis or rerun job.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
       required: [],
     },
   },
@@ -987,11 +932,6 @@ const PRODUCT_TOOL_DEFINITIONS = [
           type: "number",
           description: "Revision number (default 1)",
         },
-        runId: {
-          type: "string",
-          description:
-            "Active analysis run ID for provenance tracking (optional)",
-        },
       },
       required: ["type", "phase", "data"],
     },
@@ -1004,39 +944,23 @@ const PRODUCT_TOOL_DEFINITIONS = [
       type: "object" as const,
       properties: {
         id: { type: "string", description: "Entity ID to update" },
-        type: { type: "string", description: "Updated entity type" },
-        phase: { type: "string", description: "Updated phase" },
-        data: { type: "object", description: "Updated entity data" },
-        confidence: { type: "string", enum: ["high", "medium", "low"] },
-        rationale: { type: "string", description: "Updated rationale" },
-        revision: { type: "number", description: "Updated revision number" },
-        runId: {
-          type: "string",
-          description:
-            "Active analysis run ID for provenance tracking (optional)",
+        updates: {
+          type: "object",
+          description: "Updated entity fields to merge into the existing entity",
         },
       },
-      required: ["id"],
+      required: ["id", "updates"],
     },
   },
   {
-    name: "get_relationships",
-    description:
-      "Get analysis relationships, optionally filtered by type or entity involvement.",
+    name: "delete_entity",
+    description: "Delete an analysis entity by ID.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        type: {
-          type: "string",
-          description:
-            "Filter by relationship type (e.g. supports, contradicts, plays-in)",
-        },
-        entityId: {
-          type: "string",
-          description: "Filter to relationships involving this entity",
-        },
+        id: { type: "string", description: "Entity ID to delete" },
       },
-      required: [],
+      required: ["id"],
     },
   },
   {
@@ -1051,75 +975,55 @@ const PRODUCT_TOOL_DEFINITIONS = [
           description:
             "Relationship type: plays-in, has-objective, conflicts-with, has-strategy, supports, contradicts, produces, depends-on, invalidated-by, constrains, escalates-to, links, precedes, informed-by, derived-from",
         },
-        from: { type: "string", description: "Source entity ID" },
-        to: { type: "string", description: "Target entity ID" },
-        meta: {
+        fromId: { type: "string", description: "Source entity ID" },
+        toId: { type: "string", description: "Target entity ID" },
+        metadata: {
           type: "object",
           description: "Optional metadata for the relationship",
         },
       },
-      required: ["type", "from", "to"],
+      required: ["type", "fromId", "toId"],
     },
   },
   {
-    name: "update_relationship",
-    description: "Update an existing relationship's properties.",
+    name: "delete_relationship",
+    description: "Delete a relationship between two analysis entities by ID.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        id: { type: "string", description: "Relationship ID to update" },
-        type: { type: "string", description: "Updated relationship type" },
-        meta: { type: "object", description: "Updated metadata" },
+        id: { type: "string", description: "Relationship ID to delete" },
       },
       required: ["id"],
     },
   },
-
-  // Canvas tools (3)
   {
-    name: "layout_entities",
-    description: "Apply a layout strategy to arrange entities on the canvas.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        strategy: {
-          type: "string",
-          description:
-            "Layout strategy to apply (e.g. force-directed, hierarchical, grid)",
-        },
-      },
-      required: ["strategy"],
-    },
-  },
-  {
-    name: "focus_entity",
-    description: "Pan and zoom the canvas to focus on a specific entity.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        entityId: { type: "string", description: "Entity ID to focus on" },
-      },
-      required: ["entityId"],
-    },
-  },
-  {
-    name: "group_entities",
+    name: "rerun_phases",
     description:
-      "Visually group a set of entities under a label on the canvas.",
+      "Trigger revalidation from the earliest specified methodology phase.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        entityIds: {
+        phases: {
           type: "array",
           items: { type: "string" },
-          description: "Entity IDs to group together",
+          description: "Methodology phases to rerun",
         },
-        label: { type: "string", description: "Display label for the group" },
       },
-      required: ["entityIds", "label"],
+      required: ["phases"],
     },
   },
-];
+  {
+    name: "abort_analysis",
+    description: "Abort the currently running analysis job, if one exists.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+] as const;
+
+const PRODUCT_TOOL_DEFINITIONS = CHAT_MODE_TOOL_DEFINITIONS;
 
 // Merged set: OpenPencil tools + product tools (full profile), or product-only
 const ALL_TOOL_DEFINITIONS = PRODUCT_ONLY
@@ -1188,34 +1092,67 @@ export async function handleStartAnalysis(args: {
   return JSON.stringify({ runId, status: "started", estimatedPhases: 3 });
 }
 
-export function handleGetAnalysisStatus(args: { runId: string }): string {
-  // Check revalidation status first (reval IDs are not tracked by the orchestrator)
-  const revalStatus = revalidationService.getRevalStatus(args.runId);
-  if (revalStatus) {
-    return JSON.stringify(revalStatus);
+function resolveToolRunId(): string | undefined {
+  const envRunId = process.env.ANALYSIS_RUN_ID?.trim();
+  if (envRunId) {
+    return envRunId;
   }
-  const status = analysisOrchestrator.getStatus(args.runId);
-  return JSON.stringify(status);
+
+  const activeAnalysis = analysisOrchestrator.getActiveStatus();
+  if (activeAnalysis) {
+    return activeAnalysis.runId;
+  }
+
+  const activeRevalidation = revalidationService.getActiveRevalStatus();
+  return activeRevalidation?.runId;
 }
 
-export function handleGetAnalysisResult(args: { runId: string }): string {
-  const result = analysisOrchestrator.getResult(args.runId);
-  return JSON.stringify(result);
+function resolveEarliestRerunPhase(
+  phases: string[],
+): MethodologyPhase | { error: string } {
+  if (phases.length === 0) {
+    return { error: "rerun_phases requires at least one phase" };
+  }
+
+  const invalidPhases = phases.filter(
+    (phase) => !(ALL_PHASES as readonly string[]).includes(phase),
+  );
+  if (invalidPhases.length > 0) {
+    return {
+      error: `Unsupported phases: ${invalidPhases.join(", ")}`,
+    };
+  }
+
+  const unsupportedPhases = phases.filter(
+    (phase) => !(V1_PHASES as readonly string[]).includes(phase),
+  );
+  if (unsupportedPhases.length > 0) {
+    return {
+      error:
+        `rerun_phases currently supports only implemented phases: ${V1_PHASES.join(", ")}. ` +
+        `Unsupported: ${unsupportedPhases.join(", ")}`,
+    };
+  }
+
+  const earliestPhase = [...phases].sort(
+    (left, right) => V1_PHASES.indexOf(left as MethodologyPhase) - V1_PHASES.indexOf(right as MethodologyPhase),
+  )[0];
+
+  return earliestPhase as MethodologyPhase;
 }
 
-export function handleRevalidateEntities(args: {
-  entityIds?: string[];
-  phase?: string;
-}): string {
-  const { runId } = revalidationService.revalidate(args.entityIds, args.phase);
-  // Pass through actual status (running, deferred, completed) instead of
-  // hardcoding "started". The caller can distinguish deferred (analysis active)
-  // from running (revalidation in progress) or completed (no-op, nothing stale).
-  const status = revalidationService.getRevalStatus(runId);
-  return JSON.stringify({
-    runId,
-    status: status?.status ?? "running",
-  });
+export function handleGetAnalysisStatus(): string {
+  const activeAnalysis = analysisOrchestrator.getActiveStatus();
+  if (activeAnalysis) {
+    return JSON.stringify(activeAnalysis);
+  }
+
+  const activeRevalidation = revalidationService.getActiveRevalStatus();
+  if (activeRevalidation) {
+    return JSON.stringify(activeRevalidation);
+  }
+
+  return JSON.stringify({ status: "idle" });
 }
 
 export function handleGetEntity(args: { id: string }): string {
@@ -1255,23 +1192,6 @@ export function handleRequestLoopback(args: {
   return JSON.stringify(requestLoopback(args));
 }
 
-// Entity tools (3)
-export function handleGetEntities(args: {
-  phase?: string;
-  type?: string;
-  filters?: Record<string, unknown>;
-}): string {
-  let entities = args.phase
-    ? getEntitiesByPhase(args.phase as MethodologyPhase)
-    : getAnalysis().entities;
-
-  if (args.type) {
-    entities = entities.filter((e) => e.type === args.type);
-  }
-
-  return JSON.stringify(entities);
-}
-
 export function handleCreateEntity(args: {
   type: string;
   phase: string;
@@ -1279,8 +1199,8 @@ export function handleCreateEntity(args: {
   confidence?: string;
   rationale?: string;
   revision?: number;
-  runId?: string;
 }): string {
+  const runId = resolveToolRunId();
   const entity = createEntity(
     {
       type: args.type as any, // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -1291,7 +1211,7 @@ export function handleCreateEntity(args: {
       revision: args.revision ?? 1,
       stale: false,
     },
-    { source: "ai-edited", ...(args.runId ? { runId: args.runId } : {}) },
+    { source: "ai-edited", ...(runId ? { runId } : {}) },
   );
   return JSON.stringify({
     created: [entity],
@@ -1303,22 +1223,21 @@ export function handleCreateEntity(args: {
 
 export function handleUpdateEntity(args: {
   id: string;
-  runId?: string;
-  [key: string]: unknown;
+  updates: Record<string, unknown>;
 }): string {
-  const { id, runId, ...updates } = args;
+  const runId = resolveToolRunId();
 
   // Capture stale IDs before the update so we can report newly stale entities.
   // updateEntity() in entity-graph-service now auto-propagates staleness to
   // downstream dependents, so we diff pre/post to find what was marked stale.
   const staleBefore = new Set(getStaleEntityIds());
 
-  const result = updateEntity(id, updates as any, {
+  const result = updateEntity(args.id, args.updates as any, {
     source: "ai-edited",
     ...(runId ? { runId } : {}),
   }); // eslint-disable-line @typescript-eslint/no-explicit-any
   if (!result) {
-    return JSON.stringify({ error: `Entity "${id}" not found` });
+    return JSON.stringify({ error: `Entity "${args.id}" not found` });
   }
 
   const staleAfter = getStaleEntityIds();
@@ -1332,30 +1251,27 @@ export function handleUpdateEntity(args: {
   });
 }
 
-// Relationship tools (3)
-export function handleGetRelationships(args: {
-  type?: string;
-  entityId?: string;
-}): string {
-  const result = getRelationships({
-    type: args.type as RelationshipType | undefined,
-    entityId: args.entityId,
-  });
-  return JSON.stringify(result);
+export function handleDeleteEntity(args: { id: string }): string {
+  const deleted = removeEntity(args.id);
+  if (!deleted) {
+    return JSON.stringify({ error: `Entity "${args.id}" not found` });
+  }
+
+  return JSON.stringify({ deleted: true, id: args.id });
 }
 
 export function handleCreateRelationship(args: {
   type: string;
-  from: string;
-  to: string;
-  meta?: Record<string, unknown>;
+  fromId: string;
+  toId: string;
+  metadata?: Record<string, unknown>;
 }): string {
   try {
     const result = createRelationship({
       type: args.type as RelationshipType,
-      fromEntityId: args.from,
-      toEntityId: args.to,
-      metadata: args.meta,
+      fromEntityId: args.fromId,
+      toEntityId: args.toId,
+      metadata: args.metadata,
     });
     return JSON.stringify(result);
   } catch (err) {
@@ -1365,54 +1281,38 @@ export function handleCreateRelationship(args: {
   }
 }
 
-export function handleUpdateRelationship(args: {
-  id: string;
-  type?: string;
-  meta?: Record<string, unknown>;
-}): string {
-  const updates: Record<string, unknown> = {};
-  if (args.type !== undefined) updates.type = args.type;
-  if (args.meta !== undefined) updates.metadata = args.meta;
-  const result = updateRelationship(args.id, updates as any); // eslint-disable-line @typescript-eslint/no-explicit-any
-  if (!result) {
+export function handleDeleteRelationship(args: { id: string }): string {
+  const deleted = removeRelationship(args.id);
+  if (!deleted) {
     return JSON.stringify({ error: `Relationship "${args.id}" not found` });
   }
-  return JSON.stringify(result);
+
+  return JSON.stringify({ deleted: true, id: args.id });
 }
 
-// Canvas tools (3)
-export function handleLayoutEntities(args: { strategy: string }): string {
-  try {
-    canvasService.layoutEntities(args.strategy);
-    return JSON.stringify({
-      created: [],
-      updated: [],
-      staleMarked: [],
-      grouped: [],
-    });
-  } catch (error) {
-    return JSON.stringify({
-      error: error instanceof Error ? error.message : String(error),
-    });
+export function handleRerunPhases(args: { phases: string[] }): string {
+  const earliestPhase = resolveEarliestRerunPhase(args.phases);
+  if (typeof earliestPhase !== "string") {
+    return JSON.stringify(earliestPhase);
   }
-}
 
-export function handleFocusEntity(args: { entityId: string }): string {
-  canvasService.emitFocusEvent(args.entityId);
-  return JSON.stringify({ focused: args.entityId });
-}
-
-export function handleGroupEntities(args: {
-  entityIds: string[];
-  label: string;
-}): string {
-  canvasService.groupEntities(args.entityIds, args.label);
+  const { runId } = revalidationService.revalidate(undefined, earliestPhase);
+  const status = revalidationService.getRevalStatus(runId);
   return JSON.stringify({
-    created: [],
-    updated: [],
-    staleMarked: [],
-    grouped: args.entityIds,
+    runId,
+    status: status?.status ?? "running",
+    startPhase: earliestPhase,
   });
+}
+
+export function handleAbortAnalysis(): string {
+  const activeStatus = analysisOrchestrator.getActiveStatus();
+  if (!activeStatus) {
+    return JSON.stringify({ aborted: false, status: "idle" });
+  }
+
+  analysisOrchestrator.abort();
+  return JSON.stringify({ aborted: true, runId: activeStatus.runId });
 }
 
 // --- Tool execution handler ---
@@ -1494,11 +1394,7 @@ async function handleToolCall(
     case "start_analysis":
       return await handleStartAnalysis(a);
     case "get_analysis_status":
-      return handleGetAnalysisStatus(a);
-    case "get_analysis_result":
-      return handleGetAnalysisResult(a);
-    case "revalidate_entities":
-      return handleRevalidateEntities(a);
+      return handleGetAnalysisStatus();
     case "get_entity":
       return handleGetEntity(a);
     case "query_entities":
@@ -1507,33 +1403,28 @@ async function handleToolCall(
       return handleQueryRelationships(a);
     case "request_loopback":
       return handleRequestLoopback(a);
-    case "get_entities":
-      return handleGetEntities(a);
     case "create_entity":
       return handleCreateEntity(a);
     case "update_entity":
       return handleUpdateEntity(a);
-    case "get_relationships":
-      return handleGetRelationships(a);
+    case "delete_entity":
+      return handleDeleteEntity(a);
     case "create_relationship":
       return handleCreateRelationship(a);
-    case "update_relationship":
-      return handleUpdateRelationship(a);
-    case "layout_entities":
-      return handleLayoutEntities(a);
-    case "focus_entity":
-      return handleFocusEntity(a);
-    case "group_entities":
-      return handleGroupEntities(a);
+    case "delete_relationship":
+      return handleDeleteRelationship(a);
+    case "rerun_phases":
+      return handleRerunPhases(a);
+    case "abort_analysis":
+      return handleAbortAnalysis();
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
 }
 
-/** Register tool handlers on a Server instance. */
-function registerTools(server: Server): void {
+function registerToolSet(server: Server, toolDefinitions: readonly ToolDefinition[]): void {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: ALL_TOOL_DEFINITIONS,
+    tools: toolDefinitions,
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -1553,6 +1444,38 @@ function registerTools(server: Server): void {
       };
     }
   });
+}
+
+/** Register tool handlers on a Server instance. */
+function registerTools(server: Server): void {
+  registerToolSet(server, ALL_TOOL_DEFINITIONS);
+}
+
+export function registerAnalysisTools(server: Server): void {
+  registerToolSet(server, ANALYSIS_MODE_TOOL_DEFINITIONS);
+}
+
+export function registerChatTools(server: Server): void {
+  registerToolSet(server, CHAT_MODE_TOOL_DEFINITIONS);
+}
+
+function createMcpServer(): Server {
+  return new Server(
+    { name: pkg.name, version: pkg.version },
+    { capabilities: { tools: {} } },
+  );
+}
+
+export function buildAnalysisMcpServer(): Server {
+  const server = createMcpServer();
+  registerAnalysisTools(server);
+  return server;
+}
+
+export function buildChatMcpServer(): Server {
+  const server = createMcpServer();
+  registerChatTools(server);
+  return server;
 }
 
 // --- HTTP server helper ---
@@ -1603,10 +1526,7 @@ function startHttpServer(port: number): void {
 
     // New session — only POST (initialize) is valid without session ID
     if (req.method === "POST") {
-      const mcpServer = new Server(
-        { name: pkg.name, version: pkg.version },
-        { capabilities: { tools: {} } },
-      );
+      const mcpServer = createMcpServer();
       registerTools(mcpServer);
 
       const transport = new StreamableHTTPServerTransport({
@@ -1680,10 +1600,7 @@ async function main() {
 
   if (stdio && http) {
     // Both: stdio server + HTTP server (per-session)
-    const stdioServer = new Server(
-      { name: pkg.name, version: pkg.version },
-      { capabilities: { tools: {} } },
-    );
+    const stdioServer = createMcpServer();
     registerTools(stdioServer);
     await stdioServer.connect(new StdioServerTransport());
 
@@ -1691,10 +1608,7 @@ async function main() {
   } else if (http) {
     startHttpServer(port);
   } else {
-    const server = new Server(
-      { name: pkg.name, version: pkg.version },
-      { capabilities: { tools: {} } },
-    );
+    const server = createMcpServer();
     registerTools(server);
     await server.connect(new StdioServerTransport());
   }

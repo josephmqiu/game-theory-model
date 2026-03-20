@@ -131,6 +131,41 @@ function emitItemCompleted(
   });
 }
 
+function respondToChatConfig(method: string, id: number | undefined): boolean {
+  if (method === "config/mcpServer/reload" && id !== undefined) {
+    emitResponse(id, { ok: true });
+    return true;
+  }
+
+  if (method === "mcpServerStatus/list" && id !== undefined) {
+    emitResponse(id, {
+      data: [
+        {
+          name: "game-theory-analyzer",
+          tools: {
+            get_entity: {},
+            query_entities: {},
+            query_relationships: {},
+            request_loopback: {},
+            start_analysis: {},
+            get_analysis_status: {},
+            create_entity: {},
+            update_entity: {},
+            delete_entity: {},
+            create_relationship: {},
+            delete_relationship: {},
+            rerun_phases: {},
+            abort_analysis: {},
+          },
+        },
+      ],
+    });
+    return true;
+  }
+
+  return false;
+}
+
 function setAutoResponder(
   handler: (method: string, id: number | undefined, params: unknown) => void,
 ) {
@@ -157,6 +192,7 @@ describe("codex-adapter", () => {
       _resetConnection();
 
       setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
         if (method === "initialize" && id !== undefined) {
           emitResponse(id, { protocolVersion: "1.0" });
         }
@@ -188,6 +224,7 @@ describe("codex-adapter", () => {
       _resetConnection();
 
       setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
         if (method === "initialize" && id !== undefined) {
           emitResponse(id, { protocolVersion: "1.0" });
         }
@@ -227,6 +264,7 @@ describe("codex-adapter", () => {
       _resetConnection();
 
       setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
         if (method === "initialize" && id !== undefined) {
           emitResponse(id, { protocolVersion: "1.0" });
         }
@@ -263,6 +301,7 @@ describe("codex-adapter", () => {
       _resetConnection();
 
       setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
         if (method === "initialize" && id !== undefined) {
           emitResponse(id, { protocolVersion: "1.0" });
         }
@@ -274,7 +313,7 @@ describe("codex-adapter", () => {
           queueMicrotask(() => {
             emitNotification("item/tool/requestUserInput", {
               id: "approval-1",
-              toolName: "get_entities",
+              toolName: "query_entities",
               threadId: "thread-1",
               turnId: "turn-1",
             });
@@ -304,6 +343,7 @@ describe("codex-adapter", () => {
       _resetConnection();
 
       setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
         if (method === "initialize" && id !== undefined) {
           emitResponse(id, { protocolVersion: "1.0" });
         }
@@ -356,6 +396,7 @@ describe("codex-adapter", () => {
       _resetConnection();
 
       setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
         if (method === "initialize" && id !== undefined) {
           emitResponse(id, { protocolVersion: "1.0" });
         }
@@ -399,6 +440,7 @@ describe("codex-adapter", () => {
       _resetConnection();
 
       setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
         if (method === "initialize" && id !== undefined) {
           emitResponse(id, { protocolVersion: "1.0" });
         }
@@ -452,6 +494,7 @@ describe("codex-adapter", () => {
       _resetConnection();
 
       setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
         if (method === "initialize" && id !== undefined) {
           emitResponse(id, { protocolVersion: "1.0" });
         }
@@ -490,6 +533,7 @@ describe("codex-adapter", () => {
       _resetConnection();
 
       setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
         if (method === "initialize" && id !== undefined) {
           emitResponse(id, { protocolVersion: "1.0" });
         }
@@ -617,19 +661,19 @@ describe("codex-adapter", () => {
         ["/mock/dist/mcp-server.cjs"],
         expect.objectContaining({
           enabledTools: [
+            "get_entity",
+            "query_entities",
+            "query_relationships",
+            "request_loopback",
             "start_analysis",
             "get_analysis_status",
-            "get_analysis_result",
-            "revalidate_entities",
-            "get_entities",
             "create_entity",
             "update_entity",
-            "get_relationships",
+            "delete_entity",
             "create_relationship",
-            "update_relationship",
-            "layout_entities",
-            "focus_entity",
-            "group_entities",
+            "delete_relationship",
+            "rerun_phases",
+            "abort_analysis",
           ],
         }),
       );

@@ -11,23 +11,19 @@ import {
 } from "../analysis-tools";
 import {
   ANALYSIS_TOOL_NAMES,
-  CHAT_PRODUCT_TOOL_NAMES,
+  CHAT_TOOL_NAMES,
 } from "./tool-surfaces";
 import { serverLog } from "../../utils/ai-logger";
 import {
   handleStartAnalysis,
   handleGetAnalysisStatus,
-  handleGetAnalysisResult,
-  handleRevalidateEntities,
-  handleGetEntities,
   handleCreateEntity,
   handleUpdateEntity,
-  handleGetRelationships,
+  handleDeleteEntity,
   handleCreateRelationship,
-  handleUpdateRelationship,
-  handleLayoutEntities,
-  handleFocusEntity,
-  handleGroupEntities,
+  handleDeleteRelationship,
+  handleRerunPhases,
+  handleAbortAnalysis,
 } from "@/mcp/server";
 
 // ── Types ──
@@ -52,15 +48,74 @@ export type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-
 // ── Product MCP server ──
 
 /**
- * Build an in-process MCP server exposing ONLY the 13 product tools.
+ * Build an in-process MCP server exposing the chat-mode product tools.
  * Uses createSdkMcpServer() + tool() from the Agent SDK.
  */
-export async function createProductMcpServer() {
+export async function createChatMcpServer() {
   const { createSdkMcpServer, tool } =
     await import("@anthropic-ai/claude-agent-sdk");
   const { z } = await import("zod/v4");
 
   const tools = [
+    tool(
+      "get_entity",
+      "Get a single analysis entity by ID",
+      { id: z.string() },
+      async (args) => ({
+        content: [
+          { type: "text" as const, text: JSON.stringify(getEntity(args.id)) },
+        ],
+      }),
+    ),
+    tool(
+      "query_entities",
+      "Query analysis entities by phase, type, or stale status",
+      {
+        phase: z.string().optional(),
+        type: z.string().optional(),
+        stale: z.boolean().optional(),
+      },
+      async (args) => ({
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(queryEntities(args)),
+          },
+        ],
+      }),
+    ),
+    tool(
+      "query_relationships",
+      "Query analysis relationships by entity or type",
+      {
+        type: z.string().optional(),
+        entityId: z.string().optional(),
+      },
+      async (args) => ({
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(queryRelationships(args)),
+          },
+        ],
+      }),
+    ),
+    tool(
+      "request_loopback",
+      "Record a disruption trigger for later loopback handling",
+      {
+        trigger_type: z.string(),
+        justification: z.string(),
+      },
+      async (args) => ({
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(requestLoopback(args)),
+          },
+        ],
+      }),
+    ),
     tool(
       "start_analysis",
       "Start a new game-theoretic analysis",
@@ -74,49 +129,11 @@ export async function createProductMcpServer() {
     tool(
       "get_analysis_status",
       "Get analysis run status",
-      { runId: z.string() },
-      async (args) => ({
+      {},
+      async () => ({
         content: [
-          { type: "text" as const, text: handleGetAnalysisStatus(args) },
+          { type: "text" as const, text: handleGetAnalysisStatus() },
         ],
-      }),
-    ),
-    tool(
-      "get_analysis_result",
-      "Get completed analysis result",
-      { runId: z.string() },
-      async (args) => ({
-        content: [
-          { type: "text" as const, text: handleGetAnalysisResult(args) },
-        ],
-      }),
-    ),
-    tool(
-      "revalidate_entities",
-      "Revalidate stale entities",
-      {
-        entityIds: z.array(z.string()).optional(),
-        phase: z.string().optional(),
-      },
-      async (args) => ({
-        content: [
-          {
-            type: "text" as const,
-            text: handleRevalidateEntities(args),
-          },
-        ],
-      }),
-    ),
-    tool(
-      "get_entities",
-      "Get analysis entities",
-      {
-        phase: z.string().optional(),
-        type: z.string().optional(),
-        filters: z.record(z.string(), z.unknown()).optional(),
-      },
-      async (args) => ({
-        content: [{ type: "text" as const, text: handleGetEntities(args) }],
       }),
     ),
     tool(
@@ -129,7 +146,6 @@ export async function createProductMcpServer() {
         confidence: z.string().optional(),
         rationale: z.string().optional(),
         revision: z.number().optional(),
-        runId: z.string().optional(),
       },
       async (args) => ({
         content: [
@@ -142,13 +158,7 @@ export async function createProductMcpServer() {
       "Update an existing analysis entity",
       {
         id: z.string(),
-        type: z.string().optional(),
-        phase: z.string().optional(),
-        data: z.record(z.string(), z.unknown()).optional(),
-        confidence: z.string().optional(),
-        rationale: z.string().optional(),
-        revision: z.number().optional(),
-        runId: z.string().optional(),
+        updates: z.record(z.string(), z.unknown()),
       },
       async (args) => ({
         content: [
@@ -157,13 +167,11 @@ export async function createProductMcpServer() {
       }),
     ),
     tool(
-      "get_relationships",
-      "Get analysis relationships",
-      { type: z.string().optional(), entityId: z.string().optional() },
+      "delete_entity",
+      "Delete an analysis entity",
+      { id: z.string() },
       async (args) => ({
-        content: [
-          { type: "text" as const, text: handleGetRelationships(args) },
-        ],
+        content: [{ type: "text" as const, text: handleDeleteEntity(args) }],
       }),
     ),
     tool(
@@ -171,9 +179,9 @@ export async function createProductMcpServer() {
       "Create a relationship between entities",
       {
         type: z.string(),
-        from: z.string(),
-        to: z.string(),
-        meta: z.record(z.string(), z.unknown()).optional(),
+        fromId: z.string(),
+        toId: z.string(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
       },
       async (args) => ({
         content: [
@@ -185,64 +193,52 @@ export async function createProductMcpServer() {
       }),
     ),
     tool(
-      "update_relationship",
-      "Update a relationship",
-      {
-        id: z.string(),
-        type: z.string().optional(),
-        meta: z.record(z.string(), z.unknown()).optional(),
-      },
+      "delete_relationship",
+      "Delete a relationship",
+      { id: z.string() },
       async (args) => ({
         content: [
           {
             type: "text" as const,
-            text: handleUpdateRelationship(args as any),
+            text: handleDeleteRelationship(args as any),
           },
         ], // eslint-disable-line @typescript-eslint/no-explicit-any
       }),
     ),
     tool(
-      "layout_entities",
-      "Apply layout strategy to entities",
-      { strategy: z.string() },
+      "rerun_phases",
+      "Rerun analysis from the earliest specified phase",
+      { phases: z.array(z.string()) },
       async (args) => ({
-        content: [{ type: "text" as const, text: handleLayoutEntities(args) }],
+        content: [{ type: "text" as const, text: handleRerunPhases(args) }],
       }),
     ),
     tool(
-      "focus_entity",
-      "Focus canvas on an entity",
-      { entityId: z.string() },
-      async (args) => ({
-        content: [{ type: "text" as const, text: handleFocusEntity(args) }],
-      }),
-    ),
-    tool(
-      "group_entities",
-      "Group entities visually",
-      { entityIds: z.array(z.string()), label: z.string() },
-      async (args) => ({
-        content: [{ type: "text" as const, text: handleGroupEntities(args) }],
+      "abort_analysis",
+      "Abort the active analysis",
+      {},
+      async () => ({
+        content: [{ type: "text" as const, text: handleAbortAnalysis() }],
       }),
     ),
   ];
 
   return createSdkMcpServer({
-    name: "game-theory-product",
+    name: "game-theory-chat",
     version: "1.0.0",
     tools,
   });
 }
 
-const READ_ONLY_MCP_SERVER_NAME = "game-theory-analysis";
+const ANALYSIS_MCP_SERVER_NAME = "game-theory-analysis";
 
-export async function createReadOnlyMcpServer(runId?: string) {
+export async function createAnalysisMcpServer(runId?: string) {
   const { createSdkMcpServer, tool } =
     await import("@anthropic-ai/claude-agent-sdk");
   const { z } = await import("zod/v4");
 
   return createSdkMcpServer({
-    name: READ_ONLY_MCP_SERVER_NAME,
+    name: ANALYSIS_MCP_SERVER_NAME,
     version: "1.0.0",
     tools: [
       tool(
@@ -309,8 +305,9 @@ export async function createReadOnlyMcpServer(runId?: string) {
 }
 
 /** Exported for tests */
-export const PRODUCT_TOOL_NAMES = CHAT_PRODUCT_TOOL_NAMES;
-export { ANALYSIS_TOOL_NAMES };
+export const CHAT_MCP_SERVER_NAME = "game-theory-chat";
+export const CHAT_MODE_TOOL_NAMES = CHAT_TOOL_NAMES;
+export { ANALYSIS_MCP_SERVER_NAME, ANALYSIS_TOOL_NAMES };
 
 // ── Chat profile ──
 
@@ -330,7 +327,8 @@ const CHAT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
  * - permissionMode: "bypassPermissions"
  * - maxTurns: 25
  * - tools: ['WebSearch']
- * - mcpServers: { product: createProductMcpServer() }
+ * - allowedTools: chat MCP tools + WebSearch
+ * - mcpServers: { chat: createChatMcpServer() }
  * - includePartialMessages: true
  * - settingSources: []
  */
@@ -350,7 +348,13 @@ export async function* streamChat(
   const claudePath = resolveClaudeCli();
   const timeoutMs = options?.timeoutMs ?? CHAT_TIMEOUT_MS;
 
-  const productMcp = await createProductMcpServer();
+  const chatMcp = await createChatMcpServer();
+  const allowedTools = [
+    ...CHAT_TOOL_NAMES.map(
+      (toolName) => `mcp__${CHAT_MCP_SERVER_NAME}__${toolName}`,
+    ),
+    "WebSearch",
+  ];
 
   const q = query({
     prompt,
@@ -359,7 +363,8 @@ export async function* streamChat(
       model,
       maxTurns: 25,
       tools: ["WebSearch"],
-      mcpServers: { product: productMcp },
+      allowedTools,
+      mcpServers: { chat: chatMcp },
       includePartialMessages: true,
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
@@ -528,7 +533,7 @@ function createStreamingPrompt(prompt: string): AsyncIterable<SDKUserMessage> {
  * - permissionMode: "dontAsk"
  * - maxTurns: 12 (configurable)
  * - allowedTools: read-only MCP tools + WebSearch
- * - mcpServers: { analysis: createReadOnlyMcpServer() }
+ * - mcpServers: { analysis: createAnalysisMcpServer() }
  * - includePartialMessages: true
  * - outputFormat: { type: 'json_schema', schema }
  * - settingSources: []
@@ -548,10 +553,10 @@ export async function runAnalysisPhase<T = unknown>(
   const env = buildClaudeAgentEnv();
   const debugFile = getClaudeAgentDebugFilePath();
   const claudePath = resolveClaudeCli();
-  const readOnlyMcp = await createReadOnlyMcpServer(options?.runId);
+  const readOnlyMcp = await createAnalysisMcpServer(options?.runId);
   const allowedTools = [
     ...ANALYSIS_TOOL_NAMES.map(
-      (toolName) => `mcp__${READ_ONLY_MCP_SERVER_NAME}__${toolName}`,
+      (toolName) => `mcp__${ANALYSIS_MCP_SERVER_NAME}__${toolName}`,
     ),
     "WebSearch",
   ];

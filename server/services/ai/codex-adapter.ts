@@ -13,7 +13,7 @@ import {
 } from "./codex-config";
 import {
   ANALYSIS_TOOL_NAMES,
-  CHAT_PRODUCT_TOOL_NAMES,
+  CHAT_TOOL_NAMES,
 } from "./tool-surfaces";
 
 // ── Types ──
@@ -232,6 +232,14 @@ function installToolSurface(
   });
 }
 
+function installAnalysisToolSurface(runId?: string): void {
+  installToolSurface(ANALYSIS_TOOL_NAMES, runId);
+}
+
+function installChatToolSurface(): void {
+  installToolSurface(CHAT_TOOL_NAMES);
+}
+
 async function reloadMcpServerConfig(
   conn: AppServerConnection,
   runId?: string,
@@ -429,9 +437,13 @@ export async function* streamChat(
   const runId = options?.runId;
   const timeoutMs = options?.timeoutMs ?? CHAT_TIMEOUT_MS;
 
+  installChatToolSurface();
+
   let conn: AppServerConnection;
   try {
     conn = await startAppServer(runId);
+    await reloadMcpServerConfig(conn, runId);
+    await ensureConfiguredMcpServerAvailable(conn, CHAT_TOOL_NAMES, runId);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     yield {
@@ -706,7 +718,7 @@ export async function runAnalysisPhase<T = unknown>(
   options?: AnalysisRunOptions,
 ): Promise<T> {
   const runId = options?.runId;
-  installToolSurface(ANALYSIS_TOOL_NAMES, runId);
+  installAnalysisToolSurface(runId);
 
   const conn = await startAppServer(runId);
   let restoreError: Error | null = null;
@@ -898,7 +910,7 @@ export async function runAnalysisPhase<T = unknown>(
     }
   } finally {
     try {
-      installToolSurface(CHAT_PRODUCT_TOOL_NAMES);
+      installChatToolSurface();
       await reloadMcpServerConfig(conn, runId);
     } catch (err) {
       restoreError =

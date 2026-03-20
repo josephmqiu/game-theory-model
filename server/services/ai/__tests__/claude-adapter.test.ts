@@ -43,17 +43,13 @@ vi.mock("../../../utils/resolve-claude-cli", () => ({
 vi.mock("@/mcp/server", () => ({
   handleStartAnalysis: vi.fn(() => '{"runId":"r1"}'),
   handleGetAnalysisStatus: vi.fn(() => '{"status":"running"}'),
-  handleGetAnalysisResult: vi.fn(() => '{"entities":[]}'),
-  handleRevalidateEntities: vi.fn(() => '{"revalidated":0}'),
-  handleGetEntities: vi.fn(() => "[]"),
   handleCreateEntity: vi.fn(() => '{"id":"e1"}'),
   handleUpdateEntity: vi.fn(() => '{"id":"e1"}'),
-  handleGetRelationships: vi.fn(() => "[]"),
+  handleDeleteEntity: vi.fn(() => '{"deleted":true}'),
   handleCreateRelationship: vi.fn(() => '{"id":"r1"}'),
-  handleUpdateRelationship: vi.fn(() => '{"id":"r1"}'),
-  handleLayoutEntities: vi.fn(() => '{"error":"Not yet implemented"}'),
-  handleFocusEntity: vi.fn(() => '{"error":"Not yet implemented"}'),
-  handleGroupEntities: vi.fn(() => '{"error":"Not yet implemented"}'),
+  handleDeleteRelationship: vi.fn(() => '{"deleted":true}'),
+  handleRerunPhases: vi.fn(() => '{"runId":"reval-1"}'),
+  handleAbortAnalysis: vi.fn(() => '{"aborted":true}'),
 }));
 
 // ── Tests ──
@@ -64,40 +60,39 @@ describe("claude-adapter", () => {
     _resetLoopbackTriggersForTest();
   });
 
-  describe("createProductMcpServer", () => {
+  describe("createChatMcpServer", () => {
     it("returns an MCP server config with type sdk", async () => {
-      const { createProductMcpServer } = await import("../claude-adapter");
-      const server = await createProductMcpServer();
+      const { createChatMcpServer } = await import("../claude-adapter");
+      const server = await createChatMcpServer();
       expect(server).toEqual(
         expect.objectContaining({
           type: "sdk",
-          name: "game-theory-product",
+          name: "game-theory-chat",
         }),
       );
       expect(mockCreateSdkMcpServer).toHaveBeenCalledOnce();
     });
 
-    it("registers all 13 product tools", async () => {
-      const { createProductMcpServer, PRODUCT_TOOL_NAMES } =
+    it("registers all chat-mode tools", async () => {
+      const { createChatMcpServer, CHAT_MODE_TOOL_NAMES } =
         await import("../claude-adapter");
-      await createProductMcpServer();
+      await createChatMcpServer();
       // Each tool() call was made once
-      expect(mockTool).toHaveBeenCalledTimes(13);
-      // Verify each product tool name was registered
+      expect(mockTool).toHaveBeenCalledTimes(CHAT_MODE_TOOL_NAMES.length);
       const registeredNames = mockTool.mock.calls.map(
         (call: unknown[]) => call[0],
       );
-      for (const name of PRODUCT_TOOL_NAMES) {
+      for (const name of CHAT_MODE_TOOL_NAMES) {
         expect(registeredNames).toContain(name);
       }
     });
   });
 
-  describe("createReadOnlyMcpServer", () => {
+  describe("createAnalysisMcpServer", () => {
     it("registers exactly the four analysis tools", async () => {
-      const { createReadOnlyMcpServer, ANALYSIS_TOOL_NAMES } =
+      const { createAnalysisMcpServer, ANALYSIS_TOOL_NAMES } =
         await import("../claude-adapter");
-      const server = await createReadOnlyMcpServer("run-test");
+      const server = await createAnalysisMcpServer("run-test");
 
       expect(server).toEqual(
         expect.objectContaining({
@@ -114,8 +109,8 @@ describe("claude-adapter", () => {
     });
 
     it("records request_loopback triggers for the active run", async () => {
-      const { createReadOnlyMcpServer } = await import("../claude-adapter");
-      const server = (await createReadOnlyMcpServer("run-loopback")) as unknown as {
+      const { createAnalysisMcpServer } = await import("../claude-adapter");
+      const server = (await createAnalysisMcpServer("run-loopback")) as unknown as {
         tools: Array<{ name: string; handler: (args: unknown) => Promise<unknown> }>;
       };
 
@@ -140,7 +135,8 @@ describe("claude-adapter", () => {
 
   describe("streamChat", () => {
     it("uses correct chat profile settings", async () => {
-      const { streamChat } = await import("../claude-adapter");
+      const { streamChat, CHAT_MODE_TOOL_NAMES } =
+        await import("../claude-adapter");
 
       mockQuery.mockImplementation(() => {
         let done = false;
@@ -185,11 +181,17 @@ describe("claude-adapter", () => {
       expect(callArgs.options.model).toBe("claude-sonnet-4-6");
       expect(callArgs.options.maxTurns).toBe(25);
       expect(callArgs.options.tools).toEqual(["WebSearch"]);
+      expect(callArgs.options.allowedTools).toEqual([
+        ...CHAT_MODE_TOOL_NAMES.map(
+          (toolName) => `mcp__game-theory-chat__${toolName}`,
+        ),
+        "WebSearch",
+      ]);
       expect(callArgs.options.permissionMode).toBe("bypassPermissions");
       expect(callArgs.options.includePartialMessages).toBe(true);
       expect(callArgs.options.settingSources).toEqual([]);
       expect(callArgs.options.mcpServers).toBeDefined();
-      expect(callArgs.options.mcpServers.product).toBeDefined();
+      expect(callArgs.options.mcpServers.chat).toBeDefined();
     });
 
     it("normalizes text_delta events to ChatEvent", async () => {
@@ -257,7 +259,7 @@ describe("claude-adapter", () => {
             type: "content_block_start",
             content_block: {
               type: "tool_use",
-              name: "get_entities",
+              name: "query_entities",
               input: { phase: "situational-grounding" },
             },
           },
@@ -294,7 +296,7 @@ describe("claude-adapter", () => {
 
       expect(events[0]).toEqual({
         type: "tool_call_start",
-        toolName: "get_entities",
+        toolName: "query_entities",
         input: { phase: "situational-grounding" },
       });
     });
@@ -513,7 +515,7 @@ describe("claude-adapter", () => {
               content: [
                 {
                   type: "tool_result",
-                  tool_name: "get_entities",
+                  tool_name: "query_entities",
                   content: [{ text: "[]" }],
                 },
               ],
@@ -548,7 +550,7 @@ describe("claude-adapter", () => {
 
       expect(events).toContainEqual({
         type: "tool_call_result",
-        toolName: "get_entities",
+        toolName: "query_entities",
         output: [{ text: "[]" }],
       });
     });
