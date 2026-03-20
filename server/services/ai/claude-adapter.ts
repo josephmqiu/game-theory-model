@@ -2,6 +2,18 @@
 // Provides two profiles: streamChat (interactive) and runAnalysisPhase (structured).
 
 import type { ChatEvent } from "../../../shared/types/events";
+import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import {
+  getEntity,
+  queryEntities,
+  queryRelationships,
+  requestLoopback,
+} from "../analysis-tools";
+import {
+  ANALYSIS_TOOL_NAMES,
+  CHAT_PRODUCT_TOOL_NAMES,
+} from "./tool-surfaces";
+import { serverLog } from "../../utils/ai-logger";
 import {
   handleStartAnalysis,
   handleGetAnalysisStatus,
@@ -28,26 +40,14 @@ export interface StreamChatOptions {
   signal?: AbortSignal;
 }
 
+export interface AnalysisRunOptions {
+  runId?: string;
+  maxTurns?: number;
+  signal?: AbortSignal;
+}
+
 // Re-export McpSdkServerConfigWithInstance so callers don't import the SDK directly
 export type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
-
-// ── Product tool names (13) ──
-
-const PRODUCT_TOOL_NAMES = [
-  "start_analysis",
-  "get_analysis_status",
-  "get_analysis_result",
-  "revalidate_entities",
-  "get_entities",
-  "create_entity",
-  "update_entity",
-  "get_relationships",
-  "create_relationship",
-  "update_relationship",
-  "layout_entities",
-  "focus_entity",
-  "group_entities",
-] as const;
 
 // ── Product MCP server ──
 
@@ -234,8 +234,83 @@ export async function createProductMcpServer() {
   });
 }
 
+const READ_ONLY_MCP_SERVER_NAME = "game-theory-analysis";
+
+export async function createReadOnlyMcpServer(runId?: string) {
+  const { createSdkMcpServer, tool } =
+    await import("@anthropic-ai/claude-agent-sdk");
+  const { z } = await import("zod/v4");
+
+  return createSdkMcpServer({
+    name: READ_ONLY_MCP_SERVER_NAME,
+    version: "1.0.0",
+    tools: [
+      tool(
+        "get_entity",
+        "Get a single analysis entity by ID",
+        { id: z.string() },
+        async (args) => ({
+          content: [
+            { type: "text" as const, text: JSON.stringify(getEntity(args.id)) },
+          ],
+        }),
+      ),
+      tool(
+        "query_entities",
+        "Query analysis entities by phase, type, or stale status",
+        {
+          phase: z.string().optional(),
+          type: z.string().optional(),
+          stale: z.boolean().optional(),
+        },
+        async (args) => ({
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(queryEntities(args)),
+            },
+          ],
+        }),
+      ),
+      tool(
+        "query_relationships",
+        "Query analysis relationships by entity or type",
+        {
+          type: z.string().optional(),
+          entityId: z.string().optional(),
+        },
+        async (args) => ({
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(queryRelationships(args)),
+            },
+          ],
+        }),
+      ),
+      tool(
+        "request_loopback",
+        "Record a disruption trigger for later loopback handling",
+        {
+          trigger_type: z.string(),
+          justification: z.string(),
+        },
+        async (args) => ({
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(requestLoopback(args, runId)),
+            },
+          ],
+        }),
+      ),
+    ],
+  });
+}
+
 /** Exported for tests */
-export { PRODUCT_TOOL_NAMES };
+export const PRODUCT_TOOL_NAMES = CHAT_PRODUCT_TOOL_NAMES;
+export { ANALYSIS_TOOL_NAMES };
 
 // ── Chat profile ──
 
@@ -429,16 +504,32 @@ export async function* streamChat(
 
 // ── Analysis profile ──
 
+const ANALYSIS_MAX_TURNS = 12;
+
+function createStreamingPrompt(prompt: string): AsyncIterable<SDKUserMessage> {
+  return (async function* (): AsyncGenerator<SDKUserMessage> {
+    yield {
+      type: "user" as const,
+      message: {
+        role: "user" as const,
+        content: prompt,
+      },
+      parent_tool_use_id: null,
+      session_id: "analysis-phase",
+    };
+  })();
+}
+
 /**
  * Run a single analysis phase using Claude with structured JSON output.
  * Returns the parsed JSON result.
  *
  * Analysis profile:
- * - permissionMode: "bypassPermissions"
- * - maxTurns: 1
- * - tools: ['WebSearch']
- * - NO mcpServers
- * - includePartialMessages: false
+ * - permissionMode: "dontAsk"
+ * - maxTurns: 12 (configurable)
+ * - allowedTools: read-only MCP tools + WebSearch
+ * - mcpServers: { analysis: createReadOnlyMcpServer() }
+ * - includePartialMessages: true
  * - outputFormat: { type: 'json_schema', schema }
  * - settingSources: []
  */
@@ -447,7 +538,7 @@ export async function runAnalysisPhase<T = unknown>(
   systemPrompt: string,
   model: string,
   schema: Record<string, unknown>,
-  signal?: AbortSignal,
+  options?: AnalysisRunOptions,
 ): Promise<T> {
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
   const { buildClaudeAgentEnv, getClaudeAgentDebugFilePath } =
@@ -457,17 +548,24 @@ export async function runAnalysisPhase<T = unknown>(
   const env = buildClaudeAgentEnv();
   const debugFile = getClaudeAgentDebugFilePath();
   const claudePath = resolveClaudeCli();
+  const readOnlyMcp = await createReadOnlyMcpServer(options?.runId);
+  const allowedTools = [
+    ...ANALYSIS_TOOL_NAMES.map(
+      (toolName) => `mcp__${READ_ONLY_MCP_SERVER_NAME}__${toolName}`,
+    ),
+    "WebSearch",
+  ];
 
   const q = query({
-    prompt,
+    prompt: createStreamingPrompt(prompt),
     options: {
       systemPrompt,
       model,
-      maxTurns: 1,
-      tools: ["WebSearch"],
-      includePartialMessages: false,
-      permissionMode: "bypassPermissions",
-      allowDangerouslySkipPermissions: true,
+      maxTurns: options?.maxTurns ?? ANALYSIS_MAX_TURNS,
+      allowedTools,
+      mcpServers: { analysis: readOnlyMcp },
+      includePartialMessages: true,
+      permissionMode: "dontAsk",
       persistSession: false,
       settingSources: [],
       plugins: [],
@@ -479,30 +577,43 @@ export async function runAnalysisPhase<T = unknown>(
   });
 
   // Close query on abort signal
-  if (signal) {
+  if (options?.signal) {
     const onAbort = () => q.close();
-    signal.addEventListener("abort", onAbort, { once: true });
+    options.signal.addEventListener("abort", onAbort, { once: true });
     // Clean up listener when we're done (in finally)
-    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    const cleanup = () =>
+      options.signal?.removeEventListener("abort", onAbort);
     try {
-      return await _runAnalysisQuery<T>(q, signal);
+      return await _runAnalysisQuery<T>(q, options);
     } finally {
       cleanup();
     }
   }
 
-  return _runAnalysisQuery<T>(q);
+  return _runAnalysisQuery<T>(q, options);
 }
 
 /** Internal: consume the query iterator and extract the result. */
 async function _runAnalysisQuery<T>(
   q: { close: () => void } & AsyncIterable<any>,
-  signal?: AbortSignal,
+  options?: AnalysisRunOptions,
 ): Promise<T> {
   try {
     for await (const message of q) {
-      if (signal?.aborted) {
+      if (options?.signal?.aborted) {
         throw new Error("Aborted");
+      }
+      if (message.type === "stream_event") {
+        const ev = message.event;
+        if (
+          ev?.type === "content_block_start" &&
+          (ev.content_block as any)?.type === "tool_use"
+        ) {
+          const toolName = (ev.content_block as any)?.name ?? "unknown";
+          serverLog(options?.runId, "claude-adapter", "analysis-tool-call", {
+            toolName,
+          });
+        }
       }
       if (message.type === "result") {
         const isError =
@@ -526,7 +637,7 @@ async function _runAnalysisQuery<T>(
         );
       }
     }
-    if (signal?.aborted) {
+    if (options?.signal?.aborted) {
       throw new Error("Aborted");
     }
     throw new Error("Analysis phase completed without result");

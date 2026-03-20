@@ -80,6 +80,7 @@ describe("codex-config", () => {
       expect(content).toContain('args = ["path/to/server.js"]');
       expect(content).toContain("startup_timeout_sec = 10");
       expect(content).toContain("tool_timeout_sec = 120");
+      expect(content).toContain('env = { PRODUCT_ONLY = "1" }');
     });
 
     it("merges entry into existing config.toml, preserving other entries", () => {
@@ -115,6 +116,21 @@ describe("codex-config", () => {
       // Only one section header
       const matches = content.match(/\[mcp_servers\.game-theory-analyzer\]/g);
       expect(matches).toHaveLength(1);
+    });
+
+    it("writes enabled_tools and preserves PRODUCT_ONLY when options are provided", () => {
+      installMcpServer("node", ["server.js"], {
+        enabledTools: ["get_entity", "query_entities"],
+        env: { ANALYSIS_RUN_ID: "run-123" },
+      });
+
+      const content = readConfig();
+      expect(content).toContain(
+        'enabled_tools = ["get_entity", "query_entities"]',
+      );
+      expect(content).toContain(
+        'env = { ANALYSIS_RUN_ID = "run-123", PRODUCT_ONLY = "1" }',
+      );
     });
   });
 

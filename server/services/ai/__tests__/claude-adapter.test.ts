@@ -1,26 +1,33 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatEvent } from "../../../../shared/types/events";
+import {
+  _resetLoopbackTriggersForTest,
+  getRecordedLoopbackTriggers,
+} from "../../analysis-tools";
 
 // ── Mock the Agent SDK ──
 
 const mockQueryClose = vi.fn();
 
 const mockQuery = vi.fn();
-const mockCreateSdkMcpServer = vi.fn((_opts: unknown) => ({
+const mockCreateSdkMcpServer = vi.fn((opts: Record<string, unknown>) => ({
   type: "sdk",
-  name: "game-theory-product",
+  name: opts.name,
+  tools: opts.tools,
   instance: {},
 }));
 const mockTool = vi.fn(
   (name: string, description: string, _schema: unknown, _handler: unknown) => ({
     name,
     description,
+    handler: _handler,
   }),
 );
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: (a: unknown) => mockQuery(a),
-  createSdkMcpServer: (a: unknown) => mockCreateSdkMcpServer(a),
+  createSdkMcpServer: (a: unknown) =>
+    mockCreateSdkMcpServer(a as Record<string, unknown>),
   tool: (a: string, b: string, c: unknown, d: unknown) => mockTool(a, b, c, d),
 }));
 
@@ -54,6 +61,7 @@ vi.mock("@/mcp/server", () => ({
 describe("claude-adapter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetLoopbackTriggersForTest();
   });
 
   describe("createProductMcpServer", () => {
@@ -82,6 +90,51 @@ describe("claude-adapter", () => {
       for (const name of PRODUCT_TOOL_NAMES) {
         expect(registeredNames).toContain(name);
       }
+    });
+  });
+
+  describe("createReadOnlyMcpServer", () => {
+    it("registers exactly the four analysis tools", async () => {
+      const { createReadOnlyMcpServer, ANALYSIS_TOOL_NAMES } =
+        await import("../claude-adapter");
+      const server = await createReadOnlyMcpServer("run-test");
+
+      expect(server).toEqual(
+        expect.objectContaining({
+          type: "sdk",
+          name: "game-theory-analysis",
+        }),
+      );
+      expect(mockTool).toHaveBeenCalledTimes(4);
+
+      const registeredNames = mockTool.mock.calls.map(
+        (call: unknown[]) => call[0],
+      );
+      expect(registeredNames).toEqual(ANALYSIS_TOOL_NAMES);
+    });
+
+    it("records request_loopback triggers for the active run", async () => {
+      const { createReadOnlyMcpServer } = await import("../claude-adapter");
+      const server = (await createReadOnlyMcpServer("run-loopback")) as unknown as {
+        tools: Array<{ name: string; handler: (args: unknown) => Promise<unknown> }>;
+      };
+
+      const requestLoopbackTool = server.tools.find(
+        (tool) => tool.name === "request_loopback",
+      );
+      expect(requestLoopbackTool).toBeDefined();
+
+      await requestLoopbackTool!.handler({
+        trigger_type: "new_player",
+        justification: "A new actor materially changed the game",
+      });
+
+      expect(getRecordedLoopbackTriggers("run-loopback")).toEqual([
+        expect.objectContaining({
+          trigger_type: "new_player",
+          justification: "A new actor materially changed the game",
+        }),
+      ]);
     });
   });
 
@@ -503,7 +556,8 @@ describe("claude-adapter", () => {
 
   describe("runAnalysisPhase", () => {
     it("uses correct analysis profile settings", async () => {
-      const { runAnalysisPhase } = await import("../claude-adapter");
+      const { runAnalysisPhase, ANALYSIS_TOOL_NAMES } =
+        await import("../claude-adapter");
 
       const schema = {
         type: "object",
@@ -546,16 +600,64 @@ describe("claude-adapter", () => {
 
       expect(mockQuery).toHaveBeenCalledOnce();
       const callArgs = mockQuery.mock.calls[0][0];
-      expect(callArgs.options.maxTurns).toBe(1);
-      expect(callArgs.options.includePartialMessages).toBe(false);
+      expect(typeof callArgs.prompt[Symbol.asyncIterator]).toBe("function");
+      expect(callArgs.options.maxTurns).toBe(12);
+      expect(callArgs.options.includePartialMessages).toBe(true);
       expect(callArgs.options.outputFormat).toEqual({
         type: "json_schema",
         schema,
       });
       expect(callArgs.options.settingSources).toEqual([]);
-      expect(callArgs.options.permissionMode).toBe("bypassPermissions");
-      // No mcpServers for analysis
-      expect(callArgs.options.mcpServers).toBeUndefined();
+      expect(callArgs.options.permissionMode).toBe("dontAsk");
+      expect(callArgs.options.allowedTools).toEqual([
+        ...ANALYSIS_TOOL_NAMES.map(
+          (toolName) => `mcp__game-theory-analysis__${toolName}`,
+        ),
+        "WebSearch",
+      ]);
+      expect(callArgs.options.mcpServers).toEqual({
+        analysis: expect.objectContaining({
+          type: "sdk",
+          name: "game-theory-analysis",
+        }),
+      });
+    });
+
+    it("passes configured maxTurns through the options object", async () => {
+      const { runAnalysisPhase } = await import("../claude-adapter");
+
+      mockQuery.mockImplementation(() => {
+        let done = false;
+        return {
+          close: mockQueryClose,
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                if (!done) {
+                  done = true;
+                  return {
+                    done: false,
+                    value: {
+                      type: "result",
+                      subtype: "success",
+                      is_error: false,
+                      result: '{"entities":[],"relationships":[]}',
+                      structured_output: { entities: [], relationships: [] },
+                    },
+                  };
+                }
+                return { done: true, value: undefined };
+              },
+            };
+          },
+        };
+      });
+
+      await runAnalysisPhase("analyze", "sys", "model", { type: "object" }, {
+        maxTurns: 7,
+      });
+
+      expect(mockQuery.mock.calls[0][0].options.maxTurns).toBe(7);
     });
 
     it("returns parsed structured output", async () => {

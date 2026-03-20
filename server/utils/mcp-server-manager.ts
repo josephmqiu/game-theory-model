@@ -14,7 +14,7 @@ const MCP_PID_FILE = join(tmpdir(), 'game-theory-analyzer-mcp-server.pid')
 const MCP_PORT_FILE = join(tmpdir(), 'game-theory-analyzer-mcp-server.port')
 
 /** Resolve the MCP server script path across dev, web build, and Electron production. */
-function resolveMcpServerScript(): string {
+export function resolveMcpServerScript(): string {
   // Electron production: extraResources
   const electronResources = process.env.ELECTRON_RESOURCES_PATH
   if (electronResources) {

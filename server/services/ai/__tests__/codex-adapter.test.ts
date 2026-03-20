@@ -9,6 +9,9 @@ import {
 import type { ChatEvent } from "../../../../shared/types/events";
 import { EventEmitter } from "node:events";
 
+const mockInstallMcpServer = vi.fn();
+const mockResolveMcpServerScript = vi.fn(() => "/mock/dist/mcp-server.cjs");
+
 class MockChildProcess extends EventEmitter {
   stdin = {
     write: vi.fn(() => true),
@@ -64,6 +67,15 @@ vi.mock("../../../utils/ai-logger", () => ({
   serverLog: vi.fn(),
   serverWarn: vi.fn(),
   serverError: vi.fn(),
+}));
+
+vi.mock("../codex-config", () => ({
+  CODEX_MCP_SERVER_NAME: "game-theory-analyzer",
+  installMcpServer: (...args: unknown[]) => mockInstallMcpServer(...args),
+}));
+
+vi.mock("../../../utils/mcp-server-manager", () => ({
+  resolveMcpServerScript: () => mockResolveMcpServerScript(),
 }));
 
 function emitResponse(id: number, result: unknown) {
@@ -542,6 +554,24 @@ describe("codex-adapter", () => {
         if (method === "initialize" && id !== undefined) {
           emitResponse(id, { protocolVersion: "1.0" });
         }
+        if (method === "config/mcpServer/reload" && id !== undefined) {
+          emitResponse(id, { ok: true });
+        }
+        if (method === "mcpServerStatus/list" && id !== undefined) {
+          emitResponse(id, {
+            data: [
+              {
+                name: "game-theory-analyzer",
+                tools: {
+                  get_entity: {},
+                  query_entities: {},
+                  query_relationships: {},
+                  request_loopback: {},
+                },
+              },
+            ],
+          });
+        }
         if (method === "thread/start" && id !== undefined) {
           emitThreadStartResponse(id);
         }
@@ -568,7 +598,51 @@ describe("codex-adapter", () => {
 
       expect(result).toEqual(expected);
 
+      expect(mockInstallMcpServer).toHaveBeenNthCalledWith(
+        1,
+        expect.any(String),
+        ["/mock/dist/mcp-server.cjs"],
+        expect.objectContaining({
+          enabledTools: [
+            "get_entity",
+            "query_entities",
+            "query_relationships",
+            "request_loopback",
+          ],
+        }),
+      );
+      expect(mockInstallMcpServer).toHaveBeenNthCalledWith(
+        2,
+        expect.any(String),
+        ["/mock/dist/mcp-server.cjs"],
+        expect.objectContaining({
+          enabledTools: [
+            "start_analysis",
+            "get_analysis_status",
+            "get_analysis_result",
+            "revalidate_entities",
+            "get_entities",
+            "create_entity",
+            "update_entity",
+            "get_relationships",
+            "create_relationship",
+            "update_relationship",
+            "layout_entities",
+            "focus_entity",
+            "group_entities",
+          ],
+        }),
+      );
+
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
+      const reloadReq = JSON.parse(
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes('"config/mcpServer/reload"'))!
+          .trim(),
+      );
+      expect(reloadReq.params).toEqual({});
+
       const turnStartReq = JSON.parse(
         calls.map((call) => call[0]).find((call) => call.includes("outputSchema"))!.trim(),
       );
@@ -586,6 +660,24 @@ describe("codex-adapter", () => {
       setAutoResponder((method, id) => {
         if (method === "initialize" && id !== undefined) {
           emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "config/mcpServer/reload" && id !== undefined) {
+          emitResponse(id, { ok: true });
+        }
+        if (method === "mcpServerStatus/list" && id !== undefined) {
+          emitResponse(id, {
+            data: [
+              {
+                name: "game-theory-analyzer",
+                tools: {
+                  get_entity: {},
+                  query_entities: {},
+                  query_relationships: {},
+                  request_loopback: {},
+                },
+              },
+            ],
+          });
         }
         if (method === "thread/start" && id !== undefined) {
           emitThreadStartResponse(id, "thread-abc-123");
@@ -611,10 +703,24 @@ describe("codex-adapter", () => {
       await runAnalysisPhase("test", "system", "gpt-4o", {});
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
+      const reloadIndex = calls.findIndex((call) =>
+        call[0].includes('"config/mcpServer/reload"'),
+      );
+      const listIndex = calls.findIndex((call) =>
+        call[0].includes('"mcpServerStatus/list"'),
+      );
+      const threadStartIndex = calls.findIndex((call) =>
+        call[0].includes('"thread/start"'),
+      );
+      expect(reloadIndex).toBeGreaterThan(-1);
+      expect(listIndex).toBeGreaterThan(reloadIndex);
+      expect(threadStartIndex).toBeGreaterThan(listIndex);
+
       const threadStartReq = JSON.parse(
         calls.map((call) => call[0]).find((call) => call.includes('"thread/start"'))!.trim(),
       );
       expect(threadStartReq.params.developerInstructions).toBe("system");
+      expect(threadStartReq.params.config).toEqual({ web_search: "live" });
 
       const turnStartReq = JSON.parse(
         calls.map((call) => call[0]).find((call) => call.includes('"turn/start"'))!.trim(),
@@ -625,8 +731,8 @@ describe("codex-adapter", () => {
       ]);
     });
 
-    it("rejects MCP tool calls during analysis", async () => {
-      const { serverWarn } = await import("../../../utils/ai-logger");
+    it("approves only read-only MCP tool calls during analysis", async () => {
+      const { serverLog } = await import("../../../utils/ai-logger");
       const { runAnalysisPhase, _resetConnection } =
         await import("../codex-adapter");
       _resetConnection();
@@ -634,6 +740,24 @@ describe("codex-adapter", () => {
       setAutoResponder((method, id) => {
         if (method === "initialize" && id !== undefined) {
           emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "config/mcpServer/reload" && id !== undefined) {
+          emitResponse(id, { ok: true });
+        }
+        if (method === "mcpServerStatus/list" && id !== undefined) {
+          emitResponse(id, {
+            data: [
+              {
+                name: "game-theory-analyzer",
+                tools: {
+                  get_entity: {},
+                  query_entities: {},
+                  query_relationships: {},
+                  request_loopback: {},
+                },
+              },
+            ],
+          });
         }
         if (method === "thread/start" && id !== undefined) {
           emitThreadStartResponse(id);
@@ -643,7 +767,21 @@ describe("codex-adapter", () => {
           queueMicrotask(() => {
             emitNotification("item/tool/requestUserInput", {
               id: "mcp-approval-1",
-              toolName: "get_entities",
+              toolName: "query_entities",
+              threadId: "thread-1",
+              turnId: "turn-1",
+            });
+            emitNotification("item/mcpToolCall/progress", {
+              toolName: "query_entities",
+              input: { phase: "situational-grounding" },
+              threadId: "thread-1",
+              turnId: "turn-1",
+            });
+            emitNotification("item/started", {
+              item: {
+                type: "webSearch",
+                query: "latest developments",
+              },
               threadId: "thread-1",
               turnId: "turn-1",
             });
@@ -676,20 +814,179 @@ describe("codex-adapter", () => {
       const approvalReq = JSON.parse(
         calls.map((call) => call[0]).find((call) => call.includes("item/tool/approveUserInput"))!.trim(),
       );
-      expect(approvalReq.params.approved).toBe(false);
+      expect(approvalReq.params.approved).toBe(true);
       expect(approvalReq.params.reason).toBe(
-        "Analysis profile does not permit tool use",
+        "Approved analysis read-only MCP tool",
       );
 
+      expect(serverLog).toHaveBeenCalledWith(
+        undefined,
+        "codex-adapter",
+        "analysis-tool-approval",
+        expect.objectContaining({
+          approvalId: "mcp-approval-1",
+          toolName: "query_entities",
+          approved: true,
+        }),
+      );
+      expect(serverLog).toHaveBeenCalledWith(
+        undefined,
+        "codex-adapter",
+        "analysis-mcp-tool-call",
+        expect.objectContaining({
+          toolName: "query_entities",
+        }),
+      );
+      expect(serverLog).toHaveBeenCalledWith(
+        undefined,
+        "codex-adapter",
+        "analysis-web-search",
+        expect.objectContaining({
+          query: "latest developments",
+        }),
+      );
+    });
+
+    it("rejects non-MCP approvals during analysis", async () => {
+      const { serverWarn } = await import("../../../utils/ai-logger");
+      const { runAnalysisPhase, _resetConnection } =
+        await import("../codex-adapter");
+      _resetConnection();
+
+      setAutoResponder((method, id) => {
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "config/mcpServer/reload" && id !== undefined) {
+          emitResponse(id, { ok: true });
+        }
+        if (method === "mcpServerStatus/list" && id !== undefined) {
+          emitResponse(id, {
+            data: [
+              {
+                name: "game-theory-analyzer",
+                tools: {
+                  get_entity: {},
+                  query_entities: {},
+                  query_relationships: {},
+                  request_loopback: {},
+                },
+              },
+            ],
+          });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitThreadStartResponse(id);
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id);
+          queueMicrotask(() => {
+            emitNotification("item/fileChange/requestApproval", {
+              id: "file-approval-1",
+              path: "/tmp/file.txt",
+              threadId: "thread-1",
+              turnId: "turn-1",
+            });
+          });
+        }
+        if (method === "item/fileChange/respondApproval" && id !== undefined) {
+          emitResponse(id, { ok: true });
+          queueMicrotask(() => {
+            emitItemCompleted({
+              id: "agent-msg-4",
+              type: "agentMessage",
+              text: '{"entities":[]}',
+              phase: "final_answer",
+            });
+            emitTurnCompleted();
+          });
+        }
+      });
+
+      const result = await runAnalysisPhase("analyze", "system", "gpt-4o", {});
+      expect(result).toEqual({ entities: [] });
+
+      const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
+      const rejectionReq = JSON.parse(
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes("item/fileChange/respondApproval"))!
+          .trim(),
+      );
+      expect(rejectionReq.params.approved).toBe(false);
       expect(serverWarn).toHaveBeenCalledWith(
         undefined,
         "codex-adapter",
-        "analysis-tool-rejected",
+        "analysis-approval-rejected",
         expect.objectContaining({
-          method: "item/tool/requestUserInput",
-          approvalId: "mcp-approval-1",
+          method: "item/fileChange/requestApproval",
+          approvalId: "file-approval-1",
         }),
       );
+    });
+
+    it("throws when restoring the chat MCP surface fails", async () => {
+      const { runAnalysisPhase, _resetConnection } =
+        await import("../codex-adapter");
+      _resetConnection();
+
+      let reloadCount = 0;
+      setAutoResponder((method, id) => {
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "config/mcpServer/reload" && id !== undefined) {
+          reloadCount += 1;
+          if (reloadCount === 1) {
+            emitResponse(id, { ok: true });
+            return;
+          }
+          const line =
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id,
+              error: {
+                code: -32000,
+                message: "restore failed",
+              },
+            }) + "\n";
+          mockChild.stdout.emit("data", Buffer.from(line));
+        }
+        if (method === "mcpServerStatus/list" && id !== undefined) {
+          emitResponse(id, {
+            data: [
+              {
+                name: "game-theory-analyzer",
+                tools: {
+                  get_entity: {},
+                  query_entities: {},
+                  query_relationships: {},
+                  request_loopback: {},
+                },
+              },
+            ],
+          });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitThreadStartResponse(id);
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id);
+          queueMicrotask(() => {
+            emitItemCompleted({
+              id: "agent-msg-restore",
+              type: "agentMessage",
+              text: '{"entities":[]}',
+              phase: "final_answer",
+            });
+            emitTurnCompleted();
+          });
+        }
+      });
+
+      await expect(
+        runAnalysisPhase("analyze", "system", "gpt-4o", {}),
+      ).rejects.toThrow(/restore failed/);
     });
   });
 

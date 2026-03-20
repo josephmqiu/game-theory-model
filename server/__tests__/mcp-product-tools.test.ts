@@ -8,6 +8,10 @@ import {
 } from "../services/entity-graph-service";
 import {
   handleGetEntities,
+  handleGetEntity,
+  handleQueryEntities,
+  handleQueryRelationships,
+  handleRequestLoopback,
   handleCreateEntity,
   handleUpdateEntity,
   handleGetRelationships,
@@ -21,6 +25,10 @@ import {
   handleFocusEntity,
   handleGroupEntities,
 } from "@/mcp/server";
+import {
+  _resetLoopbackTriggersForTest,
+  getRecordedLoopbackTriggers,
+} from "../services/analysis-tools";
 
 // ── Mocks ──
 
@@ -122,6 +130,7 @@ const defaultProvenance = {
 
 beforeEach(() => {
   _resetForTest();
+  _resetLoopbackTriggersForTest();
   newAnalysis("US-China trade war");
   vi.clearAllMocks();
 });
@@ -330,6 +339,73 @@ describe("handleGetEntities", () => {
     const result = JSON.parse(handleGetEntities({ type: "player" }));
     expect(result).toHaveLength(1);
     expect(result[0].type).toBe("player");
+  });
+});
+
+describe("analysis-mode read tools", () => {
+  it("handleGetEntity returns one entity by id", () => {
+    const entity = createEntity(makeFactData(), defaultProvenance);
+
+    const result = JSON.parse(handleGetEntity({ id: entity.id }));
+    expect(result.id).toBe(entity.id);
+    expect(result.type).toBe("fact");
+  });
+
+  it("handleQueryEntities filters by phase, type, and stale", () => {
+    const fact = createEntity(makeFactData(), defaultProvenance);
+    createEntity(makePlayerData(), {
+      source: "phase-derived",
+      runId: "run-1",
+      phase: "player-identification",
+    });
+
+    const staleResult = JSON.parse(
+      handleQueryEntities({
+        phase: "situational-grounding",
+        type: "fact",
+        stale: false,
+      }),
+    );
+
+    expect(staleResult).toHaveLength(1);
+    expect(staleResult[0].id).toBe(fact.id);
+  });
+
+  it("handleQueryRelationships filters by entityId", () => {
+    const e1 = createEntity(makeFactData(), defaultProvenance);
+    const e2 = createEntity(makeFactData(), defaultProvenance);
+    const e3 = createEntity(makeFactData(), defaultProvenance);
+
+    createRelationship({
+      type: "supports",
+      fromEntityId: e1.id,
+      toEntityId: e2.id,
+    });
+    createRelationship({
+      type: "contradicts",
+      fromEntityId: e3.id,
+      toEntityId: e1.id,
+    });
+
+    const result = JSON.parse(handleQueryRelationships({ entityId: e1.id }));
+    expect(result).toHaveLength(2);
+  });
+
+  it("handleRequestLoopback records the trigger", () => {
+    const result = JSON.parse(
+      handleRequestLoopback({
+        trigger_type: "new_player",
+        justification: "A new actor entered the conflict",
+      }),
+    );
+
+    expect(result).toEqual({ accepted: true, queued: true });
+    expect(getRecordedLoopbackTriggers()).toEqual([
+      expect.objectContaining({
+        trigger_type: "new_player",
+        justification: "A new actor entered the conflict",
+      }),
+    ]);
   });
 });
 

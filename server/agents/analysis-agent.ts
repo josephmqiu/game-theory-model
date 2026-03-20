@@ -222,7 +222,13 @@ async function executeSinglePhase(
 
     // Per-phase timeout via AbortController
     const phaseAbort = new AbortController();
-    const phaseTimer = setTimeout(() => phaseAbort.abort(), PHASE_TIMEOUT_MS);
+    let phaseTimer: ReturnType<typeof setTimeout> | null = null;
+    const phaseTimeoutPromise = new Promise<PhaseResult>((_, reject) => {
+      phaseTimer = setTimeout(() => {
+        phaseAbort.abort();
+        reject(new Error("Phase timeout"));
+      }, PHASE_TIMEOUT_MS);
+    });
 
     // Also abort if external signal fires
     const onExternalAbort = () => phaseAbort.abort();
@@ -235,17 +241,14 @@ async function executeSinglePhase(
           priorEntities: priorContext,
           provider: run.provider,
           model: run.model,
+          runId: run.runId,
           signal: phaseAbort.signal,
           logger: run.logger,
         }),
-        new Promise<PhaseResult>((_, reject) => {
-          phaseAbort.signal.addEventListener("abort", () => {
-            reject(new Error("Phase timeout"));
-          });
-        }),
+        phaseTimeoutPromise,
       ]);
     } catch (err) {
-      clearTimeout(phaseTimer);
+      if (phaseTimer) clearTimeout(phaseTimer);
       externalSignal?.removeEventListener("abort", onExternalAbort);
 
       if (externalSignal?.aborted) {
@@ -273,7 +276,7 @@ async function executeSinglePhase(
       });
       continue;
     } finally {
-      clearTimeout(phaseTimer);
+      if (phaseTimer) clearTimeout(phaseTimer);
       externalSignal?.removeEventListener("abort", onExternalAbort);
     }
 
@@ -404,8 +407,13 @@ export async function runFull(
   const analysisTimer = timer();
   const abortController = new AbortController();
 
-  // Run-level timeout: create a signal that fires after RUN_TIMEOUT_MS
-  const runTimeoutSignal = AbortSignal.timeout(RUN_TIMEOUT_MS);
+  // Use an explicit timeout controller so runtime behavior is testable with fake timers.
+  const runTimeoutController = new AbortController();
+  const runTimeoutHandle = setTimeout(
+    () => runTimeoutController.abort(),
+    RUN_TIMEOUT_MS,
+  );
+  const runTimeoutSignal = runTimeoutController.signal;
 
   // Combine all abort sources: user signal, run timeout, internal controller
   const signals: AbortSignal[] = [abortController.signal, runTimeoutSignal];
@@ -528,6 +536,7 @@ export async function runFull(
         });
       }
     } finally {
+      clearTimeout(runTimeoutHandle);
       // Drain any remaining queued edits
       drainEditQueue();
       run.activePhase = null;

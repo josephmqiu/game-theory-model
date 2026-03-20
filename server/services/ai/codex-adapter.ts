@@ -5,7 +5,16 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { filterCodexEnv } from "../../utils/codex-client";
 import { serverLog, serverWarn } from "../../utils/ai-logger";
+import { resolveMcpServerScript } from "../../utils/mcp-server-manager";
 import type { ChatEvent } from "../../../shared/types/events";
+import {
+  CODEX_MCP_SERVER_NAME,
+  installMcpServer,
+} from "./codex-config";
+import {
+  ANALYSIS_TOOL_NAMES,
+  CHAT_PRODUCT_TOOL_NAMES,
+} from "./tool-surfaces";
 
 // ── Types ──
 
@@ -14,6 +23,12 @@ export interface StreamChatOptions {
   /** Wall-clock timeout per chat turn in ms (default: 5 min) */
   timeoutMs?: number;
   /** Abort signal — when aborted, sends turn/interrupt and ends the stream */
+  signal?: AbortSignal;
+}
+
+export interface AnalysisRunOptions {
+  runId?: string;
+  maxTurns?: number;
   signal?: AbortSignal;
 }
 
@@ -196,6 +211,68 @@ function handleIncomingLine(conn: AppServerConnection, line: string): void {
       }
     }
   }
+}
+
+const ANALYSIS_TIMEOUT_MS = 5 * 60 * 1000;
+
+function resolveMcpServerCommand(): string {
+  return process.release?.name === "node" ? process.execPath : "node";
+}
+
+function installToolSurface(
+  toolNames: readonly string[],
+  runId?: string,
+): void {
+  installMcpServer(resolveMcpServerCommand(), [resolveMcpServerScript()], {
+    enabledTools: [...toolNames],
+    env: runId ? { ANALYSIS_RUN_ID: runId } : undefined,
+  });
+  serverLog(runId, "codex-adapter", "mcp-config-written", {
+    toolNames,
+  });
+}
+
+async function reloadMcpServerConfig(
+  conn: AppServerConnection,
+  runId?: string,
+): Promise<void> {
+  await sendRequest(conn, "config/mcpServer/reload", {});
+  serverLog(runId, "codex-adapter", "mcp-config-reloaded");
+}
+
+async function ensureConfiguredMcpServerAvailable(
+  conn: AppServerConnection,
+  toolNames: readonly string[],
+  runId?: string,
+): Promise<void> {
+  const result = await sendRequest(conn, "mcpServerStatus/list", {
+    limit: 100,
+  });
+  const data = asRecord(result)?.data;
+  if (!Array.isArray(data)) {
+    throw new Error("App-server returned an invalid MCP status payload");
+  }
+
+  const target = data
+    .map((entry) => asRecord(entry))
+    .find((entry) => entry?.name === CODEX_MCP_SERVER_NAME);
+
+  if (!target) {
+    throw new Error(`MCP server "${CODEX_MCP_SERVER_NAME}" is not loaded`);
+  }
+
+  const availableTools = Object.keys(asRecord(target.tools) ?? {});
+  for (const toolName of toolNames) {
+    if (!availableTools.includes(toolName)) {
+      throw new Error(
+        `MCP server "${CODEX_MCP_SERVER_NAME}" is missing tool "${toolName}"`,
+      );
+    }
+  }
+
+  serverLog(runId, "codex-adapter", "mcp-status-ready", {
+    toolNames: availableTools,
+  });
 }
 
 // ── App-server lifecycle ──
@@ -618,101 +695,158 @@ export async function* streamChat(
  * Run a single analysis phase using Codex with structured JSON output.
  * Returns the parsed JSON result.
  *
- * Sends `turn/start` with `outputSchema`, waits for `turn/completed`,
- * parses and returns the structured output.
+ * Registers the read-only analysis MCP surface, reloads app-server config,
+ * runs a structured-output turn, then restores the chat MCP surface.
  */
 export async function runAnalysisPhase<T = unknown>(
   prompt: string,
   systemPrompt: string,
   model: string,
   schema: Record<string, unknown>,
-  signal?: AbortSignal,
-  runId?: string,
+  options?: AnalysisRunOptions,
 ): Promise<T> {
+  const runId = options?.runId;
+  installToolSurface(ANALYSIS_TOOL_NAMES, runId);
+
   const conn = await startAppServer(runId);
-
-  // Create a thread
-  const threadResult = await sendRequest(conn, "thread/start", {
-    developerInstructions: systemPrompt,
-    model,
-  });
-  const threadId = extractThreadId(threadResult);
+  let restoreError: Error | null = null;
+  let threadId = "";
   let turnId: string | null = null;
-
-  currentThreadId = threadId;
-  serverLog(runId, "codex-adapter", "analysis-thread-started", { threadId });
-
-  // Collect result from turn/completed
-  let result: unknown = undefined;
-  let completed = false;
-  let completionError: string | null = null;
-  let streamedText = "";
-
-  const removeListener = onNotification(conn, (method, params) => {
-    // Thread filtering: skip notifications for a different thread (best-effort).
-    const notifThreadId = params.threadId as string | undefined;
-    if (notifThreadId && notifThreadId !== threadId) return;
-
-    if (method === "turn/started") {
-      turnId = getTurnIdFromParams(params) ?? turnId;
-      return;
-    }
-
-    if (method === "item/agentMessage/delta") {
-      if (typeof params.delta === "string") {
-        streamedText += params.delta;
-      }
-      return;
-    }
-
-    if (method === "item/completed") {
-      const completedText = extractCompletedItemText(params);
-      if (completedText) {
-        result = completedText;
-      }
-      return;
-    }
-
-    if (method === "turn/completed") {
-      turnId = getTurnIdFromParams(params) ?? turnId;
-      completed = true;
-      completionError = getTurnErrorMessage(params) ?? completionError;
-      if (result === undefined) {
-        result = params.structuredOutput ?? params.content ?? params.result;
-      }
-      if (result === undefined && streamedText.trim().length > 0) {
-        result = streamedText;
-      }
-    }
-    // Analysis profile: reject ALL tool approvals (MCP, file, command, permissions).
-    // Analysis is "prompt-in, structured-data-out" — no tool use permitted.
-    if (
-      method === MCP_TOOL_APPROVAL ||
-      method === FILE_CHANGE_APPROVAL ||
-      method === COMMAND_APPROVAL ||
-      method === PERMISSIONS_APPROVAL
-    ) {
-      const approvalId = params.id as string | undefined;
-      if (approvalId) {
-        const responseMethod = method.includes("requestUserInput")
-          ? "item/tool/approveUserInput"
-          : method.replace("requestApproval", "respondApproval");
-        serverWarn(runId, "codex-adapter", "analysis-tool-rejected", {
-          method,
-          approvalId,
-          toolName: params.toolName,
-        });
-        sendRequest(conn, responseMethod, {
-          id: approvalId,
-          approved: false,
-          reason: "Analysis profile does not permit tool use",
-        }).catch(() => {});
-      }
-    }
-  });
+  let parsedResult: T | null = null;
 
   try {
-    // Send turn with output schema
+    await reloadMcpServerConfig(conn, runId);
+    await ensureConfiguredMcpServerAvailable(conn, ANALYSIS_TOOL_NAMES, runId);
+
+    const threadResult = await sendRequest(conn, "thread/start", {
+      developerInstructions: systemPrompt,
+      model,
+      config: {
+        web_search: "live",
+      },
+    });
+    threadId = extractThreadId(threadResult);
+    currentThreadId = threadId;
+    serverLog(runId, "codex-adapter", "analysis-thread-started", { threadId });
+
+    // Collect result from turn/completed
+    let result: unknown = undefined;
+    let completed = false;
+    let completionError: string | null = null;
+    let streamedText = "";
+
+    const removeListener = onNotification(conn, (method, params) => {
+      // Thread filtering: skip notifications for a different thread (best-effort).
+      const notifThreadId = params.threadId as string | undefined;
+      if (notifThreadId && notifThreadId !== threadId) return;
+
+      if (method === "turn/started") {
+        turnId = getTurnIdFromParams(params) ?? turnId;
+        return;
+      }
+
+      if (method === "item/started") {
+        const item = asRecord(params.item);
+        if (item?.type === "webSearch") {
+          serverLog(runId, "codex-adapter", "analysis-web-search", {
+            query: item.query,
+          });
+        }
+        return;
+      }
+
+      if (method === "item/agentMessage/delta") {
+        if (typeof params.delta === "string") {
+          streamedText += params.delta;
+        }
+        return;
+      }
+
+      if (method === "item/mcpToolCall/progress") {
+        serverLog(runId, "codex-adapter", "analysis-mcp-tool-call", {
+          toolName: params.toolName,
+          input: params.input ?? {},
+        });
+        return;
+      }
+
+      if (method === "item/completed") {
+        const item = asRecord(params.item);
+        if (item?.type === "webSearch") {
+          serverLog(runId, "codex-adapter", "analysis-web-search-complete", {
+            query: item.query,
+          });
+        }
+        const completedText = extractCompletedItemText(params);
+        if (completedText) {
+          result = completedText;
+        }
+        return;
+      }
+
+      if (method === "turn/completed") {
+        turnId = getTurnIdFromParams(params) ?? turnId;
+        completed = true;
+        completionError = getTurnErrorMessage(params) ?? completionError;
+        if (result === undefined) {
+          result = params.structuredOutput ?? params.content ?? params.result;
+        }
+        if (result === undefined && streamedText.trim().length > 0) {
+          result = streamedText;
+        }
+        return;
+      }
+
+      if (method === MCP_TOOL_APPROVAL) {
+        const approvalId = params.id as string | undefined;
+        const toolName =
+          typeof params.toolName === "string" ? params.toolName : "unknown";
+        if (approvalId) {
+          const approved = ANALYSIS_TOOL_NAMES.includes(
+            toolName as (typeof ANALYSIS_TOOL_NAMES)[number],
+          );
+          sendRequest(conn, "item/tool/approveUserInput", {
+            id: approvalId,
+            approved,
+            reason: approved
+              ? "Approved analysis read-only MCP tool"
+              : "Analysis mode only permits read-only MCP tools",
+          }).catch(() => {});
+          serverLog(runId, "codex-adapter", "analysis-tool-approval", {
+            approvalId,
+            toolName,
+            approved,
+          });
+        }
+        return;
+      }
+
+      if (
+        method === FILE_CHANGE_APPROVAL ||
+        method === COMMAND_APPROVAL ||
+        method === PERMISSIONS_APPROVAL
+      ) {
+        const approvalId = params.id as string | undefined;
+        serverWarn(runId, "codex-adapter", "analysis-approval-rejected", {
+          method,
+          approvalId,
+          detail: params,
+        });
+        if (approvalId) {
+          sendRequest(
+            conn,
+            method.replace("requestApproval", "respondApproval"),
+            {
+              id: approvalId,
+              approved: false,
+              reason:
+                "Analysis mode only permits read-only MCP tool access",
+            },
+          ).catch(() => {});
+        }
+      }
+    });
+
     const turnResult = await sendRequest(conn, "turn/start", {
       threadId,
       input: createTurnInput(prompt),
@@ -720,45 +854,72 @@ export async function runAnalysisPhase<T = unknown>(
     });
     turnId = extractTurnId(turnResult);
 
-    // Wait for completion with timeout
-    const ANALYSIS_TIMEOUT_MS = 5 * 60 * 1000;
     const startTime = Date.now();
 
-    while (!completed) {
-      // Check abort signal
-      if (signal?.aborted) {
-        if (turnId) {
-          await sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(() => {});
+    try {
+      while (!completed) {
+        if (options?.signal?.aborted) {
+          if (turnId) {
+            await sendRequest(conn, "turn/interrupt", {
+              threadId,
+              turnId,
+            }).catch(() => {});
+          }
+          throw new Error("Aborted");
         }
-        throw new Error("Aborted");
-      }
-      if (Date.now() - startTime > ANALYSIS_TIMEOUT_MS) {
-        if (turnId) {
-          await sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(() => {});
+        if (Date.now() - startTime > ANALYSIS_TIMEOUT_MS) {
+          if (turnId) {
+            await sendRequest(conn, "turn/interrupt", {
+              threadId,
+              turnId,
+            }).catch(() => {});
+          }
+          throw new Error("Analysis phase timed out");
         }
-        throw new Error("Analysis phase timed out");
+        await new Promise((resolve) => setTimeout(resolve, 200));
       }
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
 
-    if (completionError) {
-      throw new Error(completionError);
-    }
+      if (completionError) {
+        throw new Error(completionError);
+      }
 
-    // Parse result
-    if (result === undefined || result === null) {
-      throw new Error("Analysis phase returned empty result");
-    }
+      if (result === undefined || result === null) {
+        throw new Error("Analysis phase returned empty result");
+      }
 
-    if (typeof result === "string") {
-      return JSON.parse(result) as T;
+      if (typeof result === "string") {
+        parsedResult = JSON.parse(result) as T;
+      } else {
+        parsedResult = result as T;
+      }
+    } finally {
+      removeListener();
+      if (currentThreadId === threadId) currentThreadId = null;
     }
-
-    return result as T;
   } finally {
-    removeListener();
-    if (currentThreadId === threadId) currentThreadId = null;
+    try {
+      installToolSurface(CHAT_PRODUCT_TOOL_NAMES);
+      await reloadMcpServerConfig(conn, runId);
+    } catch (err) {
+      restoreError =
+        err instanceof Error
+          ? err
+          : new Error(`Failed to restore chat MCP config: ${String(err)}`);
+      serverWarn(runId, "codex-adapter", "mcp-restore-failed", {
+        message: restoreError.message,
+      });
+    }
   }
+
+  if (restoreError) {
+    throw restoreError;
+  }
+
+  if (parsedResult === null) {
+    throw new Error("Analysis phase completed without parsed result");
+  }
+
+  return parsedResult;
 }
 
 // ── Exports for testing ──

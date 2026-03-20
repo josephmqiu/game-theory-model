@@ -21,6 +21,12 @@ import {
   updateRelationship,
   getStaleEntityIds,
 } from "../../server/services/entity-graph-service";
+import {
+  getEntity,
+  queryEntities,
+  queryRelationships,
+  requestLoopback,
+} from "../../server/services/analysis-tools";
 import type { MethodologyPhase } from "../../shared/types/methodology";
 import type { RelationshipType } from "../../shared/types/entity";
 import * as analysisOrchestrator from "../../server/agents/analysis-agent";
@@ -67,8 +73,8 @@ import { MCP_DEFAULT_PORT } from "@/constants/app";
 
 // --- Tool definitions (shared across all Server instances) ---
 
-// When PRODUCT_ONLY is set (e.g. by Codex adapter), expose only the 13 product
-// tools — not the 28 OpenPencil design tools.
+// When PRODUCT_ONLY is set (e.g. by the Codex adapter), expose only the
+// product-facing tool surface — not the OpenPencil design tools.
 const PRODUCT_ONLY = process.env.PRODUCT_ONLY === "1";
 
 const TOOL_DEFINITIONS = [
@@ -850,6 +856,82 @@ const PRODUCT_TOOL_DEFINITIONS = [
     },
   },
 
+  // Analysis-mode read tools (4)
+  {
+    name: "get_entity",
+    description: "Get a single analysis entity by ID.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        id: { type: "string", description: "Entity ID to fetch" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "query_entities",
+    description:
+      "Query analysis entities by phase, type, or stale status for read-only analysis.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        phase: {
+          type: "string",
+          description:
+            "Filter by methodology phase (e.g. situational-grounding)",
+        },
+        type: {
+          type: "string",
+          description: "Filter by entity type (e.g. fact, player, objective)",
+        },
+        stale: {
+          type: "boolean",
+          description: "Filter by stale status",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "query_relationships",
+    description:
+      "Query analysis relationships by type or entity involvement for read-only analysis.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        type: {
+          type: "string",
+          description:
+            "Filter by relationship type (e.g. supports, contradicts, plays-in)",
+        },
+        entityId: {
+          type: "string",
+          description: "Filter to relationships involving this entity",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "request_loopback",
+    description:
+      "Record a methodology disruption trigger for orchestrator loopback handling.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        trigger_type: {
+          type: "string",
+          description: "Methodology disruption trigger type",
+        },
+        justification: {
+          type: "string",
+          description: "Why this trigger should cause a loopback",
+        },
+      },
+      required: ["trigger_type", "justification"],
+    },
+  },
+
   // Entity & relationship tools (6) — functional via entity-graph-service
   {
     name: "get_entities",
@@ -1136,6 +1218,43 @@ export function handleRevalidateEntities(args: {
   });
 }
 
+export function handleGetEntity(args: { id: string }): string {
+  return JSON.stringify(getEntity(args.id));
+}
+
+export function handleQueryEntities(args: {
+  phase?: string;
+  type?: string;
+  stale?: boolean;
+}): string {
+  return JSON.stringify(
+    queryEntities({
+      phase: args.phase,
+      type: args.type,
+      stale: args.stale,
+    }),
+  );
+}
+
+export function handleQueryRelationships(args: {
+  type?: string;
+  entityId?: string;
+}): string {
+  return JSON.stringify(
+    queryRelationships({
+      type: args.type,
+      entityId: args.entityId,
+    }),
+  );
+}
+
+export function handleRequestLoopback(args: {
+  trigger_type: string;
+  justification: string;
+}): string {
+  return JSON.stringify(requestLoopback(args));
+}
+
 // Entity tools (3)
 export function handleGetEntities(args: {
   phase?: string;
@@ -1371,7 +1490,7 @@ async function handleToolCall(
     case "design_refine":
       return JSON.stringify(await handleDesignRefine(a), null, 2);
 
-    // Product tools (13)
+    // Product tools
     case "start_analysis":
       return await handleStartAnalysis(a);
     case "get_analysis_status":
@@ -1380,6 +1499,14 @@ async function handleToolCall(
       return handleGetAnalysisResult(a);
     case "revalidate_entities":
       return handleRevalidateEntities(a);
+    case "get_entity":
+      return handleGetEntity(a);
+    case "query_entities":
+      return handleQueryEntities(a);
+    case "query_relationships":
+      return handleQueryRelationships(a);
+    case "request_loopback":
+      return handleRequestLoopback(a);
     case "get_entities":
       return handleGetEntities(a);
     case "create_entity":

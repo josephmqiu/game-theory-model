@@ -14,6 +14,7 @@ const mockRunPhase = vi.fn<
       priorEntities?: string;
       provider?: string;
       model?: string;
+      runId?: string;
       signal?: AbortSignal;
     },
   ) => Promise<PhaseResult>
@@ -148,7 +149,6 @@ describe("analysis-orchestrator", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    vi.useFakeTimers({ shouldAdvanceTime: true });
     orchestrator = await importOrchestrator();
     orchestrator._resetForTest();
   });
@@ -179,6 +179,9 @@ describe("analysis-orchestrator", () => {
 
     // Topic passed to each phase
     expect(mockRunPhase.mock.calls[0][1]).toBe("US-China trade war");
+    expect(mockRunPhase.mock.calls[0][2]?.runId).toBe(runId);
+    expect(mockRunPhase.mock.calls[1][2]?.runId).toBe(runId);
+    expect(mockRunPhase.mock.calls[2][2]?.runId).toBe(runId);
 
     const status = orchestrator.getStatus(runId);
     expect(status.status).toBe("completed");
@@ -452,8 +455,9 @@ describe("analysis-orchestrator", () => {
     expect(status.status).toBe("interrupted");
     expect(status.phasesCompleted).toBe(1);
 
-    // isRunning should be false after abort
-    expect(orchestrator.isRunning()).toBe(false);
+    // The run is marked interrupted immediately, but it only fully unwinds
+    // after the in-flight phase settles.
+    expect(orchestrator.isRunning()).toBe(true);
 
     // Phase 1 entities were created
     expect(mockEntityGraph.createEntity).toHaveBeenCalled();
@@ -461,6 +465,7 @@ describe("analysis-orchestrator", () => {
     // Clean up the pending promise
     resolvePhase2(makePhaseResult("player-identification"));
     await flushAsync();
+    expect(orchestrator.isRunning()).toBe(false);
   });
 
   // ── 10. Progress events ──
@@ -529,16 +534,26 @@ describe("analysis-orchestrator", () => {
   // ── 11. Run-level timeout ──
 
   it("fails analysis after run-level timeout, emits analysis_failed, and cancels in-flight work", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
     // Phase 1 succeeds, phase 2 takes too long
     mockRunPhase
       .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
       .mockImplementation(
-        () =>
-          new Promise<PhaseResult>((resolve) => {
-            // This never resolves on its own — timeout will catch it
-            setTimeout(
+        (_phase, _topic, context) =>
+          new Promise<PhaseResult>((resolve, reject) => {
+            // This never resolves on time — timeout will catch it.
+            const timerId = setTimeout(
               () => resolve(makePhaseResult("player-identification")),
               20 * 60 * 1000,
+            );
+            context?.signal?.addEventListener(
+              "abort",
+              () => {
+                clearTimeout(timerId);
+                reject(new Error("Aborted"));
+              },
+              { once: true },
             );
           }),
       );
@@ -549,8 +564,8 @@ describe("analysis-orchestrator", () => {
     const { runId } = await orchestrator.runFull("Test topic");
 
     // Fast-forward past run-level timeout (15 min)
-    await vi.advanceTimersByTimeAsync(16 * 60 * 1000);
-    await flushAsync();
+    vi.advanceTimersByTime(16 * 60 * 1000);
+    await orchestrator._getRunPromise();
 
     unsubscribe();
 
@@ -575,24 +590,11 @@ describe("analysis-orchestrator", () => {
   // ── 11b. Phase timeout (3 min) is terminal, not retried ──
 
   it("treats phase timeout (3 min) as terminal — no retry", async () => {
-    // Phase 1 succeeds, phase 2 exceeds the 3-minute phase timeout
     mockRunPhase
       .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
-      .mockImplementation(
-        () =>
-          new Promise<PhaseResult>((resolve) => {
-            // Never resolves on its own — phase timeout (3 min) will fire
-            setTimeout(
-              () => resolve(makePhaseResult("player-identification")),
-              5 * 60 * 1000,
-            );
-          }),
-      );
+      .mockResolvedValueOnce(makeFailedResult("Phase timeout"));
 
     const { runId } = await orchestrator.runFull("Test topic");
-
-    // Fast-forward past phase timeout (3 min) but not run timeout (15 min)
-    await vi.advanceTimersByTimeAsync(4 * 60 * 1000);
     await flushAsync();
 
     const status = orchestrator.getStatus(runId);

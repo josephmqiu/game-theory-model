@@ -147,7 +147,7 @@ describe("analysis-service", () => {
       );
 
       expect(mockClaudeRunAnalysisPhase).toHaveBeenCalledTimes(1);
-      const [prompt, systemPrompt, model, schema] =
+      const [prompt, systemPrompt, model, schema, options] =
         mockClaudeRunAnalysisPhase.mock.calls[0];
 
       // Prompt contains the topic
@@ -169,6 +169,10 @@ describe("analysis-service", () => {
       const relItems = (schema as any).properties.relationships.items;
       expect(relItems.properties.type.enum).toContain("supports");
       expect(relItems.properties.type.enum).toContain("precedes");
+      expect(options).toEqual({
+        signal: undefined,
+        runId: undefined,
+      });
 
       expect(result.success).toBe(true);
     });
@@ -314,6 +318,24 @@ describe("analysis-service", () => {
       expect(result.success).toBe(true);
     });
 
+    it("passes runId and signal through to the adapter options", async () => {
+      mockClaudeRunAnalysisPhase.mockResolvedValue(VALID_PHASE_1_STRUCTURED);
+
+      const { runPhase } = await importService();
+      const controller = new AbortController();
+
+      await runPhase("situational-grounding", "US-China trade war", {
+        runId: "run-42",
+        signal: controller.signal,
+      });
+
+      const [, , , , options] = mockClaudeRunAnalysisPhase.mock.calls[0];
+      expect(options).toEqual({
+        signal: controller.signal,
+        runId: "run-42",
+      });
+    });
+
     it("returns an explicit error for an unknown provider", async () => {
       const { runPhase } = await importService();
       const result = await runPhase(
@@ -436,6 +458,10 @@ describe("analysis-service", () => {
 
       expect(system).toContain("Phase 1");
       expect(user).toContain("US-China trade war");
+      expect(user).toContain("Use web search");
+      expect(user).toContain("get_entity, query_entities, and query_relationships");
+      expect(user).toContain("request_loopback");
+      expect(user).toContain("Return only the final JSON object");
       expect(user).not.toContain("Prior phase");
     });
 

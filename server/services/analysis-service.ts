@@ -26,7 +26,11 @@ interface AnalysisAdapter {
     systemPrompt: string,
     model: string,
     schema: Record<string, unknown>,
-    signal?: AbortSignal,
+    options?: {
+      signal?: AbortSignal;
+      runId?: string;
+      maxTurns?: number;
+    },
   ): Promise<T>;
 }
 
@@ -53,6 +57,7 @@ export interface PhaseContext {
   priorEntities?: string;
   provider?: string;
   model?: string;
+  runId?: string;
   signal?: AbortSignal;
   logger?: RunLogger;
 }
@@ -274,7 +279,16 @@ function buildPrompt(
   priorContext?: string,
 ): { system: string; user: string } {
   const systemPrompt = PHASE_PROMPTS[phase];
-  const parts = [`Analyze the following topic:\n\n${topic}`];
+  const parts = [
+    `Analyze the following topic:\n\n${topic}`,
+    [
+      "Analysis-mode tool guidance:",
+      "- Use web search to verify current, time-sensitive facts before finalizing entities.",
+      "- Use get_entity, query_entities, and query_relationships to inspect prior analytical state when helpful.",
+      "- If you detect a disruption trigger, call request_loopback(trigger_type, justification).",
+      "- Return only the final JSON object that matches the schema.",
+    ].join("\n"),
+  ];
   if (priorContext) {
     parts.push(
       `\nPrior phase output (use as context, reference entity ids where relevant):\n\n${priorContext}`,
@@ -655,7 +669,10 @@ export async function runPhase(
       system,
       model,
       schema,
-      context?.signal,
+      {
+        signal: context?.signal,
+        runId: context?.runId,
+      },
     );
   } catch (err) {
     return {

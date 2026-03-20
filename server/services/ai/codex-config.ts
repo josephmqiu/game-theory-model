@@ -8,10 +8,17 @@ import {
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-const MCP_KEY = "game-theory-analyzer";
+export const CODEX_MCP_SERVER_NAME = "game-theory-analyzer";
 const CONFIG_FILENAME = "config.toml";
 const LOCK_FILENAME = "config.toml.lock";
 const CODEX_DIR = ".codex";
+
+interface InstallMcpServerOptions {
+  enabledTools?: string[];
+  env?: Record<string, string>;
+  startupTimeoutSec?: number;
+  toolTimeoutSec?: number;
+}
 
 // ── Paths ──
 
@@ -81,17 +88,42 @@ function serializeSections(
   return result;
 }
 
+function formatStringArray(values: string[]): string {
+  return `[${values.map((value) => JSON.stringify(value)).join(", ")}]`;
+}
+
+function formatInlineTable(values: Record<string, string>): string {
+  const entries = Object.entries(values)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key} = ${JSON.stringify(value)}`);
+  return `{ ${entries.join(", ")} }`;
+}
+
 /** Build the lines for our MCP server entry (without the section header). */
-function mcpEntryLines(command: string, args: string[]): string[] {
-  const argsStr = args.map((a) => `"${a}"`).join(", ");
-  return [
-    `command = "${command}"`,
-    `args = [${argsStr}]`,
-    `startup_timeout_sec = 10`,
-    `tool_timeout_sec = 120`,
-    `env = { PRODUCT_ONLY = "1" }`,
-    "",
+function mcpEntryLines(
+  command: string,
+  args: string[],
+  options?: InstallMcpServerOptions,
+): string[] {
+  const env = {
+    PRODUCT_ONLY: "1",
+    ...(options?.env ?? {}),
+  };
+
+  const lines = [
+    `command = ${JSON.stringify(command)}`,
+    `args = ${formatStringArray(args)}`,
+    `startup_timeout_sec = ${options?.startupTimeoutSec ?? 10}`,
+    `tool_timeout_sec = ${options?.toolTimeoutSec ?? 120}`,
+    `env = ${formatInlineTable(env)}`,
   ];
+
+  if (options?.enabledTools && options.enabledTools.length > 0) {
+    lines.push(`enabled_tools = ${formatStringArray(options.enabledTools)}`);
+  }
+
+  lines.push("");
+  return lines;
 }
 
 // ── Lockfile ──
@@ -126,7 +158,7 @@ function withLock<T>(fn: () => T): T {
 
 // ── Public API ──
 
-const SECTION_KEY = `mcp_servers.${MCP_KEY}`;
+const SECTION_KEY = `mcp_servers.${CODEX_MCP_SERVER_NAME}`;
 
 /**
  * Add the game-theory-analyzer MCP server entry to ~/.codex/config.toml.
@@ -135,6 +167,7 @@ const SECTION_KEY = `mcp_servers.${MCP_KEY}`;
 export function installMcpServer(
   serverCommand: string,
   serverArgs: string[],
+  options?: InstallMcpServerOptions,
 ): void {
   withLock(() => {
     const file = configPath();
@@ -152,7 +185,7 @@ export function installMcpServer(
     const { sections, sectionOrder } = parseSections(content);
 
     // Replace or add our section
-    sections.set(SECTION_KEY, mcpEntryLines(serverCommand, serverArgs));
+    sections.set(SECTION_KEY, mcpEntryLines(serverCommand, serverArgs, options));
     if (!sectionOrder.includes(SECTION_KEY)) {
       sectionOrder.push(SECTION_KEY);
     }
