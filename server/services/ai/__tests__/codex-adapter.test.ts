@@ -1,8 +1,13 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { ChatEvent } from "../chat-events";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import type { ChatEvent } from "@/services/ai/chat-events";
 import { EventEmitter } from "node:events";
-
-// ── Mock child_process ──
 
 class MockChildProcess extends EventEmitter {
   stdin = {
@@ -13,14 +18,10 @@ class MockChildProcess extends EventEmitter {
   exitCode: number | null = null;
   pid = 12345;
 
-  kill = vi.fn(() => {
-    return true;
-  });
+  kill = vi.fn(() => true);
 }
 
 let mockChild: MockChildProcess;
-
-// Handler that will be installed before spawn is called
 let stdinHandler:
   | ((method: string, id: number | undefined, params: unknown) => void)
   | null = null;
@@ -28,18 +29,15 @@ let stdinHandler:
 vi.mock("node:child_process", () => ({
   spawn: vi.fn(() => {
     mockChild = new MockChildProcess();
-    // Wire up the auto-responder if one was installed before spawn
     if (stdinHandler) {
       const handler = stdinHandler;
       mockChild.stdin.write.mockImplementation((...args: unknown[]) => {
         const data = args[0] as string;
         try {
           const parsed = JSON.parse(data.trim());
-          queueMicrotask(() =>
-            handler(parsed.method, parsed.id, parsed.params),
-          );
+          queueMicrotask(() => handler(parsed.method, parsed.id, parsed.params));
         } catch {
-          // ignore non-JSON
+          // ignore non-JSON writes
         }
         return true;
       });
@@ -48,65 +46,84 @@ vi.mock("node:child_process", () => ({
   }),
 }));
 
-vi.mock("../../../../server/utils/codex-client", () => ({
+vi.mock("../../../utils/codex-client", () => ({
   filterCodexEnv: vi.fn((env: Record<string, string | undefined>) => {
     const result: Record<string, string | undefined> = {};
     if (env.PATH) result.PATH = env.PATH;
     if (env.HOME) result.HOME = env.HOME;
-    for (const [k, v] of Object.entries(env)) {
-      if (k.startsWith("OPENAI_") || k.startsWith("CODEX_")) {
-        result[k] = v;
+    for (const [key, value] of Object.entries(env)) {
+      if (key.startsWith("OPENAI_") || key.startsWith("CODEX_")) {
+        result[key] = value;
       }
     }
     return result;
   }),
 }));
 
-vi.mock("../../../../server/utils/ai-logger", () => ({
+vi.mock("../../../utils/ai-logger", () => ({
   serverLog: vi.fn(),
   serverWarn: vi.fn(),
   serverError: vi.fn(),
 }));
 
-vi.mock("../codex-config", () => ({
-  installMcpServer: vi.fn(),
-  uninstallMcpServer: vi.fn(),
-  registerCleanupHandler: vi.fn(() => vi.fn()),
-}));
-
-vi.mock("node:fs", async () => {
-  const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
-  return {
-    ...actual,
-    existsSync: vi.fn(() => true),
-  };
-});
-
-// ── Helpers ──
-
-/** Simulate the app-server sending a JSON-RPC response */
 function emitResponse(id: number, result: unknown) {
   const line = JSON.stringify({ jsonrpc: "2.0", id, result }) + "\n";
   mockChild.stdout.emit("data", Buffer.from(line));
 }
 
-/** Simulate the app-server sending a notification */
 function emitNotification(method: string, params: Record<string, unknown>) {
   const line = JSON.stringify({ jsonrpc: "2.0", method, params }) + "\n";
   mockChild.stdout.emit("data", Buffer.from(line));
 }
 
-/**
- * Set up an auto-responder that will be installed on the mock child's stdin
- * when spawn is called. Must be called BEFORE the adapter calls spawn.
- */
+function emitThreadStartResponse(id: number, threadId = "thread-1") {
+  emitResponse(id, { thread: { id: threadId } });
+}
+
+function emitTurnStartResponse(id: number, turnId = "turn-1") {
+  emitResponse(id, {
+    turn: {
+      id: turnId,
+      items: [],
+      status: "inProgress",
+    },
+  });
+}
+
+function emitTurnCompleted(
+  threadId = "thread-1",
+  turnId = "turn-1",
+  status = "completed",
+  error?: { message: string },
+) {
+  emitNotification("turn/completed", {
+    threadId,
+    turn: {
+      id: turnId,
+      items: [],
+      status,
+      ...(error ? { error } : {}),
+    },
+  });
+}
+
+function emitItemCompleted(
+  item: Record<string, unknown>,
+  threadId = "thread-1",
+  turnId = "turn-1",
+) {
+  emitNotification("item/completed", {
+    item,
+    threadId,
+    turnId,
+  });
+}
+
 function setAutoResponder(
   handler: (method: string, id: number | undefined, params: unknown) => void,
 ) {
   stdinHandler = handler;
 }
-
-// ── Tests ──
 
 describe("codex-adapter", () => {
   beforeEach(async () => {
@@ -135,7 +152,6 @@ describe("codex-adapter", () => {
 
       const conn = await startAppServer("test-run");
 
-      // Verify spawn was called with correct args
       expect(spawn).toHaveBeenCalledWith(
         "codex",
         ["app-server"],
@@ -144,29 +160,18 @@ describe("codex-adapter", () => {
         }),
       );
 
-      // Verify initialize request was sent
-      expect(mockChild.stdin.write).toHaveBeenCalled();
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
-      const firstWrite = calls[0][0];
-      const initReq = JSON.parse(firstWrite.trim());
+      const initReq = JSON.parse(calls[0][0].trim());
       expect(initReq.method).toBe("initialize");
-      expect(initReq.jsonrpc).toBe("2.0");
-      expect(initReq.id).toBeDefined();
 
-      // Verify initialized notification was sent after response
-      expect(calls.length).toBeGreaterThanOrEqual(2);
-      const secondWrite = calls[1][0];
-      const initNotif = JSON.parse(secondWrite.trim());
+      const initNotif = JSON.parse(calls[1][0].trim());
       expect(initNotif.method).toBe("initialized");
-      expect(initNotif.id).toBeUndefined();
-
-      expect(conn).toBeDefined();
       expect(conn.process).toBe(mockChild);
     });
   });
 
   describe("streamChat", () => {
-    it("yields text_delta from agentMessage/delta notifications", async () => {
+    it("yields streamed text deltas and turn_complete", async () => {
       const { streamChat, _resetConnection } = await import("../codex-adapter");
       _resetConnection();
 
@@ -175,28 +180,37 @@ describe("codex-adapter", () => {
           emitResponse(id, { protocolVersion: "1.0" });
         }
         if (method === "thread/start" && id !== undefined) {
-          emitResponse(id, { threadId: "thread-1" });
+          emitThreadStartResponse(id);
         }
         if (method === "turn/start" && id !== undefined) {
-          emitResponse(id, { ok: true });
+          emitTurnStartResponse(id);
           queueMicrotask(() => {
-            emitNotification("item/agentMessage/delta", { delta: "Hello " });
-            emitNotification("item/agentMessage/delta", { delta: "world" });
-            emitNotification("turn/completed", { content: "" });
+            emitNotification("item/agentMessage/delta", {
+              delta: "Hello ",
+              threadId: "thread-1",
+              turnId: "turn-1",
+            });
+            emitNotification("item/agentMessage/delta", {
+              delta: "world",
+              threadId: "thread-1",
+              turnId: "turn-1",
+            });
+            emitTurnCompleted();
           });
         }
       });
 
       const events: ChatEvent[] = [];
-      for await (const ev of streamChat("hello", "system", "gpt-4o")) {
-        events.push(ev);
+      for await (const event of streamChat("hello", "system", "gpt-4o")) {
+        events.push(event);
       }
 
       expect(events).toContainEqual({ type: "text_delta", content: "Hello " });
       expect(events).toContainEqual({ type: "text_delta", content: "world" });
+      expect(events).toContainEqual({ type: "turn_complete" });
     });
 
-    it("yields turn_complete on turn/completed", async () => {
+    it("uses developerInstructions on thread/start and input items on turn/start", async () => {
       const { streamChat, _resetConnection } = await import("../codex-adapter");
       _resetConnection();
 
@@ -205,22 +219,31 @@ describe("codex-adapter", () => {
           emitResponse(id, { protocolVersion: "1.0" });
         }
         if (method === "thread/start" && id !== undefined) {
-          emitResponse(id, { threadId: "thread-1" });
+          emitThreadStartResponse(id, "thread-chat-456");
         }
         if (method === "turn/start" && id !== undefined) {
-          emitResponse(id, { ok: true });
-          queueMicrotask(() => {
-            emitNotification("turn/completed", {});
-          });
+          emitTurnStartResponse(id, "turn-chat-1");
+          queueMicrotask(() => emitTurnCompleted("thread-chat-456", "turn-chat-1"));
         }
       });
 
-      const events: ChatEvent[] = [];
-      for await (const ev of streamChat("hello", "system", "gpt-4o")) {
-        events.push(ev);
+      for await (const _event of streamChat("hello", "system", "gpt-4o")) {
+        // drain
       }
 
-      expect(events).toContainEqual({ type: "turn_complete" });
+      const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
+      const threadStartReq = JSON.parse(
+        calls.map((call) => call[0]).find((call) => call.includes('"thread/start"'))!.trim(),
+      );
+      expect(threadStartReq.params.developerInstructions).toBe("system");
+
+      const turnStartReq = JSON.parse(
+        calls.map((call) => call[0]).find((call) => call.includes('"turn/start"'))!.trim(),
+      );
+      expect(turnStartReq.params.threadId).toBe("thread-chat-456");
+      expect(turnStartReq.params.input).toEqual([
+        { type: "text", text: "hello" },
+      ]);
     });
 
     it("auto-approves MCP tool calls", async () => {
@@ -232,43 +255,39 @@ describe("codex-adapter", () => {
           emitResponse(id, { protocolVersion: "1.0" });
         }
         if (method === "thread/start" && id !== undefined) {
-          emitResponse(id, { threadId: "thread-1" });
+          emitThreadStartResponse(id);
         }
         if (method === "turn/start" && id !== undefined) {
-          emitResponse(id, { ok: true });
+          emitTurnStartResponse(id);
           queueMicrotask(() => {
             emitNotification("item/tool/requestUserInput", {
               id: "approval-1",
               toolName: "get_entities",
+              threadId: "thread-1",
+              turnId: "turn-1",
             });
           });
         }
         if (method === "item/tool/approveUserInput" && id !== undefined) {
           emitResponse(id, { ok: true });
-          queueMicrotask(() => {
-            emitNotification("turn/completed", {});
-          });
+          queueMicrotask(() => emitTurnCompleted());
         }
       });
 
-      const events: ChatEvent[] = [];
-      for await (const ev of streamChat("hello", "system", "gpt-4o")) {
-        events.push(ev);
+      for await (const _event of streamChat("hello", "system", "gpt-4o")) {
+        // drain
       }
 
-      // Verify approval was sent
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
-      const approvalWrite = calls
-        .map((c) => c[0])
-        .find((w) => w.includes("item/tool/approveUserInput"));
-      expect(approvalWrite).toBeDefined();
-      const approvalReq = JSON.parse(approvalWrite!.trim());
+      const approvalReq = JSON.parse(
+        calls.map((call) => call[0]).find((call) => call.includes("item/tool/approveUserInput"))!.trim(),
+      );
       expect(approvalReq.params.approved).toBe(true);
       expect(approvalReq.params.id).toBe("approval-1");
     });
 
-    it("rejects file/command approvals with logged warning", async () => {
-      const { serverWarn } = await import("../../../../server/utils/ai-logger");
+    it("rejects file/command approvals with a warning", async () => {
+      const { serverWarn } = await import("../../../utils/ai-logger");
       const { streamChat, _resetConnection } = await import("../codex-adapter");
       _resetConnection();
 
@@ -277,31 +296,29 @@ describe("codex-adapter", () => {
           emitResponse(id, { protocolVersion: "1.0" });
         }
         if (method === "thread/start" && id !== undefined) {
-          emitResponse(id, { threadId: "thread-1" });
+          emitThreadStartResponse(id);
         }
         if (method === "turn/start" && id !== undefined) {
-          emitResponse(id, { ok: true });
+          emitTurnStartResponse(id);
           queueMicrotask(() => {
             emitNotification("item/fileChange/requestApproval", {
               id: "file-approval-1",
               path: "/etc/passwd",
+              threadId: "thread-1",
+              turnId: "turn-1",
             });
           });
         }
         if (method === "item/fileChange/respondApproval" && id !== undefined) {
           emitResponse(id, { ok: true });
-          queueMicrotask(() => {
-            emitNotification("turn/completed", {});
-          });
+          queueMicrotask(() => emitTurnCompleted());
         }
       });
 
-      const events: ChatEvent[] = [];
-      for await (const ev of streamChat("hello", "system", "gpt-4o")) {
-        events.push(ev);
+      for await (const _event of streamChat("hello", "system", "gpt-4o")) {
+        // drain
       }
 
-      // Verify warning was logged
       expect(serverWarn).toHaveBeenCalledWith(
         undefined,
         "codex-adapter",
@@ -312,20 +329,17 @@ describe("codex-adapter", () => {
         }),
       );
 
-      // Verify rejection was sent with the correct trust-tier message
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
-      const rejectionWrite = calls
-        .map((c) => c[0])
-        .find((w) => w.includes("respondApproval"));
-      expect(rejectionWrite).toBeDefined();
-      const rejectionReq = JSON.parse(rejectionWrite!.trim());
+      const rejectionReq = JSON.parse(
+        calls.map((call) => call[0]).find((call) => call.includes("respondApproval"))!.trim(),
+      );
       expect(rejectionReq.params.approved).toBe(false);
       expect(rejectionReq.params.reason).toBe(
         "File/command operations are not permitted in the current trust tier",
       );
     });
 
-    it("sends turn/interrupt and exits when signal is aborted", async () => {
+    it("sends turn/interrupt with threadId and turnId when aborted", async () => {
       const { streamChat, _resetConnection } = await import("../codex-adapter");
       _resetConnection();
 
@@ -334,11 +348,10 @@ describe("codex-adapter", () => {
           emitResponse(id, { protocolVersion: "1.0" });
         }
         if (method === "thread/start" && id !== undefined) {
-          emitResponse(id, { threadId: "thread-1" });
+          emitThreadStartResponse(id);
         }
         if (method === "turn/start" && id !== undefined) {
-          emitResponse(id, { ok: true });
-          // Don't send turn/completed — let abort handle it
+          emitTurnStartResponse(id);
         }
         if (method === "turn/interrupt" && id !== undefined) {
           emitResponse(id, { ok: true });
@@ -347,27 +360,26 @@ describe("codex-adapter", () => {
 
       const abortController = new AbortController();
       const events: ChatEvent[] = [];
-
-      // Abort after a short delay
       setTimeout(() => abortController.abort(), 50);
 
-      for await (const ev of streamChat("hello", "system", "gpt-4o", {
+      for await (const event of streamChat("hello", "system", "gpt-4o", {
         signal: abortController.signal,
       })) {
-        events.push(ev);
+        events.push(event);
       }
 
-      // Should exit silently — no error events
       expect(events).not.toContainEqual(
         expect.objectContaining({ type: "error" }),
       );
 
-      // Verify turn/interrupt was sent
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
-      const interruptWrite = calls
-        .map((c) => c[0])
-        .find((w) => w.includes("turn/interrupt"));
-      expect(interruptWrite).toBeDefined();
+      const interruptReq = JSON.parse(
+        calls.map((call) => call[0]).find((call) => call.includes("turn/interrupt"))!.trim(),
+      );
+      expect(interruptReq.params).toEqual({
+        threadId: "thread-1",
+        turnId: "turn-1",
+      });
     });
 
     it("interrupts after 50 tool calls", async () => {
@@ -379,15 +391,17 @@ describe("codex-adapter", () => {
           emitResponse(id, { protocolVersion: "1.0" });
         }
         if (method === "thread/start" && id !== undefined) {
-          emitResponse(id, { threadId: "thread-1" });
+          emitThreadStartResponse(id);
         }
         if (method === "turn/start" && id !== undefined) {
-          emitResponse(id, { ok: true });
+          emitTurnStartResponse(id);
           queueMicrotask(() => {
-            for (let i = 0; i < 50; i++) {
+            for (let index = 0; index < 50; index += 1) {
               emitNotification("item/mcpToolCall/progress", {
-                toolName: `tool_${i}`,
+                toolName: `tool_${index}`,
                 input: {},
+                threadId: "thread-1",
+                turnId: "turn-1",
               });
             }
           });
@@ -398,30 +412,28 @@ describe("codex-adapter", () => {
       });
 
       const events: ChatEvent[] = [];
-      for await (const ev of streamChat("hello", "system", "gpt-4o")) {
-        events.push(ev);
-        if (ev.type === "error") break;
+      for await (const event of streamChat("hello", "system", "gpt-4o")) {
+        events.push(event);
+        if (event.type === "error") break;
       }
 
-      // Should have tool_call_start events and then an error
-      const toolStarts = events.filter((e) => e.type === "tool_call_start");
-      expect(toolStarts.length).toBe(50);
+      expect(events.filter((event) => event.type === "tool_call_start")).toHaveLength(50);
+      const errorEvent = events.find((event) => event.type === "error") as
+        | { type: "error"; message: string }
+        | undefined;
+      expect(errorEvent?.message).toContain("exceeded 50 tool calls");
 
-      const errors = events.filter((e) => e.type === "error");
-      expect(errors.length).toBe(1);
-      expect((errors[0] as { message: string }).message).toContain(
-        "exceeded 50 tool calls",
-      );
-
-      // Verify turn/interrupt was sent
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
-      const interruptWrite = calls
-        .map((c) => c[0])
-        .find((w) => w.includes("turn/interrupt"));
-      expect(interruptWrite).toBeDefined();
+      const interruptReq = JSON.parse(
+        calls.map((call) => call[0]).find((call) => call.includes("turn/interrupt"))!.trim(),
+      );
+      expect(interruptReq.params).toEqual({
+        threadId: "thread-1",
+        turnId: "turn-1",
+      });
     });
 
-    it("interrupts after 5-minute timeout", async () => {
+    it("interrupts after timeout", async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
 
       const { streamChat, _resetConnection } = await import("../codex-adapter");
@@ -432,11 +444,10 @@ describe("codex-adapter", () => {
           emitResponse(id, { protocolVersion: "1.0" });
         }
         if (method === "thread/start" && id !== undefined) {
-          emitResponse(id, { threadId: "thread-1" });
+          emitThreadStartResponse(id);
         }
         if (method === "turn/start" && id !== undefined) {
-          emitResponse(id, { ok: true });
-          // Don't send turn/completed — let it time out
+          emitTurnStartResponse(id);
         }
         if (method === "turn/interrupt" && id !== undefined) {
           emitResponse(id, { ok: true });
@@ -444,152 +455,24 @@ describe("codex-adapter", () => {
       });
 
       const events: ChatEvent[] = [];
-      const gen = streamChat("hello", "system", "gpt-4o", {
-        timeoutMs: 5 * 60 * 1000,
-      });
-
       const consumePromise = (async () => {
-        for await (const ev of gen) {
-          events.push(ev);
+        for await (const event of streamChat("hello", "system", "gpt-4o", {
+          timeoutMs: 5 * 60 * 1000,
+        })) {
+          events.push(event);
         }
       })();
 
-      // Advance time past the 5-minute timeout
-      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 2000);
+      vi.advanceTimersByTime(5 * 60 * 1000 + 2000);
+      await Promise.resolve();
       await consumePromise;
 
-      const errors = events.filter((e) => e.type === "error");
-      expect(errors.length).toBeGreaterThanOrEqual(1);
-      expect((errors[0] as { message: string }).message).toContain("timed out");
-    });
-  });
-
-  describe("runAnalysisPhase", () => {
-    it("sends outputSchema and returns parsed result", async () => {
-      const { runAnalysisPhase, _resetConnection } =
-        await import("../codex-adapter");
-      _resetConnection();
-
-      const schema = {
-        type: "object",
-        properties: { entities: { type: "array" } },
-      };
-      const expected = { entities: [{ id: "e1" }] };
-
-      setAutoResponder((method, id) => {
-        if (method === "initialize" && id !== undefined) {
-          emitResponse(id, { protocolVersion: "1.0" });
-        }
-        if (method === "thread/start" && id !== undefined) {
-          emitResponse(id, { threadId: "thread-1" });
-        }
-        if (method === "turn/start" && id !== undefined) {
-          emitResponse(id, { ok: true });
-          queueMicrotask(() => {
-            emitNotification("turn/completed", {
-              structuredOutput: expected,
-            });
-          });
-        }
-      });
-
-      const result = await runAnalysisPhase(
-        "analyze this",
-        "system",
-        "gpt-4o",
-        schema,
-      );
-
-      expect(result).toEqual(expected);
-
-      // Verify outputSchema was sent in turn/start
-      const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
-      const turnStartWrite = calls
-        .map((c) => c[0])
-        .find((w) => w.includes("outputSchema"));
-      expect(turnStartWrite).toBeDefined();
-      const turnStartReq = JSON.parse(turnStartWrite!.trim());
-      expect(turnStartReq.params.outputSchema).toEqual(schema);
+      const errorEvent = events.find((event) => event.type === "error") as
+        | { type: "error"; message: string }
+        | undefined;
+      expect(errorEvent?.message).toContain("timed out");
     });
 
-    // Regression: turn/start must include threadId from thread/start response (ISSUE-002).
-    it("passes threadId from thread/start to turn/start", async () => {
-      const { runAnalysisPhase, _resetConnection } =
-        await import("../codex-adapter");
-      _resetConnection();
-
-      const EXPECTED_THREAD_ID = "thread-abc-123";
-
-      setAutoResponder((method, id) => {
-        if (method === "initialize" && id !== undefined) {
-          emitResponse(id, { protocolVersion: "1.0" });
-        }
-        if (method === "thread/start" && id !== undefined) {
-          emitResponse(id, { threadId: EXPECTED_THREAD_ID });
-        }
-        if (method === "turn/start" && id !== undefined) {
-          emitResponse(id, { ok: true });
-          queueMicrotask(() => {
-            emitNotification("turn/completed", {
-              structuredOutput: { entities: [] },
-            });
-          });
-        }
-      });
-
-      await runAnalysisPhase("test", "system", "gpt-4o", {});
-
-      // Find the turn/start request and verify threadId is present
-      const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
-      const turnStartWrite = calls
-        .map((c) => c[0])
-        .find((w) => w.includes('"turn/start"'));
-      expect(turnStartWrite).toBeDefined();
-      const turnStartReq = JSON.parse(turnStartWrite!.trim());
-      expect(turnStartReq.params.threadId).toBe(EXPECTED_THREAD_ID);
-    });
-  });
-
-  // Regression: streamChat must also pass threadId to turn/start (ISSUE-002).
-  describe("streamChat threadId", () => {
-    it("passes threadId from thread/start to turn/start", async () => {
-      const { streamChat, _resetConnection } = await import("../codex-adapter");
-      _resetConnection();
-
-      const EXPECTED_THREAD_ID = "thread-chat-456";
-
-      setAutoResponder((method, id) => {
-        if (method === "initialize" && id !== undefined) {
-          emitResponse(id, { protocolVersion: "1.0" });
-        }
-        if (method === "thread/start" && id !== undefined) {
-          emitResponse(id, { threadId: EXPECTED_THREAD_ID });
-        }
-        if (method === "turn/start" && id !== undefined) {
-          emitResponse(id, { ok: true });
-          queueMicrotask(() => {
-            emitNotification("turn/completed", {});
-          });
-        }
-      });
-
-      // Consume the generator
-      for await (const _ev of streamChat("hello", "system", "gpt-4o")) {
-        // drain
-      }
-
-      // Find the turn/start request and verify threadId
-      const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
-      const turnStartWrite = calls
-        .map((c) => c[0])
-        .find((w) => w.includes('"turn/start"'));
-      expect(turnStartWrite).toBeDefined();
-      const turnStartReq = JSON.parse(turnStartWrite!.trim());
-      expect(turnStartReq.params.threadId).toBe(EXPECTED_THREAD_ID);
-    });
-  });
-
-  describe("streamChat threadId filtering", () => {
     it("ignores notifications with a different threadId", async () => {
       const { streamChat, _resetConnection } = await import("../codex-adapter");
       _resetConnection();
@@ -599,36 +482,35 @@ describe("codex-adapter", () => {
           emitResponse(id, { protocolVersion: "1.0" });
         }
         if (method === "thread/start" && id !== undefined) {
-          emitResponse(id, { threadId: "thread-1" });
+          emitThreadStartResponse(id);
         }
         if (method === "turn/start" && id !== undefined) {
-          emitResponse(id, { ok: true });
+          emitTurnStartResponse(id);
           queueMicrotask(() => {
-            // This notification has a different threadId — should be skipped
             emitNotification("item/agentMessage/delta", {
               delta: "wrong thread",
               threadId: "thread-other",
+              turnId: "turn-1",
             });
-            // This one matches — should be received
             emitNotification("item/agentMessage/delta", {
               delta: "correct thread",
               threadId: "thread-1",
+              turnId: "turn-1",
             });
-            // This one has no threadId — should be accepted (best-effort)
             emitNotification("item/agentMessage/delta", {
               delta: " no filter",
             });
-            emitNotification("turn/completed", {});
+            emitTurnCompleted();
           });
         }
       });
 
       const events: ChatEvent[] = [];
-      for await (const ev of streamChat("hello", "system", "gpt-4o")) {
-        events.push(ev);
+      for await (const event of streamChat("hello", "system", "gpt-4o")) {
+        events.push(event);
       }
 
-      const textEvents = events.filter((e) => e.type === "text_delta");
+      const textEvents = events.filter((event) => event.type === "text_delta");
       expect(textEvents).toContainEqual({
         type: "text_delta",
         content: "correct thread",
@@ -644,9 +526,59 @@ describe("codex-adapter", () => {
     });
   });
 
-  describe("runAnalysisPhase tool isolation", () => {
-    it("rejects MCP tool calls during analysis", async () => {
-      const { serverWarn } = await import("../../../../server/utils/ai-logger");
+  describe("runAnalysisPhase", () => {
+    it("sends outputSchema and parses JSON from the completed agent message", async () => {
+      const { runAnalysisPhase, _resetConnection } =
+        await import("../codex-adapter");
+      _resetConnection();
+
+      const schema = {
+        type: "object",
+        properties: { entities: { type: "array" } },
+      };
+      const expected = { entities: [{ id: "e1" }] };
+
+      setAutoResponder((method, id) => {
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitThreadStartResponse(id);
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id);
+          queueMicrotask(() => {
+            emitItemCompleted({
+              id: "agent-msg-1",
+              type: "agentMessage",
+              text: JSON.stringify(expected),
+              phase: "final_answer",
+            });
+            emitTurnCompleted();
+          });
+        }
+      });
+
+      const result = await runAnalysisPhase(
+        "analyze this",
+        "system",
+        "gpt-4o",
+        schema,
+      );
+
+      expect(result).toEqual(expected);
+
+      const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
+      const turnStartReq = JSON.parse(
+        calls.map((call) => call[0]).find((call) => call.includes("outputSchema"))!.trim(),
+      );
+      expect(turnStartReq.params.outputSchema).toEqual(schema);
+      expect(turnStartReq.params.input).toEqual([
+        { type: "text", text: "analyze this" },
+      ]);
+    });
+
+    it("passes threadId from thread/start to turn/start using the official payload shape", async () => {
       const { runAnalysisPhase, _resetConnection } =
         await import("../codex-adapter");
       _resetConnection();
@@ -656,23 +588,77 @@ describe("codex-adapter", () => {
           emitResponse(id, { protocolVersion: "1.0" });
         }
         if (method === "thread/start" && id !== undefined) {
-          emitResponse(id, { threadId: "thread-1" });
+          emitThreadStartResponse(id, "thread-abc-123");
         }
         if (method === "turn/start" && id !== undefined) {
-          emitResponse(id, { ok: true });
+          emitTurnStartResponse(id, "turn-analysis-1");
+          queueMicrotask(() => {
+            emitItemCompleted(
+              {
+                id: "agent-msg-2",
+                type: "agentMessage",
+                text: '{"entities":[]}',
+                phase: "final_answer",
+              },
+              "thread-abc-123",
+              "turn-analysis-1",
+            );
+            emitTurnCompleted("thread-abc-123", "turn-analysis-1");
+          });
+        }
+      });
+
+      await runAnalysisPhase("test", "system", "gpt-4o", {});
+
+      const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
+      const threadStartReq = JSON.parse(
+        calls.map((call) => call[0]).find((call) => call.includes('"thread/start"'))!.trim(),
+      );
+      expect(threadStartReq.params.developerInstructions).toBe("system");
+
+      const turnStartReq = JSON.parse(
+        calls.map((call) => call[0]).find((call) => call.includes('"turn/start"'))!.trim(),
+      );
+      expect(turnStartReq.params.threadId).toBe("thread-abc-123");
+      expect(turnStartReq.params.input).toEqual([
+        { type: "text", text: "test" },
+      ]);
+    });
+
+    it("rejects MCP tool calls during analysis", async () => {
+      const { serverWarn } = await import("../../../utils/ai-logger");
+      const { runAnalysisPhase, _resetConnection } =
+        await import("../codex-adapter");
+      _resetConnection();
+
+      setAutoResponder((method, id) => {
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitThreadStartResponse(id);
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id);
           queueMicrotask(() => {
             emitNotification("item/tool/requestUserInput", {
               id: "mcp-approval-1",
               toolName: "get_entities",
+              threadId: "thread-1",
+              turnId: "turn-1",
             });
           });
         }
         if (method === "item/tool/approveUserInput" && id !== undefined) {
           emitResponse(id, { ok: true });
           queueMicrotask(() => {
-            emitNotification("turn/completed", {
-              structuredOutput: { entities: [] },
+            emitItemCompleted({
+              id: "agent-msg-3",
+              type: "agentMessage",
+              text: '{"entities":[]}',
+              phase: "final_answer",
             });
+            emitTurnCompleted();
           });
         }
       });
@@ -686,19 +672,15 @@ describe("codex-adapter", () => {
 
       expect(result).toEqual({ entities: [] });
 
-      // Verify the MCP tool was rejected (not approved)
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
-      const approvalWrite = calls
-        .map((c) => c[0])
-        .find((w) => w.includes("item/tool/approveUserInput"));
-      expect(approvalWrite).toBeDefined();
-      const approvalReq = JSON.parse(approvalWrite!.trim());
+      const approvalReq = JSON.parse(
+        calls.map((call) => call[0]).find((call) => call.includes("item/tool/approveUserInput"))!.trim(),
+      );
       expect(approvalReq.params.approved).toBe(false);
       expect(approvalReq.params.reason).toBe(
         "Analysis profile does not permit tool use",
       );
 
-      // Verify warning was logged
       expect(serverWarn).toHaveBeenCalledWith(
         undefined,
         "codex-adapter",
@@ -730,7 +712,6 @@ describe("codex-adapter", () => {
       await startAppServer("test-run");
       expect(_getConnection()).not.toBeNull();
 
-      // Stop — need to emit close event after kill
       const stopPromise = stopAppServer("test-run");
       setTimeout(() => {
         mockChild.emit("close", 0);

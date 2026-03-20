@@ -20,6 +20,7 @@ import {
 import { PHASE_PROMPTS } from "./phase-prompts";
 import { createRunLogger } from "./ai-logger";
 import type { RunLogger } from "./ai-logger";
+import { getAnalysisPhaseExecutor } from "./analysis-runtime";
 
 // ── Public types ──
 
@@ -288,29 +289,6 @@ function parseTextResponse(raw: string, phase: SupportedPhase): PhaseResult {
   }
 
   return validatePhaseOutput(parsed, phase);
-}
-
-// ── Adapter selection ──
-
-interface AnalysisAdapter {
-  runAnalysisPhase<T = unknown>(
-    prompt: string,
-    systemPrompt: string,
-    model: string,
-    schema: Record<string, unknown>,
-    signal?: AbortSignal,
-  ): Promise<T>;
-}
-
-async function getAdapter(provider?: string): Promise<AnalysisAdapter> {
-  // Import dynamically to avoid circular deps
-  if (provider === "openai") {
-    return import("./codex-adapter");
-  }
-  if (provider === "anthropic" || !provider) {
-    return import("./claude-adapter");
-  }
-  throw new Error(`Unknown provider: ${provider}. Allowed: anthropic, openai`);
 }
 
 // ── JSON Schema for structured output ──
@@ -654,15 +632,13 @@ export async function runPhase(
 
   logger.log("analysis-service", "phase-start", { phase, provider, model });
 
-  let adapter: AnalysisAdapter;
-  try {
-    adapter = await getAdapter(context?.provider);
-  } catch (err) {
+  const executor = getAnalysisPhaseExecutor();
+  if (!executor) {
     return {
       success: false,
       entities: [],
       relationships: [],
-      error: `Failed to load adapter: ${err instanceof Error ? err.message : String(err)}`,
+      error: "Analysis phase executor not configured",
     };
   }
 
@@ -680,13 +656,14 @@ export async function runPhase(
 
   let adapterResult: unknown;
   try {
-    adapterResult = await adapter.runAnalysisPhase(
-      user,
-      system,
+    adapterResult = await executor.runPhase({
+      provider: context?.provider,
+      prompt: user,
+      systemPrompt: system,
       model,
       schema,
-      context?.signal,
-    );
+      signal: context?.signal,
+    });
   } catch (err) {
     return {
       success: false,
@@ -768,5 +745,4 @@ export {
   parseTextResponse as _parseTextResponse,
   validatePhaseOutput as _validatePhaseOutput,
   trimJsonLike as _trimJsonLike,
-  getAdapter as _getAdapter,
 };

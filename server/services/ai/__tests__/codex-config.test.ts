@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   mkdtempSync,
   readFileSync,
@@ -14,13 +14,10 @@ import { rmSync } from "node:fs";
 
 let tempHome: string;
 
-vi.mock("node:os", async () => {
-  const actual = await vi.importActual<typeof import("node:os")>("node:os");
-  return {
-    ...actual,
-    homedir: () => tempHome,
-  };
-});
+vi.mock("node:os", () => ({
+  homedir: () => tempHome,
+  tmpdir: () => "/tmp",
+}));
 
 // ── Import after mock ──
 

@@ -3,17 +3,9 @@
 // Uses JSON-RPC 2.0 over stdio to a persistent `codex app-server` subprocess.
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { filterCodexEnv } from "../../../server/utils/codex-client";
-import { serverLog, serverWarn } from "../../../server/utils/ai-logger";
-import {
-  installMcpServer,
-  uninstallMcpServer,
-  registerCleanupHandler,
-} from "./codex-config";
-import type { ChatEvent } from "./chat-events";
+import { filterCodexEnv } from "../../utils/codex-client";
+import { serverLog, serverWarn } from "../../utils/ai-logger";
+import type { ChatEvent } from "@/services/ai/chat-events";
 
 // ── Types ──
 
@@ -71,6 +63,55 @@ let connection: AppServerConnection | null = null;
 // Thread filtering: tracks the active thread so notification handlers
 // only process events for their own session (Issue: cross-session fan-out).
 let currentThreadId: string | null = null;
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function extractThreadId(result: unknown): string {
+  const thread = asRecord(asRecord(result)?.thread);
+  const threadId = thread?.id;
+  if (typeof threadId !== "string" || threadId.length === 0) {
+    throw new Error("App-server thread/start response missing thread.id");
+  }
+  return threadId;
+}
+
+function extractTurnId(result: unknown): string {
+  const turn = asRecord(asRecord(result)?.turn);
+  const turnId = turn?.id;
+  if (typeof turnId !== "string" || turnId.length === 0) {
+    throw new Error("App-server turn/start response missing turn.id");
+  }
+  return turnId;
+}
+
+function getTurnIdFromParams(params: Record<string, unknown>): string | null {
+  const turn = asRecord(params.turn);
+  return typeof turn?.id === "string" ? turn.id : null;
+}
+
+function getTurnErrorMessage(params: Record<string, unknown>): string | null {
+  const turn = asRecord(params.turn);
+  const error = asRecord(turn?.error);
+  return typeof error?.message === "string" ? error.message : null;
+}
+
+function createTurnInput(prompt: string): Array<Record<string, string>> {
+  return [{ type: "text", text: prompt }];
+}
+
+function extractCompletedItemText(
+  params: Record<string, unknown>,
+): string | null {
+  const item = asRecord(params.item);
+  if (item?.type === "agentMessage" && typeof item.text === "string") {
+    return item.text;
+  }
+  return null;
+}
 
 function sendRequest(
   conn: AppServerConnection,
@@ -157,41 +198,6 @@ function handleIncomingLine(conn: AppServerConnection, line: string): void {
   }
 }
 
-// ── MCP server path resolution ──
-
-// ESM-compatible __dirname polyfill
-const _codexAdapterFilename = fileURLToPath(import.meta.url);
-const _codexAdapterDirname = dirname(_codexAdapterFilename);
-
-/**
- * Resolve the MCP server script path.
- * Same resolution order as server/utils/mcp-server-manager.ts.
- */
-function resolveMcpServerScript(): string {
-  // Electron production: extraResources
-  const electronResources = process.env.ELECTRON_RESOURCES_PATH;
-  if (electronResources) {
-    const p = resolve(electronResources, "mcp-server.cjs");
-    if (existsSync(p)) return p;
-  }
-  // dev + web build (from cwd)
-  const fromCwd = resolve(process.cwd(), "dist", "mcp-server.cjs");
-  if (existsSync(fromCwd)) return fromCwd;
-  // Fallback: relative to this file
-  const fromFile = resolve(
-    _codexAdapterDirname,
-    "..",
-    "..",
-    "..",
-    "dist",
-    "mcp-server.cjs",
-  );
-  if (existsSync(fromFile)) return fromFile;
-  return fromCwd;
-}
-
-let cleanupMcpHandler: (() => void) | null = null;
-
 // ── App-server lifecycle ──
 
 const INITIALIZE_TIMEOUT_MS = 15_000;
@@ -199,9 +205,6 @@ const INITIALIZE_TIMEOUT_MS = 15_000;
 /**
  * Spawn the `codex app-server` subprocess and perform the JSON-RPC initialize handshake.
  * Returns the connection handle. Reuses an existing connection if alive.
- *
- * H5: Installs MCP server config before spawning so that the Codex app-server
- * picks up the product tools automatically.
  */
 export async function startAppServer(
   runId?: string,
@@ -209,12 +212,6 @@ export async function startAppServer(
   if (connection && connection.process.exitCode === null) {
     return connection;
   }
-
-  // H5: Install MCP config so codex picks up our product tools
-  const mcpServerPath = resolveMcpServerScript();
-  installMcpServer("node", [mcpServerPath]);
-  cleanupMcpHandler = registerCleanupHandler();
-  serverLog(runId, "codex-adapter", "mcp-installed", { mcpServerPath });
 
   const child = spawn("codex", ["app-server"], {
     env: filterCodexEnv(process.env as Record<string, string | undefined>),
@@ -291,11 +288,6 @@ export async function startAppServer(
   // Send initialized notification
   sendNotification(conn, "initialized");
 
-  // H5: Tell the app-server to reload MCP config so it picks up the new entry
-  sendRequest(conn, "config/mcpServer/reload", {}).catch(() => {
-    serverWarn(runId, "codex-adapter", "mcp-reload-failed", {});
-  });
-
   connection = conn;
   serverLog(runId, "codex-adapter", "initialized");
   return conn;
@@ -303,7 +295,6 @@ export async function startAppServer(
 
 /**
  * Gracefully stop the app-server subprocess.
- * H5: Also uninstalls MCP server config and removes cleanup handlers.
  */
 export async function stopAppServer(runId?: string): Promise<void> {
   if (!connection) return;
@@ -312,13 +303,6 @@ export async function stopAppServer(runId?: string): Promise<void> {
   connection = null;
 
   serverLog(runId, "codex-adapter", "stopping");
-
-  // H5: Uninstall MCP config and remove cleanup handler
-  uninstallMcpServer();
-  if (cleanupMcpHandler) {
-    cleanupMcpHandler();
-    cleanupMcpHandler = null;
-  }
 
   // Try graceful shutdown, then force kill
   conn.process.kill("SIGTERM");
@@ -354,11 +338,10 @@ const PERMISSIONS_APPROVAL = "item/permissions/requestApproval";
  * Stream a chat turn using the Codex app-server.
  * Yields normalized ChatEvent objects.
  *
- * Note on single-prompt limitation: Codex `turn/start` accepts a single
- * `prompt` string, not a multi-turn message array. The caller (chat.ts)
- * extracts only the last user message. Multi-turn conversation history
- * and image attachments are not forwarded — this is a known limitation
- * of the Codex app-server JSON-RPC interface.
+ * Note on history forwarding: the caller (chat.ts) still extracts only the
+ * last user message, and we send it as a single text item in Codex's `input`
+ * array. Multi-turn conversation history and image attachments are not
+ * forwarded — this is still a known limitation of this integration layer.
  */
 export async function* streamChat(
   prompt: string,
@@ -384,12 +367,13 @@ export async function* streamChat(
 
   // Create a thread
   let threadId: string;
+  let turnId: string | null = null;
   try {
-    const threadResult = (await sendRequest(conn, "thread/start", {
-      systemPrompt,
+    const threadResult = await sendRequest(conn, "thread/start", {
+      developerInstructions: systemPrompt,
       model,
-    })) as { threadId: string };
-    threadId = threadResult.threadId;
+    });
+    threadId = extractThreadId(threadResult);
     currentThreadId = threadId;
     serverLog(runId, "codex-adapter", "thread-started", { threadId });
   } catch (err) {
@@ -425,6 +409,11 @@ export async function* streamChat(
     const notifThreadId = params.threadId as string | undefined;
     if (notifThreadId && notifThreadId !== threadId) return;
 
+    if (method === "turn/started") {
+      turnId = getTurnIdFromParams(params) ?? turnId;
+      return;
+    }
+
     // Text delta
     if (method === "item/agentMessage/delta") {
       const delta = typeof params.delta === "string" ? params.delta : "";
@@ -451,7 +440,9 @@ export async function* streamChat(
           count: toolCallCount,
           threadId,
         });
-        sendRequest(conn, "turn/interrupt", { threadId }).catch(() => {});
+        if (turnId) {
+          sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(() => {});
+        }
         turnError = `Turn interrupted: exceeded ${MAX_TOOL_CALLS_PER_TURN} tool calls`;
       }
       return;
@@ -459,12 +450,15 @@ export async function* streamChat(
 
     // Turn completed
     if (method === "turn/completed") {
-      turnCompleted = true;
-      // Extract final content if present
-      if (typeof params.content === "string" && params.content) {
-        enqueueEvent({ type: "text_delta", content: params.content });
+      turnId = getTurnIdFromParams(params) ?? turnId;
+      const errorMessage = getTurnErrorMessage(params);
+      if (errorMessage) {
+        turnError = errorMessage;
       }
-      enqueueEvent({ type: "turn_complete" });
+      turnCompleted = true;
+      if (!turnError) {
+        enqueueEvent({ type: "turn_complete" });
+      }
       return;
     }
 
@@ -522,10 +516,11 @@ export async function* streamChat(
 
   // Send the turn
   try {
-    await sendRequest(conn, "turn/start", {
+    const turnResult = await sendRequest(conn, "turn/start", {
       threadId,
-      prompt,
+      input: createTurnInput(prompt),
     });
+    turnId = extractTurnId(turnResult);
   } catch (err) {
     removeListener();
     const msg = err instanceof Error ? err.message : String(err);
@@ -540,7 +535,9 @@ export async function* streamChat(
   // Wire up abort signal to interrupt the turn
   const onAbort = () => {
     aborted = true;
-    sendRequest(conn, "turn/interrupt", { threadId }).catch(() => {});
+    if (turnId) {
+      sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(() => {});
+    }
     // Wake the wait loop so it can exit
     resolveWait?.();
     resolveWait = null;
@@ -548,7 +545,9 @@ export async function* streamChat(
   if (signal) {
     if (signal.aborted) {
       aborted = true;
-      sendRequest(conn, "turn/interrupt", { threadId }).catch(() => {});
+      if (turnId) {
+        sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(() => {});
+      }
     } else {
       signal.addEventListener("abort", onAbort, { once: true });
     }
@@ -570,7 +569,9 @@ export async function* streamChat(
           elapsedMs: Date.now() - startTime,
           threadId,
         });
-        await sendRequest(conn, "turn/interrupt", { threadId }).catch(() => {});
+        if (turnId) {
+          await sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(() => {});
+        }
         yield {
           type: "error",
           message: `Turn timed out after ${Math.round(timeoutMs / 1000)}s`,
@@ -631,11 +632,12 @@ export async function runAnalysisPhase<T = unknown>(
   const conn = await startAppServer(runId);
 
   // Create a thread
-  const threadResult = (await sendRequest(conn, "thread/start", {
-    systemPrompt,
+  const threadResult = await sendRequest(conn, "thread/start", {
+    developerInstructions: systemPrompt,
     model,
-  })) as { threadId: string };
-  const threadId = threadResult.threadId;
+  });
+  const threadId = extractThreadId(threadResult);
+  let turnId: string | null = null;
 
   currentThreadId = threadId;
   serverLog(runId, "codex-adapter", "analysis-thread-started", { threadId });
@@ -644,15 +646,43 @@ export async function runAnalysisPhase<T = unknown>(
   let result: unknown = undefined;
   let completed = false;
   let completionError: string | null = null;
+  let streamedText = "";
 
   const removeListener = onNotification(conn, (method, params) => {
     // Thread filtering: skip notifications for a different thread (best-effort).
     const notifThreadId = params.threadId as string | undefined;
     if (notifThreadId && notifThreadId !== threadId) return;
 
+    if (method === "turn/started") {
+      turnId = getTurnIdFromParams(params) ?? turnId;
+      return;
+    }
+
+    if (method === "item/agentMessage/delta") {
+      if (typeof params.delta === "string") {
+        streamedText += params.delta;
+      }
+      return;
+    }
+
+    if (method === "item/completed") {
+      const completedText = extractCompletedItemText(params);
+      if (completedText) {
+        result = completedText;
+      }
+      return;
+    }
+
     if (method === "turn/completed") {
+      turnId = getTurnIdFromParams(params) ?? turnId;
       completed = true;
-      result = params.structuredOutput ?? params.content ?? params.result;
+      completionError = getTurnErrorMessage(params) ?? completionError;
+      if (result === undefined) {
+        result = params.structuredOutput ?? params.content ?? params.result;
+      }
+      if (result === undefined && streamedText.trim().length > 0) {
+        result = streamedText;
+      }
     }
     // Analysis profile: reject ALL tool approvals (MCP, file, command, permissions).
     // Analysis is "prompt-in, structured-data-out" — no tool use permitted.
@@ -683,11 +713,12 @@ export async function runAnalysisPhase<T = unknown>(
 
   try {
     // Send turn with output schema
-    await sendRequest(conn, "turn/start", {
+    const turnResult = await sendRequest(conn, "turn/start", {
       threadId,
-      prompt,
+      input: createTurnInput(prompt),
       outputSchema: schema,
     });
+    turnId = extractTurnId(turnResult);
 
     // Wait for completion with timeout
     const ANALYSIS_TIMEOUT_MS = 5 * 60 * 1000;
@@ -696,11 +727,15 @@ export async function runAnalysisPhase<T = unknown>(
     while (!completed) {
       // Check abort signal
       if (signal?.aborted) {
-        await sendRequest(conn, "turn/interrupt", { threadId }).catch(() => {});
+        if (turnId) {
+          await sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(() => {});
+        }
         throw new Error("Aborted");
       }
       if (Date.now() - startTime > ANALYSIS_TIMEOUT_MS) {
-        await sendRequest(conn, "turn/interrupt", { threadId }).catch(() => {});
+        if (turnId) {
+          await sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(() => {});
+        }
         throw new Error("Analysis phase timed out");
       }
       await new Promise((resolve) => setTimeout(resolve, 200));

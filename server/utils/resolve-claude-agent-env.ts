@@ -8,6 +8,12 @@ interface ClaudeSettings {
   env?: Record<string, unknown>
 }
 
+const STRIPPED_PROCESS_ENV_KEYS = new Set([
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_CUSTOM_HEADERS',
+])
+
 function normalizeEnvValue(key: string, value: unknown): string | undefined {
   if (value == null) return undefined
   if (typeof value === 'string') {
@@ -73,15 +79,23 @@ function isValidJson(str: string): boolean {
 
 /**
  * Build env passed to Claude Agent SDK.
- * Priority: current process env > ~/.claude/settings.json env.
+ * Preserve the current process environment for normal runtime behavior, but do
+ * not inherit ambient direct-auth Anthropic env vars from the shell. Claude-
+ * specific auth overrides must come from Claude settings files on purpose.
  */
 export function buildClaudeAgentEnv(): EnvLike {
   const fromSettings = readClaudeSettingsEnv()
-  const fromProcess = process.env as EnvLike
+  const fromProcess: EnvLike = {}
+
+  for (const [key, value] of Object.entries(process.env as EnvLike)) {
+    if (value === undefined) continue
+    if (STRIPPED_PROCESS_ENV_KEYS.has(key)) continue
+    fromProcess[key] = value
+  }
 
   const merged: EnvLike = {
-    ...fromSettings,
     ...fromProcess,
+    ...fromSettings,
   }
 
   // Validate ANTHROPIC_CUSTOM_HEADERS if it exists - must be valid JSON

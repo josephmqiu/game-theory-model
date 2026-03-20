@@ -161,6 +161,10 @@ export function installMcpServer(
   });
 }
 
+export function getCodexConfigPath(): string {
+  return configPath();
+}
+
 /**
  * Remove the game-theory-analyzer MCP server entry from ~/.codex/config.toml.
  * Preserves all other entries. No-op if file or entry doesn't exist.

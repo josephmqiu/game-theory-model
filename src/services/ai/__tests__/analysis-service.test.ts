@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Fixtures ──
 
@@ -122,24 +122,28 @@ const VALID_PHASE_3_STRUCTURED = {
   relationships: [],
 };
 
-// ── Mock adapters ──
+// ── Mock executor ──
 
-const mockClaudeAdapter = {
-  runAnalysisPhase: vi.fn(),
+const mockExecutor = {
+  runPhase: vi.fn(),
 };
-
-const mockCodexAdapter = {
-  runAnalysisPhase: vi.fn(),
-};
-
-vi.mock("@/services/ai/claude-adapter", () => mockClaudeAdapter);
-vi.mock("@/services/ai/codex-adapter", () => mockCodexAdapter);
 
 // ── Tests ──
 
 describe("analysis-service", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    const { setAnalysisPhaseExecutor } = await import(
+      "@/services/ai/analysis-runtime"
+    );
+    setAnalysisPhaseExecutor(mockExecutor);
+  });
+
+  afterEach(async () => {
+    const { setAnalysisPhaseExecutor } = await import(
+      "@/services/ai/analysis-runtime"
+    );
+    setAnalysisPhaseExecutor(null);
   });
 
   // Lazy-import to ensure mocks are active
@@ -149,9 +153,7 @@ describe("analysis-service", () => {
 
   describe("runPhase", () => {
     it("builds correct prompt and calls adapter for situational-grounding", async () => {
-      mockClaudeAdapter.runAnalysisPhase.mockResolvedValue(
-        VALID_PHASE_1_STRUCTURED,
-      );
+      mockExecutor.runPhase.mockResolvedValue(VALID_PHASE_1_STRUCTURED);
 
       const { runPhase } = await importService();
       const result = await runPhase(
@@ -159,27 +161,26 @@ describe("analysis-service", () => {
         "US-China trade war",
       );
 
-      expect(mockClaudeAdapter.runAnalysisPhase).toHaveBeenCalledTimes(1);
-      const [prompt, systemPrompt, model, schema] =
-        mockClaudeAdapter.runAnalysisPhase.mock.calls[0];
+      expect(mockExecutor.runPhase).toHaveBeenCalledTimes(1);
+      const [request] = mockExecutor.runPhase.mock.calls[0];
 
       // Prompt contains the topic
-      expect(prompt).toContain("US-China trade war");
+      expect(request.prompt).toContain("US-China trade war");
       // System prompt is the phase 1 prompt
-      expect(systemPrompt).toContain("Phase 1");
-      expect(systemPrompt).toContain("Situational Grounding");
+      expect(request.systemPrompt).toContain("Phase 1");
+      expect(request.systemPrompt).toContain("Situational Grounding");
       // Model defaults
-      expect(model).toBe("claude-sonnet-4-20250514");
+      expect(request.model).toBe("claude-sonnet-4-20250514");
       // Schema is a real JSON schema with entity-specific fields (not placeholder)
-      expect(schema).toHaveProperty("type", "object");
-      expect(schema).toHaveProperty("required");
+      expect(request.schema).toHaveProperty("type", "object");
+      expect(request.schema).toHaveProperty("required");
       // entities.items should have real schema fields, not just { type: "object" }
-      const entityItems = (schema as any).properties.entities.items;
+      const entityItems = (request.schema as any).properties.entities.items;
       expect(entityItems).toHaveProperty("properties");
       expect(entityItems.properties).toHaveProperty("type");
       expect(entityItems.properties).toHaveProperty("data");
       // Relationship items should have typed enum
-      const relItems = (schema as any).properties.relationships.items;
+      const relItems = (request.schema as any).properties.relationships.items;
       expect(relItems.properties.type.enum).toContain("supports");
       expect(relItems.properties.type.enum).toContain("precedes");
 
@@ -187,9 +188,7 @@ describe("analysis-service", () => {
     });
 
     it("returns entities and relationships on success", async () => {
-      mockClaudeAdapter.runAnalysisPhase.mockResolvedValue(
-        VALID_PHASE_1_STRUCTURED,
-      );
+      mockExecutor.runPhase.mockResolvedValue(VALID_PHASE_1_STRUCTURED);
 
       const { runPhase } = await importService();
       const result = await runPhase(
@@ -209,9 +208,7 @@ describe("analysis-service", () => {
 
     it("validates response against Zod schema — rejects wrong entity types", async () => {
       // Feed phase 2 entities to phase 1
-      mockClaudeAdapter.runAnalysisPhase.mockResolvedValue(
-        VALID_PHASE_2_STRUCTURED,
-      );
+      mockExecutor.runPhase.mockResolvedValue(VALID_PHASE_2_STRUCTURED);
 
       const { runPhase } = await importService();
       const result = await runPhase(
@@ -226,9 +223,7 @@ describe("analysis-service", () => {
 
     it("falls back to text parsing when structured output returns raw text", async () => {
       // Adapter returns a raw JSON string instead of parsed object
-      mockClaudeAdapter.runAnalysisPhase.mockResolvedValue(
-        JSON.stringify(VALID_PHASE_1_STRUCTURED),
-      );
+      mockExecutor.runPhase.mockResolvedValue(JSON.stringify(VALID_PHASE_1_STRUCTURED));
 
       const { runPhase } = await importService();
       const result = await runPhase(
@@ -246,7 +241,7 @@ describe("analysis-service", () => {
         "Here is the analysis:\n```json\n" +
         JSON.stringify(VALID_PHASE_1_STRUCTURED) +
         "\n```\n";
-      mockClaudeAdapter.runAnalysisPhase.mockResolvedValue(fenced);
+      mockExecutor.runPhase.mockResolvedValue(fenced);
 
       const { runPhase } = await importService();
       const result = await runPhase(
@@ -259,9 +254,7 @@ describe("analysis-service", () => {
     });
 
     it("returns { success: false, error } on adapter error", async () => {
-      mockClaudeAdapter.runAnalysisPhase.mockRejectedValue(
-        new Error("API rate limit exceeded"),
-      );
+      mockExecutor.runPhase.mockRejectedValue(new Error("API rate limit exceeded"));
 
       const { runPhase } = await importService();
       const result = await runPhase(
@@ -276,9 +269,7 @@ describe("analysis-service", () => {
     });
 
     it("includes prior context in prompt when provided", async () => {
-      mockClaudeAdapter.runAnalysisPhase.mockResolvedValue(
-        VALID_PHASE_2_STRUCTURED,
-      );
+      mockExecutor.runPhase.mockResolvedValue(VALID_PHASE_2_STRUCTURED);
 
       const priorEntities = JSON.stringify({
         entities: VALID_PHASE_1_STRUCTURED.entities,
@@ -289,15 +280,13 @@ describe("analysis-service", () => {
         priorEntities,
       });
 
-      const [prompt] = mockClaudeAdapter.runAnalysisPhase.mock.calls[0];
-      expect(prompt).toContain("Prior phase output");
-      expect(prompt).toContain(priorEntities);
+      const [request] = mockExecutor.runPhase.mock.calls[0];
+      expect(request.prompt).toContain("Prior phase output");
+      expect(request.prompt).toContain(priorEntities);
     });
 
     it("does NOT retry on failure (returns failure to caller)", async () => {
-      mockClaudeAdapter.runAnalysisPhase.mockRejectedValue(
-        new Error("Network error"),
-      );
+      mockExecutor.runPhase.mockRejectedValue(new Error("Network error"));
 
       const { runPhase } = await importService();
       const result = await runPhase(
@@ -306,7 +295,7 @@ describe("analysis-service", () => {
       );
 
       // Only called once — no retry
-      expect(mockClaudeAdapter.runAnalysisPhase).toHaveBeenCalledTimes(1);
+      expect(mockExecutor.runPhase).toHaveBeenCalledTimes(1);
       expect(result.success).toBe(false);
       expect(result.error).toContain("Network error");
     });
@@ -317,13 +306,11 @@ describe("analysis-service", () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain("Unsupported phase");
-      expect(mockClaudeAdapter.runAnalysisPhase).not.toHaveBeenCalled();
+      expect(mockExecutor.runPhase).not.toHaveBeenCalled();
     });
 
-    it("uses openai adapter when provider is openai", async () => {
-      mockCodexAdapter.runAnalysisPhase.mockResolvedValue(
-        VALID_PHASE_1_STRUCTURED,
-      );
+    it("passes provider through to the executor", async () => {
+      mockExecutor.runPhase.mockResolvedValue(VALID_PHASE_1_STRUCTURED);
 
       const { runPhase } = await importService();
       const result = await runPhase(
@@ -332,12 +319,18 @@ describe("analysis-service", () => {
         { provider: "openai" },
       );
 
-      expect(mockCodexAdapter.runAnalysisPhase).toHaveBeenCalledTimes(1);
-      expect(mockClaudeAdapter.runAnalysisPhase).not.toHaveBeenCalled();
+      expect(mockExecutor.runPhase).toHaveBeenCalledTimes(1);
+      const [request] = mockExecutor.runPhase.mock.calls[0];
+      expect(request.provider).toBe("openai");
       expect(result.success).toBe(true);
     });
 
-    it("throws for unknown provider instead of silently falling back", async () => {
+    it("returns an explicit error when the executor is not configured", async () => {
+      const { setAnalysisPhaseExecutor } = await import(
+        "@/services/ai/analysis-runtime"
+      );
+      setAnalysisPhaseExecutor(null);
+
       const { runPhase } = await importService();
       const result = await runPhase(
         "situational-grounding",
@@ -346,30 +339,24 @@ describe("analysis-service", () => {
       );
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain("Unknown provider: copilot");
-      expect(result.error).toContain("Allowed: anthropic, openai");
-      expect(mockClaudeAdapter.runAnalysisPhase).not.toHaveBeenCalled();
-      expect(mockCodexAdapter.runAnalysisPhase).not.toHaveBeenCalled();
+      expect(result.error).toContain("Analysis phase executor not configured");
+      expect(mockExecutor.runPhase).not.toHaveBeenCalled();
     });
 
     it("uses custom model when provided in context", async () => {
-      mockClaudeAdapter.runAnalysisPhase.mockResolvedValue(
-        VALID_PHASE_1_STRUCTURED,
-      );
+      mockExecutor.runPhase.mockResolvedValue(VALID_PHASE_1_STRUCTURED);
 
       const { runPhase } = await importService();
       await runPhase("situational-grounding", "test topic", {
         model: "claude-opus-4-20250514",
       });
 
-      const [, , model] = mockClaudeAdapter.runAnalysisPhase.mock.calls[0];
-      expect(model).toBe("claude-opus-4-20250514");
+      const [request] = mockExecutor.runPhase.mock.calls[0];
+      expect(request.model).toBe("claude-opus-4-20250514");
     });
 
     it("works for phase 2 — player identification", async () => {
-      mockClaudeAdapter.runAnalysisPhase.mockResolvedValue(
-        VALID_PHASE_2_STRUCTURED,
-      );
+      mockExecutor.runPhase.mockResolvedValue(VALID_PHASE_2_STRUCTURED);
 
       const { runPhase } = await importService();
       const result = await runPhase(
@@ -387,21 +374,18 @@ describe("analysis-service", () => {
       const objective = result.entities.find((e) => e.type === "objective");
       expect(objective).toBeDefined();
 
-      const [, systemPrompt, , schema] =
-        mockClaudeAdapter.runAnalysisPhase.mock.calls[0];
-      expect(systemPrompt).toContain("Phase 2");
-      expect(systemPrompt).toContain("Player Identification");
+      const [request] = mockExecutor.runPhase.mock.calls[0];
+      expect(request.systemPrompt).toContain("Phase 2");
+      expect(request.systemPrompt).toContain("Player Identification");
 
       // Phase 2 schema uses oneOf for player + objective entity types
-      const entityItems = (schema as any).properties.entities.items;
+      const entityItems = (request.schema as any).properties.entities.items;
       expect(entityItems).toHaveProperty("oneOf");
       expect(entityItems.oneOf).toHaveLength(2);
     });
 
     it("works for phase 3 — baseline model", async () => {
-      mockClaudeAdapter.runAnalysisPhase.mockResolvedValue(
-        VALID_PHASE_3_STRUCTURED,
-      );
+      mockExecutor.runPhase.mockResolvedValue(VALID_PHASE_3_STRUCTURED);
 
       const { runPhase } = await importService();
       const result = await runPhase("baseline-model", "US-China trade war");
@@ -410,9 +394,9 @@ describe("analysis-service", () => {
       expect(result.entities).toHaveLength(1);
       expect(result.entities[0].type).toBe("game");
 
-      const [, systemPrompt] = mockClaudeAdapter.runAnalysisPhase.mock.calls[0];
-      expect(systemPrompt).toContain("Phase 3");
-      expect(systemPrompt).toContain("Baseline Strategic Model");
+      const [request] = mockExecutor.runPhase.mock.calls[0];
+      expect(request.systemPrompt).toContain("Phase 3");
+      expect(request.systemPrompt).toContain("Baseline Strategic Model");
     });
 
     it("returns validation error for invalid relationship type in structured output", async () => {
@@ -427,7 +411,7 @@ describe("analysis-service", () => {
           },
         ],
       };
-      mockClaudeAdapter.runAnalysisPhase.mockResolvedValue(badOutput);
+      mockExecutor.runPhase.mockResolvedValue(badOutput);
 
       const { runPhase } = await importService();
       const result = await runPhase("situational-grounding", "test topic");
@@ -437,7 +421,7 @@ describe("analysis-service", () => {
     });
 
     it("returns validation error for empty text fallback", async () => {
-      mockClaudeAdapter.runAnalysisPhase.mockResolvedValue("");
+      mockExecutor.runPhase.mockResolvedValue("");
 
       const { runPhase } = await importService();
       const result = await runPhase("situational-grounding", "test topic");
@@ -447,9 +431,7 @@ describe("analysis-service", () => {
     });
 
     it("returns validation error for invalid JSON in text fallback", async () => {
-      mockClaudeAdapter.runAnalysisPhase.mockResolvedValue(
-        "{ not valid json }}}",
-      );
+      mockExecutor.runPhase.mockResolvedValue("{ not valid json }}}");
 
       const { runPhase } = await importService();
       const result = await runPhase("situational-grounding", "test topic");

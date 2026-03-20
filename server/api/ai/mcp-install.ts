@@ -5,6 +5,11 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import {
+  getCodexConfigPath,
+  installMcpServer as installCodexMcpServer,
+  uninstallMcpServer as uninstallCodexMcpServer,
+} from '../../services/ai/codex-config'
 
 // ESM-compatible __dirname polyfill
 const __filename = fileURLToPath(import.meta.url)
@@ -161,11 +166,6 @@ const CLI_CONFIGS: Record<string, CliConfigDef> = {
     read: readJsonConfig,
     write: writeJsonConfig,
   },
-  'codex-cli': {
-    configPath: () => join(homedir(), '.codex', 'config.json'),
-    read: readJsonConfig,
-    write: writeJsonConfig,
-  },
   'gemini-cli': {
     configPath: () => join(homedir(), '.gemini', 'settings.json'),
     read: readJsonConfig,
@@ -220,12 +220,33 @@ export default defineEventHandler(async (event) => {
     return { success: false, error: 'Missing tool or action field' } satisfies InstallResult
   }
 
-  const cliConfig = CLI_CONFIGS[body.tool]
-  if (!cliConfig) {
-    return { success: false, error: `Unknown CLI tool: ${body.tool}` } satisfies InstallResult
-  }
-
   try {
+    if (body.tool === 'codex-cli') {
+      if (body.transportMode && body.transportMode !== 'stdio') {
+        return {
+          success: false,
+          error: 'Codex CLI MCP install only supports stdio transport.',
+        } satisfies InstallResult
+      }
+
+      if (body.action === 'uninstall') {
+        uninstallCodexMcpServer()
+      } else {
+        const serverPath = resolveMcpServerPath()
+        installCodexMcpServer('node', [serverPath])
+      }
+
+      return {
+        success: true,
+        configPath: getCodexConfigPath(),
+      } satisfies InstallResult
+    }
+
+    const cliConfig = CLI_CONFIGS[body.tool]
+    if (!cliConfig) {
+      return { success: false, error: `Unknown CLI tool: ${body.tool}` } satisfies InstallResult
+    }
+
     const configPath = cliConfig.configPath()
     const config = await cliConfig.read(configPath)
 

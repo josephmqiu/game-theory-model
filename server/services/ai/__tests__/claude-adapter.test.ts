@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ChatEvent } from "../chat-events";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ChatEvent } from "@/services/ai/chat-events";
 
 // ── Mock the Agent SDK ──
 
@@ -24,25 +24,12 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   tool: (a: string, b: string, c: unknown, d: unknown) => mockTool(a, b, c, d),
 }));
 
-vi.mock("zod/v4", () => {
-  const mockZ = {
-    string: () => ({ optional: () => ({}) }),
-    number: () => ({ optional: () => ({}) }),
-    boolean: () => ({}),
-    array: () => ({ optional: () => ({}) }),
-    object: () => ({ optional: () => ({}) }),
-    record: () => ({ optional: () => ({}) }),
-    unknown: () => ({}),
-  };
-  return { z: mockZ };
-});
-
-vi.mock("../../../../server/utils/resolve-claude-agent-env", () => ({
+vi.mock("../../../utils/resolve-claude-agent-env", () => ({
   buildClaudeAgentEnv: () => ({ PATH: "/usr/bin" }),
   getClaudeAgentDebugFilePath: () => "/tmp/debug.log",
 }));
 
-vi.mock("../../../../server/utils/resolve-claude-cli", () => ({
+vi.mock("../../../utils/resolve-claude-cli", () => ({
   resolveClaudeCli: () => "/usr/local/bin/claude",
 }));
 

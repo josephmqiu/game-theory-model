@@ -64,6 +64,9 @@ import { handleDesignRefine } from "./tools/design-refine";
 import { handleGetSelection } from "./tools/get-selection";
 import { LAYERED_DESIGN_TOOLS } from "./tools/layered-design-defs";
 import { MCP_DEFAULT_PORT } from "@/constants/app";
+import { configureServerAnalysisPhaseExecutor } from "../../server/utils/analysis-phase-executor";
+
+configureServerAnalysisPhaseExecutor();
 
 // --- Tool definitions (shared across all Server instances) ---
 

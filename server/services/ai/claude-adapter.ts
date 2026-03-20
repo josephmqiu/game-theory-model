@@ -1,7 +1,7 @@
 // Claude adapter — the ONLY file that imports from @anthropic-ai/claude-agent-sdk.
 // Provides two profiles: streamChat (interactive) and runAnalysisPhase (structured).
 
-import type { ChatEvent } from "./chat-events";
+import type { ChatEvent } from "@/services/ai/chat-events";
 import {
   handleStartAnalysis,
   handleGetAnalysisStatus,
@@ -271,9 +271,8 @@ export async function* streamChat(
 ): AsyncGenerator<ChatEvent> {
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
   const { buildClaudeAgentEnv, getClaudeAgentDebugFilePath } =
-    await import("../../../server/utils/resolve-claude-agent-env");
-  const { resolveClaudeCli } =
-    await import("../../../server/utils/resolve-claude-cli");
+    await import("../../utils/resolve-claude-agent-env");
+  const { resolveClaudeCli } = await import("../../utils/resolve-claude-cli");
 
   const env = buildClaudeAgentEnv();
   const debugFile = getClaudeAgentDebugFilePath();
@@ -456,9 +455,8 @@ export async function runAnalysisPhase<T = unknown>(
 ): Promise<T> {
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
   const { buildClaudeAgentEnv, getClaudeAgentDebugFilePath } =
-    await import("../../../server/utils/resolve-claude-agent-env");
-  const { resolveClaudeCli } =
-    await import("../../../server/utils/resolve-claude-cli");
+    await import("../../utils/resolve-claude-agent-env");
+  const { resolveClaudeCli } = await import("../../utils/resolve-claude-cli");
 
   const env = buildClaudeAgentEnv();
   const debugFile = getClaudeAgentDebugFilePath();

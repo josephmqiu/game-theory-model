@@ -18,8 +18,8 @@ import {
 import { serverLog } from "../../utils/ai-logger";
 import { isAllowedProvider } from "../../../src/services/ai/allowed-providers";
 import * as entityGraphService from "../../../src/services/ai/entity-graph-service";
-import { streamChat as claudeStreamChat } from "../../../src/services/ai/claude-adapter";
-import { streamChat as codexStreamChat } from "../../../src/services/ai/codex-adapter";
+import { streamChat as claudeStreamChat } from "../../services/ai/claude-adapter";
+import { streamChat as codexStreamChat } from "../../services/ai/codex-adapter";
 
 /** Pattern for detecting sensitive data in debug log output */
 export const SENSITIVE_LOG_PATTERN =

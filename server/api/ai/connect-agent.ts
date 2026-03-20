@@ -1,6 +1,7 @@
 import { defineEventHandler, readBody, setResponseHeaders } from 'h3'
 import type { GroupedModel } from '../../../src/types/agent-settings'
 import { resolveClaudeCli } from '../../utils/resolve-claude-cli'
+import { filterCodexEnv } from '../../utils/codex-client'
 import {
   buildClaudeAgentEnv,
   getClaudeAgentDebugFilePath,
@@ -16,6 +17,10 @@ interface ConnectResult {
   error?: string
   notInstalled?: boolean
 }
+
+const CODEX_CLI_TIMEOUT_MS = 5000
+const CODEX_APP_SERVER_PROBE_TIMEOUT_MS = 1500
+const CODEX_APP_SERVER_SHUTDOWN_TIMEOUT_MS = 1000
 
 /**
  * POST /api/ai/connect-agent
@@ -114,8 +119,11 @@ async function connectClaudeCode(): Promise<ConnectResult> {
 
 /** Map raw Agent SDK errors to user-friendly messages */
 function friendlyClaudeError(raw: string): string {
+  if (/invalid api key|external api key/i.test(raw)) {
+    return 'Claude Code authentication failed. Run "claude login" to refresh the Claude Code session, or remove invalid external auth overrides from Claude settings.'
+  }
   if (/process exited with code 1|invalid model|unknown model|model.*not/i.test(raw)) {
-    return 'Claude Code exited with code 1. Run "claude login" to authenticate, or set ANTHROPIC_API_KEY in ~/.claude/settings.json.'
+    return 'Claude Code exited with code 1. Run "claude login" to refresh the Claude Code session and verify the selected model is available.'
   }
   if (/exited with code/i.test(raw)) {
     return 'Unable to connect. Claude Code process exited unexpectedly.'
@@ -129,30 +137,132 @@ function friendlyClaudeError(raw: string): string {
   return raw
 }
 
+async function stopProbeProcess(
+  child: import('node:child_process').ChildProcess,
+): Promise<void> {
+  if (child.exitCode !== null) {
+    return
+  }
+
+  await new Promise<void>((resolve) => {
+    const done = () => {
+      child.removeListener('close', done)
+      resolve()
+    }
+
+    child.once('close', done)
+
+    try {
+      child.kill('SIGTERM')
+    } catch {
+      done()
+      return
+    }
+
+    setTimeout(() => {
+      if (child.exitCode === null) {
+        try {
+          child.kill('SIGKILL')
+        } catch {
+          // best-effort cleanup
+        }
+      }
+      done()
+    }, CODEX_APP_SERVER_SHUTDOWN_TIMEOUT_MS)
+  })
+}
+
+async function canStartCodexAppServer(binaryPath: string): Promise<{
+  ok: boolean
+  error?: string
+}> {
+  const { spawn } = await import('node:child_process')
+
+  return await new Promise((resolve) => {
+    const child = spawn(binaryPath, ['app-server'], {
+      env: filterCodexEnv(process.env as Record<string, string | undefined>),
+      stdio: ['pipe', 'pipe', 'pipe'],
+      ...(process.platform === 'win32' && { shell: true }),
+    })
+
+    let settled = false
+    let stderr = ''
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const finish = (ok: boolean, error?: string) => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      child.stdout?.removeAllListeners()
+      child.stderr?.removeAllListeners()
+      child.removeAllListeners()
+      resolve({ ok, ...(error ? { error } : {}) })
+    }
+
+    child.on('error', (error) => {
+      finish(false, error.message)
+    })
+
+    child.stderr?.on('data', (chunk: Buffer | string) => {
+      stderr += chunk.toString()
+    })
+
+    child.on('exit', (code) => {
+      const message = stderr.trim() || `Codex app-server exited with code ${code ?? 'unknown'}`
+      finish(false, message)
+    })
+
+    timer = setTimeout(() => {
+      finish(true)
+      void stopProbeProcess(child)
+    }, CODEX_APP_SERVER_PROBE_TIMEOUT_MS)
+  })
+}
+
 /** Connect to Codex CLI and fetch its supported models from the local cache */
 async function connectCodexCli(): Promise<ConnectResult> {
   try {
-    const { execSync } = await import('node:child_process')
+    const { spawnSync } = await import('node:child_process')
     const { readFile } = await import('node:fs/promises')
     const { homedir } = await import('node:os')
     const { join } = await import('node:path')
+    const env = filterCodexEnv(process.env as Record<string, string | undefined>)
 
     // Check if codex binary exists
-    const whichCmd = process.platform === 'win32' ? 'where codex 2>nul' : 'which codex 2>/dev/null || echo ""'
-    const which = execSync(whichCmd, {
-      encoding: 'utf-8',
-      timeout: 5000,
-    }).trim().split(/\r?\n/)[0]?.trim() ?? ''
+    const lookup = spawnSync(
+      process.platform === 'win32' ? 'where' : 'which',
+      ['codex'],
+      {
+        encoding: 'utf-8',
+        timeout: CODEX_CLI_TIMEOUT_MS,
+        env,
+        ...(process.platform === 'win32' && { shell: true }),
+      },
+    )
+    const which = `${lookup.stdout ?? ''}`.trim().split(/\r?\n/)[0]?.trim() ?? ''
 
     if (!which) {
       return { connected: false, models: [], notInstalled: true, error: 'Codex CLI not found' }
     }
 
     // Verify codex is responsive
-    try {
-      execSync('codex --version 2>&1', { encoding: 'utf-8', timeout: 5000 })
-    } catch {
+    const versionCheck = spawnSync(which, ['--version'], {
+      encoding: 'utf-8',
+      timeout: CODEX_CLI_TIMEOUT_MS,
+      env,
+      ...(process.platform === 'win32' && { shell: true }),
+    })
+    if (versionCheck.status !== 0) {
       return { connected: false, models: [], error: 'Codex CLI not responding' }
+    }
+
+    const appServerCheck = await canStartCodexAppServer(which)
+    if (!appServerCheck.ok) {
+      return {
+        connected: false,
+        models: [],
+        error: appServerCheck.error ?? 'Codex app-server failed to start',
+      }
     }
 
     // Read models from Codex CLI's local models cache
@@ -196,6 +306,8 @@ async function connectCodexCli(): Promise<ConnectResult> {
     return { connected: false, models: [], error: msg }
   }
 }
+
+export { canStartCodexAppServer, connectCodexCli }
 
 /** Resolve the opencode binary path, checking PATH then common install locations. */
 async function resolveOpencodeBinary(): Promise<string | undefined> {
