@@ -12,6 +12,7 @@ const mockRunPhase = vi.fn<
     topic: string,
     context?: {
       priorEntities?: string;
+      revisionRetryInstruction?: string;
       provider?: string;
       model?: string;
       runId?: string;
@@ -24,6 +25,31 @@ vi.mock("../../services/analysis-service", () => ({
   runPhase: (...args: Parameters<typeof mockRunPhase>) => mockRunPhase(...args),
 }));
 
+const mockCommitPhaseSnapshot = vi.fn(
+  ({
+    entities,
+    relationships,
+  }: {
+    entities: PhaseOutputEntity[];
+    relationships: Array<{ type: string }>;
+  }): unknown => ({
+    status: "applied" as const,
+    summary: {
+      entitiesCreated: entities.filter((entity) => entity.id === null).length,
+      entitiesUpdated: entities.filter((entity) => entity.id !== null).length,
+      entitiesDeleted: 0,
+      relationshipsCreated: relationships.length,
+      relationshipsDeleted: 0,
+      currentPhaseEntityIds: [],
+    },
+  }),
+);
+
+vi.mock("../../services/revision-diff", () => ({
+  commitPhaseSnapshot: (...args: Parameters<typeof mockCommitPhaseSnapshot>) =>
+    mockCommitPhaseSnapshot(...args),
+}));
+
 // ── Mock entity-graph-service ──
 
 const mockEntityGraph = {
@@ -34,14 +60,6 @@ const mockEntityGraph = {
     entities: [] as AnalysisEntity[],
     relationships: [] as AnalysisRelationship[],
     phases: [],
-  })),
-  createEntity: vi.fn((data: Record<string, unknown>) => ({
-    ...data,
-    id: `gen-${Math.random().toString(36).slice(2, 6)}`,
-  })),
-  createRelationship: vi.fn((data: Record<string, unknown>) => ({
-    ...data,
-    id: `rel-gen`,
   })),
   setPhaseStatus: vi.fn(),
   removePhaseEntities: vi.fn(),
@@ -320,9 +338,9 @@ describe("analysis-orchestrator", () => {
     );
   });
 
-  // ── 5. Clear-before-retry ──
+  // ── 5. Retry flow does not clear phase entities directly ──
 
-  it("calls removePhaseEntities with phase AND runId before retry", async () => {
+  it("retries retryable failures without clearing phase entities directly", async () => {
     mockRunPhase
       .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
       // Phase 2: fail twice (retryable), succeed on 3rd
@@ -334,18 +352,9 @@ describe("analysis-orchestrator", () => {
     const { runId } = await orchestrator.runFull("Test topic");
     await flushAsync();
 
-    // removePhaseEntities should be called before each retry (not before first attempt)
-    const removePhaseEntityCalls =
-      mockEntityGraph.removePhaseEntities.mock.calls;
-    expect(removePhaseEntityCalls.length).toBe(2);
-    // Both calls for player-identification phase WITH runId
-    expect(removePhaseEntityCalls[0][0]).toBe("player-identification");
-    expect(removePhaseEntityCalls[0][1]).toBe(runId);
-    expect(removePhaseEntityCalls[1][0]).toBe("player-identification");
-    expect(removePhaseEntityCalls[1][1]).toBe(runId);
-
     const status = orchestrator.getStatus(runId);
     expect(status.status).toBe("completed");
+    expect(mockEntityGraph.removePhaseEntities).not.toHaveBeenCalled();
   });
 
   // ── 6. Max 2 retries then phase fails ──
@@ -387,7 +396,7 @@ describe("analysis-orchestrator", () => {
     // 1 (phase 1) + 1 (phase 2 terminal) = 2 calls
     expect(mockRunPhase).toHaveBeenCalledTimes(2);
 
-    // No removePhaseEntities called (no retries happened)
+    // No direct phase clearing happens on terminal failure either
     expect(mockEntityGraph.removePhaseEntities).not.toHaveBeenCalled();
   });
 
@@ -459,8 +468,8 @@ describe("analysis-orchestrator", () => {
     // after the in-flight phase settles.
     expect(orchestrator.isRunning()).toBe(true);
 
-    // Phase 1 entities were created
-    expect(mockEntityGraph.createEntity).toHaveBeenCalled();
+    // Phase 1 commit was applied before the abort
+    expect(mockCommitPhaseSnapshot).toHaveBeenCalled();
 
     // Clean up the pending promise
     resolvePhase2(makePhaseResult("player-identification"));
@@ -822,77 +831,71 @@ describe("analysis-orchestrator", () => {
     });
   });
 
-  // ── 13. Relationship ID remapping ──
+  // ── 13. Truncation retry ──
 
-  describe("relationship ID remapping", () => {
-    it("remaps AI-provided entity IDs to service-generated IDs in relationships", async () => {
-      // createEntity mock returns predictable IDs
-      let entityCounter = 0;
-      mockEntityGraph.createEntity.mockImplementation(
-        (data: Record<string, unknown>) => ({
-          ...data,
-          id: `svc-entity-${++entityCounter}`,
-        }),
-      );
-
-      const phaseResult: PhaseResult = {
-        success: true,
-        entities: [
-          {
-            id: null,
-            ref: "ai-player-1",
-            type: "player" as const,
-            phase: "player-identification" as const,
-            data: {
-              type: "player" as const,
-              name: "Player A",
-              playerType: "primary" as const,
-              knowledge: [],
-            },
-            confidence: "high" as const,
-            rationale: "Test",
-          },
-          {
-            id: null,
-            ref: "ai-player-2",
-            type: "player" as const,
-            phase: "player-identification" as const,
-            data: {
-              type: "player" as const,
-              name: "Player B",
-              playerType: "primary" as const,
-              knowledge: [],
-            },
-            confidence: "high" as const,
-            rationale: "Test",
-          },
-        ],
-        relationships: [
-          {
-            id: "ai-rel-1",
-            type: "supports" as const,
-            fromEntityId: "ai-player-1",
-            toEntityId: "ai-player-2",
-          },
-        ],
-      };
-
+  describe("truncation retry", () => {
+    it("reruns the same phase once with an explicit retry instruction before committing deletions", async () => {
       mockRunPhase
-        .mockResolvedValueOnce(phaseResult)
+        .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
+        .mockResolvedValueOnce(makePhaseResult("player-identification"))
         .mockResolvedValueOnce(makePhaseResult("player-identification"))
         .mockResolvedValueOnce(makePhaseResult("baseline-model"));
+
+      mockCommitPhaseSnapshot
+        .mockReturnValueOnce({
+          status: "applied",
+          summary: {
+            entitiesCreated: 1,
+            entitiesUpdated: 0,
+            entitiesDeleted: 0,
+            relationshipsCreated: 0,
+            relationshipsDeleted: 0,
+            currentPhaseEntityIds: [],
+          },
+        })
+        .mockReturnValueOnce({
+          status: "retry_required",
+          originalAiEntityCount: 6,
+          returnedAiEntityCount: 2,
+          retryMessage:
+            "Your previous response appeared truncated. You returned 2 entities but 6 existed. Please return the complete revised set.",
+        })
+        .mockReturnValueOnce({
+          status: "applied",
+          summary: {
+            entitiesCreated: 0,
+            entitiesUpdated: 2,
+            entitiesDeleted: 4,
+            relationshipsCreated: 0,
+            relationshipsDeleted: 0,
+            currentPhaseEntityIds: [],
+          },
+        })
+        .mockReturnValueOnce({
+          status: "applied",
+          summary: {
+            entitiesCreated: 1,
+            entitiesUpdated: 0,
+            entitiesDeleted: 0,
+            relationshipsCreated: 0,
+            relationshipsDeleted: 0,
+            currentPhaseEntityIds: [],
+          },
+        });
 
       await orchestrator.runFull("Test topic");
       await flushAsync();
 
-      // createRelationship should have been called with remapped IDs
-      expect(mockEntityGraph.createRelationship).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "supports",
-          fromEntityId: "svc-entity-1",
-          toEntityId: "svc-entity-2",
-        }),
-      );
+      expect(mockRunPhase).toHaveBeenCalledTimes(4);
+      expect(mockRunPhase.mock.calls[1][0]).toBe("player-identification");
+      expect(mockRunPhase.mock.calls[2][0]).toBe("player-identification");
+      expect(
+        mockRunPhase.mock.calls[2][2]?.revisionRetryInstruction,
+      ).toContain("appeared truncated");
+      expect(mockCommitPhaseSnapshot).toHaveBeenCalledTimes(4);
+      expect(mockCommitPhaseSnapshot.mock.calls[2][0]).toMatchObject({
+        allowLargeReductionCommit: true,
+      });
     });
   });
 

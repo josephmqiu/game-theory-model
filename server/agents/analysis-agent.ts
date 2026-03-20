@@ -9,10 +9,11 @@ import type {
   PhaseSummary,
 } from "../../shared/types/events";
 import { V1_PHASES } from "../../src/types/methodology";
-import type { PhaseOutputEntity, PhaseResult } from "../services/analysis-service";
+import type { PhaseResult } from "../services/analysis-service";
 import { runPhase } from "../services/analysis-service";
 import * as entityGraphService from "../services/entity-graph-service";
 import * as revalidationService from "../services/revalidation-service";
+import { commitPhaseSnapshot } from "../services/revision-diff";
 import { createRunLogger, timer } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
 
@@ -40,6 +41,12 @@ export interface AnalysisResult {
   runId: string;
   entities: AnalysisEntity[];
   relationships: AnalysisRelationship[];
+}
+
+interface CommitSummary {
+  entitiesCreated: number;
+  entitiesUpdated: number;
+  relationshipsCreated: number;
 }
 
 interface ActiveRun {
@@ -211,15 +218,6 @@ async function executeSinglePhase(
       maxAttempts: MAX_RETRIES + 1,
     });
 
-    // Clear-before-retry: remove entities from the prior failed attempt
-    if (attempt > 0) {
-      run.logger.log("orchestrator", "clear-before-retry", {
-        phase,
-        runId: run.runId,
-      });
-      entityGraphService.removePhaseEntities(phase, run.runId);
-    }
-
     // Per-phase timeout via AbortController
     const phaseAbort = new AbortController();
     let phaseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -281,27 +279,94 @@ async function executeSinglePhase(
     }
 
     if (result.success) {
-      // Store entities via entity-graph-service, building a ref mapping
-      // (AI-provided local ref → service-generated ID) so relationships can be remapped.
-      const refMap = new Map<string, string>();
-      for (const entity of result.entities) {
-        const created = createPersistedEntity(entity, run.runId, phase);
-        refMap.set(entity.ref, created.id);
-      }
-      for (const rel of result.relationships) {
-        const fromId = refMap.get(rel.fromEntityId) ?? rel.fromEntityId;
-        const toId = refMap.get(rel.toEntityId) ?? rel.toEntityId;
-        try {
-          entityGraphService.createRelationship({
-            type: rel.type,
-            fromEntityId: fromId,
-            toEntityId: toId,
-            metadata: rel.metadata,
+      let commitSummary: CommitSummary | null = null;
+      lastError = "";
+      try {
+        let commitResult = commitPhaseSnapshot({
+          phase,
+          runId: run.runId,
+          entities: result.entities,
+          relationships: result.relationships,
+        });
+
+        if (commitResult.status === "retry_required") {
+          run.logger.warn("orchestrator", "truncation-retry", {
+            phase,
+            originalAiEntityCount: commitResult.originalAiEntityCount,
+            returnedAiEntityCount: commitResult.returnedAiEntityCount,
           });
-        } catch {
-          // Relationship may still fail if entity IDs reference entities from
-          // a different phase that haven't been remapped in this batch.
+
+          const retryResult = await Promise.race([
+            runPhase(phase, topic, {
+              priorEntities: priorContext,
+              revisionRetryInstruction: commitResult.retryMessage,
+              provider: run.provider,
+              model: run.model,
+              runId: run.runId,
+              signal: phaseAbort.signal,
+              logger: run.logger,
+            }),
+            phaseTimeoutPromise,
+          ]);
+
+          if (!retryResult.success) {
+            result = retryResult;
+          } else {
+            commitResult = commitPhaseSnapshot({
+              phase,
+              runId: run.runId,
+              entities: retryResult.entities,
+              relationships: retryResult.relationships,
+              allowLargeReductionCommit: true,
+            });
+
+            if (commitResult.status !== "applied") {
+              throw new Error("Revision diff requested an unexpected second truncation retry");
+            }
+
+            result = retryResult;
+          }
         }
+
+        if (!result.success) {
+          lastError = result.error ?? "Unknown validation error";
+        } else {
+          if (commitResult.status !== "applied") {
+            throw new Error("Revision diff did not produce an applied result");
+          }
+
+          commitSummary = {
+            entitiesCreated: commitResult.summary.entitiesCreated,
+            entitiesUpdated: commitResult.summary.entitiesUpdated,
+            relationshipsCreated: commitResult.summary.relationshipsCreated,
+          };
+        }
+      } catch (err) {
+        lastError = `Revision diff validation error: ${
+          err instanceof Error ? err.message : String(err)
+        }`;
+      }
+
+      if (!result.success || lastError) {
+        const classification = classifyFailure(lastError);
+        if (classification === "terminal") {
+          run.logger.error("orchestrator", "phase-failed", {
+            phase,
+            elapsedMs: Date.now() - phaseStart,
+            failureKind: classification,
+            lastError,
+          });
+          entityGraphService.setPhaseStatus(phase, "failed");
+          return { success: false, error: lastError };
+        }
+        run.logger.warn("orchestrator", "attempt-failed", {
+          phase,
+          attempt: attempt + 1,
+          error: lastError,
+          classification,
+        });
+        lastError = "";
+        continue;
       }
 
       entityGraphService.setPhaseStatus(phase, "complete");
@@ -316,9 +381,9 @@ async function executeSinglePhase(
       await run.logger.flush();
 
       const summary: PhaseSummary = {
-        entitiesCreated: result.entities.length,
-        relationshipsCreated: result.relationships.length,
-        entitiesUpdated: 0,
+        entitiesCreated: commitSummary!.entitiesCreated,
+        relationshipsCreated: commitSummary!.relationshipsCreated,
+        entitiesUpdated: commitSummary!.entitiesUpdated,
         durationMs: Date.now() - phaseStart,
       };
       emitProgress({
@@ -365,25 +430,6 @@ async function executeSinglePhase(
   });
   entityGraphService.setPhaseStatus(phase, "failed");
   return { success: false, error: lastError };
-}
-
-function createPersistedEntity(
-  entity: PhaseOutputEntity,
-  runId: string,
-  phase: MethodologyPhase,
-): AnalysisEntity {
-  return entityGraphService.createEntity(
-    {
-      type: entity.type,
-      phase: entity.phase,
-      data: entity.data,
-      confidence: entity.confidence,
-      rationale: entity.rationale,
-      revision: 1,
-      stale: false,
-    },
-    { source: "phase-derived", runId, phase },
-  );
 }
 
 // ── Public API ──

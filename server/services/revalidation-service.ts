@@ -9,6 +9,7 @@ import { V1_PHASES, PHASE_NUMBERS } from "../../src/types/methodology";
 import * as entityGraphService from "./entity-graph-service";
 import * as orchestrator from "../agents/analysis-agent";
 import { runPhase } from "./analysis-service";
+import { commitPhaseSnapshot } from "./revision-diff";
 import { createRunLogger, timer } from "../utils/ai-logger";
 
 // ── Constants ──
@@ -223,11 +224,6 @@ async function executeRevalidation(
   });
 
   for (const p of phases) {
-    // Remove old phase-derived entities before re-running to prevent duplication
-    // (user-edited and ai-edited entities are preserved by removePhaseEntities
-    // when called without runId)
-    entityGraphService.removePhaseEntities(p, undefined);
-
     emitProgress({ type: "phase_started", phase: p, runId });
     logger.log("revalidation", "phase-rerun", { phase: p, runId });
 
@@ -253,74 +249,108 @@ async function executeRevalidation(
       priorEntities.length > 0 ? JSON.stringify(priorEntities) : undefined;
 
     const phaseStart = Date.now();
-    const result = await runPhase(p, topic, {
+    let result = await runPhase(p, topic, {
       provider: lastRunProvider,
       model: lastRunModel,
       priorEntities: priorContext,
       logger,
+      runId,
     });
 
     if (result.success) {
-      // Clear stale on entities from this phase
-      const phaseEntities = entityGraphService.getEntitiesByPhase(p);
-      const phaseEntityIds = phaseEntities.map((e) => e.id);
-      if (phaseEntityIds.length > 0) {
-        entityGraphService.clearStale(phaseEntityIds);
-      }
+      try {
+        let commitResult = commitPhaseSnapshot({
+          phase: p,
+          runId,
+          entities: result.entities,
+          relationships: result.relationships,
+        });
 
-      // Store new entities, building a ref map for relationship remapping
-      const refMap = new Map<string, string>();
-      for (const entity of result.entities) {
-        const created = entityGraphService.createEntity(
-          {
-            type: entity.type,
-            phase: entity.phase,
-            data: entity.data,
-            confidence: entity.confidence,
-            rationale: entity.rationale,
-            revision: 1,
-            stale: false,
-          },
-          { source: "phase-derived", runId, phase: p },
-        );
-        refMap.set(entity.ref, created.id);
-      }
-
-      // H2 fix: recreate relationships from re-run phases with ID remapping
-      for (const rel of result.relationships) {
-        const fromId = refMap.get(rel.fromEntityId) ?? rel.fromEntityId;
-        const toId = refMap.get(rel.toEntityId) ?? rel.toEntityId;
-        try {
-          entityGraphService.createRelationship({
-            type: rel.type,
-            fromEntityId: fromId,
-            toEntityId: toId,
-            metadata: rel.metadata,
+        if (commitResult.status === "retry_required") {
+          logger.warn("revalidation", "truncation-retry", {
+            phase: p,
+            originalAiEntityCount: commitResult.originalAiEntityCount,
+            returnedAiEntityCount: commitResult.returnedAiEntityCount,
           });
-        } catch {
-          // Relationship may fail if entity IDs reference entities from
-          // a different phase that haven't been remapped in this batch.
+
+          result = await runPhase(p, topic, {
+            provider: lastRunProvider,
+            model: lastRunModel,
+            priorEntities: priorContext,
+            revisionRetryInstruction: commitResult.retryMessage,
+            logger,
+            runId,
+          });
+
+          if (!result.success) {
+            const error = result.error ?? "Revalidation phase failed";
+            revalRunStatuses.set(runId, {
+              runId,
+              status: "failed",
+              phasesCompleted,
+              error,
+            });
+            emitProgress({
+              type: "analysis_failed",
+              runId,
+              error,
+            });
+            return;
+          }
+
+          commitResult = commitPhaseSnapshot({
+            phase: p,
+            runId,
+            entities: result.entities,
+            relationships: result.relationships,
+            allowLargeReductionCommit: true,
+          });
         }
+
+        if (commitResult.status !== "applied") {
+          throw new Error("Revision diff did not produce an applied result");
+        }
+
+        if (commitResult.summary.currentPhaseEntityIds.length > 0) {
+          entityGraphService.clearStale(commitResult.summary.currentPhaseEntityIds);
+        }
+
+        phasesCompleted++;
+        revalRunStatuses.set(runId, {
+          runId,
+          status: "running",
+          phasesCompleted,
+        });
+
+        emitProgress({
+          type: "phase_completed",
+          phase: p,
+          runId,
+          summary: {
+            entitiesCreated: commitResult.summary.entitiesCreated,
+            relationshipsCreated: commitResult.summary.relationshipsCreated,
+            entitiesUpdated: commitResult.summary.entitiesUpdated,
+            durationMs: Date.now() - phaseStart,
+          },
+        });
+      } catch (err) {
+        const error =
+          err instanceof Error
+            ? `Revision diff validation error: ${err.message}`
+            : `Revision diff validation error: ${String(err)}`;
+        revalRunStatuses.set(runId, {
+          runId,
+          status: "failed",
+          phasesCompleted,
+          error,
+        });
+        emitProgress({
+          type: "analysis_failed",
+          runId,
+          error,
+        });
+        return;
       }
-
-      phasesCompleted++;
-      revalRunStatuses.set(runId, {
-        runId,
-        status: "running",
-        phasesCompleted,
-      });
-
-      emitProgress({
-        type: "phase_completed",
-        phase: p,
-        runId,
-        summary: {
-          entitiesCreated: result.entities.length,
-          relationshipsCreated: result.relationships.length,
-          entitiesUpdated: 0,
-          durationMs: Date.now() - phaseStart,
-        },
-      });
     } else {
       const error = result.error ?? "Revalidation phase failed";
       revalRunStatuses.set(runId, {

@@ -7,7 +7,7 @@
 
 import { z } from "zod/v4";
 import type { MethodologyPhase } from "../../shared/types/methodology";
-import type { AnalysisRelationship } from "../../shared/types/entity";
+import type { RelationshipType } from "../../shared/types/entity";
 import {
   entityConfidenceSchema,
   factDataSchema,
@@ -49,12 +49,13 @@ async function loadAnalysisAdapter(provider?: string): Promise<AnalysisAdapter> 
 export interface PhaseResult {
   success: boolean;
   entities: PhaseOutputEntity[];
-  relationships: AnalysisRelationship[];
+  relationships: PhaseOutputRelationship[];
   error?: string;
 }
 
 export interface PhaseContext {
   priorEntities?: string;
+  revisionRetryInstruction?: string;
   provider?: string;
   model?: string;
   runId?: string;
@@ -163,6 +164,14 @@ export type PhaseOutputEntity =
   | z.infer<typeof gameEntitySchema>
   | z.infer<typeof strategyEntitySchema>;
 
+export interface PhaseOutputRelationship {
+  id: string;
+  type: RelationshipType;
+  fromEntityId: string;
+  toEntityId: string;
+  metadata?: Record<string, unknown>;
+}
+
 // ── JSON extraction (ported from phase-worker.ts) ──
 
 const JSON_FENCE_PATTERN = /```(?:json)?\s*([\s\S]*?)```/i;
@@ -251,7 +260,7 @@ function validatePhaseOutput(
   }
 
   // Validate relationships
-  const relationships: AnalysisRelationship[] = [];
+  const relationships: PhaseOutputRelationship[] = [];
   for (const [i, raw] of (obj.relationships as unknown[]).entries()) {
     const result = relationshipSchema.safeParse(raw);
     if (!result.success) {
@@ -277,6 +286,7 @@ function buildPrompt(
   phase: SupportedPhase,
   topic: string,
   priorContext?: string,
+  revisionRetryInstruction?: string,
 ): { system: string; user: string } {
   const systemPrompt = PHASE_PROMPTS[phase];
   const parts = [
@@ -293,6 +303,9 @@ function buildPrompt(
     parts.push(
       `\nPrior phase output (use as context, reference entity ids where relevant):\n\n${priorContext}`,
     );
+  }
+  if (revisionRetryInstruction) {
+    parts.push(`\nRevision retry instruction:\n\n${revisionRetryInstruction}`);
   }
   return { system: systemPrompt, user: parts.join("\n") };
 }
@@ -642,7 +655,12 @@ export async function runPhase(
       `svc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     );
 
-  const { system, user } = buildPrompt(phase, topic, context?.priorEntities);
+  const { system, user } = buildPrompt(
+    phase,
+    topic,
+    context?.priorEntities,
+    context?.revisionRetryInstruction,
+  );
   const model = context?.model ?? "claude-sonnet-4-20250514";
   const provider = context?.provider ?? "anthropic";
   const schema = buildOutputSchema(phase);

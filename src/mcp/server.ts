@@ -1267,11 +1267,15 @@ export function handleCreateRelationship(args: {
   metadata?: Record<string, unknown>;
 }): string {
   try {
+    const runId = resolveToolRunId();
     const result = createRelationship({
       type: args.type as RelationshipType,
       fromEntityId: args.fromId,
       toEntityId: args.toId,
       metadata: args.metadata,
+    }, {
+      source: "ai-edited",
+      ...(runId ? { runId } : {}),
     });
     return JSON.stringify(result);
   } catch (err) {

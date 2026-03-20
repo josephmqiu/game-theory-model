@@ -12,8 +12,10 @@ const mockRunPhase = vi.fn<
     topic: string,
     context?: {
       priorEntities?: string;
+      revisionRetryInstruction?: string;
       provider?: string;
       model?: string;
+      runId?: string;
       signal?: AbortSignal;
     },
   ) => Promise<PhaseResult>
@@ -21,6 +23,31 @@ const mockRunPhase = vi.fn<
 
 vi.mock("../analysis-service", () => ({
   runPhase: (...args: Parameters<typeof mockRunPhase>) => mockRunPhase(...args),
+}));
+
+const mockCommitPhaseSnapshot = vi.fn(
+  ({
+    entities,
+    relationships,
+  }: {
+    entities: PhaseOutputEntity[];
+    relationships: Array<{ type: string }>;
+  }) => ({
+    status: "applied" as const,
+    summary: {
+      entitiesCreated: entities.filter((entity) => entity.id === null).length,
+      entitiesUpdated: entities.filter((entity) => entity.id !== null).length,
+      entitiesDeleted: 0,
+      relationshipsCreated: relationships.length,
+      relationshipsDeleted: 0,
+      currentPhaseEntityIds: ["phase-entity-1", "phase-entity-2"],
+    },
+  }),
+);
+
+vi.mock("../revision-diff", () => ({
+  commitPhaseSnapshot: (...args: Parameters<typeof mockCommitPhaseSnapshot>) =>
+    mockCommitPhaseSnapshot(...args),
 }));
 
 // ── Mock analysis-orchestrator ──
@@ -43,16 +70,7 @@ const mockEntityGraph = {
     phases: [],
   })),
   getStaleEntityIds: vi.fn(() => [] as string[]),
-  getEntitiesByPhase: vi.fn(() => [] as AnalysisEntity[]),
   clearStale: vi.fn(),
-  createEntity: vi.fn((data: Record<string, unknown>) => ({
-    ...data,
-    id: `gen-${Math.random().toString(36).slice(2, 6)}`,
-  })),
-  createRelationship: vi.fn((data: Record<string, unknown>) => ({
-    ...data,
-    id: `rel-${Math.random().toString(36).slice(2, 6)}`,
-  })),
   removePhaseEntities: vi.fn(),
   markStale: vi.fn(),
   onMutation: vi.fn((_cb: (event: unknown) => void) => vi.fn()),
@@ -477,9 +495,9 @@ describe("revalidation-service", () => {
     expect(status!.status).toBe("completed");
   });
 
-  // ── 15. revalidate removes old entities before re-running phases ──
+  // ── 15. revalidate commits via revision diff without clearing phases directly ──
 
-  it("calls removePhaseEntities before re-running each phase to prevent duplication", async () => {
+  it("commits rerun phases through revision diff without calling removePhaseEntities", async () => {
     mockEntityGraph.getAnalysis.mockReturnValue({
       id: "test",
       name: "test",
@@ -498,25 +516,8 @@ describe("revalidation-service", () => {
     // Flush microtasks to let async execution complete
     await vi.advanceTimersByTimeAsync(0);
 
-    // removePhaseEntities should be called once per phase, before runPhase
-    expect(mockEntityGraph.removePhaseEntities).toHaveBeenCalledTimes(3);
-    expect(mockEntityGraph.removePhaseEntities.mock.calls[0][0]).toBe(
-      "situational-grounding",
-    );
-    expect(mockEntityGraph.removePhaseEntities.mock.calls[1][0]).toBe(
-      "player-identification",
-    );
-    expect(mockEntityGraph.removePhaseEntities.mock.calls[2][0]).toBe(
-      "baseline-model",
-    );
-
-    // removePhaseEntities should be called BEFORE runPhase for each phase
-    const removeOrder =
-      mockEntityGraph.removePhaseEntities.mock.invocationCallOrder;
-    const runOrder = mockRunPhase.mock.invocationCallOrder;
-    for (let i = 0; i < 3; i++) {
-      expect(removeOrder[i]).toBeLessThan(runOrder[i]);
-    }
+    expect(mockEntityGraph.removePhaseEntities).not.toHaveBeenCalled();
+    expect(mockCommitPhaseSnapshot).toHaveBeenCalledTimes(3);
   });
 
   // ── 16. getRevalStatus returns status for tracked runs ──
@@ -558,9 +559,9 @@ describe("revalidation-service", () => {
     expect(revalidation.getRevalStatus("unknown-id")).toBeNull();
   });
 
-  // ── 18. Revalidation creates relationships from re-run phases ──
+  // ── 18. Revalidation clears stale on surviving entities after diff commit ──
 
-  it("creates relationships from re-run phases with ID remapping", async () => {
+  it("clears stale flags for the surviving current-phase entity ids returned by revision diff", async () => {
     mockEntityGraph.getAnalysis.mockReturnValue({
       id: "test",
       name: "test",
@@ -606,7 +607,21 @@ describe("revalidation-service", () => {
     revalidation.revalidate(["e1"]);
     await vi.advanceTimersByTimeAsync(0);
 
-    // createRelationship should have been called for the relationship
-    expect(mockEntityGraph.createRelationship).toHaveBeenCalled();
+    expect(mockEntityGraph.clearStale).toHaveBeenCalledWith([
+      "phase-entity-1",
+      "phase-entity-2",
+    ]);
+    expect(mockCommitPhaseSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phase: "situational-grounding",
+        relationships: [
+          expect.objectContaining({
+            type: "precedes",
+            fromEntityId: "fact-1",
+            toEntityId: "fact-1",
+          }),
+        ],
+      }),
+    );
   });
 });

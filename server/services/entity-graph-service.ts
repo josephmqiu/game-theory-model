@@ -174,6 +174,11 @@ export function createEntity(
 
 export function createRelationship(
   data: Omit<AnalysisRelationship, "id">,
+  provenance?: {
+    source: EntityProvenance["source"];
+    runId?: string;
+    phase?: string;
+  },
 ): AnalysisRelationship {
   // Validate that both entity IDs exist
   const entityIds = new Set(analysis.entities.map((e) => e.id));
@@ -191,6 +196,17 @@ export function createRelationship(
   const relationship: AnalysisRelationship = {
     ...data,
     id: nanoid(),
+    ...(provenance
+      ? {
+          source: entitySourceForProvenance(provenance.source),
+          provenance: {
+            source: provenance.source,
+            runId: provenance.runId,
+            phase: provenance.phase,
+            timestamp: Date.now(),
+          },
+        }
+      : {}),
   };
 
   analysis = {

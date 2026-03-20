@@ -276,6 +276,8 @@ export interface AnalysisRelationship {
   fromEntityId: string;
   toEntityId: string;
   metadata?: Record<string, unknown>;
+  source?: EntitySource;
+  provenance?: EntityProvenance;
 }
 
 // ── Full Analysis ──
