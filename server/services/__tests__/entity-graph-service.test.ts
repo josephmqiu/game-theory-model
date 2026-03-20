@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import type { AnalysisMutationEvent } from "@/services/ai/analysis-events";
+import type { AnalysisMutationEvent } from "../../../shared/types/events";
 import {
   newAnalysis,
   loadAnalysis,

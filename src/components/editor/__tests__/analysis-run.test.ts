@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { abortAnalysisRun } from "@/components/editor/analysis-run";
-import type { AnalysisResult } from "@/services/ai/analysis-orchestrator";
-import type { RunLogger } from "@/services/ai/ai-logger";
+import {
+  abortAnalysisRun,
+  type AnalysisResult,
+  type RunLogger,
+} from "@/components/editor/analysis-run";
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void;

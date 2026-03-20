@@ -2,19 +2,19 @@
 // Calls analysis-service.runPhase() per phase. Does NOT call streamChat directly.
 // Consolidates analysis-run-store state into module-level singleton.
 
-import type { MethodologyPhase } from "@/types/methodology";
-import { V1_PHASES } from "@/types/methodology";
-import type { AnalysisEntity, AnalysisRelationship } from "@/types/entity";
-import type { PhaseResult } from "@/services/ai/analysis-service";
-import { runPhase } from "@/services/ai/analysis-service";
-import * as entityGraphService from "@/services/ai/entity-graph-service";
+import type { MethodologyPhase } from "../../shared/types/methodology";
+import type { AnalysisEntity, AnalysisRelationship } from "../../shared/types/entity";
 import type {
   AnalysisProgressEvent,
   PhaseSummary,
-} from "@/services/ai/analysis-events";
-import * as revalidationService from "@/services/ai/revalidation-service";
-import { createRunLogger, timer } from "./ai-logger";
-import type { RunLogger } from "./ai-logger";
+} from "../../shared/types/events";
+import { V1_PHASES } from "../../src/types/methodology";
+import type { PhaseResult } from "../services/analysis-service";
+import { runPhase } from "../services/analysis-service";
+import * as entityGraphService from "../services/entity-graph-service";
+import * as revalidationService from "../services/revalidation-service";
+import { createRunLogger, timer } from "../utils/ai-logger";
+import type { RunLogger } from "../utils/ai-logger";
 
 // ── Types ──
 

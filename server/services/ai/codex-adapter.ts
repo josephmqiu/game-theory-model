@@ -5,7 +5,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { filterCodexEnv } from "../../utils/codex-client";
 import { serverLog, serverWarn } from "../../utils/ai-logger";
-import type { ChatEvent } from "@/services/ai/chat-events";
+import type { ChatEvent } from "../../../shared/types/events";
 
 // ── Types ──
 

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
-import type { MethodologyPhase } from "@/types/methodology";
-import type { PhaseResult } from "@/services/ai/analysis-service";
-import type { AnalysisProgressEvent } from "@/services/ai/analysis-events";
-import type { AnalysisEntity, AnalysisRelationship } from "@/types/entity";
+import type { MethodologyPhase } from "../../../shared/types/methodology";
+import type { AnalysisProgressEvent } from "../../../shared/types/events";
+import type { AnalysisEntity, AnalysisRelationship } from "../../../shared/types/entity";
+import type { PhaseResult } from "../../services/analysis-service";
 
 // ── Mock analysis-service ──
 
@@ -19,7 +19,7 @@ const mockRunPhase = vi.fn<
   ) => Promise<PhaseResult>
 >();
 
-vi.mock("@/services/ai/analysis-service", () => ({
+vi.mock("../../services/analysis-service", () => ({
   runPhase: (...args: Parameters<typeof mockRunPhase>) => mockRunPhase(...args),
 }));
 
@@ -46,7 +46,7 @@ const mockEntityGraph = {
   removePhaseEntities: vi.fn(),
 };
 
-vi.mock("@/services/ai/entity-graph-service", () => mockEntityGraph);
+vi.mock("../../services/entity-graph-service", () => mockEntityGraph);
 
 // ── Mock revalidation-service ──
 
@@ -55,7 +55,7 @@ const mockRevalidation = {
   wire: vi.fn(),
 };
 
-vi.mock("@/services/ai/revalidation-service", () => mockRevalidation);
+vi.mock("../../services/revalidation-service", () => mockRevalidation);
 
 // ── Test fixtures ──
 
@@ -150,7 +150,7 @@ function flushAsync(ms = 10): Promise<void> {
 describe("analysis-orchestrator", () => {
   // Lazy import to get fresh module state after mocks
   async function importOrchestrator() {
-    return import("@/services/ai/analysis-orchestrator");
+    return import("../analysis-agent");
   }
 
   let orchestrator: Awaited<ReturnType<typeof importOrchestrator>>;

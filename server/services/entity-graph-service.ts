@@ -9,11 +9,11 @@ import type {
   Analysis,
   EntityProvenance,
   RelationshipType,
-} from "@/types/entity";
-import { RELATIONSHIP_CATEGORY } from "@/types/entity";
-import type { MethodologyPhase, PhaseStatus } from "@/types/methodology";
-import { V1_PHASES } from "@/types/methodology";
-import type { AnalysisMutationEvent } from "@/services/ai/analysis-events";
+} from "../../shared/types/entity";
+import type { MethodologyPhase, PhaseStatus } from "../../shared/types/methodology";
+import type { AnalysisMutationEvent } from "../../shared/types/events";
+import { RELATIONSHIP_CATEGORY } from "../../src/types/entity";
+import { V1_PHASES } from "../../src/types/methodology";
 
 // ── Module-level state ──
 

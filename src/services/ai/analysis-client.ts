@@ -3,8 +3,8 @@
 // NEVER imports Node.js modules or server-side services.
 
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
-import type { AnalysisProgressEvent } from "./analysis-events";
-import type { Analysis } from "@/types/entity";
+import type { AnalysisProgressEvent } from "../../../shared/types/events";
+import type { Analysis } from "../../../shared/types/entity";
 
 type ProgressCallback = (event: AnalysisProgressEvent) => void;
 

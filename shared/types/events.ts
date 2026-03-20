@@ -1,12 +1,8 @@
-// Event types emitted during AI-driven analysis.
-// Progress events come from the analysis orchestrator (lifecycle/status).
-// Mutation events come from entity-graph-service (data changes).
-
 import type {
   AnalysisEntity,
   AnalysisRelationship,
   EntityProvenance,
-} from "@/types/entity";
+} from "./entity";
 
 export interface PhaseSummary {
   entitiesCreated: number;
@@ -15,7 +11,6 @@ export interface PhaseSummary {
   durationMs: number;
 }
 
-// Progress/lifecycle events — emitted by analysis-orchestrator
 export type AnalysisProgressEvent =
   | { type: "phase_started"; phase: string; runId: string }
   | {
@@ -27,7 +22,6 @@ export type AnalysisProgressEvent =
   | { type: "analysis_completed"; runId: string }
   | { type: "analysis_failed"; runId: string; error: string };
 
-// Mutation events — emitted by entity-graph-service
 export type AnalysisMutationEvent =
   | { type: "entity_created"; entity: AnalysisEntity }
   | { type: "relationship_created"; relationship: AnalysisRelationship }
@@ -42,32 +36,10 @@ export type AnalysisMutationEvent =
 
 export type AnalysisEvent = AnalysisProgressEvent | AnalysisMutationEvent;
 
-// ── Type Guards ──
-
-const PROGRESS_TYPES = new Set([
-  "phase_started",
-  "phase_completed",
-  "analysis_completed",
-  "analysis_failed",
-]);
-
-const MUTATION_TYPES = new Set([
-  "entity_created",
-  "relationship_created",
-  "entity_updated",
-  "relationship_updated",
-  "stale_marked",
-  "state_changed",
-]);
-
-export function isProgressEvent(
-  event: AnalysisEvent,
-): event is AnalysisProgressEvent {
-  return PROGRESS_TYPES.has(event.type);
-}
-
-export function isMutationEvent(
-  event: AnalysisEvent,
-): event is AnalysisMutationEvent {
-  return MUTATION_TYPES.has(event.type);
-}
+export type ChatEvent =
+  | { type: "text_delta"; content: string }
+  | { type: "tool_call_start"; toolName: string; input: unknown }
+  | { type: "tool_call_result"; toolName: string; output: unknown }
+  | { type: "tool_call_error"; toolName: string; error: string }
+  | { type: "turn_complete" }
+  | { type: "error"; message: string; recoverable: boolean };

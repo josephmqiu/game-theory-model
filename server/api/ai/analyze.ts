@@ -8,9 +8,8 @@ import {
   setResponseHeaders,
   setResponseStatus,
 } from "h3";
-import * as analysisOrchestrator from "../../../src/services/ai/analysis-orchestrator";
-import * as entityGraphService from "../../../src/services/ai/entity-graph-service";
-import { configureServerAnalysisPhaseExecutor } from "../../utils/analysis-phase-executor";
+import * as analysisOrchestrator from "../../agents/analysis-agent";
+import * as entityGraphService from "../../services/entity-graph-service";
 
 interface AnalyzeBody {
   topic: string;
@@ -25,7 +24,6 @@ const KEEPALIVE_INTERVAL_MS = 15_000;
 const STREAM_TIMEOUT_MS = 16 * 60 * 1000;
 
 export default defineEventHandler(async (event) => {
-  configureServerAnalysisPhaseExecutor();
   const body = await readBody<AnalyzeBody>(event);
   if (!body?.topic) {
     setResponseStatus(event, 400);

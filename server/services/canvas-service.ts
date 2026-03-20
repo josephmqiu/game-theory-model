@@ -6,7 +6,7 @@ import {
   getAnalysis,
   updateEntity,
   markDirty,
-} from "@/services/ai/entity-graph-service";
+} from "./entity-graph-service";
 // ── Layout column mapping ──
 
 const COLUMN_X: Record<string, number> = {

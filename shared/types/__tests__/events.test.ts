@@ -4,13 +4,13 @@ import type {
   AnalysisProgressEvent,
   AnalysisMutationEvent,
   AnalysisEvent,
-} from "../analysis-events";
-import { isProgressEvent, isMutationEvent } from "../analysis-events";
+  ChatEvent,
+} from "../events";
 import type {
   AnalysisEntity,
   AnalysisRelationship,
   EntityProvenance,
-} from "@/types/entity";
+} from "../entity";
 
 // ── Fixtures ──
 
@@ -179,7 +179,7 @@ describe("AnalysisMutationEvent", () => {
   });
 });
 
-describe("type guards", () => {
+describe("AnalysisEvent union", () => {
   const progressEvents: AnalysisEvent[] = [
     { type: "phase_started", phase: "situational-grounding", runId: "r" },
     {
@@ -206,33 +206,7 @@ describe("type guards", () => {
     { type: "state_changed" },
   ];
 
-  it("isProgressEvent returns true for all progress variants", () => {
-    for (const event of progressEvents) {
-      expect(isProgressEvent(event)).toBe(true);
-    }
-  });
-
-  it("isProgressEvent returns false for all mutation variants", () => {
-    for (const event of mutationEvents) {
-      expect(isProgressEvent(event)).toBe(false);
-    }
-  });
-
-  it("isMutationEvent returns true for all mutation variants", () => {
-    for (const event of mutationEvents) {
-      expect(isMutationEvent(event)).toBe(true);
-    }
-  });
-
-  it("isMutationEvent returns false for all progress variants", () => {
-    for (const event of progressEvents) {
-      expect(isMutationEvent(event)).toBe(false);
-    }
-  });
-});
-
-describe("AnalysisEvent union", () => {
-  it("accepts both progress and mutation events", () => {
+  it("accepts both progress and mutation event variants", () => {
     const events: AnalysisEvent[] = [
       { type: "phase_started", phase: "baseline-model", runId: "r" },
       { type: "entity_created", entity },
@@ -241,13 +215,23 @@ describe("AnalysisEvent union", () => {
       { type: "state_changed" },
       { type: "analysis_completed", runId: "r" },
     ];
-    // All assignable to AnalysisEvent[]
     expect(events).toHaveLength(6);
-    // Verify mixed array can be partitioned by guards
-    const progress = events.filter(isProgressEvent);
-    const mutations = events.filter(isMutationEvent);
-    expect(progress).toHaveLength(2);
-    expect(mutations).toHaveLength(4);
-    expect(progress.length + mutations.length).toBe(events.length);
+    expect(progressEvents).toHaveLength(4);
+    expect(mutationEvents).toHaveLength(6);
+  });
+});
+
+describe("ChatEvent", () => {
+  it("accepts chat event variants", () => {
+    const events: ChatEvent[] = [
+      { type: "text_delta", content: "hello" },
+      { type: "tool_call_start", toolName: "get_entities", input: {} },
+      { type: "tool_call_result", toolName: "get_entities", output: [] },
+      { type: "tool_call_error", toolName: "get_entities", error: "failed" },
+      { type: "turn_complete" },
+      { type: "error", message: "timeout", recoverable: false },
+    ];
+
+    expect(events).toHaveLength(6);
   });
 });

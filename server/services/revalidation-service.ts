@@ -3,13 +3,13 @@
 // debounces for 2s, then re-runs phases from the earliest stale one.
 // Suppressed during active analysis runs; deferred staleIds revalidate on run complete.
 
-import type { MethodologyPhase } from "@/types/methodology";
-import { V1_PHASES, PHASE_NUMBERS } from "@/types/methodology";
-import * as entityGraphService from "@/services/ai/entity-graph-service";
-import * as orchestrator from "@/services/ai/analysis-orchestrator";
-import { runPhase } from "@/services/ai/analysis-service";
-import type { AnalysisProgressEvent } from "@/services/ai/analysis-events";
-import { createRunLogger, timer } from "./ai-logger";
+import type { MethodologyPhase } from "../../shared/types/methodology";
+import type { AnalysisProgressEvent } from "../../shared/types/events";
+import { V1_PHASES, PHASE_NUMBERS } from "../../src/types/methodology";
+import * as entityGraphService from "./entity-graph-service";
+import * as orchestrator from "../agents/analysis-agent";
+import { runPhase } from "./analysis-service";
+import { createRunLogger, timer } from "../utils/ai-logger";
 
 // ── Constants ──
 

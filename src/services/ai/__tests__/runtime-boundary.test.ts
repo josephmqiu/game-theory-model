@@ -19,15 +19,16 @@ const RENDERER_FILES = [
 
 // Server-only modules — importing these from renderer code causes runtime crashes
 const FORBIDDEN_PATTERNS = [
-  "analysis-orchestrator",
-  "analysis-service",
-  "analysis-runtime",
+  "analysis-agent",
   "claude-adapter",
   "codex-adapter",
   "codex-config",
   "entity-graph-service",
   "revalidation-service",
   "canvas-service",
+  "/server/agents/",
+  "/server/services/",
+  "/server/utils/",
   "@/mcp/",
   "mcp/server",
   "/server/",

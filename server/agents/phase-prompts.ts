@@ -1,4 +1,4 @@
-import type { MethodologyPhase } from "@/types/methodology";
+import type { MethodologyPhase } from "../../shared/types/methodology";
 
 /**
  * System prompts for methodology Phases 1-3.

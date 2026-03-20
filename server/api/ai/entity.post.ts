@@ -1,7 +1,7 @@
 import { defineEventHandler, readBody, setResponseStatus } from "h3";
 import type { H3Event } from "h3";
-import * as entityGraphService from "../../../src/services/ai/entity-graph-service";
-import * as analysisOrchestrator from "../../../src/services/ai/analysis-orchestrator";
+import * as entityGraphService from "../../services/entity-graph-service";
+import * as analysisOrchestrator from "../../agents/analysis-agent";
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{

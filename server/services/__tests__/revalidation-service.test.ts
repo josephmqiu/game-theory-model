@@ -1,8 +1,8 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import type { MethodologyPhase } from "@/types/methodology";
-import type { PhaseResult } from "@/services/ai/analysis-service";
-import type { AnalysisProgressEvent } from "@/services/ai/analysis-events";
-import type { AnalysisEntity, AnalysisRelationship } from "@/types/entity";
+import type { MethodologyPhase } from "../../../shared/types/methodology";
+import type { AnalysisProgressEvent } from "../../../shared/types/events";
+import type { AnalysisEntity, AnalysisRelationship } from "../../../shared/types/entity";
+import type { PhaseResult } from "../analysis-service";
 
 // ── Mock analysis-service ──
 
@@ -19,7 +19,7 @@ const mockRunPhase = vi.fn<
   ) => Promise<PhaseResult>
 >();
 
-vi.mock("@/services/ai/analysis-service", () => ({
+vi.mock("../analysis-service", () => ({
   runPhase: (...args: Parameters<typeof mockRunPhase>) => mockRunPhase(...args),
 }));
 
@@ -27,7 +27,7 @@ vi.mock("@/services/ai/analysis-service", () => ({
 
 const mockIsRunning = vi.fn<() => boolean>().mockReturnValue(false);
 
-vi.mock("@/services/ai/analysis-orchestrator", () => ({
+vi.mock("../../agents/analysis-agent", () => ({
   isRunning: () => mockIsRunning(),
 }));
 
@@ -58,7 +58,7 @@ const mockEntityGraph = {
   onMutation: vi.fn((_cb: (event: unknown) => void) => vi.fn()),
 };
 
-vi.mock("@/services/ai/entity-graph-service", () => mockEntityGraph);
+vi.mock("../entity-graph-service", () => mockEntityGraph);
 
 // ── Test fixtures ──
 
@@ -112,7 +112,7 @@ function makeFailedResult(error: string): PhaseResult {
 
 describe("revalidation-service", () => {
   async function importRevalidation() {
-    return import("@/services/ai/revalidation-service");
+    return import("../revalidation-service");
   }
 
   let revalidation: Awaited<ReturnType<typeof importRevalidation>>;

@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { abortAnalysisRun } from "@/components/editor/analysis-run";
-import type { AnalysisResult } from "@/services/ai/analysis-orchestrator";
+import {
+  abortAnalysisRun,
+  type AnalysisResult,
+} from "@/components/editor/analysis-run";
 
 const topBarPath = join(process.cwd(), "src/components/editor/top-bar.tsx");
 const landingPath = join(process.cwd(), "src/routes/index.tsx");

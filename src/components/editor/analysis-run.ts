@@ -4,7 +4,15 @@
 // This file is kept for backward compat with test imports.
 
 import type { AnalysisEntity, AnalysisRelationship } from "@/types/entity";
-import type { RunLogger } from "@/services/ai/ai-logger";
+
+export interface RunLogger {
+  log: (sub: string, event: string, data?: Record<string, unknown>) => void;
+  warn: (sub: string, event: string, data?: Record<string, unknown>) => void;
+  error: (sub: string, event: string, data?: Record<string, unknown>) => void;
+  capture: (sub: string, event: string, data?: Record<string, unknown>) => void;
+  flush: () => Promise<boolean>;
+  entries: () => unknown[];
+}
 
 export interface AnalysisResult {
   runId: string;

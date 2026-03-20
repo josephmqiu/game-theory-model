@@ -6,8 +6,8 @@
 // Does NOT own retries, sequencing, or run lifecycle — that's the orchestrator's job.
 
 import { z } from "zod/v4";
-import type { MethodologyPhase } from "@/types/methodology";
-import type { AnalysisEntity, AnalysisRelationship } from "@/types/entity";
+import type { MethodologyPhase } from "../../shared/types/methodology";
+import type { AnalysisEntity, AnalysisRelationship } from "../../shared/types/entity";
 import {
   entityConfidenceSchema,
   entitySourceSchema,
@@ -16,11 +16,30 @@ import {
   objectiveDataSchema,
   gameDataSchema,
   strategyDataSchema,
-} from "@/types/entity";
-import { PHASE_PROMPTS } from "./phase-prompts";
-import { createRunLogger } from "./ai-logger";
-import type { RunLogger } from "./ai-logger";
-import { getAnalysisPhaseExecutor } from "./analysis-runtime";
+} from "../../src/types/entity";
+import { PHASE_PROMPTS } from "../agents/phase-prompts";
+import { createRunLogger } from "../utils/ai-logger";
+import type { RunLogger } from "../utils/ai-logger";
+
+interface AnalysisAdapter {
+  runAnalysisPhase<T = unknown>(
+    prompt: string,
+    systemPrompt: string,
+    model: string,
+    schema: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<T>;
+}
+
+async function loadAnalysisAdapter(provider?: string): Promise<AnalysisAdapter> {
+  if (provider === "openai") {
+    return import("./ai/codex-adapter");
+  }
+  if (provider === "anthropic" || !provider) {
+    return import("./ai/claude-adapter");
+  }
+  throw new Error(`Unknown provider: ${provider}. Allowed: anthropic, openai`);
+}
 
 // ── Public types ──
 
@@ -632,16 +651,6 @@ export async function runPhase(
 
   logger.log("analysis-service", "phase-start", { phase, provider, model });
 
-  const executor = getAnalysisPhaseExecutor();
-  if (!executor) {
-    return {
-      success: false,
-      entities: [],
-      relationships: [],
-      error: "Analysis phase executor not configured",
-    };
-  }
-
   // Check abort signal before adapter call
   if (context?.signal?.aborted) {
     return {
@@ -656,14 +665,14 @@ export async function runPhase(
 
   let adapterResult: unknown;
   try {
-    adapterResult = await executor.runPhase({
-      provider: context?.provider,
-      prompt: user,
-      systemPrompt: system,
+    const adapter = await loadAnalysisAdapter(context?.provider);
+    adapterResult = await adapter.runAnalysisPhase(
+      user,
+      system,
       model,
       schema,
-      signal: context?.signal,
-    });
+      context?.signal,
+    );
   } catch (err) {
     return {
       success: false,

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ChatEvent } from "@/services/ai/chat-events";
+import type { ChatEvent } from "../../../../shared/types/events";
 
 // ── Mock the Agent SDK ──
 

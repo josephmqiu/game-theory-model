@@ -6,7 +6,7 @@ import {
   it,
   vi,
 } from "vitest";
-import type { ChatEvent } from "@/services/ai/chat-events";
+import type { ChatEvent } from "../../../../shared/types/events";
 import { EventEmitter } from "node:events";
 
 class MockChildProcess extends EventEmitter {

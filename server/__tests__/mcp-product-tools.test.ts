@@ -5,7 +5,7 @@ import {
   createRelationship,
   getAnalysis,
   _resetForTest,
-} from "../entity-graph-service";
+} from "../services/entity-graph-service";
 import {
   handleGetEntities,
   handleCreateEntity,
@@ -24,7 +24,7 @@ import {
 
 // ── Mocks ──
 
-vi.mock("@/services/ai/analysis-orchestrator", () => ({
+vi.mock("../agents/analysis-agent", () => ({
   runFull: vi.fn().mockResolvedValue({ runId: "run-mock-123" }),
   getStatus: vi.fn().mockReturnValue({
     runId: "run-mock-123",
@@ -40,7 +40,7 @@ vi.mock("@/services/ai/analysis-orchestrator", () => ({
   }),
 }));
 
-vi.mock("@/services/ai/revalidation-service", () => ({
+vi.mock("../services/revalidation-service", () => ({
   revalidate: vi.fn().mockReturnValue({ runId: "reval-mock-456" }),
   getRevalStatus: vi.fn().mockImplementation((runId: string) => {
     // Only return status for reval runIds, return null for analysis runIds
@@ -51,7 +51,7 @@ vi.mock("@/services/ai/revalidation-service", () => ({
   }),
 }));
 
-vi.mock("@/services/ai/canvas-service", () => ({
+vi.mock("../services/canvas-service", () => ({
   layoutEntities: vi.fn(),
   groupEntities: vi.fn(),
   emitFocusEvent: vi.fn(),
@@ -134,7 +134,7 @@ beforeEach(() => {
 
 describe("handleStartAnalysis", () => {
   it("calls orchestrator.runFull and returns runId with status", async () => {
-    const { runFull } = await import("@/services/ai/analysis-orchestrator");
+    const { runFull } = await import("../agents/analysis-agent");
 
     const result = JSON.parse(
       await handleStartAnalysis({ topic: "US-China semiconductor trade war" }),
@@ -151,7 +151,7 @@ describe("handleStartAnalysis", () => {
   });
 
   it("passes provider and model through to orchestrator.runFull", async () => {
-    const { runFull } = await import("@/services/ai/analysis-orchestrator");
+    const { runFull } = await import("../agents/analysis-agent");
 
     const result = JSON.parse(
       await handleStartAnalysis({
@@ -171,7 +171,7 @@ describe("handleStartAnalysis", () => {
 
 describe("handleGetAnalysisStatus", () => {
   it("calls orchestrator.getStatus and returns status object", async () => {
-    const { getStatus } = await import("@/services/ai/analysis-orchestrator");
+    const { getStatus } = await import("../agents/analysis-agent");
 
     const result = JSON.parse(
       handleGetAnalysisStatus({ runId: "run-mock-123" }),
@@ -190,7 +190,7 @@ describe("handleGetAnalysisStatus", () => {
 
 describe("handleGetAnalysisResult", () => {
   it("calls orchestrator.getResult and returns entities/relationships", async () => {
-    const { getResult } = await import("@/services/ai/analysis-orchestrator");
+    const { getResult } = await import("../agents/analysis-agent");
 
     const result = JSON.parse(
       handleGetAnalysisResult({ runId: "run-mock-123" }),
@@ -207,7 +207,7 @@ describe("handleGetAnalysisResult", () => {
 
 describe("handleRevalidateEntities", () => {
   it("calls revalidationService.revalidate with entityIds and phase", async () => {
-    const { revalidate } = await import("@/services/ai/revalidation-service");
+    const { revalidate } = await import("../services/revalidation-service");
 
     const result = JSON.parse(
       handleRevalidateEntities({
@@ -225,7 +225,7 @@ describe("handleRevalidateEntities", () => {
   });
 
   it("passes undefined when no entityIds or phase given", async () => {
-    const { revalidate } = await import("@/services/ai/revalidation-service");
+    const { revalidate } = await import("../services/revalidation-service");
 
     handleRevalidateEntities({});
 
@@ -237,7 +237,7 @@ describe("handleRevalidateEntities", () => {
 
 describe("handleLayoutEntities", () => {
   it("calls canvasService.layoutEntities and returns side-effect summary", async () => {
-    const { layoutEntities } = await import("@/services/ai/canvas-service");
+    const { layoutEntities } = await import("../services/canvas-service");
 
     const result = JSON.parse(handleLayoutEntities({ strategy: "column" }));
 
@@ -255,7 +255,7 @@ describe("handleLayoutEntities", () => {
 
 describe("handleFocusEntity", () => {
   it("calls canvasService.emitFocusEvent and returns focused id", async () => {
-    const { emitFocusEvent } = await import("@/services/ai/canvas-service");
+    const { emitFocusEvent } = await import("../services/canvas-service");
 
     const result = JSON.parse(handleFocusEntity({ entityId: "entity-abc" }));
 
@@ -268,7 +268,7 @@ describe("handleFocusEntity", () => {
 
 describe("handleGroupEntities", () => {
   it("calls canvasService.groupEntities and returns side-effect summary", async () => {
-    const { groupEntities } = await import("@/services/ai/canvas-service");
+    const { groupEntities } = await import("../services/canvas-service");
 
     const result = JSON.parse(
       handleGroupEntities({

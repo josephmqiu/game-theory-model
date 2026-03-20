@@ -16,10 +16,17 @@ import {
   getClaudeAgentDebugFilePath,
 } from "../../utils/resolve-claude-agent-env";
 import { serverLog } from "../../utils/ai-logger";
-import { isAllowedProvider } from "../../../src/services/ai/allowed-providers";
-import * as entityGraphService from "../../../src/services/ai/entity-graph-service";
+import * as entityGraphService from "../../services/entity-graph-service";
 import { streamChat as claudeStreamChat } from "../../services/ai/claude-adapter";
 import { streamChat as codexStreamChat } from "../../services/ai/codex-adapter";
+
+const ALLOWED_PROVIDERS = ["anthropic", "openai"] as const;
+
+function isAllowedProvider(
+  provider: string,
+): provider is (typeof ALLOWED_PROVIDERS)[number] {
+  return (ALLOWED_PROVIDERS as readonly string[]).includes(provider);
+}
 
 /** Pattern for detecting sensitive data in debug log output */
 export const SENSITIVE_LOG_PATTERN =

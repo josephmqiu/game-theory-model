@@ -20,12 +20,12 @@ import {
   createRelationship,
   updateRelationship,
   getStaleEntityIds,
-} from "@/services/ai/entity-graph-service";
-import type { MethodologyPhase } from "@/types/methodology";
-import type { RelationshipType } from "@/types/entity";
-import * as analysisOrchestrator from "@/services/ai/analysis-orchestrator";
-import * as revalidationService from "@/services/ai/revalidation-service";
-import * as canvasService from "@/services/ai/canvas-service";
+} from "../../server/services/entity-graph-service";
+import type { MethodologyPhase } from "../../shared/types/methodology";
+import type { RelationshipType } from "../../shared/types/entity";
+import * as analysisOrchestrator from "../../server/agents/analysis-agent";
+import * as revalidationService from "../../server/services/revalidation-service";
+import * as canvasService from "../../server/services/canvas-service";
 import { handleOpenDocument } from "./tools/open-document";
 import { handleBatchGet } from "./tools/batch-get";
 import {
@@ -64,9 +64,6 @@ import { handleDesignRefine } from "./tools/design-refine";
 import { handleGetSelection } from "./tools/get-selection";
 import { LAYERED_DESIGN_TOOLS } from "./tools/layered-design-defs";
 import { MCP_DEFAULT_PORT } from "@/constants/app";
-import { configureServerAnalysisPhaseExecutor } from "../../server/utils/analysis-phase-executor";
-
-configureServerAnalysisPhaseExecutor();
 
 // --- Tool definitions (shared across all Server instances) ---
 

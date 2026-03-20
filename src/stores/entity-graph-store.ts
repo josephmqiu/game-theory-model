@@ -9,9 +9,9 @@ import type {
   AnalysisFileReference,
   AnalysisRelationship,
   Analysis,
-} from "@/types/entity";
+} from "../../shared/types/entity";
 import { RELATIONSHIP_CATEGORY } from "@/types/entity";
-import type { MethodologyPhase, PhaseStatus } from "@/types/methodology";
+import type { MethodologyPhase, PhaseStatus } from "../../shared/types/methodology";
 import { V1_PHASES } from "@/types/methodology";
 
 // ── State shape ──

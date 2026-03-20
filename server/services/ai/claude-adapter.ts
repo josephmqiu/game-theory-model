@@ -1,7 +1,7 @@
 // Claude adapter — the ONLY file that imports from @anthropic-ai/claude-agent-sdk.
 // Provides two profiles: streamChat (interactive) and runAnalysisPhase (structured).
 
-import type { ChatEvent } from "@/services/ai/chat-events";
+import type { ChatEvent } from "../../../shared/types/events";
 import {
   handleStartAnalysis,
   handleGetAnalysisStatus,

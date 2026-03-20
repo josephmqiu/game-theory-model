@@ -6,8 +6,24 @@ import {
   DEFAULT_STREAM_NO_TEXT_TIMEOUT_MS,
   STREAM_TIMEOUT_MIN_MS,
 } from "./ai-runtime-config";
-import type { RunContext } from "./ai-logger";
-import { timer } from "./ai-logger";
+
+interface RunLogger {
+  log: (sub: string, event: string, data?: Record<string, unknown>) => void;
+  warn: (sub: string, event: string, data?: Record<string, unknown>) => void;
+  error: (sub: string, event: string, data?: Record<string, unknown>) => void;
+}
+
+interface RunContext {
+  runId: string;
+  logger: RunLogger;
+}
+
+function timer(): { elapsed(): number } {
+  const started = Date.now();
+  return {
+    elapsed: () => Date.now() - started,
+  };
+}
 
 export interface StreamChatOptions {
   hardTimeoutMs?: number;
