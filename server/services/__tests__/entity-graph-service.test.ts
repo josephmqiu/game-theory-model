@@ -14,6 +14,8 @@ import {
   clearStale,
   getStaleEntityIds,
   getDownstreamEntityIds,
+  removeEntity,
+  removeRelationship,
   removePhaseEntities,
   setPhaseStatus,
   getIsDirty,
@@ -39,9 +41,7 @@ function makeFactData() {
       content: "A fact",
       category: "action" as const,
     },
-    position: { x: 0, y: 0 },
     confidence: "high" as const,
-    source: "ai" as const,
     rationale: "test rationale",
     revision: 1,
     stale: false,
@@ -58,9 +58,7 @@ function makePlayerData() {
       playerType: "primary" as const,
       knowledge: [],
     },
-    position: { x: 100, y: 100 },
     confidence: "high" as const,
-    source: "ai" as const,
     rationale: "primary actor",
     revision: 1,
     stale: false,
@@ -630,6 +628,29 @@ describe("onMutation", () => {
     unsub();
   });
 
+  it("callback receives entity_deleted and cascade relationship_deleted events", () => {
+    newAnalysis("test");
+    const e1 = createEntity(makeFactData(), defaultProvenance);
+    const e2 = createEntity(makeFactData(), defaultProvenance);
+    const rel = createRelationship({
+      type: "supports",
+      fromEntityId: e1.id,
+      toEntityId: e2.id,
+    });
+
+    const events: AnalysisMutationEvent[] = [];
+    const unsub = onMutation((event) => events.push(event));
+
+    expect(removeEntity(e1.id)).toBe(true);
+
+    expect(events).toEqual([
+      { type: "entity_deleted", entityId: e1.id },
+      { type: "relationship_deleted", relationshipId: rel.id },
+    ]);
+
+    unsub();
+  });
+
   it("callback receives stale_marked events", () => {
     newAnalysis("test");
     const e1 = createEntity(makeFactData(), defaultProvenance);
@@ -669,6 +690,28 @@ describe("onMutation", () => {
       expect(events[0].relationship.id).toBe(rel.id);
       expect(events[0].relationship.type).toBe("contradicts");
     }
+
+    unsub();
+  });
+
+  it("callback receives relationship_deleted events for explicit removal", () => {
+    newAnalysis("test");
+    const e1 = createEntity(makeFactData(), defaultProvenance);
+    const e2 = createEntity(makeFactData(), defaultProvenance);
+    const rel = createRelationship({
+      type: "supports",
+      fromEntityId: e1.id,
+      toEntityId: e2.id,
+    });
+
+    const events: AnalysisMutationEvent[] = [];
+    const unsub = onMutation((event) => events.push(event));
+
+    expect(removeRelationship(rel.id)).toBe(true);
+
+    expect(events).toEqual([
+      { type: "relationship_deleted", relationshipId: rel.id },
+    ]);
 
     unsub();
   });

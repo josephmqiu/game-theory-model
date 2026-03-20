@@ -268,32 +268,28 @@ async function executeRevalidation(
         entityGraphService.clearStale(phaseEntityIds);
       }
 
-      // Store new entities, building an ID map for relationship remapping
-      const idMap = new Map<string, string>();
+      // Store new entities, building a ref map for relationship remapping
+      const refMap = new Map<string, string>();
       for (const entity of result.entities) {
         const created = entityGraphService.createEntity(
           {
             type: entity.type,
             phase: entity.phase,
             data: entity.data,
-            position: entity.position,
             confidence: entity.confidence,
-            source: entity.source,
             rationale: entity.rationale,
-            revision: entity.revision,
-            stale: entity.stale,
+            revision: 1,
+            stale: false,
           },
           { source: "phase-derived", runId, phase: p },
         );
-        if (entity.id) {
-          idMap.set(entity.id, created.id);
-        }
+        refMap.set(entity.ref, created.id);
       }
 
       // H2 fix: recreate relationships from re-run phases with ID remapping
       for (const rel of result.relationships) {
-        const fromId = idMap.get(rel.fromEntityId) ?? rel.fromEntityId;
-        const toId = idMap.get(rel.toEntityId) ?? rel.toEntityId;
+        const fromId = refMap.get(rel.fromEntityId) ?? rel.fromEntityId;
+        const toId = refMap.get(rel.toEntityId) ?? rel.toEntityId;
         try {
           entityGraphService.createRelationship({
             type: rel.type,

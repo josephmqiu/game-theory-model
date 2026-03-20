@@ -38,6 +38,7 @@ export default function AnalysisCanvas({
   const revision = useEntityGraphStore((s) => s.revision);
   const entities = useEntityGraphStore((s) => s.analysis.entities);
   const relationships = useEntityGraphStore((s) => s.analysis.relationships);
+  const layout = useEntityGraphStore((s) => s.layout);
 
   // ── Initialize Skia engine ──
 
@@ -91,25 +92,28 @@ export default function AnalysisCanvas({
       ? entities.filter((e) => e.phase === phaseFilter)
       : entities;
 
-    // Layout entities that don't have positions yet (position is {0,0})
-    const needsLayout = visibleEntities.some(
-      (e) => e.position.x === 0 && e.position.y === 0,
-    );
-    if (needsLayout && visibleEntities.length > 0) {
+    const missingLayoutEntities = visibleEntities.filter((entity) => !layout[entity.id]);
+    if (missingLayoutEntities.length > 0) {
       const positions = layoutEntities(visibleEntities);
       const store = useEntityGraphStore.getState();
-      for (const [id, pos] of positions) {
-        const entity = visibleEntities.find((e) => e.id === id);
-        if (entity && entity.position.x === 0 && entity.position.y === 0) {
-          store.updateEntity(id, { position: pos });
-        }
+      const updates = Object.fromEntries(
+        Array.from(positions.entries())
+          .filter(([id]) => !layout[id])
+          .map(([id, position]) => [id, { ...position, pinned: false }]),
+      );
+      if (Object.keys(updates).length > 0) {
+        store.updateLayout(updates);
       }
-      // updateEntity triggers revision bump, so the next render cycle will pick it up
       return;
     }
 
     // Build render nodes
-    const renderNodes = visibleEntities.map((e) => entityToRenderNode(e));
+    const renderNodes = visibleEntities
+      .map((entity) => {
+        const layoutEntry = layout[entity.id];
+        return layoutEntry ? entityToRenderNode(entity, layoutEntry) : null;
+      })
+      .filter((node): node is NonNullable<typeof node> => node !== null);
 
     // Filter relationships to visible entities
     const visibleIds = new Set(visibleEntities.map((e) => e.id));
@@ -179,7 +183,7 @@ export default function AnalysisCanvas({
     canvas.restore();
     engine.surface!.flush();
     engine.markDirty();
-  }, [revision, entities, relationships, phaseFilter, searchHighlight]);
+  }, [revision, entities, relationships, layout, phaseFilter, searchHighlight]);
 
   // ── Pan (mouse drag) ──
 

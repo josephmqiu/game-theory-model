@@ -17,16 +17,14 @@ OUTPUT FORMAT — respond with a single JSON object, no markdown outside the cod
 \`\`\`
 
 ENTITY RULES:
-- Every entity needs a locally-unique "id" (e.g. "fact-1", "player-eu").
+- For new entities, set "id" to null.
+- Every entity needs a locally-unique "ref" (e.g. "fact-1", "player-eu").
 - Include "confidence" ("high" | "medium" | "low") and "rationale" (one sentence justifying the entity).
-- "source" is always "ai".
-- "revision" is always 1.
-- "stale" is always false.
-- "position" should be { "x": 0, "y": 0 } (layout is handled separately).
+- Do not include "source", "revision", "stale", or "position" fields.
 
 RELATIONSHIP RULES:
 - Each relationship needs a unique "id" (e.g. "rel-1").
-- "fromEntityId" and "toEntityId" must reference entity ids in the same output.
+- "fromEntityId" and "toEntityId" must reference entity refs in the same output.
 - Use the most specific relationship type that applies.
 - Valid types: "supports", "contradicts", "depends-on", "informed-by", "derived-from",
   "plays-in", "has-objective", "has-strategy", "conflicts-with", "produces",
@@ -60,7 +58,8 @@ what you assumed.
 
 ENTITY SCHEMA for each fact:
 {
-  "id": "<unique-id>",
+  "id": null,
+  "ref": "<unique-ref>",
   "type": "fact",
   "phase": "situational-grounding",
   "data": {
@@ -70,12 +69,8 @@ ENTITY SCHEMA for each fact:
     "content": "<specific factual claim>",
     "category": "capability" | "economic" | "position" | "impact" | "action" | "rule"
   },
-  "position": { "x": 0, "y": 0 },
   "confidence": "high" | "medium" | "low",
-  "source": "ai",
-  "rationale": "<why this fact matters>",
-  "revision": 1,
-  "stale": false
+  "rationale": "<why this fact matters>"
 }
 
 Use "supports" relationships between facts that reinforce each other, "contradicts" between
@@ -106,7 +101,8 @@ STEP 2a — Identify all players with agency. Produce "player" entities:
 
 PLAYER ENTITY SCHEMA:
 {
-  "id": "<unique-id>",
+  "id": null,
+  "ref": "<unique-ref>",
   "type": "player",
   "phase": "player-identification",
   "data": {
@@ -115,12 +111,8 @@ PLAYER ENTITY SCHEMA:
     "playerType": "primary" | "involuntary" | "background" | "internal" | "gatekeeper",
     "knowledge": ["<what this player knows or does not know>"]
   },
-  "position": { "x": 0, "y": 0 },
   "confidence": "high" | "medium" | "low",
-  "source": "ai",
-  "rationale": "<why this player matters>",
-  "revision": 1,
-  "stale": false
+  "rationale": "<why this player matters>"
 }
 
 STEP 2b — Write explicit objective functions. Produce "objective" entities for each player:
@@ -130,7 +122,8 @@ STEP 2b — Write explicit objective functions. Produce "objective" entities for
 
 OBJECTIVE ENTITY SCHEMA:
 {
-  "id": "<unique-id>",
+  "id": null,
+  "ref": "<unique-ref>",
   "type": "objective",
   "phase": "player-identification",
   "data": {
@@ -139,12 +132,8 @@ OBJECTIVE ENTITY SCHEMA:
     "priority": "lexicographic" | "high" | "tradable",
     "stability": "stable" | "shifting" | "unknown"
   },
-  "position": { "x": 0, "y": 0 },
   "confidence": "high" | "medium" | "low",
-  "source": "ai",
-  "rationale": "<evidence for this objective>",
-  "revision": 1,
-  "stale": false
+  "rationale": "<evidence for this objective>"
 }
 
 RELATIONSHIPS:
@@ -182,7 +171,8 @@ actual, requires-new-capability, rhetoric-only, or dominated.
 
 GAME ENTITY SCHEMA:
 {
-  "id": "<unique-id>",
+  "id": null,
+  "ref": "<unique-ref>",
   "type": "game",
   "phase": "baseline-model",
   "data": {
@@ -192,17 +182,14 @@ GAME ENTITY SCHEMA:
     "timing": "simultaneous" | "sequential" | "repeated",
     "description": "<brief description of the strategic tension>"
   },
-  "position": { "x": 0, "y": 0 },
   "confidence": "high" | "medium" | "low",
-  "source": "ai",
-  "rationale": "<why this game type fits>",
-  "revision": 1,
-  "stale": false
+  "rationale": "<why this game type fits>"
 }
 
 STRATEGY ENTITY SCHEMA:
 {
-  "id": "<unique-id>",
+  "id": null,
+  "ref": "<unique-ref>",
   "type": "strategy",
   "phase": "baseline-model",
   "data": {
@@ -211,12 +198,8 @@ STRATEGY ENTITY SCHEMA:
     "feasibility": "actual" | "requires-new-capability" | "rhetoric-only" | "dominated",
     "description": "<what this strategy entails>"
   },
-  "position": { "x": 0, "y": 0 },
   "confidence": "high" | "medium" | "low",
-  "source": "ai",
-  "rationale": "<why this strategy is available to the player>",
-  "revision": 1,
-  "stale": false
+  "rationale": "<why this strategy is available to the player>"
 }
 
 RELATIONSHIPS:

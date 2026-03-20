@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
 import type { MethodologyPhase } from "../../../shared/types/methodology";
 import type { AnalysisProgressEvent } from "../../../shared/types/events";
 import type { AnalysisEntity, AnalysisRelationship } from "../../../shared/types/entity";
-import type { PhaseResult } from "../../services/analysis-service";
+import type { PhaseOutputEntity, PhaseResult } from "../../services/analysis-service";
 
 // ── Mock analysis-service ──
 
@@ -63,11 +63,12 @@ function makePhaseResult(
   phase: "situational-grounding" | "player-identification" | "baseline-model",
   entityCount = 1,
 ): PhaseResult {
-  const entities = [];
+  const entities: PhaseOutputEntity[] = [];
   for (let i = 0; i < entityCount; i++) {
     if (phase === "situational-grounding") {
       entities.push({
-        id: `fact-${i + 1}`,
+        id: null,
+        ref: `fact-${i + 1}`,
         type: "fact" as const,
         phase: "situational-grounding" as const,
         data: {
@@ -77,16 +78,13 @@ function makePhaseResult(
           content: `Fact ${i + 1}`,
           category: "action" as const,
         },
-        position: { x: 0, y: 0 },
         confidence: "high" as const,
-        source: "ai" as const,
         rationale: "Test",
-        revision: 1,
-        stale: false,
       });
     } else if (phase === "player-identification") {
       entities.push({
-        id: `player-${i + 1}`,
+        id: null,
+        ref: `player-${i + 1}`,
         type: "player" as const,
         phase: "player-identification" as const,
         data: {
@@ -95,16 +93,13 @@ function makePhaseResult(
           playerType: "primary" as const,
           knowledge: [],
         },
-        position: { x: 0, y: 0 },
         confidence: "high" as const,
-        source: "ai" as const,
         rationale: "Test",
-        revision: 1,
-        stale: false,
       });
     } else {
       entities.push({
-        id: `game-${i + 1}`,
+        id: null,
+        ref: `game-${i + 1}`,
         type: "game" as const,
         phase: "baseline-model" as const,
         data: {
@@ -114,12 +109,8 @@ function makePhaseResult(
           timing: "sequential" as const,
           description: "Test game",
         },
-        position: { x: 0, y: 0 },
         confidence: "medium" as const,
-        source: "ai" as const,
         rationale: "Test",
-        revision: 1,
-        stale: false,
       });
     }
   }
@@ -846,38 +837,32 @@ describe("analysis-orchestrator", () => {
         success: true,
         entities: [
           {
-            id: "ai-player-1",
+            id: null,
+            ref: "ai-player-1",
             type: "player" as const,
-            phase: "situational-grounding" as const,
+            phase: "player-identification" as const,
             data: {
               type: "player" as const,
               name: "Player A",
               playerType: "primary" as const,
               knowledge: [],
             },
-            position: { x: 0, y: 0 },
             confidence: "high" as const,
-            source: "ai" as const,
             rationale: "Test",
-            revision: 1,
-            stale: false,
           },
           {
-            id: "ai-player-2",
+            id: null,
+            ref: "ai-player-2",
             type: "player" as const,
-            phase: "situational-grounding" as const,
+            phase: "player-identification" as const,
             data: {
               type: "player" as const,
               name: "Player B",
               playerType: "primary" as const,
               knowledge: [],
             },
-            position: { x: 0, y: 0 },
             confidence: "high" as const,
-            source: "ai" as const,
             rationale: "Test",
-            revision: 1,
-            stale: false,
           },
         ],
         relationships: [

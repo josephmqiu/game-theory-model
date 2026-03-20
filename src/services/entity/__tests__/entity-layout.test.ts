@@ -7,7 +7,6 @@ function makeEntity(
     Pick<AnalysisEntity, "id" | "type" | "phase">,
 ): AnalysisEntity {
   return {
-    position: { x: 0, y: 0 },
     confidence: "medium",
     source: "ai",
     rationale: "",

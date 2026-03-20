@@ -15,7 +15,6 @@ const makeEntity = (
     content: "Country A imposed tariffs",
     category: "action",
   },
-  position: { x: 0, y: 0 },
   confidence: "high",
   source: "ai",
   rationale: "Test",

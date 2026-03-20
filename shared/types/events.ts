@@ -24,7 +24,9 @@ export type AnalysisProgressEvent =
 
 export type AnalysisMutationEvent =
   | { type: "entity_created"; entity: AnalysisEntity }
+  | { type: "entity_deleted"; entityId: string }
   | { type: "relationship_created"; relationship: AnalysisRelationship }
+  | { type: "relationship_deleted"; relationshipId: string }
   | {
       type: "entity_updated";
       entity: AnalysisEntity;

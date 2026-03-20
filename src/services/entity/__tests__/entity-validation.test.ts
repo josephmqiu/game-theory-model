@@ -23,7 +23,6 @@ const makeEntity = (
     content: "Test fact",
     category: "action",
   },
-  position: { x: 0, y: 0 },
   confidence: "high",
   source: "ai",
   rationale: "Test",

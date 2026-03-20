@@ -2,7 +2,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import type { MethodologyPhase } from "../../../shared/types/methodology";
 import type { AnalysisProgressEvent } from "../../../shared/types/events";
 import type { AnalysisEntity, AnalysisRelationship } from "../../../shared/types/entity";
-import type { PhaseResult } from "../analysis-service";
+import type { PhaseOutputEntity, PhaseResult } from "../analysis-service";
 
 // ── Mock analysis-service ──
 
@@ -78,7 +78,6 @@ function makeEntity(
       content: `Entity ${id}`,
       category: "action" as const,
     },
-    position: { x: 0, y: 0 },
     confidence: "high",
     source: "ai",
     rationale: "test",
@@ -97,9 +96,23 @@ function makePhaseResult(
   phase: MethodologyPhase,
   entityCount = 1,
 ): PhaseResult {
-  const entities: AnalysisEntity[] = [];
+  const entities: PhaseOutputEntity[] = [];
   for (let i = 0; i < entityCount; i++) {
-    entities.push(makeEntity(`${phase}-${i}`, phase));
+    entities.push({
+      id: null,
+      ref: `${phase}-${i}`,
+      type: "fact",
+      phase,
+      data: {
+        type: "fact",
+        date: "2026-03-19",
+        source: "test",
+        content: `Entity ${phase}-${i}`,
+        category: "action",
+      },
+      confidence: "high",
+      rationale: "test",
+    } as PhaseOutputEntity);
   }
   return { success: true, entities, relationships: [] };
 }
@@ -559,7 +572,23 @@ describe("revalidation-service", () => {
 
     const phaseResult: PhaseResult = {
       success: true,
-      entities: [makeEntity("fact-1", "situational-grounding")],
+      entities: [
+        {
+          id: null,
+          ref: "fact-1",
+          type: "fact",
+          phase: "situational-grounding",
+          data: {
+            type: "fact",
+            date: "2026-03-19",
+            source: "test",
+            content: "Entity fact-1",
+            category: "action",
+          },
+          confidence: "high",
+          rationale: "test",
+        },
+      ],
       relationships: [
         {
           id: "rel-1",

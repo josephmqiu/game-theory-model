@@ -1,4 +1,4 @@
-import type { AnalysisEntity, EntityType } from "@/types/entity";
+import type { AnalysisEntity, EntityType, LayoutState } from "@/types/entity";
 import type { FrameNode, TextNode } from "@/types/pen";
 import type { RenderNode } from "@/canvas/skia/skia-renderer";
 
@@ -71,9 +71,12 @@ function entityMetaLine(entity: AnalysisEntity): string {
  * using the entity's position, type-based size, and a semantic role
  * prefixed with "entity-".
  */
-export function entityToRenderNode(entity: AnalysisEntity): RenderNode {
+export function entityToRenderNode(
+  entity: AnalysisEntity,
+  layoutEntry: LayoutState[string],
+): RenderNode {
   const size = ENTITY_SIZE[entity.type] ?? { w: 120, h: 50 };
-  const { x, y } = entity.position;
+  const { x, y } = layoutEntry;
 
   const nameText: TextNode = {
     id: `${entity.id}__name`,

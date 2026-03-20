@@ -7,10 +7,9 @@
 
 import { z } from "zod/v4";
 import type { MethodologyPhase } from "../../shared/types/methodology";
-import type { AnalysisEntity, AnalysisRelationship } from "../../shared/types/entity";
+import type { AnalysisRelationship } from "../../shared/types/entity";
 import {
   entityConfidenceSchema,
-  entitySourceSchema,
   factDataSchema,
   playerDataSchema,
   objectiveDataSchema,
@@ -45,7 +44,7 @@ async function loadAnalysisAdapter(provider?: string): Promise<AnalysisAdapter> 
 
 export interface PhaseResult {
   success: boolean;
-  entities: AnalysisEntity[];
+  entities: PhaseOutputEntity[];
   relationships: AnalysisRelationship[];
   error?: string;
 }
@@ -77,16 +76,11 @@ function isSupportedPhase(phase: MethodologyPhase): phase is SupportedPhase {
 
 // ── Zod schemas (ported from phase-worker.ts) ──
 
-const positionSchema = z.object({ x: z.number(), y: z.number() });
-
 const baseEntityFields = {
-  id: z.string().min(1),
-  position: positionSchema,
+  id: z.string().min(1).nullable(),
+  ref: z.string().min(1),
   confidence: entityConfidenceSchema,
-  source: entitySourceSchema.default("ai"),
   rationale: z.string(),
-  revision: z.number(),
-  stale: z.boolean(),
 };
 
 const factEntitySchema = z.object({
@@ -157,6 +151,13 @@ const PHASE_ENTITY_SCHEMAS: Record<SupportedPhase, z.ZodType[]> = {
   "baseline-model": [gameEntitySchema, strategyEntitySchema],
 };
 
+export type PhaseOutputEntity =
+  | z.infer<typeof factEntitySchema>
+  | z.infer<typeof playerEntitySchema>
+  | z.infer<typeof objectiveEntitySchema>
+  | z.infer<typeof gameEntitySchema>
+  | z.infer<typeof strategyEntitySchema>;
+
 // ── JSON extraction (ported from phase-worker.ts) ──
 
 const JSON_FENCE_PATTERN = /```(?:json)?\s*([\s\S]*?)```/i;
@@ -174,12 +175,12 @@ function validateEntity(
   value: unknown,
   schemas: z.ZodType[],
 ):
-  | { success: true; data: AnalysisEntity }
+  | { success: true; data: PhaseOutputEntity }
   | { success: false; error: z.ZodError } {
   for (const schema of schemas) {
     const result = schema.safeParse(value);
     if (result.success) {
-      return { success: true, data: result.data as AnalysisEntity };
+      return { success: true, data: result.data as PhaseOutputEntity };
     }
   }
   // Return the first schema's error for diagnostics
@@ -227,7 +228,7 @@ function validatePhaseOutput(
   const entitySchemas = PHASE_ENTITY_SCHEMAS[phase];
 
   // Validate entities
-  const entities: AnalysisEntity[] = [];
+  const entities: PhaseOutputEntity[] = [];
   for (const [i, raw] of (obj.entities as unknown[]).entries()) {
     const result = validateEntity(raw, entitySchemas);
     if (!result.success) {
@@ -313,17 +314,10 @@ function parseTextResponse(raw: string, phase: SupportedPhase): PhaseResult {
 // ── JSON Schema for structured output ──
 
 const BASE_ENTITY_SCHEMA = {
-  id: { type: "string" },
-  position: {
-    type: "object",
-    properties: { x: { type: "number" }, y: { type: "number" } },
-    required: ["x", "y"],
-  },
+  id: { type: ["string", "null"] },
+  ref: { type: "string" },
   confidence: { type: "string", enum: ["high", "medium", "low"] },
-  source: { type: "string", enum: ["ai", "human", "computed"] },
   rationale: { type: "string" },
-  revision: { type: "number" },
-  stale: { type: "boolean" },
 } as const;
 
 const FACT_ENTITY_SCHEMA = {
@@ -356,14 +350,12 @@ const FACT_ENTITY_SCHEMA = {
   },
   required: [
     "id",
+    "ref",
     "type",
     "phase",
     "data",
-    "position",
     "confidence",
     "rationale",
-    "revision",
-    "stale",
   ],
 };
 
@@ -395,14 +387,12 @@ const PLAYER_ENTITY_SCHEMA = {
   },
   required: [
     "id",
+    "ref",
     "type",
     "phase",
     "data",
-    "position",
     "confidence",
     "rationale",
-    "revision",
-    "stale",
   ],
 };
 
@@ -431,14 +421,12 @@ const OBJECTIVE_ENTITY_SCHEMA = {
   },
   required: [
     "id",
+    "ref",
     "type",
     "phase",
     "data",
-    "position",
     "confidence",
     "rationale",
-    "revision",
-    "stale",
   ],
 };
 
@@ -483,14 +471,12 @@ const GAME_ENTITY_SCHEMA = {
   },
   required: [
     "id",
+    "ref",
     "type",
     "phase",
     "data",
-    "position",
     "confidence",
     "rationale",
-    "revision",
-    "stale",
   ],
 };
 
@@ -521,14 +507,12 @@ const STRATEGY_ENTITY_SCHEMA = {
   },
   required: [
     "id",
+    "ref",
     "type",
     "phase",
     "data",
-    "position",
     "confidence",
     "rationale",
-    "revision",
-    "stale",
   ],
 };
 

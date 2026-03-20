@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AnalysisEntity } from "@/types/entity";
+import type { AnalysisEntity, LayoutState } from "@/types/entity";
 import type { FrameNode, TextNode } from "@/types/pen";
 import { entityToRenderNode } from "@/services/entity/entity-to-pennode";
 
@@ -8,12 +8,22 @@ function makeEntity(
     Pick<AnalysisEntity, "id" | "type" | "phase" | "data">,
 ): AnalysisEntity {
   return {
-    position: { x: 0, y: 0 },
     confidence: "medium",
     source: "ai",
     rationale: "",
     revision: 1,
     stale: false,
+    ...overrides,
+  };
+}
+
+function makeLayoutEntry(
+  overrides: Partial<LayoutState[string]> = {},
+): LayoutState[string] {
+  return {
+    x: 0,
+    y: 0,
+    pinned: false,
     ...overrides,
   };
 }
@@ -24,7 +34,6 @@ describe("entityToRenderNode", () => {
       id: "f1",
       type: "fact",
       phase: "situational-grounding",
-      position: { x: 100, y: 200 },
       data: {
         type: "fact",
         date: "2026-01-15",
@@ -34,7 +43,7 @@ describe("entityToRenderNode", () => {
       },
     });
 
-    const rn = entityToRenderNode(entity);
+    const rn = entityToRenderNode(entity, makeLayoutEntry({ x: 100, y: 200 }));
 
     expect(rn.absW).toBe(140);
     expect(rn.absH).toBe(60);
@@ -48,7 +57,6 @@ describe("entityToRenderNode", () => {
       id: "p1",
       type: "player",
       phase: "player-identification",
-      position: { x: 500, y: 0 },
       data: {
         type: "player",
         name: "United States",
@@ -57,7 +65,7 @@ describe("entityToRenderNode", () => {
       },
     });
 
-    const rn = entityToRenderNode(entity);
+    const rn = entityToRenderNode(entity, makeLayoutEntry({ x: 500, y: 0 }));
 
     expect(rn.absW).toBe(160);
     expect(rn.absH).toBe(80);
@@ -69,7 +77,6 @@ describe("entityToRenderNode", () => {
       id: "g1",
       type: "game",
       phase: "baseline-model",
-      position: { x: 900, y: 0 },
       data: {
         type: "game",
         name: "Tariff Escalation",
@@ -79,7 +86,7 @@ describe("entityToRenderNode", () => {
       },
     });
 
-    const rn = entityToRenderNode(entity);
+    const rn = entityToRenderNode(entity, makeLayoutEntry({ x: 900, y: 0 }));
 
     expect(rn.absW).toBe(160);
     expect(rn.absH).toBe(80);
@@ -110,10 +117,10 @@ describe("entityToRenderNode", () => {
       },
     });
 
-    expect(entityToRenderNode(obj).absW).toBe(120);
-    expect(entityToRenderNode(obj).absH).toBe(50);
-    expect(entityToRenderNode(strat).absW).toBe(120);
-    expect(entityToRenderNode(strat).absH).toBe(50);
+    expect(entityToRenderNode(obj, makeLayoutEntry()).absW).toBe(120);
+    expect(entityToRenderNode(obj, makeLayoutEntry()).absH).toBe(50);
+    expect(entityToRenderNode(strat, makeLayoutEntry()).absW).toBe(120);
+    expect(entityToRenderNode(strat, makeLayoutEntry()).absH).toBe(50);
   });
 
   it("includes entity name as first text child node", () => {
@@ -121,7 +128,6 @@ describe("entityToRenderNode", () => {
       id: "p1",
       type: "player",
       phase: "player-identification",
-      position: { x: 0, y: 0 },
       data: {
         type: "player",
         name: "China",
@@ -130,7 +136,7 @@ describe("entityToRenderNode", () => {
       },
     });
 
-    const rn = entityToRenderNode(entity);
+    const rn = entityToRenderNode(entity, makeLayoutEntry());
     const frame = rn.node as FrameNode;
     expect(frame.children).toBeDefined();
     expect(frame.children!.length).toBe(2);
@@ -157,7 +163,7 @@ describe("entityToRenderNode", () => {
       },
     });
 
-    const rn = entityToRenderNode(entity);
+    const rn = entityToRenderNode(entity, makeLayoutEntry());
     const frame = rn.node as FrameNode;
     const metaChild = frame.children![1] as TextNode;
     expect(metaChild.type).toBe("text");
@@ -166,12 +172,11 @@ describe("entityToRenderNode", () => {
     expect(metaChild.fontWeight).toBe(400);
   });
 
-  it("uses entity position for RenderNode coordinates", () => {
+  it("uses layout state for RenderNode coordinates", () => {
     const entity = makeEntity({
       id: "g1",
       type: "game",
       phase: "baseline-model",
-      position: { x: 300, y: 450 },
       data: {
         type: "game",
         name: "Arms Race",
@@ -181,7 +186,7 @@ describe("entityToRenderNode", () => {
       },
     });
 
-    const rn = entityToRenderNode(entity);
+    const rn = entityToRenderNode(entity, makeLayoutEntry({ x: 300, y: 450 }));
     expect(rn.absX).toBe(300);
     expect(rn.absY).toBe(450);
     expect(rn.node.x).toBe(300);
@@ -203,7 +208,7 @@ describe("entityToRenderNode", () => {
       },
     });
 
-    const rn = entityToRenderNode(entity);
+    const rn = entityToRenderNode(entity, makeLayoutEntry());
     const frame = rn.node as FrameNode;
     const nameChild = frame.children![0] as TextNode;
     expect((nameChild.content as string).length).toBeLessThanOrEqual(30);
@@ -223,7 +228,7 @@ describe("entityToRenderNode", () => {
       },
     });
 
-    const rn = entityToRenderNode(entity);
+    const rn = entityToRenderNode(entity, makeLayoutEntry());
     const frame = rn.node as FrameNode;
     const nameChild = frame.children![0] as TextNode;
     expect(nameChild.content).toBe("payoff");

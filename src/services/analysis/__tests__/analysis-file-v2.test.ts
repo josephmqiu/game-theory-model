@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Analysis } from "@/types/entity";
+import type { Analysis, LayoutState } from "@/types/entity";
 import type { PhaseState } from "@/types/methodology";
 import {
   parseAnalysisFileText,
@@ -30,7 +30,6 @@ function createTestAnalysis(): Analysis {
           content: "New tariffs announced",
           category: "action",
         },
-        position: { x: 100, y: 200 },
         confidence: "high",
         source: "human",
         rationale: "Directly reported",
@@ -43,13 +42,20 @@ function createTestAnalysis(): Analysis {
   };
 }
 
-describe("v2 entity analysis file format", () => {
+function createTestLayout(): LayoutState {
+  return {
+    e1: { x: 100, y: 200, pinned: true },
+  };
+}
+
+describe("v3 entity analysis file format", () => {
   it("round-trips an Analysis through serialize and parse", () => {
     const analysis = createTestAnalysis();
-    const text = serializeAnalysisFile(analysis);
+    const layout = createTestLayout();
+    const text = serializeAnalysisFile(analysis, layout);
     const parsed = parseAnalysisFileText(text);
 
-    expect(parsed).toEqual(analysis);
+    expect(parsed).toEqual({ analysis, layout });
   });
 
   it("preserves entities with relationships through round-trip", () => {
@@ -64,7 +70,6 @@ describe("v2 entity analysis file format", () => {
         playerType: "primary",
         knowledge: [],
       },
-      position: { x: 300, y: 400 },
       confidence: "high",
       source: "ai",
       rationale: "Key actor in trade dispute",
@@ -78,18 +83,23 @@ describe("v2 entity analysis file format", () => {
       toEntityId: "e1",
     });
 
-    const text = serializeAnalysisFile(analysis);
+    const layout = {
+      ...createTestLayout(),
+      e2: { x: 300, y: 400, pinned: false },
+    };
+    const text = serializeAnalysisFile(analysis, layout);
     const parsed = parseAnalysisFileText(text);
 
-    expect(parsed.entities).toHaveLength(2);
-    expect(parsed.relationships).toHaveLength(1);
-    expect(parsed.relationships[0]).toEqual(analysis.relationships[0]);
+    expect(parsed.analysis.entities).toHaveLength(2);
+    expect(parsed.analysis.relationships).toHaveLength(1);
+    expect(parsed.analysis.relationships[0]).toEqual(analysis.relationships[0]);
+    expect(parsed.layout.e2).toEqual({ x: 300, y: 400, pinned: false });
   });
 
   it("rejects v1 files with an upgrade message", () => {
     const v1File = JSON.stringify({
       type: "game-theory-analysis",
-      version: 1,
+      version: 2,
       analysis: {
         id: "old",
         name: "Old Analysis",
@@ -113,6 +123,7 @@ describe("v2 entity analysis file format", () => {
       type: "game-theory-analysis",
       version: 99,
       analysis: createTestAnalysis(),
+      layout: createTestLayout(),
     });
 
     expect(() => parseAnalysisFileText(badVersion)).toThrow(
@@ -123,8 +134,9 @@ describe("v2 entity analysis file format", () => {
   it("rejects files with an unknown type", () => {
     const badType = JSON.stringify({
       type: "not-a-real-type",
-      version: 2,
+      version: 3,
       analysis: createTestAnalysis(),
+      layout: createTestLayout(),
     });
 
     expect(() => parseAnalysisFileText(badType)).toThrow(
@@ -147,7 +159,7 @@ describe("v2 entity analysis file format", () => {
   it("rejects a v2 file with missing analysis fields", () => {
     const missingTopic = JSON.stringify({
       type: "game-theory-analysis",
-      version: 2,
+      version: 3,
       analysis: {
         id: "a1",
         name: "Test",
@@ -156,6 +168,7 @@ describe("v2 entity analysis file format", () => {
         relationships: [],
         phases: [],
       },
+      layout: {},
     });
 
     expect(() => parseAnalysisFileText(missingTopic)).toThrow(

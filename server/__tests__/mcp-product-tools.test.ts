@@ -88,9 +88,7 @@ function makeFactData() {
       content: "A fact",
       category: "action" as const,
     },
-    position: { x: 0, y: 0 },
     confidence: "high" as const,
-    source: "ai" as const,
     rationale: "test rationale",
     revision: 1,
     stale: false,
@@ -107,9 +105,7 @@ function makePlayerData() {
       playerType: "primary" as const,
       knowledge: [],
     },
-    position: { x: 100, y: 100 },
     confidence: "high" as const,
-    source: "ai" as const,
     rationale: "primary actor",
     revision: 1,
     stale: false,
@@ -373,7 +369,7 @@ describe("handleCreateEntity", () => {
     expect(getAnalysis().entities).toHaveLength(1);
   });
 
-  it("uses default position and confidence when omitted", () => {
+  it("uses default confidence and server-controlled source when omitted", () => {
     const result = JSON.parse(
       handleCreateEntity({
         type: "player",
@@ -388,8 +384,8 @@ describe("handleCreateEntity", () => {
     );
 
     const entity = result.created[0];
-    expect(entity.position).toEqual({ x: 0, y: 0 });
     expect(entity.confidence).toBe("medium");
+    expect(entity.source).toBe("ai");
   });
 
   it("includes runId in provenance when provided", () => {

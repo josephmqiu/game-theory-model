@@ -12,7 +12,6 @@ function makeEntity(
   },
 ): AnalysisEntity {
   return {
-    position: { x: 0, y: 0 },
     confidence: "medium",
     source: "ai",
     rationale: "",
@@ -774,16 +773,21 @@ describe("entity-graph-store", () => {
         entities: [entity],
       };
 
-      useEntityGraphStore.getState().loadAnalysis(analysis, {
-        fileName: "loaded.gta2",
-        filePath: "/tmp/loaded.gta2",
-      });
+      useEntityGraphStore.getState().loadAnalysis(
+        analysis,
+        { e1: { x: 100, y: 200, pinned: true } },
+        {
+          fileName: "loaded.gta",
+          filePath: "/tmp/loaded.gta",
+        },
+      );
 
       const state = useEntityGraphStore.getState();
       expect(state.analysis.topic).toBe("loaded topic");
       expect(state.analysis.entities).toHaveLength(1);
-      expect(state.fileName).toBe("loaded.gta2");
+      expect(state.fileName).toBe("loaded.gta");
       expect(state.isDirty).toBe(false);
+      expect(state.layout.e1).toEqual({ x: 100, y: 200, pinned: true });
     });
   });
 });

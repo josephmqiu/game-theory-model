@@ -8,6 +8,7 @@ import type {
   AnalysisRelationship,
   Analysis,
   EntityProvenance,
+  EntitySource,
   RelationshipType,
 } from "../../shared/types/entity";
 import type { MethodologyPhase, PhaseStatus } from "../../shared/types/methodology";
@@ -86,6 +87,19 @@ function mutate(): void {
   _revision += 1;
 }
 
+function entitySourceForProvenance(
+  source: EntityProvenance["source"],
+): EntitySource {
+  switch (source) {
+    case "user-edited":
+      return "human";
+    case "ai-edited":
+    case "phase-derived":
+    default:
+      return "ai";
+  }
+}
+
 // ── Core API ──
 
 export function newAnalysis(topic: string): void {
@@ -118,7 +132,7 @@ export function getAnalysis(): Readonly<Analysis> {
 }
 
 export function createEntity(
-  data: Omit<AnalysisEntity, "id" | "provenance">,
+  data: Omit<AnalysisEntity, "id" | "provenance" | "source">,
   provenance: {
     source: EntityProvenance["source"];
     runId?: string;
@@ -140,6 +154,7 @@ export function createEntity(
   const entity: AnalysisEntity = {
     ...data,
     id,
+    source: entitySourceForProvenance(provenance.source),
     provenance: fullProvenance,
   };
 
@@ -190,7 +205,7 @@ export function createRelationship(
 
 export function updateEntity(
   id: string,
-  updates: Partial<AnalysisEntity>,
+  updates: Partial<Omit<AnalysisEntity, "id" | "provenance" | "source">>,
   provenance: { source: EntityProvenance["source"]; runId?: string },
 ): AnalysisEntity | null {
   const existing = analysis.entities.find((e) => e.id === id);
@@ -212,6 +227,7 @@ export function updateEntity(
     ...existing,
     ...updates,
     id, // preserve original ID
+    source: entitySourceForProvenance(provenance.source),
     provenance: newProvenance,
   };
 
@@ -254,6 +270,20 @@ export function updateRelationship(
   emit({ type: "relationship_updated", relationship: updated });
 
   return updated;
+}
+
+export function removeRelationship(id: string): boolean {
+  const relationship = analysis.relationships.find((r) => r.id === id);
+  if (!relationship) return false;
+
+  analysis = {
+    ...analysis,
+    relationships: analysis.relationships.filter((r) => r.id !== id),
+  };
+  mutate();
+  emit({ type: "relationship_deleted", relationshipId: relationship.id });
+
+  return true;
 }
 
 export function getEntitiesByPhase(phase: MethodologyPhase): AnalysisEntity[] {
@@ -320,6 +350,10 @@ export function removeEntity(id: string): boolean {
   const exists = analysis.entities.some((e) => e.id === id);
   if (!exists) return false;
 
+  const removedRelationshipIds = analysis.relationships
+    .filter((r) => r.fromEntityId === id || r.toEntityId === id)
+    .map((r) => r.id);
+
   analysis = {
     ...analysis,
     entities: analysis.entities.filter((e) => e.id !== id),
@@ -328,6 +362,10 @@ export function removeEntity(id: string): boolean {
     ),
   };
   mutate();
+  emit({ type: "entity_deleted", entityId: id });
+  for (const relationshipId of removedRelationshipIds) {
+    emit({ type: "relationship_deleted", relationshipId });
+  }
   return true;
 }
 

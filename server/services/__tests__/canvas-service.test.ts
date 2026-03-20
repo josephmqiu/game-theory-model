@@ -28,9 +28,7 @@ function makeFact(content = "A fact") {
         content,
         category: "action" as const,
       },
-      position: { x: 0, y: 0 },
       confidence: "high" as const,
-      source: "ai" as const,
       rationale: "test",
       revision: 1,
       stale: false,
@@ -50,9 +48,7 @@ function makePlayer(name = "USA") {
         playerType: "primary" as const,
         knowledge: [],
       },
-      position: { x: 0, y: 0 },
       confidence: "high" as const,
-      source: "ai" as const,
       rationale: "primary actor",
       revision: 1,
       stale: false,
@@ -73,9 +69,7 @@ function makeGame(name = "Tariff Game") {
         timing: "simultaneous" as const,
         description: "",
       },
-      position: { x: 0, y: 0 },
       confidence: "high" as const,
-      source: "ai" as const,
       rationale: "baseline game",
       revision: 1,
       stale: false,
@@ -95,56 +89,29 @@ beforeEach(() => {
 // ── layoutEntities ──
 
 describe("layoutEntities", () => {
-  it("applies column layout: facts left, players center, games right", () => {
+  it("throws an explicit renderer-owned error", () => {
+    makeFact();
+    makePlayer();
+    makeGame();
+
+    expect(() => layoutEntities("column")).toThrow(
+      'Layout strategy "column" is renderer-owned and not available via the server canvas service.',
+    );
+  });
+
+  it("does not mutate the entity graph", () => {
     const fact = makeFact();
-    const player = makePlayer();
-    const game = makeGame();
 
-    layoutEntities("column");
+    expect(() => layoutEntities("column")).toThrow();
 
-    const entities = getAnalysis().entities;
-    const updated = (id: string) => entities.find((e) => e.id === id)!;
-
-    expect(updated(fact.id).position).toEqual({ x: 100, y: 100 });
-    expect(updated(player.id).position).toEqual({ x: 400, y: 100 });
-    expect(updated(game.id).position).toEqual({ x: 700, y: 100 });
-  });
-
-  it("stacks entities in the same column by index", () => {
-    const f1 = makeFact("Fact 1");
-    const f2 = makeFact("Fact 2");
-
-    layoutEntities("column");
-
-    const entities = getAnalysis().entities;
-    const pos1 = entities.find((e) => e.id === f1.id)!.position;
-    const pos2 = entities.find((e) => e.id === f2.id)!.position;
-
-    expect(pos1).toEqual({ x: 100, y: 100 });
-    expect(pos2).toEqual({ x: 100, y: 220 });
-  });
-
-  it("marks the entity graph as dirty", () => {
-    makeFact();
-    // Reset dirty flag after entity creation
-    newAnalysis("Test");
-    makeFact();
-    // getIsDirty is already true from createEntity, so verify it stays true
-    layoutEntities("column");
+    const entity = getAnalysis().entities.find((e) => e.id === fact.id)!;
+    expect(entity.provenance?.source).toBe("phase-derived");
     expect(getIsDirty()).toBe(true);
   });
 
-  it("uses ai-edited provenance source for layout mutations", () => {
-    const fact = makeFact();
-    layoutEntities("column");
-
-    const entity = getAnalysis().entities.find((e) => e.id === fact.id)!;
-    expect(entity.provenance?.source).toBe("ai-edited");
-  });
-
-  it("throws on unknown layout strategy", () => {
+  it("throws for unknown strategies through the same renderer-owned boundary", () => {
     expect(() => layoutEntities("radial")).toThrow(
-      'Unknown layout strategy: "radial"',
+      'Layout strategy "radial" is renderer-owned and not available via the server canvas service.',
     );
   });
 });

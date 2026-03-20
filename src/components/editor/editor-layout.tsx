@@ -34,6 +34,7 @@ export default function EditorLayout() {
       ? (state.analysis.entities.find((e) => e.id === selectedEntityId) ?? null)
       : null,
   );
+  const layout = useEntityGraphStore((state) => state.layout);
   const [overlayPosition, setOverlayPosition] = useState({ x: 0, y: 0 });
   const [chatCollapsed, setChatCollapsed] = useState(false);
 
@@ -176,11 +177,16 @@ export default function EditorLayout() {
       return;
     }
 
+    const layoutEntry = layout[entity.id];
+    if (!layoutEntry) {
+      return;
+    }
+
     setOverlayPosition({
-      x: entity.position.x + 180,
-      y: entity.position.y + 40,
+      x: layoutEntry.x + 180,
+      y: layoutEntry.y + 40,
     });
-  }, []);
+  }, [layout]);
 
   const handleRerunPhase = useCallback(
     (_phase: MethodologyPhase) => {

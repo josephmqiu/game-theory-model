@@ -1,4 +1,4 @@
-import type { AnalysisFileV2, Analysis } from "@/types/entity";
+import type { AnalysisFileV3, Analysis, LayoutState } from "@/types/entity";
 import { validateAnalysis } from "@/services/entity/entity-validation";
 
 export class AnalysisFileError extends Error {
@@ -37,8 +37,8 @@ function assertArray(
 // ── File format constants ──
 
 const ANALYSIS_FILE_TYPE = "game-theory-analysis";
-const ANALYSIS_FILE_VERSION = 2 as const;
-const LEGACY_FILE_VERSION = 1;
+const ANALYSIS_FILE_VERSION = 3 as const;
+const LEGACY_FILE_VERSION = 2;
 
 // ── Shape validation ──
 
@@ -57,18 +57,49 @@ function assertAnalysisShape(
   assertArray(rawAnalysis.phases, "analysis.phases");
 }
 
+function assertLayoutShape(
+  rawLayout: unknown,
+): asserts rawLayout is LayoutState {
+  if (!isRecord(rawLayout)) {
+    throw new AnalysisFileError("layout must be an object.");
+  }
+
+  for (const [entityId, value] of Object.entries(rawLayout)) {
+    if (!isRecord(value)) {
+      throw new AnalysisFileError(`layout.${entityId} must be an object.`);
+    }
+    if (typeof value.x !== "number") {
+      throw new AnalysisFileError(`layout.${entityId}.x must be a number.`);
+    }
+    if (typeof value.y !== "number") {
+      throw new AnalysisFileError(`layout.${entityId}.y must be a number.`);
+    }
+    if (typeof value.pinned !== "boolean") {
+      throw new AnalysisFileError(
+        `layout.${entityId}.pinned must be a boolean.`,
+      );
+    }
+  }
+}
+
 // ── Serialize / Parse ──
 
-export function serializeAnalysisFile(analysis: Analysis): string {
-  const file: AnalysisFileV2 = {
+export function serializeAnalysisFile(
+  analysis: Analysis,
+  layout: LayoutState,
+): string {
+  const file: AnalysisFileV3 = {
     type: ANALYSIS_FILE_TYPE,
     version: ANALYSIS_FILE_VERSION,
     analysis,
+    layout,
   };
   return JSON.stringify(file, null, 2);
 }
 
-export function parseAnalysisFileText(text: string): Analysis {
+export function parseAnalysisFileText(
+  text: string,
+): { analysis: Analysis; layout: LayoutState } {
   let raw: unknown;
 
   try {
@@ -100,6 +131,7 @@ export function parseAnalysisFileText(text: string): Analysis {
   }
 
   assertAnalysisShape(raw.analysis);
+  assertLayoutShape(raw.layout);
 
   const validation = validateAnalysis(raw.analysis);
   if (!validation.isValid) {
@@ -107,7 +139,7 @@ export function parseAnalysisFileText(text: string): Analysis {
     throw new AnalysisFileError(`Invalid entity analysis: ${messages}`);
   }
 
-  return raw.analysis;
+  return { analysis: raw.analysis, layout: raw.layout };
 }
 
 export function createDefaultAnalysisFileName(analysis: Analysis): string {

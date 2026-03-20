@@ -9,6 +9,7 @@ import type {
   AnalysisFileReference,
   AnalysisRelationship,
   Analysis,
+  LayoutState,
 } from "../../shared/types/entity";
 import { RELATIONSHIP_CATEGORY } from "@/types/entity";
 import type { MethodologyPhase, PhaseStatus } from "../../shared/types/methodology";
@@ -18,6 +19,7 @@ import { V1_PHASES } from "@/types/methodology";
 
 interface EntityGraphStoreState extends AnalysisFileReference {
   analysis: Analysis;
+  layout: LayoutState;
   isDirty: boolean;
   revision: number;
   pendingEdits: Array<{ id: string; updates: Partial<AnalysisEntity> }>;
@@ -25,12 +27,15 @@ interface EntityGraphStoreState extends AnalysisFileReference {
   newAnalysis: (topic: string) => void;
   loadAnalysis: (
     analysis: Analysis,
+    layout?: LayoutState,
     source?: {
       fileName?: string;
       filePath?: string;
       fileHandle?: FileSystemFileHandle;
     },
   ) => void;
+  setLayout: (layout: LayoutState) => void;
+  updateLayout: (updates: LayoutState) => void;
   addEntities: (
     entities: AnalysisEntity[],
     relationships?: AnalysisRelationship[],
@@ -117,6 +122,16 @@ function createEmptyAnalysis(topic: string): Analysis {
   };
 }
 
+function pruneLayout(
+  layout: LayoutState,
+  entities: AnalysisEntity[],
+): LayoutState {
+  const validIds = new Set(entities.map((entity) => entity.id));
+  return Object.fromEntries(
+    Object.entries(layout).filter(([entityId]) => validIds.has(entityId)),
+  );
+}
+
 // ── Store ──
 // This store is a LOCAL state container for the renderer.
 // In browser mode, state arrives via analysis-client SSE (syncAnalysis / setPhaseStatusLocal).
@@ -126,6 +141,7 @@ function createEmptyAnalysis(topic: string): Analysis {
 export const useEntityGraphStore = create<EntityGraphStoreState>(
   (set, get) => ({
     analysis: createEmptyAnalysis(""),
+    layout: {},
     isDirty: false,
     revision: 0,
     fileName: null,
@@ -136,6 +152,7 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
     newAnalysis: (topic) => {
       set((state) => ({
         analysis: createEmptyAnalysis(topic),
+        layout: {},
         isDirty: false,
         revision: state.revision + 1,
         fileName: null,
@@ -145,15 +162,38 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
       }));
     },
 
-    loadAnalysis: (analysis, source) => {
+    loadAnalysis: (analysis, layout, source) => {
       set((state) => ({
         analysis,
+        layout: pruneLayout(layout ?? {}, analysis.entities),
         isDirty: false,
         revision: state.revision + 1,
         fileName: source?.fileName ?? null,
         filePath: source?.filePath ?? null,
         fileHandle: source?.fileHandle ?? null,
         pendingEdits: [],
+      }));
+    },
+
+    setLayout: (layout) => {
+      set((state) => ({
+        layout: pruneLayout(layout, state.analysis.entities),
+        isDirty: true,
+        revision: state.revision + 1,
+      }));
+    },
+
+    updateLayout: (updates) => {
+      set((state) => ({
+        layout: pruneLayout(
+          {
+            ...state.layout,
+            ...updates,
+          },
+          state.analysis.entities,
+        ),
+        isDirty: true,
+        revision: state.revision + 1,
       }));
     },
 
@@ -179,6 +219,10 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
               ...newRelationships,
             ],
           },
+          layout: pruneLayout(state.layout, [
+            ...state.analysis.entities,
+            ...newEntities,
+          ]),
           isDirty: true,
           revision: state.revision + 1,
         };
@@ -217,6 +261,9 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
             (r) => r.fromEntityId !== id && r.toEntityId !== id,
           ),
         },
+        layout: Object.fromEntries(
+          Object.entries(state.layout).filter(([entityId]) => entityId !== id),
+        ),
         isDirty: true,
         revision: state.revision + 1,
       }));
@@ -323,6 +370,7 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
     syncAnalysis: (analysis) =>
       set((state) => ({
         analysis,
+        layout: pruneLayout(state.layout, analysis.entities),
         revision: state.revision + 1,
         // Note: does NOT clear isDirty or file refs — those are for save/load lifecycle
       })),

@@ -895,20 +895,10 @@ const PRODUCT_TOOL_DEFINITIONS = [
           description:
             "Entity-type-specific data (e.g. { type: 'fact', date, source, content, category })",
         },
-        position: {
-          type: "object",
-          description: "Canvas position { x, y }",
-          properties: { x: { type: "number" }, y: { type: "number" } },
-        },
         confidence: {
           type: "string",
           enum: ["high", "medium", "low"],
           description: "Confidence level",
-        },
-        source: {
-          type: "string",
-          enum: ["ai", "human", "computed"],
-          description: "Entity source",
         },
         rationale: { type: "string", description: "Reasoning for this entity" },
         revision: {
@@ -935,9 +925,7 @@ const PRODUCT_TOOL_DEFINITIONS = [
         type: { type: "string", description: "Updated entity type" },
         phase: { type: "string", description: "Updated phase" },
         data: { type: "object", description: "Updated entity data" },
-        position: { type: "object", description: "Updated position { x, y }" },
         confidence: { type: "string", enum: ["high", "medium", "low"] },
-        source: { type: "string", enum: ["ai", "human", "computed"] },
         rationale: { type: "string", description: "Updated rationale" },
         revision: { type: "number", description: "Updated revision number" },
         runId: {
@@ -1169,9 +1157,7 @@ export function handleCreateEntity(args: {
   type: string;
   phase: string;
   data: Record<string, unknown>;
-  position?: { x: number; y: number };
   confidence?: string;
-  source?: string;
   rationale?: string;
   revision?: number;
   runId?: string;
@@ -1181,9 +1167,7 @@ export function handleCreateEntity(args: {
       type: args.type as any, // eslint-disable-line @typescript-eslint/no-explicit-any
       phase: args.phase as MethodologyPhase,
       data: args.data as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-      position: args.position ?? { x: 0, y: 0 },
       confidence: (args.confidence as any) ?? "medium", // eslint-disable-line @typescript-eslint/no-explicit-any
-      source: (args.source as any) ?? "ai", // eslint-disable-line @typescript-eslint/no-explicit-any
       rationale: args.rationale ?? "",
       revision: args.revision ?? 1,
       stale: false,
@@ -1279,13 +1263,19 @@ export function handleUpdateRelationship(args: {
 
 // Canvas tools (3)
 export function handleLayoutEntities(args: { strategy: string }): string {
-  canvasService.layoutEntities(args.strategy);
-  return JSON.stringify({
-    created: [],
-    updated: [],
-    staleMarked: [],
-    grouped: [],
-  });
+  try {
+    canvasService.layoutEntities(args.strategy);
+    return JSON.stringify({
+      created: [],
+      updated: [],
+      staleMarked: [],
+      grouped: [],
+    });
+  } catch (error) {
+    return JSON.stringify({
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 export function handleFocusEntity(args: { entityId: string }): string {

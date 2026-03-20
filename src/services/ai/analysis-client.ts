@@ -103,7 +103,7 @@ export async function startAnalysis(
               if (store.syncAnalysis) {
                 store.syncAnalysis(event.analysis);
               } else {
-                store.loadAnalysis(event.analysis);
+                store.loadAnalysis(event.analysis, undefined);
               }
             }
           } else if (event.channel === "error") {
@@ -155,7 +155,7 @@ export async function updateEntity(
   if (data.analysis) {
     const store = useEntityGraphStore.getState();
     if (store.syncAnalysis) store.syncAnalysis(data.analysis);
-    else store.loadAnalysis(data.analysis);
+    else store.loadAnalysis(data.analysis, undefined);
   }
 }
 
@@ -163,5 +163,5 @@ export async function updateEntity(
 export function handleChatEntitySnapshot(analysis: Analysis): void {
   const store = useEntityGraphStore.getState();
   if (store.syncAnalysis) store.syncAnalysis(analysis);
-  else store.loadAnalysis(analysis);
+  else store.loadAnalysis(analysis, undefined);
 }

@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const VALID_PHASE_1_STRUCTURED = {
   entities: [
     {
-      id: "fact-1",
+      id: null,
+      ref: "fact-1",
       type: "fact",
       phase: "situational-grounding",
       data: {
@@ -15,15 +16,12 @@ const VALID_PHASE_1_STRUCTURED = {
         content: "Country A imposed 25% tariffs on Country B steel imports",
         category: "action",
       },
-      position: { x: 0, y: 0 },
       confidence: "high",
-      source: "ai",
       rationale: "Confirmed by official trade records",
-      revision: 1,
-      stale: false,
     },
     {
-      id: "fact-2",
+      id: null,
+      ref: "fact-2",
       type: "fact",
       phase: "situational-grounding",
       data: {
@@ -33,12 +31,8 @@ const VALID_PHASE_1_STRUCTURED = {
         content: "Country B steel exports dropped 40% in the first week",
         category: "economic",
       },
-      position: { x: 0, y: 0 },
       confidence: "medium",
-      source: "ai",
       rationale: "Early data, may be revised",
-      revision: 1,
-      stale: false,
     },
   ],
   relationships: [
@@ -54,7 +48,8 @@ const VALID_PHASE_1_STRUCTURED = {
 const VALID_PHASE_2_STRUCTURED = {
   entities: [
     {
-      id: "player-a",
+      id: null,
+      ref: "player-a",
       type: "player",
       phase: "player-identification",
       data: {
@@ -63,15 +58,12 @@ const VALID_PHASE_2_STRUCTURED = {
         playerType: "primary",
         knowledge: ["Own tariff schedule"],
       },
-      position: { x: 0, y: 0 },
       confidence: "high",
-      source: "ai",
       rationale: "Initiator of the tariff action",
-      revision: 1,
-      stale: false,
     },
     {
-      id: "obj-a1",
+      id: null,
+      ref: "obj-a1",
       type: "objective",
       phase: "player-identification",
       data: {
@@ -80,12 +72,8 @@ const VALID_PHASE_2_STRUCTURED = {
         priority: "high",
         stability: "stable",
       },
-      position: { x: 0, y: 0 },
       confidence: "high",
-      source: "ai",
       rationale: "Stated policy goal",
-      revision: 1,
-      stale: false,
     },
   ],
   relationships: [
@@ -101,7 +89,8 @@ const VALID_PHASE_2_STRUCTURED = {
 const VALID_PHASE_3_STRUCTURED = {
   entities: [
     {
-      id: "game-1",
+      id: null,
+      ref: "game-1",
       type: "game",
       phase: "baseline-model",
       data: {
@@ -111,12 +100,8 @@ const VALID_PHASE_3_STRUCTURED = {
         timing: "sequential",
         description: "Escalation game between two trading nations",
       },
-      position: { x: 0, y: 0 },
       confidence: "medium",
-      source: "ai",
       rationale: "Fits chicken structure",
-      revision: 1,
-      stale: false,
     },
   ],
   relationships: [],
@@ -200,7 +185,8 @@ describe("analysis-service", () => {
       expect(result.success).toBe(true);
       expect(result.entities).toHaveLength(2);
       expect(result.entities[0].type).toBe("fact");
-      expect(result.entities[0].id).toBe("fact-1");
+      expect(result.entities[0].id).toBeNull();
+      expect(result.entities[0].ref).toBe("fact-1");
       expect(result.entities[1].confidence).toBe("medium");
       expect(result.relationships).toHaveLength(1);
       expect(result.relationships[0].type).toBe("precedes");
@@ -483,7 +469,8 @@ describe("analysis-service", () => {
       const withTrailing = `{
         "entities": [
           {
-            "id": "fact-1",
+            "id": null,
+            "ref": "fact-1",
             "type": "fact",
             "phase": "situational-grounding",
             "data": {
@@ -493,12 +480,8 @@ describe("analysis-service", () => {
               "content": "Test fact",
               "category": "action",
             },
-            "position": { "x": 0, "y": 0 },
             "confidence": "high",
-            "source": "ai",
             "rationale": "Test",
-            "revision": 1,
-            "stale": false,
           },
         ],
         "relationships": [],
@@ -536,15 +519,14 @@ describe("analysis-service", () => {
       expect(result.error).toContain("relationships");
     });
 
-    // Regression: confidence must validate against "high"|"medium"|"low",
-    // not against the source enum "ai"|"human"|"computed" (ISSUE-001).
-    it("accepts entity with confidence: 'high' (not rejected by source enum)", async () => {
+    it("accepts entity with confidence and required ref", async () => {
       const { _validatePhaseOutput } = await importService();
       const result = _validatePhaseOutput(
         {
           entities: [
             {
-              id: "fact-regression",
+              id: null,
+              ref: "fact-regression",
               type: "fact",
               phase: "situational-grounding",
               data: {
@@ -554,12 +536,8 @@ describe("analysis-service", () => {
                 content: "Test content",
                 category: "action",
               },
-              position: { x: 0, y: 0 },
               confidence: "high",
-              source: "ai",
               rationale: "Test rationale",
-              revision: 1,
-              stale: false,
             },
           ],
           relationships: [],
@@ -571,13 +549,13 @@ describe("analysis-service", () => {
       expect(result.entities[0].confidence).toBe("high");
     });
 
-    it("accepts entity without explicit source (defaults to 'ai')", async () => {
+    it("rejects entity missing required ref", async () => {
       const { _validatePhaseOutput } = await importService();
       const result = _validatePhaseOutput(
         {
           entities: [
             {
-              id: "fact-no-source",
+              id: null,
               type: "fact",
               phase: "situational-grounding",
               data: {
@@ -587,20 +565,16 @@ describe("analysis-service", () => {
                 content: "Test content",
                 category: "economic",
               },
-              position: { x: 0, y: 0 },
               confidence: "medium",
-              // no source field — should default to "ai"
               rationale: "Test",
-              revision: 1,
-              stale: false,
             },
           ],
           relationships: [],
         },
         "situational-grounding",
       );
-      expect(result.success).toBe(true);
-      expect(result.entities[0].source).toBe("ai");
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Entity 0");
     });
 
     it("rejects entity with invalid confidence value", async () => {
@@ -609,7 +583,8 @@ describe("analysis-service", () => {
         {
           entities: [
             {
-              id: "fact-bad-conf",
+              id: null,
+              ref: "fact-bad-conf",
               type: "fact",
               phase: "situational-grounding",
               data: {
@@ -619,12 +594,8 @@ describe("analysis-service", () => {
                 content: "Test",
                 category: "action",
               },
-              position: { x: 0, y: 0 },
               confidence: "ai", // wrong — this is a source value, not confidence
-              source: "ai",
               rationale: "Test",
-              revision: 1,
-              stale: false,
             },
           ],
           relationships: [],

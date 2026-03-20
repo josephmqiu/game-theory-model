@@ -9,7 +9,7 @@ import type {
   PhaseSummary,
 } from "../../shared/types/events";
 import { V1_PHASES } from "../../src/types/methodology";
-import type { PhaseResult } from "../services/analysis-service";
+import type { PhaseOutputEntity, PhaseResult } from "../services/analysis-service";
 import { runPhase } from "../services/analysis-service";
 import * as entityGraphService from "../services/entity-graph-service";
 import * as revalidationService from "../services/revalidation-service";
@@ -278,31 +278,16 @@ async function executeSinglePhase(
     }
 
     if (result.success) {
-      // Store entities via entity-graph-service, building an ID mapping
-      // (AI-provided ID → service-generated ID) so relationships can be remapped.
-      const idMap = new Map<string, string>();
+      // Store entities via entity-graph-service, building a ref mapping
+      // (AI-provided local ref → service-generated ID) so relationships can be remapped.
+      const refMap = new Map<string, string>();
       for (const entity of result.entities) {
-        const created = entityGraphService.createEntity(
-          {
-            type: entity.type,
-            phase: entity.phase,
-            data: entity.data,
-            position: entity.position,
-            confidence: entity.confidence,
-            source: entity.source,
-            rationale: entity.rationale,
-            revision: entity.revision,
-            stale: entity.stale,
-          },
-          { source: "phase-derived", runId: run.runId, phase },
-        );
-        if (entity.id) {
-          idMap.set(entity.id, created.id);
-        }
+        const created = createPersistedEntity(entity, run.runId, phase);
+        refMap.set(entity.ref, created.id);
       }
       for (const rel of result.relationships) {
-        const fromId = idMap.get(rel.fromEntityId) ?? rel.fromEntityId;
-        const toId = idMap.get(rel.toEntityId) ?? rel.toEntityId;
+        const fromId = refMap.get(rel.fromEntityId) ?? rel.fromEntityId;
+        const toId = refMap.get(rel.toEntityId) ?? rel.toEntityId;
         try {
           entityGraphService.createRelationship({
             type: rel.type,
@@ -377,6 +362,25 @@ async function executeSinglePhase(
   });
   entityGraphService.setPhaseStatus(phase, "failed");
   return { success: false, error: lastError };
+}
+
+function createPersistedEntity(
+  entity: PhaseOutputEntity,
+  runId: string,
+  phase: MethodologyPhase,
+): AnalysisEntity {
+  return entityGraphService.createEntity(
+    {
+      type: entity.type,
+      phase: entity.phase,
+      data: entity.data,
+      confidence: entity.confidence,
+      rationale: entity.rationale,
+      revision: 1,
+      stale: false,
+    },
+    { source: "phase-derived", runId, phase },
+  );
 }
 
 // ── Public API ──

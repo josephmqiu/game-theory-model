@@ -215,7 +215,6 @@ export interface AnalysisEntity {
   type: EntityType;
   phase: MethodologyPhase;
   data: EntityData;
-  position: { x: number; y: number };
   confidence: EntityConfidence;
   /** @deprecated Use provenance.source instead */
   source: EntitySource;
@@ -293,10 +292,16 @@ export interface Analysis {
 
 // ── File Format ──
 
-export interface AnalysisFileV2 {
+export type LayoutState = Record<
+  string,
+  { x: number; y: number; pinned: boolean }
+>;
+
+export interface AnalysisFileV3 {
   type: "game-theory-analysis";
-  version: 2;
+  version: 3;
   analysis: Analysis;
+  layout: LayoutState;
 }
 
 /** File reference for persistence (shared across v1 and v2 formats). */

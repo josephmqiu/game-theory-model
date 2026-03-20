@@ -32,7 +32,6 @@ const entity: AnalysisEntity = {
     content: "A fact",
     category: "action",
   },
-  position: { x: 0, y: 0 },
   confidence: "high",
   source: "ai",
   provenance,
@@ -133,6 +132,15 @@ describe("AnalysisMutationEvent", () => {
     expect(event.relationship.id).toBe("r-1");
   });
 
+  it("represents entity_deleted", () => {
+    const event: AnalysisMutationEvent = {
+      type: "entity_deleted",
+      entityId: "e-1",
+    };
+    expect(event.type).toBe("entity_deleted");
+    expect(event.entityId).toBe("e-1");
+  });
+
   it("represents entity_updated with EntityProvenance (not string)", () => {
     const previousProvenance: EntityProvenance = {
       source: "phase-derived",
@@ -160,6 +168,15 @@ describe("AnalysisMutationEvent", () => {
     };
     expect(event.type).toBe("relationship_updated");
     expect(event.relationship.id).toBe("r-1");
+  });
+
+  it("represents relationship_deleted", () => {
+    const event: AnalysisMutationEvent = {
+      type: "relationship_deleted",
+      relationshipId: "r-1",
+    };
+    expect(event.type).toBe("relationship_deleted");
+    expect(event.relationshipId).toBe("r-1");
   });
 
   it("represents stale_marked", () => {
@@ -199,7 +216,9 @@ describe("AnalysisEvent union", () => {
 
   const mutationEvents: AnalysisEvent[] = [
     { type: "entity_created", entity },
+    { type: "entity_deleted", entityId: "e-1" },
     { type: "relationship_created", relationship },
+    { type: "relationship_deleted", relationshipId: "r-1" },
     { type: "entity_updated", entity, previousProvenance: provenance },
     { type: "relationship_updated", relationship },
     { type: "stale_marked", entityIds: ["e-1"] },
@@ -210,14 +229,16 @@ describe("AnalysisEvent union", () => {
     const events: AnalysisEvent[] = [
       { type: "phase_started", phase: "baseline-model", runId: "r" },
       { type: "entity_created", entity },
+      { type: "entity_deleted", entityId: "e-1" },
       { type: "relationship_updated", relationship },
+      { type: "relationship_deleted", relationshipId: "r-1" },
       { type: "stale_marked", entityIds: [] },
       { type: "state_changed" },
       { type: "analysis_completed", runId: "r" },
     ];
-    expect(events).toHaveLength(6);
+    expect(events).toHaveLength(8);
     expect(progressEvents).toHaveLength(4);
-    expect(mutationEvents).toHaveLength(6);
+    expect(mutationEvents).toHaveLength(8);
   });
 });
 

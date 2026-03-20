@@ -1,5 +1,6 @@
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
-import type { AnalysisFileReference } from "@/types/entity";
+import { layoutEntities } from "@/services/entity/entity-layout";
+import type { Analysis, AnalysisFileReference, LayoutState } from "@/types/entity";
 import {
   AnalysisFileError,
   createDefaultAnalysisFileName,
@@ -166,6 +167,25 @@ function saveAnalysisAsWithDownload(
   };
 }
 
+function buildResolvedLayout(
+  analysis: Analysis,
+  storedLayout: LayoutState,
+): LayoutState {
+  const validIds = new Set(analysis.entities.map((entity) => entity.id));
+  const layout = Object.fromEntries(
+    Object.entries(storedLayout).filter(([entityId]) => validIds.has(entityId)),
+  );
+
+  const computedPositions = layoutEntities(analysis.entities);
+  for (const [entityId, position] of computedPositions) {
+    if (!layout[entityId]) {
+      layout[entityId] = { ...position, pinned: false };
+    }
+  }
+
+  return layout;
+}
+
 // ── Persistence ──
 
 export function createAnalysisSavePayload(
@@ -176,7 +196,7 @@ export function createAnalysisSavePayload(
   source: AnalysisFileReference;
 } {
   return {
-    text: serializeAnalysisFile(state.analysis),
+    text: serializeAnalysisFile(state.analysis, state.layout),
     fileName: state.fileName ?? createDefaultAnalysisFileName(state.analysis),
     source: {
       fileName: state.fileName,
@@ -276,12 +296,16 @@ export function loadAnalysisFromText(
   text: string,
   source?: AnalysisPersistenceSource,
 ): void {
-  const analysis = parseAnalysisFileText(text);
-  useEntityGraphStore.getState().loadAnalysis(analysis, {
-    fileName: source?.fileName ?? undefined,
-    filePath: source?.filePath ?? undefined,
-    fileHandle: source?.fileHandle ?? undefined,
-  });
+  const { analysis, layout } = parseAnalysisFileText(text);
+  useEntityGraphStore.getState().loadAnalysis(
+    analysis,
+    buildResolvedLayout(analysis, layout),
+    {
+      fileName: source?.fileName ?? undefined,
+      filePath: source?.filePath ?? undefined,
+      fileHandle: source?.fileHandle ?? undefined,
+    },
+  );
 }
 
 export async function openAnalysisFromPath(filePath: string): Promise<boolean> {
