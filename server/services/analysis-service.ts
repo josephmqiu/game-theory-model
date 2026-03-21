@@ -1702,7 +1702,8 @@ const PHASE_ENTITY_JSON_SCHEMAS: Record<
 /**
  * Recursively ensure every object with `properties` has `additionalProperties: false`.
  * Required by OpenAI structured output; harmless for Anthropic.
- * Also normalises `type: ["string", "null"]` → `type: "string"` (OpenAI rejects array types).
+ * Also normalises `type: ["string", "null"]` → `anyOf` branches because
+ * OpenAI structured output expects union types in combinator form.
  * Bare `{ type: "object" }` without `properties` gets `properties: {}`.
  */
 function enforceStrictSchema(
@@ -1711,7 +1712,7 @@ function enforceStrictSchema(
   const out = { ...schema };
 
   // Normalise array-form type (e.g. ["string", "null"] → anyOf with null)
-  // OpenAI rejects type arrays; use anyOf instead to preserve nullability.
+  // so the schema stays within the supported structured-output subset.
   if (Array.isArray(out.type)) {
     const types = out.type as string[];
     if (types.length === 1) {
@@ -1750,7 +1751,7 @@ function enforceStrictSchema(
     out.items = enforceStrictSchema(out.items as Record<string, unknown>);
   }
 
-  // Handle oneOf / anyOf
+  // Recurse into combinators used by the structured-output schema.
   for (const key of ["oneOf", "anyOf"] as const) {
     if (Array.isArray(out[key])) {
       out[key] = (out[key] as Record<string, unknown>[]).map((s) =>
@@ -1769,7 +1770,7 @@ function enforceStrictSchema(
 function buildOutputSchema(phase: SupportedPhase): Record<string, unknown> {
   const entitySchemas = PHASE_ENTITY_JSON_SCHEMAS[phase];
   const entityItems =
-    entitySchemas.length === 1 ? entitySchemas[0] : { oneOf: entitySchemas };
+    entitySchemas.length === 1 ? entitySchemas[0] : { anyOf: entitySchemas };
 
   const raw = {
     type: "object",

@@ -822,10 +822,11 @@ describe("analysis-service", () => {
       expect(systemPrompt).toContain("Phase 2");
       expect(systemPrompt).toContain("Player Identification");
 
-      // Phase 2 schema uses oneOf for player + objective entity types
+      // Phase 2 schema uses anyOf for player + objective entity types
       const entityItems = (schema as any).properties.entities.items;
-      expect(entityItems).toHaveProperty("oneOf");
-      expect(entityItems.oneOf).toHaveLength(2);
+      expect(entityItems).toHaveProperty("anyOf");
+      expect(entityItems.anyOf).toHaveLength(2);
+      expect(entityItems).not.toHaveProperty("oneOf");
     });
 
     it("works for phase 3 — baseline model", async () => {
@@ -838,9 +839,15 @@ describe("analysis-service", () => {
       expect(result.entities).toHaveLength(1);
       expect(result.entities[0].type).toBe("game");
 
-      const [, systemPrompt] = mockClaudeRunAnalysisPhase.mock.calls[0];
+      const [, systemPrompt, , schema] =
+        mockClaudeRunAnalysisPhase.mock.calls[0];
       expect(systemPrompt).toContain("Phase 3");
       expect(systemPrompt).toContain("Baseline Strategic Model");
+
+      const entityItems = (schema as any).properties.entities.items;
+      expect(entityItems).toHaveProperty("anyOf");
+      expect(entityItems.anyOf).toHaveLength(2);
+      expect(entityItems).not.toHaveProperty("oneOf");
     });
 
     it("works for phase 4 — historical game", async () => {
@@ -879,10 +886,11 @@ describe("analysis-service", () => {
       expect(systemPrompt).toContain("Phase 4");
       expect(systemPrompt).toContain("Historical Repeated Game");
 
-      // Phase 4 schema uses oneOf for 5 entity types
+      // Phase 4 schema uses anyOf for 5 entity types
       const entityItems = (schema as any).properties.entities.items;
-      expect(entityItems).toHaveProperty("oneOf");
-      expect(entityItems.oneOf).toHaveLength(5);
+      expect(entityItems).toHaveProperty("anyOf");
+      expect(entityItems.anyOf).toHaveLength(5);
+      expect(entityItems).not.toHaveProperty("oneOf");
     });
 
     it("works for phase 7 — assumptions", async () => {
@@ -903,9 +911,10 @@ describe("analysis-service", () => {
       expect(systemPrompt).toContain("Phase 7");
       expect(systemPrompt).toContain("Assumption");
 
-      // Phase 7 schema uses a single entity type (no oneOf)
+      // Phase 7 schema uses a single entity type (no combinator)
       const entityItems = (schema as any).properties.entities.items;
       expect(entityItems).not.toHaveProperty("oneOf");
+      expect(entityItems).not.toHaveProperty("anyOf");
       expect(entityItems.properties).toHaveProperty("type");
     });
 
@@ -975,10 +984,33 @@ describe("analysis-service", () => {
       expect(systemPrompt).toContain("Phase 6");
       expect(systemPrompt).toContain("Formal Modeling");
 
-      // Phase 6 schema uses oneOf for 9 entity types
+      // Phase 6 schema uses anyOf for 9 entity types
       const entityItems = (schema as any).properties.entities.items;
-      expect(entityItems).toHaveProperty("oneOf");
-      expect(entityItems.oneOf).toHaveLength(9);
+      expect(entityItems).toHaveProperty("anyOf");
+      expect(entityItems.anyOf).toHaveLength(9);
+      expect(entityItems).not.toHaveProperty("oneOf");
+    });
+
+    it("uses anyOf for phase 9 — scenarios", async () => {
+      mockClaudeRunAnalysisPhase.mockResolvedValue({
+        entities: [],
+        relationships: [],
+      });
+
+      const { runPhase } = await importService();
+      const result = await runPhase("scenarios", "US-China trade war");
+
+      expect(result.success).toBe(true);
+
+      const [, systemPrompt, , schema] =
+        mockClaudeRunAnalysisPhase.mock.calls[0];
+      expect(systemPrompt).toContain("Phase 9");
+      expect(systemPrompt).toContain("Scenario Generation");
+
+      const entityItems = (schema as any).properties.entities.items;
+      expect(entityItems).toHaveProperty("anyOf");
+      expect(entityItems.anyOf).toHaveLength(2);
+      expect(entityItems).not.toHaveProperty("oneOf");
     });
 
     it("rejects phase 6 entities in phase 7 slot", async () => {

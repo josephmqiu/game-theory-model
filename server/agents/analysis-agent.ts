@@ -152,6 +152,13 @@ export function classifyFailure(error: string): FailureClass {
   if (/connect|ECONNR|network|socket|EPIPE/i.test(error)) return "retryable"; // transport
   if (/empty.*(response|output)|no.*(content|output|text)/i.test(error))
     return "retryable"; // empty
+  if (
+    /schema.*refus|invalid_json_schema|response_format|outputSchema|not permitted/i.test(
+      error,
+    )
+  ) {
+    return "terminal"; // schema refusal / unsupported structured output
+  }
   if (/parse|json|syntax|zod|validation/i.test(error)) return "retryable"; // parse
   // Everything else is terminal (timeout, auth, schema refusal, unknown)
   return "terminal";

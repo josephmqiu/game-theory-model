@@ -471,6 +471,17 @@ describe("analysis-orchestrator", () => {
     );
   });
 
+  it("classifies OpenAI structured-output schema errors as terminal", () => {
+    expect(
+      orchestrator.classifyFailure(
+        "Invalid schema for response_format 'codex_output_schema': In context=('properties', 'entities', 'items'), 'oneOf' is not permitted.",
+      ),
+    ).toBe("terminal");
+    expect(
+      orchestrator.classifyFailure("invalid_json_schema: outputSchema rejected"),
+    ).toBe("terminal");
+  });
+
   it("classifies transport errors as retryable", () => {
     expect(orchestrator.classifyFailure("ECONNRESET")).toBe("retryable");
     expect(orchestrator.classifyFailure("Network error")).toBe("retryable");
