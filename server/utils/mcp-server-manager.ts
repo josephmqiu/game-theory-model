@@ -5,9 +5,19 @@ import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 
-// ESM-compatible __dirname polyfill
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
+function resolveModuleDirname(): string {
+  const importMetaUrl =
+    typeof import.meta !== 'undefined' ? import.meta.url : undefined
+  if (typeof importMetaUrl === 'string') {
+    return dirname(fileURLToPath(importMetaUrl))
+  }
+  if (typeof __dirname === 'string') {
+    return __dirname
+  }
+  return process.cwd()
+}
+
+const __dirname = resolveModuleDirname()
 
 // PID/Port files for tracking the detached MCP server process across restarts
 const MCP_PID_FILE = join(tmpdir(), 'game-theory-analyzer-mcp-server.pid')

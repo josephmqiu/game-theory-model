@@ -1,8 +1,14 @@
 import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
 import type { MethodologyPhase } from "../../../shared/types/methodology";
 import type { AnalysisProgressEvent } from "../../../shared/types/events";
-import type { AnalysisEntity, AnalysisRelationship } from "../../../shared/types/entity";
-import type { PhaseOutputEntity, PhaseResult } from "../../services/analysis-service";
+import type {
+  AnalysisEntity,
+  AnalysisRelationship,
+} from "../../../shared/types/entity";
+import type {
+  PhaseOutputEntity,
+  PhaseResult,
+} from "../../services/analysis-service";
 
 // ── Mock analysis-service ──
 
@@ -572,8 +578,8 @@ describe("analysis-orchestrator", () => {
 
     const { runId } = await orchestrator.runFull("Test topic");
 
-    // Fast-forward past run-level timeout (15 min)
-    vi.advanceTimersByTime(16 * 60 * 1000);
+    // Fast-forward past run-level timeout (30 min)
+    vi.advanceTimersByTime(31 * 60 * 1000);
     await orchestrator._getRunPromise();
 
     unsubscribe();
@@ -596,9 +602,9 @@ describe("analysis-orchestrator", () => {
     expect(status.phasesCompleted).toBe(1);
   });
 
-  // ── 11b. Phase timeout (3 min) is terminal, not retried ──
+  // ── 11b. Phase timeout (9 min) is terminal, not retried ──
 
-  it("treats phase timeout (3 min) as terminal — no retry", async () => {
+  it("treats phase timeout (9 min) as terminal — no retry", async () => {
     mockRunPhase
       .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
       .mockResolvedValueOnce(makeFailedResult("Phase timeout"));
@@ -889,9 +895,9 @@ describe("analysis-orchestrator", () => {
       expect(mockRunPhase).toHaveBeenCalledTimes(4);
       expect(mockRunPhase.mock.calls[1][0]).toBe("player-identification");
       expect(mockRunPhase.mock.calls[2][0]).toBe("player-identification");
-      expect(
-        mockRunPhase.mock.calls[2][2]?.revisionRetryInstruction,
-      ).toContain("appeared truncated");
+      expect(mockRunPhase.mock.calls[2][2]?.revisionRetryInstruction).toContain(
+        "appeared truncated",
+      );
       expect(mockCommitPhaseSnapshot).toHaveBeenCalledTimes(4);
       expect(mockCommitPhaseSnapshot.mock.calls[2][0]).toMatchObject({
         allowLargeReductionCommit: true,

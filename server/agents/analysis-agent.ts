@@ -3,7 +3,10 @@
 // Consolidates analysis-run-store state into module-level singleton.
 
 import type { MethodologyPhase } from "../../shared/types/methodology";
-import type { AnalysisEntity, AnalysisRelationship } from "../../shared/types/entity";
+import type {
+  AnalysisEntity,
+  AnalysisRelationship,
+} from "../../shared/types/entity";
 import type {
   AnalysisProgressEvent,
   PhaseSummary,
@@ -78,8 +81,8 @@ const SUPPORTED_PHASES: SupportedPhase[] = V1_PHASES.filter(
 );
 
 const MAX_RETRIES = 2;
-const PHASE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
-const RUN_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const PHASE_TIMEOUT_MS = 9 * 60 * 1000; // 9 minutes
+const RUN_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 // ── Module-level state ──
 
@@ -321,7 +324,9 @@ async function executeSinglePhase(
             });
 
             if (commitResult.status !== "applied") {
-              throw new Error("Revision diff requested an unexpected second truncation retry");
+              throw new Error(
+                "Revision diff requested an unexpected second truncation retry",
+              );
             }
 
             result = retryResult;

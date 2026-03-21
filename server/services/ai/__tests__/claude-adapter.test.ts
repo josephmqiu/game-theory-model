@@ -110,8 +110,13 @@ describe("claude-adapter", () => {
 
     it("records request_loopback triggers for the active run", async () => {
       const { createAnalysisMcpServer } = await import("../claude-adapter");
-      const server = (await createAnalysisMcpServer("run-loopback")) as unknown as {
-        tools: Array<{ name: string; handler: (args: unknown) => Promise<unknown> }>;
+      const server = (await createAnalysisMcpServer(
+        "run-loopback",
+      )) as unknown as {
+        tools: Array<{
+          name: string;
+          handler: (args: unknown) => Promise<unknown>;
+        }>;
       };
 
       const requestLoopbackTool = server.tools.find(
@@ -179,7 +184,7 @@ describe("claude-adapter", () => {
       expect(callArgs.prompt).toBe("hello");
       expect(callArgs.options.systemPrompt).toBe("system");
       expect(callArgs.options.model).toBe("claude-sonnet-4-6");
-      expect(callArgs.options.maxTurns).toBe(25);
+      expect(callArgs.options.maxTurns).toBe(99);
       expect(callArgs.options.tools).toEqual(["WebSearch"]);
       expect(callArgs.options.allowedTools).toEqual([
         ...CHAT_MODE_TOOL_NAMES.map(
@@ -655,9 +660,15 @@ describe("claude-adapter", () => {
         };
       });
 
-      await runAnalysisPhase("analyze", "sys", "model", { type: "object" }, {
-        maxTurns: 7,
-      });
+      await runAnalysisPhase(
+        "analyze",
+        "sys",
+        "model",
+        { type: "object" },
+        {
+          maxTurns: 7,
+        },
+      );
 
       expect(mockQuery.mock.calls[0][0].options.maxTurns).toBe(7);
     });

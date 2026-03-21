@@ -9,10 +9,7 @@ import {
   queryRelationships,
   requestLoopback,
 } from "../analysis-tools";
-import {
-  ANALYSIS_TOOL_NAMES,
-  CHAT_TOOL_NAMES,
-} from "./tool-surfaces";
+import { ANALYSIS_TOOL_NAMES, CHAT_TOOL_NAMES } from "./tool-surfaces";
 import { serverLog } from "../../utils/ai-logger";
 import {
   handleStartAnalysis,
@@ -126,16 +123,9 @@ export async function createChatMcpServer() {
         ],
       }),
     ),
-    tool(
-      "get_analysis_status",
-      "Get analysis run status",
-      {},
-      async () => ({
-        content: [
-          { type: "text" as const, text: handleGetAnalysisStatus() },
-        ],
-      }),
-    ),
+    tool("get_analysis_status", "Get analysis run status", {}, async () => ({
+      content: [{ type: "text" as const, text: handleGetAnalysisStatus() }],
+    })),
     tool(
       "create_entity",
       "Create a new analysis entity",
@@ -213,14 +203,9 @@ export async function createChatMcpServer() {
         content: [{ type: "text" as const, text: handleRerunPhases(args) }],
       }),
     ),
-    tool(
-      "abort_analysis",
-      "Abort the active analysis",
-      {},
-      async () => ({
-        content: [{ type: "text" as const, text: handleAbortAnalysis() }],
-      }),
-    ),
+    tool("abort_analysis", "Abort the active analysis", {}, async () => ({
+      content: [{ type: "text" as const, text: handleAbortAnalysis() }],
+    })),
   ];
 
   return createSdkMcpServer({
@@ -361,7 +346,7 @@ export async function* streamChat(
     options: {
       systemPrompt,
       model,
-      maxTurns: 25,
+      maxTurns: 99,
       tools: ["WebSearch"],
       allowedTools,
       mcpServers: { chat: chatMcp },
@@ -586,8 +571,7 @@ export async function runAnalysisPhase<T = unknown>(
     const onAbort = () => q.close();
     options.signal.addEventListener("abort", onAbort, { once: true });
     // Clean up listener when we're done (in finally)
-    const cleanup = () =>
-      options.signal?.removeEventListener("abort", onAbort);
+    const cleanup = () => options.signal?.removeEventListener("abort", onAbort);
     try {
       return await _runAnalysisQuery<T>(q, options);
     } finally {

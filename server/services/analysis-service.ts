@@ -34,7 +34,9 @@ interface AnalysisAdapter {
   ): Promise<T>;
 }
 
-async function loadAnalysisAdapter(provider?: string): Promise<AnalysisAdapter> {
+async function loadAnalysisAdapter(
+  provider?: string,
+): Promise<AnalysisAdapter> {
   if (provider === "openai") {
     return import("./ai/codex-adapter");
   }
@@ -375,15 +377,7 @@ const FACT_ENTITY_SCHEMA = {
       required: ["type", "date", "source", "content", "category"],
     },
   },
-  required: [
-    "id",
-    "ref",
-    "type",
-    "phase",
-    "data",
-    "confidence",
-    "rationale",
-  ],
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
 };
 
 const PLAYER_ENTITY_SCHEMA = {
@@ -412,15 +406,7 @@ const PLAYER_ENTITY_SCHEMA = {
       required: ["type", "name", "playerType"],
     },
   },
-  required: [
-    "id",
-    "ref",
-    "type",
-    "phase",
-    "data",
-    "confidence",
-    "rationale",
-  ],
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
 };
 
 const OBJECTIVE_ENTITY_SCHEMA = {
@@ -446,15 +432,7 @@ const OBJECTIVE_ENTITY_SCHEMA = {
       required: ["type", "description", "priority"],
     },
   },
-  required: [
-    "id",
-    "ref",
-    "type",
-    "phase",
-    "data",
-    "confidence",
-    "rationale",
-  ],
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
 };
 
 const GAME_ENTITY_SCHEMA = {
@@ -496,15 +474,7 @@ const GAME_ENTITY_SCHEMA = {
       required: ["type", "name", "gameType", "timing"],
     },
   },
-  required: [
-    "id",
-    "ref",
-    "type",
-    "phase",
-    "data",
-    "confidence",
-    "rationale",
-  ],
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
 };
 
 const STRATEGY_ENTITY_SCHEMA = {
@@ -532,15 +502,7 @@ const STRATEGY_ENTITY_SCHEMA = {
       required: ["type", "name", "feasibility"],
     },
   },
-  required: [
-    "id",
-    "ref",
-    "type",
-    "phase",
-    "data",
-    "confidence",
-    "rationale",
-  ],
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
 };
 
 const RELATIONSHIP_SCHEMA = {
@@ -585,6 +547,69 @@ const PHASE_ENTITY_JSON_SCHEMAS: Record<
 };
 
 /**
+ * Recursively ensure every object with `properties` has `additionalProperties: false`.
+ * Required by OpenAI structured output; harmless for Anthropic.
+ * Also normalises `type: ["string", "null"]` → `type: "string"` (OpenAI rejects array types).
+ * Bare `{ type: "object" }` without `properties` gets `properties: {}`.
+ */
+function enforceStrictSchema(
+  schema: Record<string, unknown>,
+): Record<string, unknown> {
+  const out = { ...schema };
+
+  // Normalise array-form type (e.g. ["string", "null"] → anyOf with null)
+  // OpenAI rejects type arrays; use anyOf instead to preserve nullability.
+  if (Array.isArray(out.type)) {
+    const types = out.type as string[];
+    if (types.length === 1) {
+      out.type = types[0];
+    } else {
+      const { type: _, ...rest } = out;
+      return enforceStrictSchema({
+        ...rest,
+        anyOf: types.map((t) => ({ type: t })),
+      });
+    }
+  }
+
+  if (out.type === "object") {
+    if (!out.properties) {
+      out.properties = {};
+    }
+    out.additionalProperties = false;
+
+    // Recurse into properties
+    const props = out.properties as Record<string, Record<string, unknown>>;
+    const processed: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(props)) {
+      processed[key] =
+        val && typeof val === "object" && !Array.isArray(val)
+          ? enforceStrictSchema(val)
+          : val;
+    }
+    out.properties = processed;
+
+    // Ensure required lists all properties (OpenAI requirement)
+    out.required = Object.keys(processed);
+  }
+
+  if (out.type === "array" && out.items) {
+    out.items = enforceStrictSchema(out.items as Record<string, unknown>);
+  }
+
+  // Handle oneOf / anyOf
+  for (const key of ["oneOf", "anyOf"] as const) {
+    if (Array.isArray(out[key])) {
+      out[key] = (out[key] as Record<string, unknown>[]).map((s) =>
+        enforceStrictSchema(s),
+      );
+    }
+  }
+
+  return out;
+}
+
+/**
  * Build a JSON Schema representation of the phase output for structured output mode.
  * Uses real entity schemas per phase so providers can enforce structure natively.
  */
@@ -593,7 +618,7 @@ function buildOutputSchema(phase: SupportedPhase): Record<string, unknown> {
   const entityItems =
     entitySchemas.length === 1 ? entitySchemas[0] : { oneOf: entitySchemas };
 
-  return {
+  const raw = {
     type: "object",
     properties: {
       entities: {
@@ -609,6 +634,8 @@ function buildOutputSchema(phase: SupportedPhase): Record<string, unknown> {
     },
     required: ["entities", "relationships"],
   };
+
+  return enforceStrictSchema(raw);
 }
 
 // ── Main entry point ──

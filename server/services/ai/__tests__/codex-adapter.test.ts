@@ -70,7 +70,7 @@ vi.mock("../../../utils/ai-logger", () => ({
 }));
 
 vi.mock("../codex-config", () => ({
-  CODEX_MCP_SERVER_NAME: "game-theory-analyzer",
+  CODEX_MCP_SERVER_NAME: "game_theory_analyzer_mcp",
   installMcpServer: (...args: unknown[]) => mockInstallMcpServer(...args),
 }));
 
@@ -141,7 +141,7 @@ function respondToChatConfig(method: string, id: number | undefined): boolean {
     emitResponse(id, {
       data: [
         {
-          name: "game-theory-analyzer",
+          name: "game_theory_analyzer_mcp",
           tools: {
             get_entity: {},
             query_entities: {},
@@ -605,7 +605,7 @@ describe("codex-adapter", () => {
           emitResponse(id, {
             data: [
               {
-                name: "game-theory-analyzer",
+                name: "game_theory_analyzer_mcp",
                 tools: {
                   get_entity: {},
                   query_entities: {},
@@ -712,7 +712,7 @@ describe("codex-adapter", () => {
           emitResponse(id, {
             data: [
               {
-                name: "game-theory-analyzer",
+                name: "game_theory_analyzer_mcp",
                 tools: {
                   get_entity: {},
                   query_entities: {},
@@ -792,7 +792,7 @@ describe("codex-adapter", () => {
           emitResponse(id, {
             data: [
               {
-                name: "game-theory-analyzer",
+                name: "game_theory_analyzer_mcp",
                 tools: {
                   get_entity: {},
                   query_entities: {},
@@ -908,7 +908,7 @@ describe("codex-adapter", () => {
           emitResponse(id, {
             data: [
               {
-                name: "game-theory-analyzer",
+                name: "game_theory_analyzer_mcp",
                 tools: {
                   get_entity: {},
                   query_entities: {},
@@ -1000,7 +1000,7 @@ describe("codex-adapter", () => {
           emitResponse(id, {
             data: [
               {
-                name: "game-theory-analyzer",
+                name: "game_theory_analyzer_mcp",
                 tools: {
                   get_entity: {},
                   query_entities: {},

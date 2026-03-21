@@ -8,7 +8,11 @@ import {
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-export const CODEX_MCP_SERVER_NAME = "game-theory-analyzer";
+export const CODEX_MCP_SERVER_NAME = "game_theory_analyzer_mcp";
+const LEGACY_CODEX_MCP_SERVER_NAMES = [
+  "game-theory-analyzer",
+  "game-theory-analyzer-mcp",
+] as const;
 const CONFIG_FILENAME = "config.toml";
 const LOCK_FILENAME = "config.toml.lock";
 const CODEX_DIR = ".codex";
@@ -160,6 +164,38 @@ function withLock<T>(fn: () => T): T {
 
 const SECTION_KEY = `mcp_servers.${CODEX_MCP_SERVER_NAME}`;
 
+function removeLegacySections(
+  sections: Map<string, string[]>,
+  sectionOrder: string[],
+): string[] {
+  for (const legacyName of LEGACY_CODEX_MCP_SERVER_NAMES) {
+    sections.delete(`mcp_servers.${legacyName}`);
+  }
+  // Also remove any sub-table sections (e.g. .env) for the current and legacy keys.
+  // mcpEntryLines() writes env as an inline table, so sub-table sections would
+  // create a duplicate-key TOML error.
+  const keysToRemove = new Set<string>();
+  keysToRemove.add(SECTION_KEY);
+  for (const legacyName of LEGACY_CODEX_MCP_SERVER_NAMES) {
+    keysToRemove.add(`mcp_servers.${legacyName}`);
+  }
+  for (const key of sections.keys()) {
+    for (const prefix of keysToRemove) {
+      if (key.startsWith(`${prefix}.`)) {
+        sections.delete(key);
+      }
+    }
+  }
+  return sectionOrder.filter(
+    (key) =>
+      key !== SECTION_KEY &&
+      !LEGACY_CODEX_MCP_SERVER_NAMES.some(
+        (legacyName) => key === `mcp_servers.${legacyName}`,
+      ) &&
+      ![...keysToRemove].some((prefix) => key.startsWith(`${prefix}.`)),
+  );
+}
+
 /**
  * Add the game-theory-analyzer MCP server entry to ~/.codex/config.toml.
  * Preserves all existing entries. Creates the file + directory if needed.
@@ -183,14 +219,18 @@ export function installMcpServer(
     }
 
     const { sections, sectionOrder } = parseSections(content);
+    const nextSectionOrder = removeLegacySections(sections, sectionOrder);
 
     // Replace or add our section
-    sections.set(SECTION_KEY, mcpEntryLines(serverCommand, serverArgs, options));
-    if (!sectionOrder.includes(SECTION_KEY)) {
-      sectionOrder.push(SECTION_KEY);
+    sections.set(
+      SECTION_KEY,
+      mcpEntryLines(serverCommand, serverArgs, options),
+    );
+    if (!nextSectionOrder.includes(SECTION_KEY)) {
+      nextSectionOrder.push(SECTION_KEY);
     }
 
-    writeFileSync(file, serializeSections(sections, sectionOrder), "utf-8");
+    writeFileSync(file, serializeSections(sections, nextSectionOrder), "utf-8");
   });
 }
 
@@ -210,10 +250,9 @@ export function uninstallMcpServer(): void {
     const content = readFileSync(file, "utf-8");
     const { sections, sectionOrder } = parseSections(content);
 
-    if (!sections.has(SECTION_KEY)) return;
-
-    sections.delete(SECTION_KEY);
-    const filtered = sectionOrder.filter((k) => k !== SECTION_KEY);
+    const hadCurrent = sections.has(SECTION_KEY);
+    const filtered = removeLegacySections(sections, sectionOrder);
+    if (!hadCurrent && filtered.length === sectionOrder.length) return;
 
     writeFileSync(file, serializeSections(sections, filtered), "utf-8");
   } catch {

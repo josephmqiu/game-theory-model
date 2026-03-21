@@ -2,6 +2,8 @@
 
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -1626,14 +1628,36 @@ process.on("unhandledRejection", (err) => {
   console.error("MCP server unhandled rejection:", err);
 });
 
+function isMainEntrypoint(): boolean {
+  if (typeof process === "undefined" || !process.argv[1]) {
+    return false;
+  }
+
+  if (
+    typeof require !== "undefined" &&
+    typeof module !== "undefined" &&
+    require.main === module
+  ) {
+    return true;
+  }
+
+  const importMetaUrl =
+    typeof import.meta !== "undefined" ? import.meta.url : undefined;
+  if (typeof importMetaUrl !== "string") {
+    return false;
+  }
+
+  try {
+    return resolve(fileURLToPath(importMetaUrl)) === resolve(process.argv[1]);
+  } catch {
+    return false;
+  }
+}
+
 // Only run main() when this file is the entrypoint (not when imported as a module).
 // The Claude adapter imports handler functions from this file; running main()
 // as a side effect would start the MCP CLI server unintentionally.
-if (
-  typeof process !== "undefined" &&
-  process.argv[1] &&
-  import.meta.url.endsWith(process.argv[1])
-) {
+if (isMainEntrypoint()) {
   main().catch((err) => {
     console.error("MCP server failed to start:", err);
     process.exit(1);

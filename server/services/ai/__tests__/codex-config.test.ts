@@ -75,7 +75,7 @@ describe("codex-config", () => {
 
       expect(existsSync(configPath())).toBe(true);
       const content = readConfig();
-      expect(content).toContain("[mcp_servers.game-theory-analyzer]");
+      expect(content).toContain("[mcp_servers.game_theory_analyzer_mcp]");
       expect(content).toContain('command = "node"');
       expect(content).toContain('args = ["path/to/server.js"]');
       expect(content).toContain("startup_timeout_sec = 10");
@@ -98,7 +98,7 @@ describe("codex-config", () => {
 
       const content = readConfig();
       // Our entry is present
-      expect(content).toContain("[mcp_servers.game-theory-analyzer]");
+      expect(content).toContain("[mcp_servers.game_theory_analyzer_mcp]");
       expect(content).toContain('command = "node"');
       // Existing entries are preserved
       expect(content).toContain('model = "o4-mini"');
@@ -106,7 +106,7 @@ describe("codex-config", () => {
       expect(content).toContain('command = "python"');
     });
 
-    it("replaces existing game-theory-analyzer entry on re-install", () => {
+    it("replaces existing game_theory_analyzer_mcp entry on re-install", () => {
       installMcpServer("node", ["old-server.js"]);
       installMcpServer("node", ["new-server.js"]);
 
@@ -114,7 +114,55 @@ describe("codex-config", () => {
       expect(content).not.toContain("old-server.js");
       expect(content).toContain("new-server.js");
       // Only one section header
-      const matches = content.match(/\[mcp_servers\.game-theory-analyzer\]/g);
+      const matches = content.match(
+        /\[mcp_servers\.game_theory_analyzer_mcp\]/g,
+      );
+      expect(matches).toHaveLength(1);
+    });
+
+    it("removes the legacy game-theory-analyzer entry when installing", () => {
+      writeConfig(
+        [
+          "[mcp_servers.game-theory-analyzer]",
+          'command = "node"',
+          'args = ["legacy-server.js"]',
+          "",
+        ].join("\n"),
+      );
+
+      installMcpServer("node", ["server.js"]);
+
+      const content = readConfig();
+      expect(content).not.toContain("[mcp_servers.game-theory-analyzer]");
+      expect(content).toContain("[mcp_servers.game_theory_analyzer_mcp]");
+    });
+
+    it("removes .env sub-table sections to avoid duplicate-key TOML errors", () => {
+      writeConfig(
+        [
+          "[mcp_servers.game_theory_analyzer_mcp.env]",
+          'PRODUCT_ONLY = "1"',
+          "",
+          "[mcp_servers.game_theory_analyzer_mcp]",
+          'command = "node"',
+          'args = ["old-server.js"]',
+          "",
+        ].join("\n"),
+      );
+
+      installMcpServer("node", ["server.js"]);
+
+      const content = readConfig();
+      // Sub-table section must be removed (env is written inline)
+      expect(content).not.toContain(
+        "[mcp_servers.game_theory_analyzer_mcp.env]",
+      );
+      // Inline env must be present
+      expect(content).toContain('env = { PRODUCT_ONLY = "1" }');
+      // Only one section header for our key
+      const matches = content.match(
+        /\[mcp_servers\.game_theory_analyzer_mcp\]/g,
+      );
       expect(matches).toHaveLength(1);
     });
 
@@ -141,7 +189,7 @@ describe("codex-config", () => {
         'command = "python"',
         'args = ["tool.py"]',
         "",
-        "[mcp_servers.game-theory-analyzer]",
+        "[mcp_servers.game_theory_analyzer_mcp]",
         'command = "node"',
         'args = ["server.js"]',
         "startup_timeout_sec = 10",
@@ -153,9 +201,29 @@ describe("codex-config", () => {
       uninstallMcpServer();
 
       const content = readConfig();
-      expect(content).not.toContain("[mcp_servers.game-theory-analyzer]");
+      expect(content).not.toContain("[mcp_servers.game_theory_analyzer_mcp]");
       expect(content).toContain("[mcp_servers.other-tool]");
       expect(content).toContain('command = "python"');
+    });
+
+    it("removes the legacy game-theory-analyzer entry during uninstall", () => {
+      const existing = [
+        "[mcp_servers.other-tool]",
+        'command = "python"',
+        'args = ["tool.py"]',
+        "",
+        "[mcp_servers.game-theory-analyzer]",
+        'command = "node"',
+        'args = ["legacy-server.js"]',
+        "",
+      ].join("\n");
+      writeConfig(existing);
+
+      uninstallMcpServer();
+
+      const content = readConfig();
+      expect(content).not.toContain("[mcp_servers.game-theory-analyzer]");
+      expect(content).toContain("[mcp_servers.other-tool]");
     });
 
     it("handles missing config gracefully", () => {
@@ -163,7 +231,7 @@ describe("codex-config", () => {
       expect(() => uninstallMcpServer()).not.toThrow();
     });
 
-    it("handles config with no game-theory-analyzer entry", () => {
+    it("handles config with no game_theory_analyzer_mcp entry", () => {
       writeConfig('[mcp_servers.other]\ncommand = "x"\n');
       expect(() => uninstallMcpServer()).not.toThrow();
       const content = readConfig();
