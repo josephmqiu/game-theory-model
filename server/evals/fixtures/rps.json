@@ -1,0 +1,56 @@
+{
+  "name": "rps",
+  "topic": "rock vs paper vs scissors",
+  "complexityTier": "trivial",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [2, 8],
+      "forbiddenPatterns": ["lizard", "evolutionary", "biological"],
+      "rubrics": [
+        "Facts should describe the game rules and known solution, not tangential research areas like evolutionary biology or behavioral psychology experiments"
+      ]
+    },
+    "player-identification": {
+      "entityCountRange": [2, 6],
+      "forbiddenPatterns": [
+        "referee",
+        "internal agent",
+        "cognitive",
+        "heuristic",
+        "rational.?optimizer",
+        "pattern.?exploiter",
+        "enforcer"
+      ],
+      "rubrics": [
+        "All player entities should be genuine actors who independently choose actions in the game, not cognitive modes, internal mental processes, or rule enforcers",
+        "A standard 2-player game should have exactly 2 player entities"
+      ]
+    },
+    "baseline-model": {
+      "entityCountRange": [2, 8],
+      "forbiddenPatterns": ["iterated.*game", "pattern.?exploitation.*game"],
+      "rubrics": [
+        "Should identify one game (RPS), not invent additional game variants unless the prompt explicitly asks about iterated play"
+      ]
+    },
+    "assumptions": {
+      "entityCountRange": [2, 8],
+      "forbiddenPatterns": [
+        "action space is exactly three",
+        "game is (strictly )?zero.?sum",
+        "Nash equilibrium is"
+      ],
+      "rubrics": [
+        "Assumptions should be things that could genuinely be violated or questioned, not definitional properties of the game",
+        "Known theorems or proven results should not be listed as assumptions"
+      ]
+    },
+    "scenarios": {
+      "entityCountRange": [1, 4],
+      "forbiddenPatterns": ["cheating", "break simultaneity", "collu"],
+      "rubrics": [
+        "Scenarios for a solved game with one Nash equilibrium should focus on the equilibrium outcome, not speculative behavioral forecasts or rule violations"
+      ]
+    }
+  }
+}
