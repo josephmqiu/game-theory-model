@@ -71,6 +71,8 @@ import { handleGetSelection } from "./tools/get-selection";
 import { LAYERED_DESIGN_TOOLS } from "./tools/layered-design-defs";
 import { MCP_DEFAULT_PORT } from "@/constants/app";
 
+export const MCP_HTTP_HOST = "127.0.0.1";
+
 // --- Tool definitions (shared across all Server instances) ---
 
 // When PRODUCT_ONLY is set (e.g. by the Codex adapter), expose only the
@@ -1569,9 +1571,9 @@ function startHttpServer(port: number): void {
     );
   });
 
-  httpServer.listen(port, "0.0.0.0", () => {
+  httpServer.listen(port, MCP_HTTP_HOST, () => {
     console.error(
-      `Game Theory Analyzer MCP server listening on http://0.0.0.0:${port}/mcp`,
+      `Game Theory Analyzer MCP server listening on http://${MCP_HTTP_HOST}:${port}/mcp`,
     );
   });
 }

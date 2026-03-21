@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process'
 import { existsSync, writeFileSync, unlinkSync, readFileSync } from 'node:fs'
-import { networkInterfaces } from 'node:os'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
@@ -22,6 +21,7 @@ const __dirname = resolveModuleDirname()
 // PID/Port files for tracking the detached MCP server process across restarts
 const MCP_PID_FILE = join(tmpdir(), 'game-theory-analyzer-mcp-server.pid')
 const MCP_PORT_FILE = join(tmpdir(), 'game-theory-analyzer-mcp-server.port')
+const MCP_HTTP_HOST = '127.0.0.1'
 
 /** Resolve the MCP server script path across dev, web build, and Electron production. */
 export function resolveMcpServerScript(): string {
@@ -38,19 +38,6 @@ export function resolveMcpServerScript(): string {
   const fromFile = resolve(__dirname, '..', '..', '..', 'dist', 'mcp-server.cjs')
   if (existsSync(fromFile)) return fromFile
   return fromCwd
-}
-
-/** Get the first non-internal IPv4 address (LAN IP). */
-export function getLocalIp(): string | null {
-  const nets = networkInterfaces()
-  for (const name of Object.keys(nets)) {
-    for (const net of nets[name] ?? []) {
-      if (net.family === 'IPv4' && !net.internal) {
-        return net.address
-      }
-    }
-  }
-  return null
 }
 
 /** Check if a process with the given PID is running. */
@@ -89,14 +76,14 @@ export function getMcpServerStatus(): { running: boolean; port: number | null; l
   if (!info) {
     return { running: false, port: null, localIp: null }
   }
-  return { running: true, port: info.port, localIp: getLocalIp() }
+  return { running: true, port: info.port, localIp: MCP_HTTP_HOST }
 }
 
 export function startMcpHttpServer(port: number): { running: boolean; port: number; localIp: string | null; error?: string } {
   // Check if already running
   const existing = getRunningPid()
   if (existing) {
-    return { running: true, port: existing.port, localIp: getLocalIp() }
+    return { running: true, port: existing.port, localIp: MCP_HTTP_HOST }
   }
 
   const serverScript = resolveMcpServerScript()
@@ -135,7 +122,7 @@ export function startMcpHttpServer(port: number): { running: boolean; port: numb
       }, 100)
     }
 
-    return { running: true, port, localIp: getLocalIp() }
+    return { running: true, port, localIp: MCP_HTTP_HOST }
   } catch (err) {
     return { running: false, port, localIp: null, error: err instanceof Error ? err.message : String(err) }
   }

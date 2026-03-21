@@ -447,7 +447,7 @@ export default function AgentSettingsDialog() {
   const handleCopyConfig = useCallback(() => {
     if (!mcpServerLocalIp) return;
     const config = JSON.stringify(
-      { type: "http", url: `http://${mcpServerLocalIp}:${mcpHttpPort}/mcp` },
+      { type: "http", url: `http://127.0.0.1:${mcpHttpPort}/mcp` },
       null,
       2,
     );
@@ -628,7 +628,7 @@ export default function AgentSettingsDialog() {
                     )}
                   </Button>
                 </div>
-                <code className="text-[10px] text-muted-foreground font-mono select-all leading-none">{`{ "type": "http", "url": "http://${mcpServerLocalIp}:${mcpHttpPort}/mcp" }`}</code>
+                <code className="text-[10px] text-muted-foreground font-mono select-all leading-none">{`{ "type": "http", "url": "http://127.0.0.1:${mcpHttpPort}/mcp" }`}</code>
               </div>
             )}
             {mcpServerError && (
