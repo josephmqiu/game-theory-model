@@ -1,0 +1,13 @@
+{
+  "name": "opec-quotas",
+  "topic": "OPEC members deciding oil production quotas for next quarter",
+  "complexityTier": "complex",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [8, 25],
+      "rubrics": [
+        "Facts should cover multiple member states, production capacities, market conditions, and defection incentives with specific data points"
+      ]
+    }
+  }
+}

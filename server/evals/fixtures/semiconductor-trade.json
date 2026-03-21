@@ -1,0 +1,13 @@
+{
+  "name": "semiconductor-trade",
+  "topic": "US-China-EU trade tensions over semiconductor exports",
+  "complexityTier": "complex",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [8, 25],
+      "rubrics": [
+        "Facts should cover the three major blocs, specific export controls, supply chain dependencies, and retaliatory measures with dates and specifics"
+      ]
+    }
+  }
+}

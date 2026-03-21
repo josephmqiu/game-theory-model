@@ -1,0 +1,13 @@
+{
+  "name": "vaccine-patents",
+  "topic": "three pharmaceutical companies deciding whether to share vaccine patents",
+  "complexityTier": "complex",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [8, 25],
+      "rubrics": [
+        "Facts should cover the multi-player dynamics, public health pressure, IP economics, and free-rider incentives with specifics rather than generic corporate ethics framing"
+      ]
+    }
+  }
+}

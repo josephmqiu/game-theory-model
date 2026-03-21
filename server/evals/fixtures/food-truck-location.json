@@ -1,0 +1,13 @@
+{
+  "name": "food-truck-location",
+  "topic": "two food trucks choosing where to park for the day",
+  "complexityTier": "standard",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [4, 15],
+      "rubrics": [
+        "Facts should describe the location choice dynamics and customer distribution without over-formalizing into Hotelling's model theory"
+      ]
+    }
+  }
+}

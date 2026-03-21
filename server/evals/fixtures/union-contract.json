@@ -1,0 +1,13 @@
+{
+  "name": "union-contract",
+  "topic": "union negotiating a new contract with management",
+  "complexityTier": "standard",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [4, 15],
+      "rubrics": [
+        "Facts should cover bargaining structure, information asymmetry, and fallback positions without assuming a specific industry or inventing details"
+      ]
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "matching-pennies",
+  "topic": "matching pennies",
+  "complexityTier": "trivial",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [2, 8],
+      "rubrics": [
+        "Facts should describe the game rules and mixed-strategy equilibrium concisely without inventing real-world analogies"
+      ]
+    }
+  }
+}

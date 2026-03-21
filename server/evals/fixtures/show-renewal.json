@@ -1,0 +1,13 @@
+{
+  "name": "show-renewal",
+  "topic": "streaming service deciding whether to renew an expensive show",
+  "complexityTier": "standard",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [4, 15],
+      "rubrics": [
+        "Facts should cover the cost-benefit dynamics, subscriber impact, and competitive positioning without expanding into general media industry trends"
+      ]
+    }
+  }
+}

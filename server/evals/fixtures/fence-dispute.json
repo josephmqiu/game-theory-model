@@ -1,0 +1,14 @@
+{
+  "name": "fence-dispute",
+  "topic": "neighbor dispute over a shared fence",
+  "complexityTier": "standard",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [4, 15],
+      "forbiddenPatterns": ["geopolitical", "international", "military"],
+      "rubrics": [
+        "Facts should be proportional to the low stakes of the scenario without over-dramatizing or importing frameworks from high-stakes conflicts"
+      ]
+    }
+  }
+}

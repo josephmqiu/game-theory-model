@@ -1,0 +1,13 @@
+{
+  "name": "rent-increase",
+  "topic": "landlord deciding whether to raise rent on a long-term tenant",
+  "complexityTier": "standard",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [4, 15],
+      "rubrics": [
+        "Facts should focus on the landlord-tenant dynamic, costs, and market conditions without expanding into housing policy or macroeconomics"
+      ]
+    }
+  }
+}

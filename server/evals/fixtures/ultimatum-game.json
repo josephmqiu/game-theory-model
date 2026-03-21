@@ -1,0 +1,14 @@
+{
+  "name": "ultimatum-game",
+  "topic": "ultimatum game",
+  "complexityTier": "trivial",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [2, 8],
+      "forbiddenPatterns": ["fMRI", "neuroscience", "cultural variation"],
+      "rubrics": [
+        "Facts should describe the game rules and subgame-perfect equilibrium without expanding into behavioral economics experiments or cross-cultural studies"
+      ]
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "government-contract-bid",
+  "topic": "two companies bidding on a government contract",
+  "complexityTier": "standard",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [4, 15],
+      "rubrics": [
+        "Facts should cover the bidding structure, key players, and competitive dynamics without inventing specific company names or contract details not in the prompt"
+      ]
+    }
+  }
+}

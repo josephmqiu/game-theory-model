@@ -1,0 +1,13 @@
+{
+  "name": "fishing-rights",
+  "topic": "two countries negotiating a fishing rights treaty",
+  "complexityTier": "standard",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [4, 15],
+      "rubrics": [
+        "Facts should cover the bilateral negotiation over shared resources, enforcement mechanisms, and sustainability concerns without expanding into broader ocean governance"
+      ]
+    }
+  }
+}

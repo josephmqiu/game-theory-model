@@ -1,0 +1,13 @@
+{
+  "name": "plea-bargain",
+  "topic": "plea bargain negotiation between prosecutor and defense",
+  "complexityTier": "standard",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [4, 15],
+      "rubrics": [
+        "Facts should cover the negotiation structure, information asymmetry, and fallback positions without expanding into criminal justice reform or legal philosophy"
+      ]
+    }
+  }
+}

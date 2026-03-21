@@ -1,0 +1,13 @@
+{
+  "name": "climate-negotiations",
+  "topic": "climate change negotiations between developed and developing nations",
+  "complexityTier": "complex",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [8, 25],
+      "rubrics": [
+        "Facts should identify key blocs, emission targets, financing mechanisms, and free-rider dynamics with specific data rather than generic statements"
+      ]
+    }
+  }
+}

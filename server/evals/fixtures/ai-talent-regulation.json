@@ -1,0 +1,13 @@
+{
+  "name": "ai-talent-regulation",
+  "topic": "tech companies competing for AI talent while lobbying for regulation",
+  "complexityTier": "complex",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [8, 25],
+      "rubrics": [
+        "Facts should cover both the talent market competition and the regulatory lobbying as distinct but interacting domains without collapsing them into one"
+      ]
+    }
+  }
+}

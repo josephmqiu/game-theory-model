@@ -1,0 +1,18 @@
+{
+  "name": "prisoners-dilemma",
+  "topic": "prisoner's dilemma",
+  "complexityTier": "trivial",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [2, 8],
+      "forbiddenPatterns": [
+        "evolutionary",
+        "biological",
+        "population dynamics"
+      ],
+      "rubrics": [
+        "Facts should describe the game structure and known solution, not tangential extensions like iterated or evolutionary variants"
+      ]
+    }
+  }
+}

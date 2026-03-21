@@ -1,0 +1,13 @@
+{
+  "name": "acquisition-offer",
+  "topic": "startup deciding whether to accept an acquisition offer",
+  "complexityTier": "standard",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [4, 15],
+      "rubrics": [
+        "Facts should cover the bilateral negotiation dynamics, valuation considerations, and alternatives without inventing specific financials"
+      ]
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "airline-pricing",
+  "topic": "airline pricing on a route with one competitor",
+  "complexityTier": "standard",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [4, 15],
+      "rubrics": [
+        "Facts should cover the duopoly pricing dynamics, cost structures, and demand characteristics without expanding into general airline industry analysis"
+      ]
+    }
+  }
+}

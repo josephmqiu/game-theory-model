@@ -1,0 +1,14 @@
+{
+  "name": "chicken-game",
+  "topic": "chicken game",
+  "complexityTier": "trivial",
+  "phases": {
+    "situational-grounding": {
+      "entityCountRange": [2, 8],
+      "forbiddenPatterns": ["Cuban missile", "nuclear"],
+      "rubrics": [
+        "Facts should describe the abstract game structure and its two Nash equilibria without expanding into historical applications unless the prompt asks"
+      ]
+    }
+  }
+}
