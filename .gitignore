@@ -25,3 +25,7 @@ AGENTS.md
 DESIGN.md
 TODOS.md
 docs/
+
+# Local AI config
+.claude/
+.codex/
