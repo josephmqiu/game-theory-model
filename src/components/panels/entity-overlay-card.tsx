@@ -24,6 +24,15 @@ import type {
   TrustAssessmentData,
   DynamicInconsistencyData,
   SignalingEffectData,
+  PayoffMatrixData,
+  GameTreeData,
+  EquilibriumResultData,
+  CrossGameConstraintTableData,
+  CrossGameEffectData,
+  SignalClassificationData,
+  BargainingDynamicsData,
+  OptionValueAssessmentData,
+  BehavioralOverlayData,
   AssumptionData,
 } from "@/types/entity";
 
@@ -53,6 +62,15 @@ const ENTITY_TYPE_COLORS: Record<EntityType, string> = {
   "trust-assessment": "#2DD4BF",
   "dynamic-inconsistency": "#FB923C",
   "signaling-effect": "#F472B6",
+  "payoff-matrix": "#FBBF24",
+  "game-tree": "#FBBF24",
+  "equilibrium-result": "#F59E0B",
+  "cross-game-constraint-table": "#FB923C",
+  "cross-game-effect": "#FB923C",
+  "signal-classification": "#F472B6",
+  "bargaining-dynamics": "#818CF8",
+  "option-value-assessment": "#2DD4BF",
+  "behavioral-overlay": "#C084FC",
   assumption: "#E879F9",
 };
 
@@ -70,6 +88,15 @@ const ENTITY_TYPE_LABELS: Record<EntityType, string> = {
   "trust-assessment": "Trust",
   "dynamic-inconsistency": "Commitment",
   "signaling-effect": "Signal",
+  "payoff-matrix": "Matrix",
+  "game-tree": "Game Tree",
+  "equilibrium-result": "Equilibrium",
+  "cross-game-constraint-table": "Constraints",
+  "cross-game-effect": "Cross-Game",
+  "signal-classification": "Signal Class",
+  "bargaining-dynamics": "Bargaining",
+  "option-value-assessment": "Option Value",
+  "behavioral-overlay": "Behavioral",
   assumption: "Assumption",
 };
 
@@ -136,6 +163,28 @@ function getEntityName(entity: AnalysisEntity): string {
         : d.commitment;
     case "signaling-effect":
       return d.signal.length > 60 ? d.signal.slice(0, 60) + "\u2026" : d.signal;
+    case "payoff-matrix":
+      return d.gameName;
+    case "game-tree":
+      return d.gameName;
+    case "equilibrium-result":
+      return d.gameName;
+    case "cross-game-constraint-table":
+      return `${d.games.length} games \u00d7 ${d.strategies.length} strategies`;
+    case "cross-game-effect":
+      return `${d.sourceGame} \u2192 ${d.targetGame}`;
+    case "signal-classification":
+      return d.action.length > 60 ? d.action.slice(0, 60) + "\u2026" : d.action;
+    case "bargaining-dynamics":
+      return d.negotiation.length > 60
+        ? d.negotiation.slice(0, 60) + "\u2026"
+        : d.negotiation;
+    case "option-value-assessment":
+      return d.action.length > 60 ? d.action.slice(0, 60) + "\u2026" : d.action;
+    case "behavioral-overlay":
+      return d.description.length > 60
+        ? d.description.slice(0, 60) + "\u2026"
+        : d.description;
     case "assumption":
       return d.description.length > 60
         ? d.description.slice(0, 60) + "\u2026"
@@ -300,6 +349,175 @@ function SignalingEffectDetails({ data }: { data: SignalingEffectData }) {
       <DetailRow label="Signal" value={data.signal} />
       <DetailRow label="Observers" value={data.observers.join(", ")} />
       <DetailRow label="Lesson" value={data.lesson} />
+    </dl>
+  );
+}
+
+function PayoffMatrixDetails({ data }: { data: PayoffMatrixData }) {
+  return (
+    <dl className="space-y-1.5">
+      <DetailRow label="Game" value={data.gameName} />
+      <DetailRow label="Players" value={data.players.join(" vs ")} />
+      <DetailRow
+        label="Row strategies"
+        value={data.strategies.row.join(", ")}
+      />
+      <DetailRow
+        label="Column strategies"
+        value={data.strategies.column.join(", ")}
+      />
+      <DetailRow label="Cells" value={`${data.cells.length} outcomes`} />
+    </dl>
+  );
+}
+
+function GameTreeDetails({ data }: { data: GameTreeData }) {
+  return (
+    <dl className="space-y-1.5">
+      <DetailRow label="Game" value={data.gameName} />
+      <DetailRow label="Nodes" value={String(data.nodes.length)} />
+      <DetailRow label="Branches" value={String(data.branches.length)} />
+      <DetailRow
+        label="Information sets"
+        value={String(data.informationSets.length)}
+      />
+    </dl>
+  );
+}
+
+function EquilibriumResultDetails({ data }: { data: EquilibriumResultData }) {
+  return (
+    <dl className="space-y-1.5">
+      <DetailRow label="Game" value={data.gameName} />
+      <DetailRow label="Type" value={data.equilibriumType} />
+      <DetailRow label="Description" value={data.description} />
+      {data.strategies.length > 0 && (
+        <div>
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-500">
+            Strategies
+          </dt>
+          <dd className="mt-0.5">
+            <ul className="list-disc pl-4 space-y-0.5">
+              {data.strategies.map((s, i) => (
+                <li key={i} className="text-[13px] text-zinc-300">
+                  {s.player}: {s.strategy}
+                </li>
+              ))}
+            </ul>
+          </dd>
+        </div>
+      )}
+    </dl>
+  );
+}
+
+function CrossGameConstraintTableDetails({
+  data,
+}: {
+  data: CrossGameConstraintTableData;
+}) {
+  return (
+    <dl className="space-y-1.5">
+      <DetailRow label="Strategies" value={data.strategies.join(", ")} />
+      <DetailRow label="Games" value={data.games.join(", ")} />
+      <DetailRow label="Cells" value={`${data.cells.length} entries`} />
+    </dl>
+  );
+}
+
+function CrossGameEffectDetails({ data }: { data: CrossGameEffectData }) {
+  return (
+    <dl className="space-y-1.5">
+      <DetailRow label="Source" value={data.sourceGame} />
+      <DetailRow label="Target" value={data.targetGame} />
+      <DetailRow label="Effect type" value={data.effectType} />
+      <DetailRow label="Trigger" value={data.trigger} />
+      <DetailRow label="Cascade" value={data.cascade ? "Yes" : "No"} />
+    </dl>
+  );
+}
+
+function SignalClassificationDetails({
+  data,
+}: {
+  data: SignalClassificationData;
+}) {
+  return (
+    <dl className="space-y-1.5">
+      <DetailRow label="Action" value={data.action} />
+      <DetailRow label="Player" value={data.player} />
+      <DetailRow label="Classification" value={data.classification} />
+      <DetailRow label="Credibility" value={data.credibility} />
+    </dl>
+  );
+}
+
+function BargainingDynamicsDetails({ data }: { data: BargainingDynamicsData }) {
+  return (
+    <dl className="space-y-1.5">
+      <DetailRow label="Negotiation" value={data.negotiation} />
+      <DetailRow
+        label="Outside options"
+        value={`${data.outsideOptions.length} players`}
+      />
+      <DetailRow label="Deadlines" value={`${data.deadlines.length}`} />
+      {data.commitmentProblems.length > 0 && (
+        <DetailRow
+          label="Commitment problems"
+          value={data.commitmentProblems.join("; ")}
+        />
+      )}
+    </dl>
+  );
+}
+
+function OptionValueAssessmentDetails({
+  data,
+}: {
+  data: OptionValueAssessmentData;
+}) {
+  return (
+    <dl className="space-y-1.5">
+      <DetailRow label="Player" value={data.player} />
+      <DetailRow label="Action" value={data.action} />
+      <DetailRow label="Uncertainty" value={data.uncertaintyLevel} />
+      {data.flexibilityPreserved.length > 0 && (
+        <div>
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-500">
+            Flexibility preserved
+          </dt>
+          <dd className="mt-0.5">
+            <ul className="list-disc pl-4 space-y-0.5">
+              {data.flexibilityPreserved.map((f, i) => (
+                <li key={i} className="text-[13px] text-zinc-300">
+                  {f.type}: {f.description}
+                </li>
+              ))}
+            </ul>
+          </dd>
+        </div>
+      )}
+    </dl>
+  );
+}
+
+function BehavioralOverlayDetails({ data }: { data: BehavioralOverlayData }) {
+  return (
+    <dl className="space-y-1.5">
+      <DetailRow label="Overlay type" value={data.overlayType} />
+      <DetailRow label="Classification" value={data.classification} />
+      <DetailRow label="Description" value={data.description} />
+      <DetailRow
+        label="Affected players"
+        value={data.affectedPlayers.join(", ")}
+      />
+      {data.referencePoint && (
+        <DetailRow label="Reference point" value={data.referencePoint} />
+      )}
+      <DetailRow
+        label="Prediction modification"
+        value={data.predictionModification}
+      />
     </dl>
   );
 }
@@ -570,6 +788,99 @@ function EditableEntityData({
           />
         </div>
       );
+    case "payoff-matrix":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Game name"
+            value={data.gameName}
+            onChange={(v) => set("gameName", v)}
+          />
+        </div>
+      );
+    case "game-tree":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Game name"
+            value={data.gameName}
+            onChange={(v) => set("gameName", v)}
+          />
+        </div>
+      );
+    case "equilibrium-result":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Game name"
+            value={data.gameName}
+            onChange={(v) => set("gameName", v)}
+          />
+          <EditField
+            label="Description"
+            value={data.description}
+            onChange={(v) => set("description", v)}
+          />
+        </div>
+      );
+    case "cross-game-constraint-table":
+      return (
+        <div className="space-y-1.5">
+          <p className="text-[11px] text-zinc-500">
+            Composite entity — edit via AI reanalysis
+          </p>
+        </div>
+      );
+    case "cross-game-effect":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Trigger"
+            value={data.trigger}
+            onChange={(v) => set("trigger", v)}
+          />
+        </div>
+      );
+    case "signal-classification":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Action"
+            value={data.action}
+            onChange={(v) => set("action", v)}
+          />
+        </div>
+      );
+    case "bargaining-dynamics":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Negotiation"
+            value={data.negotiation}
+            onChange={(v) => set("negotiation", v)}
+          />
+        </div>
+      );
+    case "option-value-assessment":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Action"
+            value={data.action}
+            onChange={(v) => set("action", v)}
+          />
+        </div>
+      );
+    case "behavioral-overlay":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Description"
+            value={data.description}
+            onChange={(v) => set("description", v)}
+          />
+        </div>
+      );
     case "assumption":
       return (
         <div className="space-y-1.5">
@@ -616,6 +927,24 @@ function EntityDataSection({ entity }: { entity: AnalysisEntity }) {
       return <DynamicInconsistencyDetails data={entity.data} />;
     case "signaling-effect":
       return <SignalingEffectDetails data={entity.data} />;
+    case "payoff-matrix":
+      return <PayoffMatrixDetails data={entity.data} />;
+    case "game-tree":
+      return <GameTreeDetails data={entity.data} />;
+    case "equilibrium-result":
+      return <EquilibriumResultDetails data={entity.data} />;
+    case "cross-game-constraint-table":
+      return <CrossGameConstraintTableDetails data={entity.data} />;
+    case "cross-game-effect":
+      return <CrossGameEffectDetails data={entity.data} />;
+    case "signal-classification":
+      return <SignalClassificationDetails data={entity.data} />;
+    case "bargaining-dynamics":
+      return <BargainingDynamicsDetails data={entity.data} />;
+    case "option-value-assessment":
+      return <OptionValueAssessmentDetails data={entity.data} />;
+    case "behavioral-overlay":
+      return <BehavioralOverlayDetails data={entity.data} />;
     case "assumption":
       return <AssumptionDetails data={entity.data} />;
   }

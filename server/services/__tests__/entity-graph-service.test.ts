@@ -87,12 +87,13 @@ describe("newAnalysis", () => {
     expect(a.name).toBe("US-China trade war");
     expect(a.entities).toEqual([]);
     expect(a.relationships).toEqual([]);
-    expect(a.phases).toHaveLength(5);
+    expect(a.phases).toHaveLength(6);
     expect(a.phases.map((p) => p.phase)).toEqual([
       "situational-grounding",
       "player-identification",
       "baseline-model",
       "historical-game",
+      "formal-modeling",
       "assumptions",
     ]);
     expect(a.phases.every((p) => p.status === "pending")).toBe(true);

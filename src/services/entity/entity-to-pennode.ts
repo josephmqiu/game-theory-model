@@ -18,6 +18,15 @@ const ENTITY_SIZE: Record<EntityType, { w: number; h: number }> = {
   "trust-assessment": { w: 140, h: 60 },
   "dynamic-inconsistency": { w: 140, h: 60 },
   "signaling-effect": { w: 120, h: 50 },
+  "payoff-matrix": { w: 180, h: 100 },
+  "game-tree": { w: 180, h: 100 },
+  "equilibrium-result": { w: 160, h: 80 },
+  "cross-game-constraint-table": { w: 180, h: 100 },
+  "cross-game-effect": { w: 140, h: 60 },
+  "signal-classification": { w: 140, h: 60 },
+  "bargaining-dynamics": { w: 160, h: 80 },
+  "option-value-assessment": { w: 140, h: 60 },
+  "behavioral-overlay": { w: 140, h: 60 },
   assumption: { w: 120, h: 50 },
 };
 
@@ -27,6 +36,12 @@ const ENTITY_SIZE: Record<EntityType, { w: number; h: number }> = {
 function entityDisplayName(entity: AnalysisEntity): string {
   const d = entity.data;
   if ("name" in d && typeof d.name === "string" && d.name) return d.name;
+  if ("gameName" in d && typeof d.gameName === "string" && d.gameName)
+    return d.gameName;
+  if ("negotiation" in d && typeof d.negotiation === "string" && d.negotiation)
+    return d.negotiation.length > 30
+      ? d.negotiation.slice(0, 27) + "..."
+      : d.negotiation;
   if ("content" in d && typeof d.content === "string" && d.content) {
     return d.content.length > 30 ? d.content.slice(0, 27) + "..." : d.content;
   }
@@ -75,6 +90,24 @@ function entityMetaLine(entity: AnalysisEntity): string {
       return `commitment / ${d.durability}`;
     case "signaling-effect":
       return `signal`;
+    case "payoff-matrix":
+      return `matrix / ${d.players.join(" vs ")}`;
+    case "game-tree":
+      return `tree / ${d.nodes.length} nodes`;
+    case "equilibrium-result":
+      return `equilibrium / ${d.equilibriumType}`;
+    case "cross-game-constraint-table":
+      return `constraints / ${d.games.length} games`;
+    case "cross-game-effect":
+      return `effect / ${d.effectType}`;
+    case "signal-classification":
+      return `signal / ${d.classification}`;
+    case "bargaining-dynamics":
+      return `bargaining`;
+    case "option-value-assessment":
+      return `option value / ${d.uncertaintyLevel}`;
+    case "behavioral-overlay":
+      return `behavioral / ${d.overlayType}`;
     case "assumption":
       return `assumption / ${d.sensitivity}`;
   }

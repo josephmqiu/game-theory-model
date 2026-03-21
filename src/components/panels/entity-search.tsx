@@ -28,6 +28,15 @@ const ENTITY_TYPE_COLORS: Record<EntityType, string> = {
   "trust-assessment": "#2DD4BF",
   "dynamic-inconsistency": "#FB923C",
   "signaling-effect": "#F472B6",
+  "payoff-matrix": "#FBBF24",
+  "game-tree": "#FBBF24",
+  "equilibrium-result": "#F59E0B",
+  "cross-game-constraint-table": "#FB923C",
+  "cross-game-effect": "#FB923C",
+  "signal-classification": "#F472B6",
+  "bargaining-dynamics": "#818CF8",
+  "option-value-assessment": "#2DD4BF",
+  "behavioral-overlay": "#C084FC",
   assumption: "#E879F9",
 };
 
@@ -45,6 +54,15 @@ const ENTITY_TYPE_LABELS: Record<EntityType, string> = {
   "trust-assessment": "Trust",
   "dynamic-inconsistency": "Commit",
   "signaling-effect": "Sig",
+  "payoff-matrix": "Matrix",
+  "game-tree": "Tree",
+  "equilibrium-result": "Equil",
+  "cross-game-constraint-table": "Constr",
+  "cross-game-effect": "X-Game",
+  "signal-classification": "SigCls",
+  "bargaining-dynamics": "Barg",
+  "option-value-assessment": "OptVal",
+  "behavioral-overlay": "Behav",
   assumption: "Asmp",
 };
 
@@ -80,6 +98,24 @@ function getSearchableText(entity: AnalysisEntity): string {
       return `${d.commitment} ${d.institutionalForm} ${d.durability}`;
     case "signaling-effect":
       return `${d.signal} ${d.observers.join(" ")} ${d.lesson}`;
+    case "payoff-matrix":
+      return `${d.gameName} ${d.players.join(" ")}`;
+    case "game-tree":
+      return `${d.gameName}`;
+    case "equilibrium-result":
+      return `${d.gameName} ${d.equilibriumType} ${d.description}`;
+    case "cross-game-constraint-table":
+      return `${d.strategies.join(" ")} ${d.games.join(" ")}`;
+    case "cross-game-effect":
+      return `${d.sourceGame} ${d.targetGame} ${d.effectType} ${d.trigger}`;
+    case "signal-classification":
+      return `${d.action} ${d.player} ${d.classification} ${d.credibility}`;
+    case "bargaining-dynamics":
+      return `${d.negotiation}`;
+    case "option-value-assessment":
+      return `${d.player} ${d.action} ${d.uncertaintyLevel}`;
+    case "behavioral-overlay":
+      return `${d.overlayType} ${d.description} ${d.affectedPlayers.join(" ")}`;
     case "assumption":
       return `${d.description} ${d.sensitivity} ${d.category} ${d.classification}`;
   }
@@ -127,6 +163,28 @@ function getEntityDisplayName(entity: AnalysisEntity): string {
         : d.commitment;
     case "signaling-effect":
       return d.signal.length > 50 ? d.signal.slice(0, 50) + "\u2026" : d.signal;
+    case "payoff-matrix":
+      return d.gameName;
+    case "game-tree":
+      return d.gameName;
+    case "equilibrium-result":
+      return d.gameName;
+    case "cross-game-constraint-table":
+      return `${d.games.length} games \u00d7 ${d.strategies.length} strategies`;
+    case "cross-game-effect":
+      return `${d.sourceGame} \u2192 ${d.targetGame}`;
+    case "signal-classification":
+      return d.action.length > 50 ? d.action.slice(0, 50) + "\u2026" : d.action;
+    case "bargaining-dynamics":
+      return d.negotiation.length > 50
+        ? d.negotiation.slice(0, 50) + "\u2026"
+        : d.negotiation;
+    case "option-value-assessment":
+      return d.action.length > 50 ? d.action.slice(0, 50) + "\u2026" : d.action;
+    case "behavioral-overlay":
+      return d.description.length > 50
+        ? d.description.slice(0, 50) + "\u2026"
+        : d.description;
     case "assumption":
       return d.description.length > 50
         ? d.description.slice(0, 50) + "\u2026"

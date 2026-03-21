@@ -206,6 +206,301 @@ const VALID_PHASE_4_STRUCTURED = {
   ],
 };
 
+const VALID_PHASE_6_STRUCTURED = {
+  entities: [
+    {
+      id: null,
+      ref: "matrix-1",
+      type: "payoff-matrix",
+      phase: "formal-modeling",
+      data: {
+        type: "payoff-matrix",
+        gameName: "Steel Trade War",
+        players: ["Country A", "Country B"],
+        strategies: {
+          row: ["Escalate", "Negotiate"],
+          column: ["Retaliate", "Concede"],
+        },
+        cells: [
+          {
+            row: "Escalate",
+            column: "Retaliate",
+            payoffs: [
+              {
+                player: "Country A",
+                ordinalRank: 3,
+                cardinalValue: null,
+                rangeLow: -20,
+                rangeHigh: -5,
+                confidence: "medium",
+                rationale: "Both lose from escalation",
+                dependencies: ["game-1"],
+              },
+              {
+                player: "Country B",
+                ordinalRank: 3,
+                cardinalValue: null,
+                rangeLow: -25,
+                rangeHigh: -10,
+                confidence: "medium",
+                rationale: "Smaller economy bears larger cost",
+                dependencies: ["fact-2"],
+              },
+            ],
+          },
+        ],
+      },
+      confidence: "medium",
+      rationale: "Normal-form representation of simultaneous tariff game",
+    },
+    {
+      id: null,
+      ref: "tree-1",
+      type: "game-tree",
+      phase: "formal-modeling",
+      data: {
+        type: "game-tree",
+        gameName: "Tariff Escalation Sequence",
+        nodes: [
+          {
+            nodeId: "n1",
+            player: "Country A",
+            nodeType: "decision",
+            informationSet: null,
+          },
+          {
+            nodeId: "n2",
+            player: "Country B",
+            nodeType: "decision",
+            informationSet: null,
+          },
+          {
+            nodeId: "n3",
+            player: null,
+            nodeType: "terminal",
+            informationSet: null,
+          },
+        ],
+        branches: [
+          {
+            fromNodeId: "n1",
+            toNodeId: "n2",
+            action: "Impose tariffs",
+            probability: null,
+          },
+          {
+            fromNodeId: "n2",
+            toNodeId: "n3",
+            action: "Retaliate",
+            probability: null,
+          },
+        ],
+        informationSets: [],
+        terminalPayoffs: [
+          {
+            nodeId: "n3",
+            payoffs: [
+              {
+                player: "Country A",
+                ordinalRank: 3,
+                cardinalValue: null,
+                rangeLow: -15,
+                rangeHigh: -5,
+                confidence: "medium",
+                rationale: "Mutual escalation outcome",
+                dependencies: ["game-1"],
+              },
+            ],
+          },
+        ],
+      },
+      confidence: "medium",
+      rationale: "Sequential representation of tariff escalation",
+    },
+    {
+      id: null,
+      ref: "equil-1",
+      type: "equilibrium-result",
+      phase: "formal-modeling",
+      data: {
+        type: "equilibrium-result",
+        gameName: "Steel Trade War",
+        equilibriumType: "nash",
+        description: "Both countries escalate in the absence of enforcement",
+        strategies: [
+          { player: "Country A", strategy: "Escalate" },
+          { player: "Country B", strategy: "Retaliate" },
+        ],
+        selectionFactors: [
+          {
+            factor: "path-dependence",
+            evidence:
+              "Prior rounds of escalation make cooperation focal point unattainable",
+            weight: "high",
+          },
+        ],
+      },
+      confidence: "medium",
+      rationale: "Dominant strategy equilibrium given low trust",
+    },
+    {
+      id: null,
+      ref: "constraint-1",
+      type: "cross-game-constraint-table",
+      phase: "formal-modeling",
+      data: {
+        type: "cross-game-constraint-table",
+        strategies: ["Full escalation", "Selective tariffs"],
+        games: ["Steel Trade War", "Tech Competition"],
+        cells: [
+          {
+            strategy: "Full escalation",
+            game: "Steel Trade War",
+            result: "pass",
+            reasoning: "Feasible given existing authority",
+          },
+          {
+            strategy: "Full escalation",
+            game: "Tech Competition",
+            result: "fail",
+            reasoning: "Would trigger semiconductor retaliation",
+          },
+        ],
+      },
+      confidence: "medium",
+      rationale: "Cross-game strategy feasibility check",
+    },
+    {
+      id: null,
+      ref: "effect-1",
+      type: "cross-game-effect",
+      phase: "formal-modeling",
+      data: {
+        type: "cross-game-effect",
+        sourceGame: "Steel Trade War",
+        targetGame: "Tech Competition",
+        trigger: "Escalation beyond 50% tariffs",
+        effectType: "payoff-shift",
+        magnitude: "Large negative shift in tech cooperation payoffs",
+        direction: "Reduces cooperation incentives",
+        cascade: true,
+      },
+      confidence: "medium",
+      rationale: "Steel escalation spills over into tech sector",
+    },
+    {
+      id: null,
+      ref: "signal-cls-1",
+      type: "signal-classification",
+      phase: "formal-modeling",
+      data: {
+        type: "signal-classification",
+        action: "Country A public tariff announcement",
+        player: "Country A",
+        classification: "audience-cost",
+        cheapTalkConditions: null,
+        credibility: "high",
+      },
+      confidence: "high",
+      rationale: "Public announcement creates domestic audience costs",
+    },
+    {
+      id: null,
+      ref: "bargain-1",
+      type: "bargaining-dynamics",
+      phase: "formal-modeling",
+      data: {
+        type: "bargaining-dynamics",
+        negotiation: "Steel tariff negotiations",
+        outsideOptions: [
+          {
+            player: "Country A",
+            option: "Domestic production subsidy",
+            quality: "moderate",
+          },
+        ],
+        patience: [
+          {
+            player: "Country A",
+            discountFactor: "Low — election cycle pressure",
+            pressures: ["Upcoming election", "Domestic industry lobbying"],
+          },
+        ],
+        deadlines: [
+          {
+            description: "WTO dispute ruling",
+            date: "2026-06-01",
+            affectsPlayer: "Country A",
+          },
+        ],
+        commitmentProblems: ["Post-election policy reversal"],
+        dynamicInconsistency: "New administration may reverse tariffs",
+        issueLinkage: [
+          {
+            linkedGame: "Tech Competition",
+            description: "Steel concessions may be traded for tech access",
+          },
+        ],
+      },
+      confidence: "medium",
+      rationale: "Bargaining dynamics driven by asymmetric patience",
+    },
+    {
+      id: null,
+      ref: "optval-1",
+      type: "option-value-assessment",
+      phase: "formal-modeling",
+      data: {
+        type: "option-value-assessment",
+        player: "Country B",
+        action: "Retaliatory tariffs on agriculture",
+        flexibilityPreserved: [
+          {
+            type: "waiting-for-information",
+            description: "Election outcome may change Country A's position",
+          },
+        ],
+        uncertaintyLevel: "high",
+      },
+      confidence: "medium",
+      rationale: "Delay preserves option value given political uncertainty",
+    },
+    {
+      id: null,
+      ref: "behav-1",
+      type: "behavioral-overlay",
+      phase: "formal-modeling",
+      data: {
+        type: "behavioral-overlay",
+        classification: "adjacent",
+        overlayType: "sunk-cost",
+        description:
+          "Country A has invested political capital in tariff policy",
+        affectedPlayers: ["Country A"],
+        referencePoint: "Pre-tariff trade levels",
+        predictionModification:
+          "Country A less likely to de-escalate than rational model predicts due to sunk political costs",
+      },
+      confidence: "medium",
+      rationale: "Sunk cost bias may prevent rational de-escalation",
+    },
+  ],
+  relationships: [
+    {
+      id: "rel-f1",
+      type: "derived-from",
+      fromEntityId: "matrix-1",
+      toEntityId: "game-1",
+    },
+    {
+      id: "rel-f2",
+      type: "depends-on",
+      fromEntityId: "effect-1",
+      toEntityId: "matrix-1",
+    },
+  ],
+};
+
 const VALID_PHASE_7_STRUCTURED = {
   entities: [
     {
@@ -438,7 +733,7 @@ describe("analysis-service", () => {
 
     it("returns error for unsupported phase", async () => {
       const { runPhase } = await importService();
-      const result = await runPhase("formal-modeling", "US-China trade war");
+      const result = await runPhase("revalidation", "US-China trade war");
 
       expect(result.success).toBe(false);
       expect(result.error).toContain("Unsupported phase");
@@ -616,6 +911,78 @@ describe("analysis-service", () => {
 
     it("rejects phase 4 entities in phase 7 slot", async () => {
       mockClaudeRunAnalysisPhase.mockResolvedValue(VALID_PHASE_4_STRUCTURED);
+
+      const { runPhase } = await importService();
+      const result = await runPhase("assumptions", "US-China trade war");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/Entity 0/);
+    });
+
+    it("works for phase 6 — formal modeling", async () => {
+      mockClaudeRunAnalysisPhase.mockResolvedValue(VALID_PHASE_6_STRUCTURED);
+
+      const { runPhase } = await importService();
+      const result = await runPhase("formal-modeling", "US-China trade war");
+
+      expect(result.success).toBe(true);
+      expect(result.entities).toHaveLength(9);
+
+      const matrix = result.entities.find((e) => e.type === "payoff-matrix");
+      expect(matrix).toBeDefined();
+      expect(matrix!.data.type).toBe("payoff-matrix");
+
+      const tree = result.entities.find((e) => e.type === "game-tree");
+      expect(tree).toBeDefined();
+
+      const equil = result.entities.find(
+        (e) => e.type === "equilibrium-result",
+      );
+      expect(equil).toBeDefined();
+
+      const constraint = result.entities.find(
+        (e) => e.type === "cross-game-constraint-table",
+      );
+      expect(constraint).toBeDefined();
+
+      const effect = result.entities.find(
+        (e) => e.type === "cross-game-effect",
+      );
+      expect(effect).toBeDefined();
+
+      const sigCls = result.entities.find(
+        (e) => e.type === "signal-classification",
+      );
+      expect(sigCls).toBeDefined();
+
+      const bargain = result.entities.find(
+        (e) => e.type === "bargaining-dynamics",
+      );
+      expect(bargain).toBeDefined();
+
+      const optVal = result.entities.find(
+        (e) => e.type === "option-value-assessment",
+      );
+      expect(optVal).toBeDefined();
+
+      const behav = result.entities.find(
+        (e) => e.type === "behavioral-overlay",
+      );
+      expect(behav).toBeDefined();
+
+      const [, systemPrompt, , schema] =
+        mockClaudeRunAnalysisPhase.mock.calls[0];
+      expect(systemPrompt).toContain("Phase 6");
+      expect(systemPrompt).toContain("Formal Modeling");
+
+      // Phase 6 schema uses oneOf for 9 entity types
+      const entityItems = (schema as any).properties.entities.items;
+      expect(entityItems).toHaveProperty("oneOf");
+      expect(entityItems.oneOf).toHaveLength(9);
+    });
+
+    it("rejects phase 6 entities in phase 7 slot", async () => {
+      mockClaudeRunAnalysisPhase.mockResolvedValue(VALID_PHASE_6_STRUCTURED);
 
       const { runPhase } = await importService();
       const result = await runPhase("assumptions", "US-China trade war");

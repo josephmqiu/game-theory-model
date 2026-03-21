@@ -32,12 +32,13 @@ export const V1_PHASES: MethodologyPhase[] = [
   "baseline-model",
 ];
 
-/** Phases implemented in v2 (adds Phase 4 + Phase 7) */
+/** Phases implemented in v2 (adds Phase 4 + Phase 6 + Phase 7) */
 export const V2_PHASES: MethodologyPhase[] = [
   "situational-grounding",
   "player-identification",
   "baseline-model",
   "historical-game",
+  "formal-modeling",
   "assumptions",
 ];
 

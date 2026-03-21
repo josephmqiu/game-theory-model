@@ -308,11 +308,12 @@ describe("revalidation-service", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     // Should run from player-identification (earliest) through assumptions
-    expect(mockRunPhase).toHaveBeenCalledTimes(4);
+    expect(mockRunPhase).toHaveBeenCalledTimes(5);
     expect(mockRunPhase.mock.calls[0][0]).toBe("player-identification");
     expect(mockRunPhase.mock.calls[1][0]).toBe("baseline-model");
     expect(mockRunPhase.mock.calls[2][0]).toBe("historical-game");
-    expect(mockRunPhase.mock.calls[3][0]).toBe("assumptions");
+    expect(mockRunPhase.mock.calls[3][0]).toBe("formal-modeling");
+    expect(mockRunPhase.mock.calls[4][0]).toBe("assumptions");
   });
 
   // ── 6. revalidate(undefined, phase) re-runs from explicit phase ──
@@ -329,6 +330,7 @@ describe("revalidation-service", () => {
     mockRunPhase
       .mockResolvedValueOnce(makePhaseResult("baseline-model"))
       .mockResolvedValueOnce(makePhaseResult("historical-game"))
+      .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
       .mockResolvedValueOnce(makePhaseResult("assumptions"));
 
     const result = revalidation.revalidate(undefined, "baseline-model");
@@ -338,11 +340,12 @@ describe("revalidation-service", () => {
     // Flush microtasks to let async execution complete
     await vi.advanceTimersByTimeAsync(0);
 
-    // Should run baseline-model through assumptions (3 phases in V2)
-    expect(mockRunPhase).toHaveBeenCalledTimes(3);
+    // Should run baseline-model through assumptions (4 phases in V2)
+    expect(mockRunPhase).toHaveBeenCalledTimes(4);
     expect(mockRunPhase.mock.calls[0][0]).toBe("baseline-model");
     expect(mockRunPhase.mock.calls[1][0]).toBe("historical-game");
-    expect(mockRunPhase.mock.calls[2][0]).toBe("assumptions");
+    expect(mockRunPhase.mock.calls[2][0]).toBe("formal-modeling");
+    expect(mockRunPhase.mock.calls[3][0]).toBe("assumptions");
   });
 
   // ── 7. Returns runId ──
@@ -368,6 +371,7 @@ describe("revalidation-service", () => {
       .mockResolvedValueOnce(makePhaseResult("player-identification"))
       .mockResolvedValueOnce(makePhaseResult("baseline-model"))
       .mockResolvedValueOnce(makePhaseResult("historical-game"))
+      .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
       .mockResolvedValueOnce(makePhaseResult("assumptions"));
 
     const events: AnalysisProgressEvent[] = [];
@@ -380,12 +384,12 @@ describe("revalidation-service", () => {
 
     unsubscribe();
 
-    // Should have phase_started + phase_completed for each of the 5 phases
+    // Should have phase_started + phase_completed for each of the 6 phases
     const started = events.filter((e) => e.type === "phase_started");
     const completed = events.filter((e) => e.type === "phase_completed");
 
-    expect(started).toHaveLength(5);
-    expect(completed).toHaveLength(5);
+    expect(started).toHaveLength(6);
+    expect(completed).toHaveLength(6);
     expect(started[0]).toMatchObject({
       type: "phase_started",
       phase: "situational-grounding",
@@ -525,6 +529,7 @@ describe("revalidation-service", () => {
       .mockResolvedValueOnce(makePhaseResult("player-identification"))
       .mockResolvedValueOnce(makePhaseResult("baseline-model"))
       .mockResolvedValueOnce(makePhaseResult("historical-game"))
+      .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
       .mockResolvedValueOnce(makePhaseResult("assumptions"));
 
     revalidation.revalidate(["e1"]);
@@ -533,7 +538,7 @@ describe("revalidation-service", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(mockEntityGraph.removePhaseEntities).not.toHaveBeenCalled();
-    expect(mockCommitPhaseSnapshot).toHaveBeenCalledTimes(5);
+    expect(mockCommitPhaseSnapshot).toHaveBeenCalledTimes(6);
   });
 
   // ── 16. getRevalStatus returns status for tracked runs ──
@@ -568,7 +573,7 @@ describe("revalidation-service", () => {
     const statusAfter = revalidation.getRevalStatus(runId);
     expect(statusAfter).not.toBeNull();
     expect(statusAfter!.status).toBe("completed");
-    expect(statusAfter!.phasesCompleted).toBe(5);
+    expect(statusAfter!.phasesCompleted).toBe(6);
   });
 
   // ── 17. getRevalStatus returns null for unknown runIds ──

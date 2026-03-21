@@ -36,6 +36,15 @@ export type EntityType =
   | "trust-assessment"
   | "dynamic-inconsistency"
   | "signaling-effect"
+  | "payoff-matrix"
+  | "game-tree"
+  | "equilibrium-result"
+  | "cross-game-constraint-table"
+  | "cross-game-effect"
+  | "signal-classification"
+  | "bargaining-dynamics"
+  | "option-value-assessment"
+  | "behavioral-overlay"
   | "assumption";
 
 // ── Phase 1: Situational Grounding ──
@@ -275,6 +284,292 @@ export const signalingEffectDataSchema = z.object({
 });
 export type SignalingEffectData = z.infer<typeof signalingEffectDataSchema>;
 
+// ── Phase 6: Full Formal Modeling ──
+
+export const payoffEstimateSchema = z.object({
+  player: z.string().min(1),
+  ordinalRank: z.number(),
+  cardinalValue: z.number().nullable(),
+  rangeLow: z.number(),
+  rangeHigh: z.number(),
+  confidence: entityConfidenceSchema,
+  rationale: z.string().min(1),
+  dependencies: z.array(z.string()).min(1),
+});
+export type PayoffEstimate = z.infer<typeof payoffEstimateSchema>;
+
+export const payoffMatrixDataSchema = z.object({
+  type: z.literal("payoff-matrix"),
+  gameName: z.string().min(1),
+  players: z.tuple([z.string(), z.string()]),
+  strategies: z.object({
+    row: z.array(z.string()),
+    column: z.array(z.string()),
+  }),
+  cells: z.array(
+    z.object({
+      row: z.string(),
+      column: z.string(),
+      payoffs: z.array(payoffEstimateSchema),
+    }),
+  ),
+});
+export type PayoffMatrixData = z.infer<typeof payoffMatrixDataSchema>;
+
+export const gameTreeDataSchema = z.object({
+  type: z.literal("game-tree"),
+  gameName: z.string().min(1),
+  nodes: z.array(
+    z.object({
+      nodeId: z.string(),
+      player: z.string().nullable(),
+      nodeType: z.enum(["decision", "chance", "terminal"]),
+      informationSet: z.string().nullable(),
+    }),
+  ),
+  branches: z.array(
+    z.object({
+      fromNodeId: z.string(),
+      toNodeId: z.string(),
+      action: z.string(),
+      probability: z.number().nullable(),
+    }),
+  ),
+  informationSets: z.array(
+    z.object({
+      setId: z.string(),
+      player: z.string(),
+      nodeIds: z.array(z.string()),
+      description: z.string(),
+    }),
+  ),
+  terminalPayoffs: z.array(
+    z.object({
+      nodeId: z.string(),
+      payoffs: z.array(payoffEstimateSchema),
+    }),
+  ),
+});
+export type GameTreeData = z.infer<typeof gameTreeDataSchema>;
+
+export type EquilibriumType =
+  | "dominant-strategy"
+  | "nash"
+  | "subgame-perfect"
+  | "bayesian-nash"
+  | "separating"
+  | "pooling"
+  | "semi-separating";
+
+export type SelectionFactor =
+  | "path-dependence"
+  | "focal-points"
+  | "commitment-devices"
+  | "institutional-rules"
+  | "salient-narratives"
+  | "relative-cost-of-swerving";
+
+const selectionFactorSchema = z.object({
+  factor: z.enum([
+    "path-dependence",
+    "focal-points",
+    "commitment-devices",
+    "institutional-rules",
+    "salient-narratives",
+    "relative-cost-of-swerving",
+  ]),
+  evidence: z.string().min(1),
+  weight: z.enum(["high", "medium", "low"]),
+});
+
+export const equilibriumResultDataSchema = z.object({
+  type: z.literal("equilibrium-result"),
+  gameName: z.string().min(1),
+  equilibriumType: z.enum([
+    "dominant-strategy",
+    "nash",
+    "subgame-perfect",
+    "bayesian-nash",
+    "separating",
+    "pooling",
+    "semi-separating",
+  ]),
+  description: z.string(),
+  strategies: z.array(
+    z.object({
+      player: z.string(),
+      strategy: z.string(),
+    }),
+  ),
+  selectionFactors: z.array(selectionFactorSchema).min(1),
+});
+export type EquilibriumResultData = z.infer<typeof equilibriumResultDataSchema>;
+
+export const crossGameConstraintTableDataSchema = z.object({
+  type: z.literal("cross-game-constraint-table"),
+  strategies: z.array(z.string()),
+  games: z.array(z.string()),
+  cells: z.array(
+    z.object({
+      strategy: z.string(),
+      game: z.string(),
+      result: z.enum(["pass", "fail", "uncertain"]),
+      reasoning: z.string(),
+    }),
+  ),
+});
+export type CrossGameConstraintTableData = z.infer<
+  typeof crossGameConstraintTableDataSchema
+>;
+
+export type CrossGameEffectType =
+  | "payoff-shift"
+  | "belief-update"
+  | "strategy-unlock"
+  | "strategy-elimination"
+  | "player-entry"
+  | "player-exit"
+  | "commitment-change"
+  | "resource-transfer"
+  | "timing-change";
+
+export const crossGameEffectDataSchema = z.object({
+  type: z.literal("cross-game-effect"),
+  sourceGame: z.string(),
+  targetGame: z.string(),
+  trigger: z.string(),
+  effectType: z.enum([
+    "payoff-shift",
+    "belief-update",
+    "strategy-unlock",
+    "strategy-elimination",
+    "player-entry",
+    "player-exit",
+    "commitment-change",
+    "resource-transfer",
+    "timing-change",
+  ]),
+  magnitude: z.string(),
+  direction: z.string(),
+  cascade: z.boolean(),
+});
+export type CrossGameEffectData = z.infer<typeof crossGameEffectDataSchema>;
+
+export const signalClassificationDataSchema = z.object({
+  type: z.literal("signal-classification"),
+  action: z.string(),
+  player: z.string(),
+  classification: z.enum(["cheap-talk", "costly-signal", "audience-cost"]),
+  cheapTalkConditions: z
+    .object({
+      interestsAligned: z.boolean(),
+      reputationalCapital: z.boolean(),
+      verifiable: z.boolean(),
+      repeatedGameMakesLyingCostly: z.boolean(),
+    })
+    .nullable(),
+  credibility: z.enum(["high", "medium", "low"]),
+});
+export type SignalClassificationData = z.infer<
+  typeof signalClassificationDataSchema
+>;
+
+export const bargainingDynamicsDataSchema = z.object({
+  type: z.literal("bargaining-dynamics"),
+  negotiation: z.string(),
+  outsideOptions: z.array(
+    z.object({
+      player: z.string(),
+      option: z.string(),
+      quality: z.enum(["strong", "moderate", "weak"]),
+    }),
+  ),
+  patience: z.array(
+    z.object({
+      player: z.string(),
+      discountFactor: z.string(),
+      pressures: z.array(z.string()),
+    }),
+  ),
+  deadlines: z.array(
+    z.object({
+      description: z.string(),
+      date: z.string().nullable(),
+      affectsPlayer: z.string(),
+    }),
+  ),
+  commitmentProblems: z.array(z.string()),
+  dynamicInconsistency: z.string().nullable(),
+  issueLinkage: z.array(
+    z.object({
+      linkedGame: z.string(),
+      description: z.string(),
+    }),
+  ),
+});
+export type BargainingDynamicsData = z.infer<
+  typeof bargainingDynamicsDataSchema
+>;
+
+export type OptionValueFlexibilityType =
+  | "escalation-flexibility"
+  | "avoiding-irreversible-commitment"
+  | "waiting-for-information"
+  | "letting-constraints-tighten";
+
+export const optionValueAssessmentDataSchema = z.object({
+  type: z.literal("option-value-assessment"),
+  player: z.string(),
+  action: z.string(),
+  flexibilityPreserved: z.array(
+    z.object({
+      type: z.enum([
+        "escalation-flexibility",
+        "avoiding-irreversible-commitment",
+        "waiting-for-information",
+        "letting-constraints-tighten",
+      ]),
+      description: z.string(),
+    }),
+  ),
+  uncertaintyLevel: z.enum(["high", "medium", "low"]),
+});
+export type OptionValueAssessmentData = z.infer<
+  typeof optionValueAssessmentDataSchema
+>;
+
+export type BehavioralOverlayType =
+  | "prospect-theory"
+  | "overconfidence"
+  | "sunk-cost"
+  | "groupthink"
+  | "anchoring"
+  | "honor-based-escalation"
+  | "reference-dependence"
+  | "scenario-planning"
+  | "red-teaming";
+
+export const behavioralOverlayDataSchema = z.object({
+  type: z.literal("behavioral-overlay"),
+  classification: z.literal("adjacent"),
+  overlayType: z.enum([
+    "prospect-theory",
+    "overconfidence",
+    "sunk-cost",
+    "groupthink",
+    "anchoring",
+    "honor-based-escalation",
+    "reference-dependence",
+    "scenario-planning",
+    "red-teaming",
+  ]),
+  description: z.string(),
+  affectedPlayers: z.array(z.string()),
+  referencePoint: z.string().nullable(),
+  predictionModification: z.string(),
+});
+export type BehavioralOverlayData = z.infer<typeof behavioralOverlayDataSchema>;
+
 // ── Phase 7: Assumption Extraction ──
 
 export const assumptionDataSchema = z.object({
@@ -312,6 +607,15 @@ export type EntityData =
   | TrustAssessmentData
   | DynamicInconsistencyData
   | SignalingEffectData
+  | PayoffMatrixData
+  | GameTreeData
+  | EquilibriumResultData
+  | CrossGameConstraintTableData
+  | CrossGameEffectData
+  | SignalClassificationData
+  | BargainingDynamicsData
+  | OptionValueAssessmentData
+  | BehavioralOverlayData
   | AssumptionData;
 
 export const entityDataSchema = z.discriminatedUnion("type", [
@@ -328,6 +632,15 @@ export const entityDataSchema = z.discriminatedUnion("type", [
   trustAssessmentDataSchema,
   dynamicInconsistencyDataSchema,
   signalingEffectDataSchema,
+  payoffMatrixDataSchema,
+  gameTreeDataSchema,
+  equilibriumResultDataSchema,
+  crossGameConstraintTableDataSchema,
+  crossGameEffectDataSchema,
+  signalClassificationDataSchema,
+  bargainingDynamicsDataSchema,
+  optionValueAssessmentDataSchema,
+  behavioralOverlayDataSchema,
   assumptionDataSchema,
 ]);
 

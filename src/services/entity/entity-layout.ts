@@ -8,7 +8,8 @@ const PHASE_COLUMN_X: Record<string, number> = {
   "player-identification": 500,
   "baseline-model": 900,
   "historical-game": 1300,
-  assumptions: 1700,
+  "formal-modeling": 1700,
+  assumptions: 2100,
 };
 
 const DEFAULT_COLUMN_X = 100;
@@ -29,6 +30,15 @@ const ENTITY_HEIGHT: Record<EntityType, number> = {
   "trust-assessment": 60,
   "dynamic-inconsistency": 60,
   "signaling-effect": 50,
+  "payoff-matrix": 100,
+  "game-tree": 100,
+  "equilibrium-result": 80,
+  "cross-game-constraint-table": 100,
+  "cross-game-effect": 60,
+  "signal-classification": 60,
+  "bargaining-dynamics": 80,
+  "option-value-assessment": 60,
+  "behavioral-overlay": 60,
   assumption: 50,
 };
 

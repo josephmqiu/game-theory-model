@@ -22,6 +22,15 @@ import {
   dynamicInconsistencyDataSchema,
   signalingEffectDataSchema,
   assumptionDataSchema,
+  payoffMatrixDataSchema,
+  gameTreeDataSchema,
+  equilibriumResultDataSchema,
+  crossGameConstraintTableDataSchema,
+  crossGameEffectDataSchema,
+  signalClassificationDataSchema,
+  bargainingDynamicsDataSchema,
+  optionValueAssessmentDataSchema,
+  behavioralOverlayDataSchema,
 } from "../../src/types/entity";
 import { PHASE_PROMPTS } from "../agents/phase-prompts";
 import { createRunLogger } from "../utils/ai-logger";
@@ -81,6 +90,7 @@ type SupportedPhase = Extract<
   | "player-identification"
   | "baseline-model"
   | "historical-game"
+  | "formal-modeling"
   | "assumptions"
 >;
 
@@ -90,6 +100,7 @@ const SUPPORTED_PHASES: SupportedPhase[] = V2_PHASES.filter(
     p === "player-identification" ||
     p === "baseline-model" ||
     p === "historical-game" ||
+    p === "formal-modeling" ||
     p === "assumptions",
 );
 
@@ -183,6 +194,69 @@ const assumptionEntitySchema = z.object({
   data: assumptionDataSchema,
 });
 
+const payoffMatrixEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("payoff-matrix"),
+  phase: z.literal("formal-modeling"),
+  data: payoffMatrixDataSchema,
+});
+
+const gameTreeEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("game-tree"),
+  phase: z.literal("formal-modeling"),
+  data: gameTreeDataSchema,
+});
+
+const equilibriumResultEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("equilibrium-result"),
+  phase: z.literal("formal-modeling"),
+  data: equilibriumResultDataSchema,
+});
+
+const crossGameConstraintTableEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("cross-game-constraint-table"),
+  phase: z.literal("formal-modeling"),
+  data: crossGameConstraintTableDataSchema,
+});
+
+const crossGameEffectEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("cross-game-effect"),
+  phase: z.literal("formal-modeling"),
+  data: crossGameEffectDataSchema,
+});
+
+const signalClassificationEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("signal-classification"),
+  phase: z.literal("formal-modeling"),
+  data: signalClassificationDataSchema,
+});
+
+const bargainingDynamicsEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("bargaining-dynamics"),
+  phase: z.literal("formal-modeling"),
+  data: bargainingDynamicsDataSchema,
+});
+
+const optionValueAssessmentEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("option-value-assessment"),
+  phase: z.literal("formal-modeling"),
+  data: optionValueAssessmentDataSchema,
+});
+
+const behavioralOverlayEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("behavioral-overlay"),
+  phase: z.literal("formal-modeling"),
+  data: behavioralOverlayDataSchema,
+});
+
 const relationshipTypeSchema = z.enum([
   "plays-in",
   "has-objective",
@@ -221,6 +295,17 @@ const PHASE_ENTITY_SCHEMAS: Record<SupportedPhase, z.ZodType[]> = {
     dynamicInconsistencyEntitySchema,
     signalingEffectEntitySchema,
   ],
+  "formal-modeling": [
+    payoffMatrixEntitySchema,
+    gameTreeEntitySchema,
+    equilibriumResultEntitySchema,
+    crossGameConstraintTableEntitySchema,
+    crossGameEffectEntitySchema,
+    signalClassificationEntitySchema,
+    bargainingDynamicsEntitySchema,
+    optionValueAssessmentEntitySchema,
+    behavioralOverlayEntitySchema,
+  ],
   assumptions: [assumptionEntitySchema],
 };
 
@@ -235,7 +320,16 @@ export type PhaseOutputEntity =
   | z.infer<typeof trustAssessmentEntitySchema>
   | z.infer<typeof dynamicInconsistencyEntitySchema>
   | z.infer<typeof signalingEffectEntitySchema>
-  | z.infer<typeof assumptionEntitySchema>;
+  | z.infer<typeof assumptionEntitySchema>
+  | z.infer<typeof payoffMatrixEntitySchema>
+  | z.infer<typeof gameTreeEntitySchema>
+  | z.infer<typeof equilibriumResultEntitySchema>
+  | z.infer<typeof crossGameConstraintTableEntitySchema>
+  | z.infer<typeof crossGameEffectEntitySchema>
+  | z.infer<typeof signalClassificationEntitySchema>
+  | z.infer<typeof bargainingDynamicsEntitySchema>
+  | z.infer<typeof optionValueAssessmentEntitySchema>
+  | z.infer<typeof behavioralOverlayEntitySchema>;
 
 export interface PhaseOutputRelationship {
   id: string;
@@ -804,6 +898,527 @@ const ASSUMPTION_ENTITY_SCHEMA = {
   required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
 };
 
+const PAYOFF_ESTIMATE_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    player: { type: "string" },
+    ordinalRank: { type: "number" },
+    cardinalValue: { type: ["number", "null"] },
+    rangeLow: { type: "number" },
+    rangeHigh: { type: "number" },
+    confidence: { type: "string", enum: ["high", "medium", "low"] },
+    rationale: { type: "string" },
+    dependencies: { type: "array", items: { type: "string" } },
+  },
+  required: [
+    "player",
+    "ordinalRank",
+    "cardinalValue",
+    "rangeLow",
+    "rangeHigh",
+    "confidence",
+    "rationale",
+    "dependencies",
+  ],
+};
+
+const PAYOFF_MATRIX_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["payoff-matrix"] },
+    phase: { type: "string", enum: ["formal-modeling"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["payoff-matrix"] },
+        gameName: { type: "string" },
+        players: { type: "array", items: { type: "string" } },
+        strategies: {
+          type: "object",
+          properties: {
+            row: { type: "array", items: { type: "string" } },
+            column: { type: "array", items: { type: "string" } },
+          },
+          required: ["row", "column"],
+        },
+        cells: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              row: { type: "string" },
+              column: { type: "string" },
+              payoffs: {
+                type: "array",
+                items: PAYOFF_ESTIMATE_JSON_SCHEMA,
+              },
+            },
+            required: ["row", "column", "payoffs"],
+          },
+        },
+      },
+      required: ["type", "gameName", "players", "strategies", "cells"],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
+const GAME_TREE_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["game-tree"] },
+    phase: { type: "string", enum: ["formal-modeling"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["game-tree"] },
+        gameName: { type: "string" },
+        nodes: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              nodeId: { type: "string" },
+              player: { type: ["string", "null"] },
+              nodeType: {
+                type: "string",
+                enum: ["decision", "chance", "terminal"],
+              },
+              informationSet: { type: ["string", "null"] },
+            },
+            required: ["nodeId", "player", "nodeType", "informationSet"],
+          },
+        },
+        branches: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              fromNodeId: { type: "string" },
+              toNodeId: { type: "string" },
+              action: { type: "string" },
+              probability: { type: ["number", "null"] },
+            },
+            required: ["fromNodeId", "toNodeId", "action", "probability"],
+          },
+        },
+        informationSets: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              setId: { type: "string" },
+              player: { type: "string" },
+              nodeIds: { type: "array", items: { type: "string" } },
+              description: { type: "string" },
+            },
+            required: ["setId", "player", "nodeIds", "description"],
+          },
+        },
+        terminalPayoffs: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              nodeId: { type: "string" },
+              payoffs: {
+                type: "array",
+                items: PAYOFF_ESTIMATE_JSON_SCHEMA,
+              },
+            },
+            required: ["nodeId", "payoffs"],
+          },
+        },
+      },
+      required: [
+        "type",
+        "gameName",
+        "nodes",
+        "branches",
+        "informationSets",
+        "terminalPayoffs",
+      ],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
+const EQUILIBRIUM_RESULT_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["equilibrium-result"] },
+    phase: { type: "string", enum: ["formal-modeling"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["equilibrium-result"] },
+        gameName: { type: "string" },
+        equilibriumType: {
+          type: "string",
+          enum: [
+            "dominant-strategy",
+            "nash",
+            "subgame-perfect",
+            "bayesian-nash",
+            "separating",
+            "pooling",
+            "semi-separating",
+          ],
+        },
+        description: { type: "string" },
+        strategies: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              player: { type: "string" },
+              strategy: { type: "string" },
+            },
+            required: ["player", "strategy"],
+          },
+        },
+        selectionFactors: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              factor: {
+                type: "string",
+                enum: [
+                  "path-dependence",
+                  "focal-points",
+                  "commitment-devices",
+                  "institutional-rules",
+                  "salient-narratives",
+                  "relative-cost-of-swerving",
+                ],
+              },
+              evidence: { type: "string" },
+              weight: { type: "string", enum: ["high", "medium", "low"] },
+            },
+            required: ["factor", "evidence", "weight"],
+          },
+        },
+      },
+      required: [
+        "type",
+        "gameName",
+        "equilibriumType",
+        "description",
+        "strategies",
+        "selectionFactors",
+      ],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
+const CROSS_GAME_CONSTRAINT_TABLE_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["cross-game-constraint-table"] },
+    phase: { type: "string", enum: ["formal-modeling"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["cross-game-constraint-table"] },
+        strategies: { type: "array", items: { type: "string" } },
+        games: { type: "array", items: { type: "string" } },
+        cells: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              strategy: { type: "string" },
+              game: { type: "string" },
+              result: {
+                type: "string",
+                enum: ["pass", "fail", "uncertain"],
+              },
+              reasoning: { type: "string" },
+            },
+            required: ["strategy", "game", "result", "reasoning"],
+          },
+        },
+      },
+      required: ["type", "strategies", "games", "cells"],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
+const CROSS_GAME_EFFECT_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["cross-game-effect"] },
+    phase: { type: "string", enum: ["formal-modeling"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["cross-game-effect"] },
+        sourceGame: { type: "string" },
+        targetGame: { type: "string" },
+        trigger: { type: "string" },
+        effectType: {
+          type: "string",
+          enum: [
+            "payoff-shift",
+            "belief-update",
+            "strategy-unlock",
+            "strategy-elimination",
+            "player-entry",
+            "player-exit",
+            "commitment-change",
+            "resource-transfer",
+            "timing-change",
+          ],
+        },
+        magnitude: { type: "string" },
+        direction: { type: "string" },
+        cascade: { type: "boolean" },
+      },
+      required: [
+        "type",
+        "sourceGame",
+        "targetGame",
+        "trigger",
+        "effectType",
+        "magnitude",
+        "direction",
+        "cascade",
+      ],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
+const SIGNAL_CLASSIFICATION_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["signal-classification"] },
+    phase: { type: "string", enum: ["formal-modeling"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["signal-classification"] },
+        action: { type: "string" },
+        player: { type: "string" },
+        classification: {
+          type: "string",
+          enum: ["cheap-talk", "costly-signal", "audience-cost"],
+        },
+        cheapTalkConditions: {
+          anyOf: [
+            {
+              type: "object",
+              properties: {
+                interestsAligned: { type: "boolean" },
+                reputationalCapital: { type: "boolean" },
+                verifiable: { type: "boolean" },
+                repeatedGameMakesLyingCostly: { type: "boolean" },
+              },
+              required: [
+                "interestsAligned",
+                "reputationalCapital",
+                "verifiable",
+                "repeatedGameMakesLyingCostly",
+              ],
+            },
+            { type: "null" },
+          ],
+        },
+        credibility: { type: "string", enum: ["high", "medium", "low"] },
+      },
+      required: [
+        "type",
+        "action",
+        "player",
+        "classification",
+        "cheapTalkConditions",
+        "credibility",
+      ],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
+const BARGAINING_DYNAMICS_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["bargaining-dynamics"] },
+    phase: { type: "string", enum: ["formal-modeling"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["bargaining-dynamics"] },
+        negotiation: { type: "string" },
+        outsideOptions: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              player: { type: "string" },
+              option: { type: "string" },
+              quality: {
+                type: "string",
+                enum: ["strong", "moderate", "weak"],
+              },
+            },
+            required: ["player", "option", "quality"],
+          },
+        },
+        patience: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              player: { type: "string" },
+              discountFactor: { type: "string" },
+              pressures: { type: "array", items: { type: "string" } },
+            },
+            required: ["player", "discountFactor", "pressures"],
+          },
+        },
+        deadlines: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              description: { type: "string" },
+              date: { type: ["string", "null"] },
+              affectsPlayer: { type: "string" },
+            },
+            required: ["description", "date", "affectsPlayer"],
+          },
+        },
+        commitmentProblems: { type: "array", items: { type: "string" } },
+        dynamicInconsistency: { type: ["string", "null"] },
+        issueLinkage: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              linkedGame: { type: "string" },
+              description: { type: "string" },
+            },
+            required: ["linkedGame", "description"],
+          },
+        },
+      },
+      required: [
+        "type",
+        "negotiation",
+        "outsideOptions",
+        "patience",
+        "deadlines",
+        "commitmentProblems",
+        "dynamicInconsistency",
+        "issueLinkage",
+      ],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
+const OPTION_VALUE_ASSESSMENT_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["option-value-assessment"] },
+    phase: { type: "string", enum: ["formal-modeling"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["option-value-assessment"] },
+        player: { type: "string" },
+        action: { type: "string" },
+        flexibilityPreserved: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: [
+                  "escalation-flexibility",
+                  "avoiding-irreversible-commitment",
+                  "waiting-for-information",
+                  "letting-constraints-tighten",
+                ],
+              },
+              description: { type: "string" },
+            },
+            required: ["type", "description"],
+          },
+        },
+        uncertaintyLevel: {
+          type: "string",
+          enum: ["high", "medium", "low"],
+        },
+      },
+      required: [
+        "type",
+        "player",
+        "action",
+        "flexibilityPreserved",
+        "uncertaintyLevel",
+      ],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
+const BEHAVIORAL_OVERLAY_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["behavioral-overlay"] },
+    phase: { type: "string", enum: ["formal-modeling"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["behavioral-overlay"] },
+        classification: { type: "string", enum: ["adjacent"] },
+        overlayType: {
+          type: "string",
+          enum: [
+            "prospect-theory",
+            "overconfidence",
+            "sunk-cost",
+            "groupthink",
+            "anchoring",
+            "honor-based-escalation",
+            "reference-dependence",
+            "scenario-planning",
+            "red-teaming",
+          ],
+        },
+        description: { type: "string" },
+        affectedPlayers: { type: "array", items: { type: "string" } },
+        referencePoint: { type: ["string", "null"] },
+        predictionModification: { type: "string" },
+      },
+      required: [
+        "type",
+        "classification",
+        "overlayType",
+        "description",
+        "affectedPlayers",
+        "referencePoint",
+        "predictionModification",
+      ],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
 const RELATIONSHIP_SCHEMA = {
   type: "object",
   properties: {
@@ -849,6 +1464,17 @@ const PHASE_ENTITY_JSON_SCHEMAS: Record<
     TRUST_ASSESSMENT_ENTITY_SCHEMA,
     DYNAMIC_INCONSISTENCY_ENTITY_SCHEMA,
     SIGNALING_EFFECT_ENTITY_SCHEMA,
+  ],
+  "formal-modeling": [
+    PAYOFF_MATRIX_ENTITY_SCHEMA,
+    GAME_TREE_ENTITY_SCHEMA,
+    EQUILIBRIUM_RESULT_ENTITY_SCHEMA,
+    CROSS_GAME_CONSTRAINT_TABLE_ENTITY_SCHEMA,
+    CROSS_GAME_EFFECT_ENTITY_SCHEMA,
+    SIGNAL_CLASSIFICATION_ENTITY_SCHEMA,
+    BARGAINING_DYNAMICS_ENTITY_SCHEMA,
+    OPTION_VALUE_ASSESSMENT_ENTITY_SCHEMA,
+    BEHAVIORAL_OVERLAY_ENTITY_SCHEMA,
   ],
   assumptions: [ASSUMPTION_ENTITY_SCHEMA],
 };
