@@ -1,3 +1,9 @@
+// Renderer-side chat/design runtime helpers only.
+// This file is NOT the live server analysis runtime config source.
+// Server-owned analysis defaults and env resolution live in:
+// - server/config/analysis-runtime.ts
+// - server/config/analysis-runtime-resolver.ts
+
 export type ThinkingMode = 'adaptive' | 'disabled' | 'enabled'
 export type ThinkingEffort = 'low' | 'medium' | 'high' | 'max'
 
@@ -118,4 +124,3 @@ export const RETRY_TIMEOUT_CONFIG = {
   noTextTimeoutMaxMs: 480_000,
   firstTextTimeoutMaxMs: 1_200_000,
 } as const
-

@@ -7,6 +7,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 
 export const CODEX_MCP_SERVER_NAME = "game_theory_analyzer_mcp";
 const LEGACY_CODEX_MCP_SERVER_NAMES = [
@@ -117,8 +118,12 @@ function mcpEntryLines(
   const lines = [
     `command = ${JSON.stringify(command)}`,
     `args = ${formatStringArray(args)}`,
-    `startup_timeout_sec = ${options?.startupTimeoutSec ?? 10}`,
-    `tool_timeout_sec = ${options?.toolTimeoutSec ?? 120}`,
+    `startup_timeout_sec = ${
+      options?.startupTimeoutSec ?? analysisRuntimeConfig.codexMcp.startupTimeoutSec
+    }`,
+    `tool_timeout_sec = ${
+      options?.toolTimeoutSec ?? analysisRuntimeConfig.codexMcp.toolTimeoutSec
+    }`,
     `env = ${formatInlineTable(env)}`,
   ];
 

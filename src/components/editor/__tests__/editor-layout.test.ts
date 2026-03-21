@@ -24,6 +24,19 @@ describe("editor layout", () => {
     expect(source).not.toContain("useAnalysisStore");
   });
 
+  it("passes renderer-owned runtime overrides into analysis startup", () => {
+    const source = readFileSync(
+      join(process.cwd(), "src/components/editor/editor-layout.tsx"),
+      "utf8",
+    );
+
+    expect(source).toContain("buildAnalysisRuntimeOverrides");
+    expect(source).toContain("useAgentSettingsStore.getState()");
+    expect(source).toContain(
+      "analysisClient.startAnalysis(topic, provider, model, runtime)",
+    );
+  });
+
   it("keeps the editor route and landing page analysis-focused", () => {
     const landingLocaleSource = readFileSync(englishLocalePath, "utf8");
     const landingSource = readFileSync(landingPath, "utf8");

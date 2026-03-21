@@ -11,6 +11,10 @@ import type {
   AnalysisProgressEvent,
   PhaseSummary,
 } from "../../shared/types/events";
+import type {
+  AnalysisRuntimeOverrides,
+  ResolvedAnalysisRuntime,
+} from "../../shared/types/analysis-runtime";
 import { V3_PHASES } from "../../src/types/methodology";
 import type { PhaseResult } from "../services/analysis-service";
 import { runPhase } from "../services/analysis-service";
@@ -22,6 +26,8 @@ import {
   clearRecordedLoopbackTriggers,
 } from "../services/analysis-tools";
 import type { LoopbackTriggerType } from "../services/analysis-tools";
+import { analysisRuntimeConfig } from "../config/analysis-runtime";
+import { resolveAnalysisRuntime } from "../config/analysis-runtime-resolver";
 import { createRunLogger, timer } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
 
@@ -63,6 +69,9 @@ interface ActiveRun {
   activePhase: MethodologyPhase | null;
   provider?: string;
   model?: string;
+  runtime: ResolvedAnalysisRuntime;
+  activePhases: SupportedPhase[];
+  autoRevalidationEnabled: boolean;
   editQueue: Array<() => void>;
   startTime: number;
   phasesCompleted: MethodologyPhase[];
@@ -99,8 +108,9 @@ const SUPPORTED_PHASES: SupportedPhase[] = V3_PHASES.filter(
     p === "meta-check",
 );
 
-const MAX_RETRIES = 2;
-const MAX_LOOPBACK_PASSES = 4;
+const MAX_RETRIES = analysisRuntimeConfig.orchestrator.maxRetries;
+const MAX_LOOPBACK_PASSES =
+  analysisRuntimeConfig.orchestrator.maxLoopbackPasses;
 
 /** Maps loopback trigger types to the phase that needs re-running */
 const TRIGGER_TARGET_PHASE: Record<LoopbackTriggerType, MethodologyPhase> = {
@@ -117,8 +127,8 @@ const TRIGGER_TARGET_PHASE: Record<LoopbackTriggerType, MethodologyPhase> = {
   behavioral_overlay_change: "baseline-model",
   meta_check_blind_spot: "player-identification",
 };
-const PHASE_TIMEOUT_MS = 9 * 60 * 1000; // 9 minutes
-const RUN_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const PHASE_TIMEOUT_MS = analysisRuntimeConfig.orchestrator.phaseTimeoutMs;
+const RUN_TIMEOUT_MS = analysisRuntimeConfig.orchestrator.runTimeoutMs;
 
 // ── Module-level state ──
 
@@ -127,11 +137,52 @@ let runPromise: Promise<void> | null = null;
 const progressListeners = new Set<(event: AnalysisProgressEvent) => void>();
 
 /** Capped snapshot store: completed run results keyed by runId */
-const MAX_RESULT_SNAPSHOTS = 10;
+const MAX_RESULT_SNAPSHOTS =
+  analysisRuntimeConfig.orchestrator.maxResultSnapshots;
 const resultSnapshots = new Map<
   string,
   { entities: AnalysisEntity[]; relationships: AnalysisRelationship[] }
 >();
+
+function getCanonicalPhaseIndex(phase: MethodologyPhase): number {
+  return SUPPORTED_PHASES.indexOf(phase as SupportedPhase);
+}
+
+function normalizeActivePhases(
+  requestedPhases?: MethodologyPhase[],
+): SupportedPhase[] {
+  if (requestedPhases === undefined) {
+    return [...SUPPORTED_PHASES];
+  }
+
+  if (!Array.isArray(requestedPhases)) {
+    throw new Error("activePhases must be an array of supported phases");
+  }
+
+  const invalidPhases = requestedPhases.filter(
+    (phase): phase is MethodologyPhase =>
+      !SUPPORTED_PHASES.includes(phase as SupportedPhase),
+  );
+
+  if (invalidPhases.length > 0) {
+    throw new Error(
+      `Invalid activePhases: ${invalidPhases.join(", ")}. Allowed phases: ${SUPPORTED_PHASES.join(", ")}`,
+    );
+  }
+
+  const requestedPhaseSet = new Set(requestedPhases as SupportedPhase[]);
+  const normalized = SUPPORTED_PHASES.filter((phase) =>
+    requestedPhaseSet.has(phase),
+  );
+
+  if (normalized.length === 0) {
+    throw new Error(
+      "activePhases must include at least one supported canonical phase",
+    );
+  }
+
+  return normalized;
+}
 
 // ── Progress event helpers ──
 
@@ -187,13 +238,27 @@ function drainEditQueue(): void {
 // ── Prior context builder ──
 
 function buildPriorContext(
+  currentPhase: SupportedPhase,
   completedPhases: MethodologyPhase[],
+  activePhases: SupportedPhase[],
 ): string | undefined {
   if (completedPhases.length === 0) return undefined;
 
+  const currentPhaseIndex = getCanonicalPhaseIndex(currentPhase);
+  const priorCompletedPhases = completedPhases.filter((phase) => {
+    if (!activePhases.includes(phase as SupportedPhase)) {
+      return false;
+    }
+
+    const phaseIndex = getCanonicalPhaseIndex(phase);
+    return phaseIndex !== -1 && phaseIndex < currentPhaseIndex;
+  });
+
+  if (priorCompletedPhases.length === 0) return undefined;
+
   const analysis = entityGraphService.getAnalysis();
   const priorEntities = analysis.entities.filter((e) =>
-    completedPhases.includes(e.phase),
+    priorCompletedPhases.includes(e.phase),
   );
 
   if (priorEntities.length === 0) return undefined;
@@ -211,6 +276,62 @@ function buildPriorContext(
   }));
 
   return JSON.stringify(summary);
+}
+
+function resolveLoopbackJumpIndex(
+  phase: SupportedPhase,
+  phaseIndex: number,
+  run: ActiveRun,
+  triggers: Array<{
+    trigger_type: LoopbackTriggerType;
+    justification: string;
+    timestamp: number;
+  }>,
+): number | null {
+  let earliestJumpIndex = Number.POSITIVE_INFINITY;
+
+  for (const trigger of triggers) {
+    const targetPhase = TRIGGER_TARGET_PHASE[trigger.trigger_type];
+    const targetCanonicalIndex = getCanonicalPhaseIndex(targetPhase);
+
+    if (targetCanonicalIndex === -1) {
+      continue;
+    }
+
+    const directActiveIndex = run.activePhases.findIndex(
+      (activePhase) => activePhase === targetPhase,
+    );
+
+    if (directActiveIndex !== -1) {
+      if (directActiveIndex < phaseIndex && directActiveIndex < earliestJumpIndex) {
+        earliestJumpIndex = directActiveIndex;
+      }
+      continue;
+    }
+
+    const resolvedActiveIndex = run.activePhases.findIndex(
+      (activePhase, activeIndex) =>
+        activeIndex < phaseIndex &&
+        getCanonicalPhaseIndex(activePhase) >= targetCanonicalIndex,
+    );
+
+    if (resolvedActiveIndex !== -1) {
+      if (resolvedActiveIndex < earliestJumpIndex) {
+        earliestJumpIndex = resolvedActiveIndex;
+      }
+      continue;
+    }
+
+    run.logger.warn("orchestrator", "loopback-no-active-target", {
+      from: phase,
+      triggerType: trigger.trigger_type,
+      targetPhase,
+      justification: trigger.justification,
+      activePhases: run.activePhases,
+    });
+  }
+
+  return Number.isFinite(earliestJumpIndex) ? earliestJumpIndex : null;
 }
 
 // ── Single phase execution with retries ──
@@ -238,7 +359,11 @@ async function executeSinglePhase(
   emitProgress({ type: "phase_started", phase, runId: run.runId });
   run.logger.log("orchestrator", "phase-start", { phase });
 
-  const priorContext = buildPriorContext(run.phasesCompleted);
+  const priorContext = buildPriorContext(
+    phase,
+    run.phasesCompleted,
+    run.activePhases,
+  );
 
   let lastError = "";
 
@@ -286,6 +411,7 @@ async function executeSinglePhase(
           priorEntities: priorContext,
           provider: run.provider,
           model: run.model,
+          runtime: run.runtime,
           runId: run.runId,
           signal: phaseAbort.signal,
           logger: run.logger,
@@ -349,6 +475,7 @@ async function executeSinglePhase(
               revisionRetryInstruction: commitResult.retryMessage,
               provider: run.provider,
               model: run.model,
+              runtime: run.runtime,
               runId: run.runId,
               signal: phaseAbort.signal,
               logger: run.logger,
@@ -488,6 +615,7 @@ export async function runFull(
   provider?: string,
   model?: string,
   signal?: AbortSignal,
+  runtimeOverrides?: AnalysisRuntimeOverrides,
 ): Promise<{ runId: string }> {
   // Guard: check both status AND whether the async execution is still unwinding
   if (activeRun && activeRun.status === "running") {
@@ -501,6 +629,9 @@ export async function runFull(
   const logger = createRunLogger(runId);
   const analysisTimer = timer();
   const abortController = new AbortController();
+  const runtime = resolveAnalysisRuntime(runtimeOverrides);
+  const activePhases = normalizeActivePhases(runtimeOverrides?.activePhases);
+  const autoRevalidationEnabled = activePhases.length === SUPPORTED_PHASES.length;
 
   // Use an explicit timeout controller so runtime behavior is testable with fake timers.
   const runTimeoutController = new AbortController();
@@ -530,6 +661,9 @@ export async function runFull(
     activePhase: null,
     provider,
     model,
+    runtime,
+    activePhases,
+    autoRevalidationEnabled,
     editQueue: [],
     startTime: Date.now(),
     phasesCompleted: [],
@@ -542,7 +676,10 @@ export async function runFull(
     topic,
     model,
     provider,
-    phases: SUPPORTED_PHASES.length,
+    runtime,
+    activePhases,
+    autoRevalidationEnabled,
+    phases: activePhases.length,
   });
 
   // Execute phases async — don't await here, return immediately
@@ -552,10 +689,10 @@ export async function runFull(
       let phaseIndex = 0;
       let passCount = 0;
 
-      while (phaseIndex < SUPPORTED_PHASES.length) {
+      while (phaseIndex < run.activePhases.length) {
         if (run.status !== "running") break;
 
-        const phase = SUPPORTED_PHASES[phaseIndex];
+        const phase = run.activePhases[phaseIndex];
 
         const result = await executeSinglePhase(
           phase,
@@ -607,20 +744,14 @@ export async function runFull(
         if (triggers.length > 0) {
           clearRecordedLoopbackTriggers(run.runId);
 
-          // Find the earliest target phase among all triggers
-          let earliestTargetIndex = SUPPORTED_PHASES.length;
-          for (const trigger of triggers) {
-            const targetPhase = TRIGGER_TARGET_PHASE[trigger.trigger_type];
-            const targetIndex = SUPPORTED_PHASES.findIndex(
-              (p) => p === targetPhase,
-            );
-            if (targetIndex !== -1 && targetIndex < earliestTargetIndex) {
-              earliestTargetIndex = targetIndex;
-            }
-          }
+          const earliestTargetIndex = resolveLoopbackJumpIndex(
+            phase,
+            phaseIndex,
+            run,
+            triggers,
+          );
 
-          // Only jump back if the target is before the current position
-          if (earliestTargetIndex < phaseIndex) {
+          if (earliestTargetIndex !== null && earliestTargetIndex < phaseIndex) {
             passCount++;
 
             if (passCount >= MAX_LOOPBACK_PASSES) {
@@ -640,7 +771,7 @@ export async function runFull(
 
             run.logger.log("orchestrator", "loopback-jump", {
               from: phase,
-              to: SUPPORTED_PHASES[earliestTargetIndex],
+              to: run.activePhases[earliestTargetIndex],
               pass: passCount,
               triggers: triggers.map((t) => ({
                 type: t.trigger_type,
@@ -704,7 +835,12 @@ export async function runFull(
       // Clear runPromise so new runs can start
       runPromise = null;
       // Flush deferred revalidations that were suppressed during this run
-      revalidationService.onRunComplete(run.provider, run.model);
+      revalidationService.onRunComplete(
+        run.provider,
+        run.model,
+        run.runtime,
+        run.autoRevalidationEnabled,
+      );
     }
   };
 
@@ -730,7 +866,7 @@ export function getStatus(runId: string): RunStatus {
     status: activeRun.status,
     activePhase: activeRun.activePhase,
     phasesCompleted: activeRun.phasesCompleted.length,
-    totalPhases: SUPPORTED_PHASES.length,
+    totalPhases: activeRun.activePhases.length,
     error: activeRun.error,
   };
 }
@@ -745,7 +881,7 @@ export function getActiveStatus(): RunStatus | null {
     status: activeRun.status,
     activePhase: activeRun.activePhase,
     phasesCompleted: activeRun.phasesCompleted.length,
-    totalPhases: SUPPORTED_PHASES.length,
+    totalPhases: activeRun.activePhases.length,
     error: activeRun.error,
   };
 }

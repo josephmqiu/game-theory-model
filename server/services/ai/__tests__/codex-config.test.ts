@@ -10,6 +10,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { rmSync } from "node:fs";
 
+const ORIGINAL_ENV = { ...process.env };
+
 // ── Mock os.homedir() to point at a temp dir ──
 
 let tempHome: string;
@@ -27,6 +29,8 @@ let isInstalled: typeof import("../codex-config").isInstalled;
 let registerCleanupHandler: typeof import("../codex-config").registerCleanupHandler;
 
 beforeEach(async () => {
+  process.env = { ...ORIGINAL_ENV };
+  vi.resetModules();
   tempHome = mkdtempSync(join(tmpdir(), "codex-config-test-"));
   // Re-import to pick up fresh module state
   const mod = await import("../codex-config");
@@ -37,6 +41,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  process.env = { ...ORIGINAL_ENV };
   try {
     rmSync(tempHome, { recursive: true, force: true });
   } catch {
@@ -179,6 +184,22 @@ describe("codex-config", () => {
       expect(content).toContain(
         'env = { ANALYSIS_RUN_ID = "run-123", PRODUCT_ONLY = "1" }',
       );
+    });
+
+    it("uses analysis runtime env overrides for default startup and tool timeouts", async () => {
+      process.env.GAME_THEORY_ANALYSIS_RUNTIME_CODEX_MCP_STARTUP_TIMEOUT_SEC =
+        "25";
+      process.env.GAME_THEORY_ANALYSIS_RUNTIME_CODEX_MCP_TOOL_TIMEOUT_SEC =
+        "240";
+      vi.resetModules();
+      const mod = await import("../codex-config");
+      installMcpServer = mod.installMcpServer;
+
+      installMcpServer("node", ["server.js"]);
+
+      const content = readConfig();
+      expect(content).toContain("startup_timeout_sec = 25");
+      expect(content).toContain("tool_timeout_sec = 240");
     });
   });
 

@@ -141,6 +141,72 @@ describe("analysis-client", () => {
     ).toBe("complete");
   });
 
+  it("includes full runtime overrides in the analyze request body when provided", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    fetchMock.mockResolvedValueOnce(
+      sseResponse([
+        { channel: "started", runId: "run-runtime" },
+        { channel: "progress", type: "analysis_completed", runId: "run-runtime" },
+        { type: "done" },
+      ]),
+    );
+
+    const client = await import("../analysis-client");
+    client._resetForTest();
+
+    await client.startAnalysis("Topic", "openai", "gpt-5.4", {
+      webSearch: false,
+      effortLevel: "thorough",
+      activePhases: ["situational-grounding", "scenarios"],
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/ai/analyze",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          topic: "Topic",
+          provider: "openai",
+          model: "gpt-5.4",
+          runtime: {
+            webSearch: false,
+            effortLevel: "thorough",
+            activePhases: ["situational-grounding", "scenarios"],
+          },
+        }),
+      }),
+    );
+  });
+
+  it("omits runtime from the analyze request body when not provided", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    fetchMock.mockResolvedValueOnce(
+      sseResponse([
+        { channel: "started", runId: "run-no-runtime" },
+        {
+          channel: "progress",
+          type: "analysis_completed",
+          runId: "run-no-runtime",
+        },
+        { type: "done" },
+      ]),
+    );
+
+    const client = await import("../analysis-client");
+    client._resetForTest();
+
+    await client.startAnalysis("Topic");
+
+    const requestInit = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(String(requestInit.body))).toEqual({
+      topic: "Topic",
+    });
+  });
+
   it("upserts later runnable phases from SSE progress events", async () => {
     const fetchMock = vi.fn();
     globalThis.fetch = fetchMock as typeof fetch;
@@ -280,8 +346,7 @@ describe("analysis-client", () => {
     await client.hydrateAnalysisState({ enableRecoveryPolling: true });
     expect(client.isRunning()).toBe(true);
 
-    vi.advanceTimersByTime(2_000);
-    await flushMicrotasks();
+    await vi.advanceTimersByTimeAsync(2_000);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(client.isRunning()).toBe(false);

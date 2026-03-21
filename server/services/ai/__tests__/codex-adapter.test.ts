@@ -9,6 +9,7 @@ import {
 import type { ChatEvent } from "../../../../shared/types/events";
 import { EventEmitter } from "node:events";
 
+const ORIGINAL_ENV = { ...process.env };
 const mockInstallMcpServer = vi.fn();
 const mockResolveMcpServerScript = vi.fn(() => "/mock/dist/mcp-server.cjs");
 
@@ -192,13 +193,16 @@ function setAutoResponder(
 
 describe("codex-adapter", () => {
   beforeEach(async () => {
+    process.env = { ...ORIGINAL_ENV };
     vi.clearAllMocks();
+    vi.resetModules();
     stdinHandler = null;
     const mod = await import("../codex-adapter");
     mod._resetConnection();
   });
 
   afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
     vi.useRealTimers();
   });
 
@@ -791,6 +795,65 @@ describe("codex-adapter", () => {
       expect(turnStartReq.params.input).toEqual([
         { type: "text", text: "test" },
       ]);
+    });
+
+    it("sends disabled analysis web_search config when runtime webSearch is false", async () => {
+      const { runAnalysisPhase, _resetConnection } =
+        await import("../codex-adapter");
+      _resetConnection();
+
+      setAutoResponder((method, id) => {
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "config/mcpServer/reload" && id !== undefined) {
+          emitResponse(id, { ok: true });
+        }
+        if (method === "mcpServerStatus/list" && id !== undefined) {
+          emitResponse(id, {
+            data: [
+              {
+                name: "game_theory_analyzer_mcp",
+                tools: {
+                  get_entity: {},
+                  query_entities: {},
+                  query_relationships: {},
+                  request_loopback: {},
+                },
+              },
+            ],
+          });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitThreadStartResponse(id, "thread-no-search");
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id, "turn-no-search");
+          queueMicrotask(() => {
+            emitItemCompleted(
+              {
+                id: "agent-msg-no-search",
+                type: "agentMessage",
+                text: '{"entities":[]}',
+                phase: "final_answer",
+              },
+              "thread-no-search",
+              "turn-no-search",
+            );
+            emitTurnCompleted("thread-no-search", "turn-no-search");
+          });
+        }
+      });
+
+      await runAnalysisPhase("test", "system", "gpt-4o", {}, {
+        webSearch: false,
+      });
+
+      const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
+      const threadStartReq = JSON.parse(
+        calls.map((call) => call[0]).find((call) => call.includes('"thread/start"'))!.trim(),
+      );
+      expect(threadStartReq.params.config).toEqual({ web_search: "disabled" });
     });
 
     it("approves only read-only MCP tool calls during analysis", async () => {

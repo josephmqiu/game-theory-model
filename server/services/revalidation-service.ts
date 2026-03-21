@@ -5,16 +5,18 @@
 
 import type { MethodologyPhase } from "../../shared/types/methodology";
 import type { AnalysisProgressEvent } from "../../shared/types/events";
+import type { ResolvedAnalysisRuntime } from "../../shared/types/analysis-runtime";
 import { V2_PHASES, PHASE_NUMBERS } from "../../src/types/methodology";
+import { analysisRuntimeConfig } from "../config/analysis-runtime";
 import * as entityGraphService from "./entity-graph-service";
 import * as orchestrator from "../agents/analysis-agent";
 import { runPhase } from "./analysis-service";
 import { commitPhaseSnapshot } from "./revision-diff";
-import { createRunLogger, timer } from "../utils/ai-logger";
+import { createRunLogger, serverWarn, timer } from "../utils/ai-logger";
 
 // ── Constants ──
 
-const DEBOUNCE_MS = 2000;
+const DEBOUNCE_MS = analysisRuntimeConfig.revalidation.debounceMs;
 
 // ── Revalidation run status tracking ──
 
@@ -43,6 +45,7 @@ const revalRunStatuses = new Map<string, RevalRunStatus>();
 /** Provider/model from the most recent analysis run, used for revalidation continuity. */
 let lastRunProvider: string | undefined;
 let lastRunModel: string | undefined;
+let lastRunRuntime: ResolvedAnalysisRuntime | undefined;
 
 // ── Progress event helpers ──
 
@@ -252,6 +255,7 @@ async function executeRevalidation(
     let result = await runPhase(p, topic, {
       provider: lastRunProvider,
       model: lastRunModel,
+      runtime: lastRunRuntime,
       priorEntities: priorContext,
       logger,
       runId,
@@ -276,6 +280,7 @@ async function executeRevalidation(
           result = await runPhase(p, topic, {
             provider: lastRunProvider,
             model: lastRunModel,
+            runtime: lastRunRuntime,
             priorEntities: priorContext,
             revisionRetryInstruction: commitResult.retryMessage,
             logger,
@@ -407,9 +412,26 @@ export function getActiveRevalStatus(): RevalRunStatus | null {
  * for revalidation continuity. If there are pending staleIds from suppressed
  * revalidation, triggers revalidation now.
  */
-export function onRunComplete(provider?: string, model?: string): void {
+export function onRunComplete(
+  provider?: string,
+  model?: string,
+  runtime?: ResolvedAnalysisRuntime,
+  autoRevalidationEnabled = true,
+): void {
   if (provider !== undefined) lastRunProvider = provider;
   if (model !== undefined) lastRunModel = model;
+  if (runtime !== undefined) lastRunRuntime = runtime;
+
+  if (!autoRevalidationEnabled) {
+    serverWarn(undefined, "revalidation", "auto-revalidation-disabled", {
+      pendingStaleCount: pendingStaleIds.size,
+      deferredStaleCount: deferredStaleIds.size,
+      reason: "subset-run",
+    });
+    deferredStaleIds.clear();
+    pendingStaleIds.clear();
+    return;
+  }
 
   if (deferredStaleIds.size > 0) {
     const ids = Array.from(deferredStaleIds);
@@ -468,6 +490,7 @@ export function _resetForTest(): void {
   revalRunStatuses.clear();
   lastRunProvider = undefined;
   lastRunModel = undefined;
+  lastRunRuntime = undefined;
   unwire();
 }
 

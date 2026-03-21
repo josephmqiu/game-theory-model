@@ -50,6 +50,7 @@ interface AnalysisAdapter {
       signal?: AbortSignal;
       runId?: string;
       maxTurns?: number;
+      webSearch?: boolean;
     },
   ): Promise<T>;
 }
@@ -75,12 +76,20 @@ export interface PhaseResult {
   error?: string;
 }
 
+type PhaseEffortLevel = "quick" | "standard" | "thorough";
+
+interface PhaseRuntimeContext {
+  webSearch: boolean;
+  effortLevel: PhaseEffortLevel;
+}
+
 export interface PhaseContext {
   priorEntities?: string;
   revisionRetryInstruction?: string;
   revisionSystemPrompt?: string;
   provider?: string;
   model?: string;
+  runtime?: PhaseRuntimeContext;
   runId?: string;
   signal?: AbortSignal;
   logger?: RunLogger;
@@ -519,8 +528,12 @@ function buildPrompt(
   priorContext?: string,
   revisionRetryInstruction?: string,
   revisionSystemPrompt?: string,
+  runtime?: PhaseRuntimeContext,
 ): { system: string; user: string } {
   const systemPrompt = revisionSystemPrompt ?? PHASE_PROMPTS[phase];
+  const effortGuidance = buildAnalysisEffortGuidance(
+    runtime?.effortLevel ?? "standard",
+  );
   const parts = [
     `Analyze the following topic:\n\n${topic}`,
     [
@@ -530,6 +543,7 @@ function buildPrompt(
       "- If you detect a disruption trigger, call request_loopback(trigger_type, justification).",
       "- Return only the final JSON object that matches the schema.",
     ].join("\n"),
+    effortGuidance,
   ];
   if (priorContext) {
     parts.push(
@@ -540,6 +554,36 @@ function buildPrompt(
     parts.push(`\nRevision retry instruction:\n\n${revisionRetryInstruction}`);
   }
   return { system: systemPrompt, user: parts.join("\n") };
+}
+
+function buildAnalysisEffortGuidance(
+  effortLevel: PhaseEffortLevel,
+): string {
+  const guidanceByEffort: Record<PhaseEffortLevel, string[]> = {
+    quick: [
+      "Analysis effort guidance:",
+      '- Effort level: "quick".',
+      "- Prioritize core players, objectives, strategic structure, and the minimum research needed for a useful answer.",
+      "- Avoid unnecessary branching or long-tail possibilities.",
+      "- Prefer concise outputs when uncertainty is high.",
+    ],
+    standard: [
+      "Analysis effort guidance:",
+      '- Effort level: "standard".',
+      "- Preserve the current expected level of depth and research coverage.",
+      "- Focus on the main strategic structure without expanding scope unnecessarily.",
+      "- Keep uncertainty visible, but do not add extra alternatives unless they materially help the analysis.",
+    ],
+    thorough: [
+      "Analysis effort guidance:",
+      '- Effort level: "thorough".',
+      "- Allow broader research and comparison when it materially improves the analysis.",
+      "- Surface more alternatives, assumptions, and uncertainty explicitly.",
+      "- Spend more attention on edge cases and competing explanations.",
+    ],
+  };
+
+  return guidanceByEffort[effortLevel].join("\n");
 }
 
 // ── Text-based fallback parsing (ported from phase-worker.ts) ──
@@ -1842,6 +1886,7 @@ export async function runPhase(
     context?.priorEntities,
     context?.revisionRetryInstruction,
     context?.revisionSystemPrompt,
+    context?.runtime,
   );
   const model = context?.model ?? "claude-sonnet-4-20250514";
   const provider = context?.provider ?? "anthropic";
@@ -1872,6 +1917,7 @@ export async function runPhase(
       {
         signal: context?.signal,
         runId: context?.runId,
+        webSearch: context?.runtime?.webSearch,
       },
     );
   } catch (err) {

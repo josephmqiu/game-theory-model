@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
+import type { ResolvedAnalysisRuntime } from "../../../shared/types/analysis-runtime";
 import type { MethodologyPhase } from "../../../shared/types/methodology";
 import type { AnalysisProgressEvent } from "../../../shared/types/events";
 import type {
@@ -50,6 +51,7 @@ const mockRunPhase = vi.fn<
       revisionRetryInstruction?: string;
       provider?: string;
       model?: string;
+      runtime?: ResolvedAnalysisRuntime;
       runId?: string;
       signal?: AbortSignal;
     },
@@ -415,6 +417,101 @@ describe("analysis-orchestrator", () => {
     const finalStatus = orchestrator.getStatus(runId);
     expect(finalStatus.status).toBe("completed");
     expect(finalStatus.phasesCompleted).toBe(9);
+  });
+
+  it("rejects unsupported activePhases before starting a run", async () => {
+    await expect(
+      orchestrator.runFull("Test topic", undefined, undefined, undefined, {
+        activePhases: ["revalidation" as MethodologyPhase],
+      }),
+    ).rejects.toThrow("Invalid activePhases");
+
+    expect(mockRunPhase).not.toHaveBeenCalled();
+  });
+
+  it("rejects activePhases that normalize to an empty runnable set", async () => {
+    await expect(
+      orchestrator.runFull("Test topic", undefined, undefined, undefined, {
+        activePhases: [],
+      }),
+    ).rejects.toThrow(
+      "activePhases must include at least one supported canonical phase",
+    );
+
+    expect(mockRunPhase).not.toHaveBeenCalled();
+  });
+
+  it("runs deduped activePhases in canonical order and reports subset totals", async () => {
+    mockRunPhase
+      .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
+      .mockResolvedValueOnce(makePhaseResult("baseline-model"))
+      .mockResolvedValueOnce(makePhaseResult("scenarios"));
+
+    const { runId } = await orchestrator.runFull(
+      "Subset topic",
+      undefined,
+      undefined,
+      undefined,
+      {
+        activePhases: [
+          "scenarios",
+          "situational-grounding",
+          "baseline-model",
+          "baseline-model",
+        ],
+      },
+    );
+    await flushAsync();
+
+    expect(mockRunPhase.mock.calls.map((call) => call[0])).toEqual([
+      "situational-grounding",
+      "baseline-model",
+      "scenarios",
+    ]);
+
+    const status = orchestrator.getStatus(runId);
+    expect(status.status).toBe("completed");
+    expect(status.phasesCompleted).toBe(3);
+    expect(status.totalPhases).toBe(3);
+  });
+
+  it("reports subset-aware totals while a filtered run is active", async () => {
+    let resolvePhase1!: (value: PhaseResult) => void;
+    mockRunPhase
+      .mockReturnValueOnce(
+        new Promise<PhaseResult>((resolve) => {
+          resolvePhase1 = resolve;
+        }),
+      )
+      .mockResolvedValueOnce(makePhaseResult("baseline-model"));
+
+    const { runId } = await orchestrator.runFull(
+      "Subset topic",
+      undefined,
+      undefined,
+      undefined,
+      {
+        activePhases: ["baseline-model", "situational-grounding"],
+      },
+    );
+    await flushAsync();
+
+    expect(orchestrator.getActiveStatus()).toMatchObject({
+      runId,
+      status: "running",
+      activePhase: "situational-grounding",
+      phasesCompleted: 0,
+      totalPhases: 2,
+    });
+
+    resolvePhase1(makePhaseResult("situational-grounding"));
+    await flushAsync();
+
+    expect(orchestrator.getStatus(runId)).toMatchObject({
+      status: "completed",
+      phasesCompleted: 2,
+      totalPhases: 2,
+    });
   });
 
   // ── 3. No concurrent runs ──
@@ -1120,7 +1217,7 @@ describe("analysis-orchestrator", () => {
   });
 
   describe("provider affinity", () => {
-    it("passes the SAME provider+model to every runPhase call in a run", async () => {
+    it("passes the SAME provider+model+runtime to every runPhase call in a run", async () => {
       mockRunPhase
         .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
         .mockResolvedValueOnce(makePhaseResult("player-identification"))
@@ -1132,7 +1229,13 @@ describe("analysis-orchestrator", () => {
         .mockResolvedValueOnce(makePhaseResult("scenarios"))
         .mockResolvedValueOnce(makePhaseResult("meta-check"));
 
-      await orchestrator.runFull("Test topic", "openai", "gpt-4o");
+      await orchestrator.runFull(
+        "Test topic",
+        "openai",
+        "gpt-4o",
+        undefined,
+        { webSearch: false },
+      );
       await flushAsync();
 
       // All 9 phases must have been called
@@ -1141,10 +1244,18 @@ describe("analysis-orchestrator", () => {
       // Every call gets the same provider+model
       for (const call of mockRunPhase.mock.calls) {
         const context = call[2] as
-          | { provider?: string; model?: string }
+          | {
+              provider?: string;
+              model?: string;
+              runtime?: ResolvedAnalysisRuntime;
+            }
           | undefined;
         expect(context?.provider).toBe("openai");
         expect(context?.model).toBe("gpt-4o");
+        expect(context?.runtime).toEqual({
+          webSearch: false,
+          effortLevel: "standard",
+        });
       }
     });
   });
@@ -1307,7 +1418,12 @@ describe("analysis-orchestrator", () => {
       await orchestrator.runFull("Test topic");
       await flushAsync();
 
-      expect(mockRevalidation.onRunComplete).toHaveBeenCalled();
+      expect(mockRevalidation.onRunComplete).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+        { webSearch: true, effortLevel: "standard" },
+        true,
+      );
     });
 
     it("calls revalidationService.onRunComplete even after failure", async () => {
@@ -1318,7 +1434,30 @@ describe("analysis-orchestrator", () => {
       await orchestrator.runFull("Test topic");
       await flushAsync();
 
-      expect(mockRevalidation.onRunComplete).toHaveBeenCalled();
+      expect(mockRevalidation.onRunComplete).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+        { webSearch: true, effortLevel: "standard" },
+        true,
+      );
+    });
+
+    it("disables auto-revalidation after subset runs", async () => {
+      mockRunPhase
+        .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
+        .mockResolvedValueOnce(makePhaseResult("baseline-model"));
+
+      await orchestrator.runFull("Test topic", undefined, undefined, undefined, {
+        activePhases: ["situational-grounding", "baseline-model"],
+      });
+      await flushAsync();
+
+      expect(mockRevalidation.onRunComplete).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+        { webSearch: true, effortLevel: "standard" },
+        false,
+      );
     });
   });
 
@@ -1413,6 +1552,166 @@ describe("analysis-orchestrator", () => {
 
       // Should run normally: all 9 phases — no loopback
       expect(mockRunPhase).toHaveBeenCalledTimes(9);
+    });
+
+    it("resolves inactive loopback targets to the earliest eligible active phase", async () => {
+      let formalModelingCalls = 0;
+      mockRunPhase.mockImplementation((phase) => {
+        if (phase === "formal-modeling") {
+          formalModelingCalls++;
+        }
+        if (phase === "formal-modeling" && formalModelingCalls === 1) {
+          mockTriggers = [
+            {
+              trigger_type: "game_reframed",
+              justification: "Baseline game changed",
+              timestamp: Date.now(),
+            },
+          ];
+        }
+        return Promise.resolve(makePhaseResult(phase));
+      });
+
+      const { runId } = await orchestrator.runFull(
+        "Test topic",
+        undefined,
+        undefined,
+        undefined,
+        {
+          activePhases: [
+            "situational-grounding",
+            "historical-game",
+            "formal-modeling",
+          ],
+        },
+      );
+      await flushAsync();
+
+      expect(orchestrator.getStatus(runId).status).toBe("completed");
+      expect(mockRunPhase.mock.calls.map((call) => call[0])).toEqual([
+        "situational-grounding",
+        "historical-game",
+        "formal-modeling",
+        "historical-game",
+        "formal-modeling",
+      ]);
+    });
+
+    it("does not jump when an inactive loopback target resolves to no earlier active phase", async () => {
+      mockRunPhase.mockImplementation((phase) => {
+        if (phase === "historical-game") {
+          mockTriggers = [
+            {
+              trigger_type: "assumption_invalidated",
+              justification: "Late assumption changed",
+              timestamp: Date.now(),
+            },
+          ];
+        }
+        return Promise.resolve(makePhaseResult(phase));
+      });
+
+      const { runId } = await orchestrator.runFull(
+        "Test topic",
+        undefined,
+        undefined,
+        undefined,
+        {
+          activePhases: ["situational-grounding", "historical-game"],
+        },
+      );
+      await flushAsync();
+
+      expect(orchestrator.getStatus(runId).status).toBe("completed");
+      expect(mockRunPhase.mock.calls.map((call) => call[0])).toEqual([
+        "situational-grounding",
+        "historical-game",
+      ]);
+    });
+
+    it("builds prior context only from earlier active phases after a loopback", async () => {
+      mockEntityGraph.getAnalysis.mockImplementation(() => ({
+        id: "test",
+        name: "test",
+        topic: "test",
+        entities: [
+          {
+            id: "fact-1",
+            type: "fact",
+            phase: "situational-grounding",
+            data: {
+              type: "fact",
+              date: "2025-06-15",
+              source: "Reuters",
+              content: "Grounding fact",
+              category: "action",
+            },
+          },
+          {
+            id: "game-1",
+            type: "game",
+            phase: "baseline-model",
+            data: {
+              type: "game",
+              name: "Baseline game",
+              gameType: "chicken",
+              timing: "sequential",
+              description: "Test game",
+            },
+          },
+          {
+            id: "scenario-1",
+            type: "scenario",
+            phase: "scenarios",
+            data: {
+              type: "scenario",
+              subtype: "baseline",
+              narrative: "Scenario",
+              probability: { point: 100, rangeLow: 90, rangeHigh: 100 },
+              key_assumptions: [],
+              invalidation_conditions: "Never",
+              model_basis: [],
+              cross_game_interactions: "",
+              prediction_basis: "equilibrium",
+              trigger: null,
+              why_unlikely: null,
+              consequences: null,
+              drift_trajectory: null,
+            },
+          },
+        ] as AnalysisEntity[],
+        relationships: [] as AnalysisRelationship[],
+        phases: [],
+      }));
+
+      mockRunPhase.mockImplementation((phase) => {
+        if (phase === "scenarios") {
+          mockTriggers = [
+            {
+              trigger_type: "game_reframed",
+              justification: "Scenario exposed a reframed game",
+              timestamp: Date.now(),
+            },
+          ];
+        }
+        return Promise.resolve(makePhaseResult(phase));
+      });
+
+      await orchestrator.runFull("Test topic", undefined, undefined, undefined, {
+        activePhases: [
+          "situational-grounding",
+          "baseline-model",
+          "scenarios",
+        ],
+      });
+      await flushAsync();
+
+      const secondBaselineContext = mockRunPhase.mock.calls[3][2] as
+        | { priorEntities?: string }
+        | undefined;
+      expect(secondBaselineContext?.priorEntities).toContain("fact-1");
+      expect(secondBaselineContext?.priorEntities).not.toContain("game-1");
+      expect(secondBaselineContext?.priorEntities).not.toContain("scenario-1");
     });
   });
 });

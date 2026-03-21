@@ -376,6 +376,21 @@ const fr: TranslationKeys = {
   'agents.installing': 'Installation...',
   'agents.installFailed': "Échec de l'installation",
   'agents.viewDocs': 'Docs',
+  'agents.analysisRuntime': 'Analysis Runtime',
+  'agents.analysisWebSearch': 'Web search',
+  'agents.analysisWebSearchHint':
+    'Use live web research during analysis runs.',
+  'agents.analysisEffort': 'Analysis effort',
+  'agents.analysisEffortHint':
+    'Controls analysis depth guidance for analysis runs, not model selection.',
+  'agents.analysisEffortQuick': 'Quick',
+  'agents.analysisEffortStandard': 'Standard',
+  'agents.analysisEffortThorough': 'Thorough',
+  'agents.analysisPhases': 'Phase selection',
+  'agents.analysisPhasesHint':
+    'Custom phase runs only the selected phases and may disable automatic downstream revalidation.',
+  'agents.analysisPhasesAll': 'All phases',
+  'agents.analysisPhasesCustom': 'Custom',
 
   // ── Figma Import ──
   'figma.title': 'Importer depuis Figma',

@@ -8,20 +8,26 @@ import {
   setResponseHeaders,
   setResponseStatus,
 } from "h3";
+import type { AnalysisRuntimeOverrides } from "../../../shared/types/analysis-runtime";
 import * as analysisOrchestrator from "../../agents/analysis-agent";
+import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 import * as entityGraphService from "../../services/entity-graph-service";
 
 interface AnalyzeBody {
   topic: string;
   provider?: string;
   model?: string;
+  runtime?: AnalysisRuntimeOverrides;
 }
 
 /** Keep-alive ping interval (ms) — prevents client timeout while waiting for AI */
-const KEEPALIVE_INTERVAL_MS = 15_000;
+const KEEPALIVE_INTERVAL_MS =
+  analysisRuntimeConfig.analyzeSse.keepaliveIntervalMs;
 
 /** Safety timeout (ms) — close stream even if orchestrator never emits terminal event */
-const STREAM_TIMEOUT_MS = 16 * 60 * 1000;
+const STREAM_TIMEOUT_MS = analysisRuntimeConfig.analyzeSse.streamTimeoutMs;
+const SNAPSHOT_SETTLE_DELAY_MS =
+  analysisRuntimeConfig.analyzeSse.snapshotSettleDelayMs;
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<AnalyzeBody>(event);
@@ -118,6 +124,7 @@ export default defineEventHandler(async (event) => {
           body.provider,
           body.model,
           abortController.signal,
+          body.runtime,
         );
         emit({ channel: "started", runId });
 
@@ -125,7 +132,9 @@ export default defineEventHandler(async (event) => {
         await analysisPromise;
 
         // Wait for edit queue to drain (orchestrator drains in finally block after emitting events)
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await new Promise((resolve) =>
+          setTimeout(resolve, SNAPSHOT_SETTLE_DELAY_MS),
+        );
 
         // Now send snapshot with queued edits applied
         emit({

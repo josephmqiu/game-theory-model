@@ -10,7 +10,10 @@ import AIChatPanel from "@/components/panels/ai-chat-panel";
 import { PhaseSidebar } from "@/components/panels/phase-sidebar";
 import { PhaseProgress } from "@/components/panels/phase-progress";
 import EntityOverlayCard from "@/components/panels/entity-overlay-card";
-import { useAgentSettingsStore } from "@/stores/agent-settings-store";
+import {
+  buildAnalysisRuntimeOverrides,
+  useAgentSettingsStore,
+} from "@/stores/agent-settings-store";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useElectronMenu } from "@/hooks/use-electron-menu";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
@@ -83,9 +86,12 @@ export default function EditorLayout() {
         analysisClient.abort();
         clearEditorChrome();
         useEntityGraphStore.getState().newAnalysis(topic);
+        const runtime = buildAnalysisRuntimeOverrides(
+          useAgentSettingsStore.getState(),
+        );
 
         try {
-          await analysisClient.startAnalysis(topic, provider, model);
+          await analysisClient.startAnalysis(topic, provider, model, runtime);
         } catch (err) {
           console.error(
             "[editor] analysis-start-failed",

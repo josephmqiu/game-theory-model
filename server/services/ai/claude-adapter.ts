@@ -22,6 +22,7 @@ import {
   handleRerunPhases,
   handleAbortAnalysis,
 } from "@/mcp/server";
+import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 
 // ── Types ──
 
@@ -37,6 +38,7 @@ export interface AnalysisRunOptions {
   runId?: string;
   maxTurns?: number;
   signal?: AbortSignal;
+  webSearch?: boolean;
 }
 
 // Re-export McpSdkServerConfigWithInstance so callers don't import the SDK directly
@@ -296,7 +298,7 @@ export { ANALYSIS_MCP_SERVER_NAME, ANALYSIS_TOOL_NAMES };
 
 // ── Chat profile ──
 
-const CHAT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const CHAT_TIMEOUT_MS = analysisRuntimeConfig.claude.chatTimeoutMs;
 
 /**
  * Stream a chat turn using the Claude Agent SDK.
@@ -310,7 +312,7 @@ const CHAT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
  *
  * Chat profile:
  * - permissionMode: "bypassPermissions"
- * - maxTurns: 25
+ * - maxTurns: 99
  * - tools: ['WebSearch']
  * - allowedTools: chat MCP tools + WebSearch
  * - mcpServers: { chat: createChatMcpServer() }
@@ -494,7 +496,7 @@ export async function* streamChat(
 
 // ── Analysis profile ──
 
-const ANALYSIS_MAX_TURNS = 12;
+const ANALYSIS_MAX_TURNS = analysisRuntimeConfig.claude.analysisMaxTurns;
 
 function createStreamingPrompt(prompt: string): AsyncIterable<SDKUserMessage> {
   return (async function* (): AsyncGenerator<SDKUserMessage> {
@@ -539,12 +541,12 @@ export async function runAnalysisPhase<T = unknown>(
   const debugFile = getClaudeAgentDebugFilePath();
   const claudePath = resolveClaudeCli();
   const readOnlyMcp = await createAnalysisMcpServer(options?.runId);
-  const allowedTools = [
-    ...ANALYSIS_TOOL_NAMES.map(
-      (toolName) => `mcp__${ANALYSIS_MCP_SERVER_NAME}__${toolName}`,
-    ),
-    "WebSearch",
-  ];
+  const allowedTools = ANALYSIS_TOOL_NAMES.map(
+    (toolName) => `mcp__${ANALYSIS_MCP_SERVER_NAME}__${toolName}`,
+  );
+  if (options?.webSearch !== false) {
+    allowedTools.push("WebSearch");
+  }
 
   const q = query({
     prompt: createStreamingPrompt(prompt),

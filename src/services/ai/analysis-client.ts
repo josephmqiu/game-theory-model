@@ -13,6 +13,7 @@ import type {
   AnalysisProgressEvent,
 } from "../../../shared/types/events";
 import type { Analysis } from "../../../shared/types/entity";
+import type { AnalysisRuntimeOverrides } from "../../../shared/types/analysis-runtime";
 import { V3_PHASES } from "@/types/methodology";
 
 type ProgressCallback = (event: AnalysisProgressEvent) => void;
@@ -225,6 +226,7 @@ export async function startAnalysis(
   topic: string,
   provider?: string,
   model?: string,
+  runtime?: AnalysisRuntimeOverrides,
 ): Promise<{ runId: string }> {
   if (currentController) throw new Error("Analysis already running");
 
@@ -247,7 +249,7 @@ export async function startAnalysis(
     const response = await fetch("/api/ai/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topic, provider, model }),
+      body: JSON.stringify({ topic, provider, model, runtime }),
       signal: controller.signal,
     });
 

@@ -673,6 +673,48 @@ describe("claude-adapter", () => {
       expect(mockQuery.mock.calls[0][0].options.maxTurns).toBe(7);
     });
 
+    it("removes WebSearch from analysis allowedTools when webSearch is false", async () => {
+      const { runAnalysisPhase, ANALYSIS_TOOL_NAMES } =
+        await import("../claude-adapter");
+
+      mockQuery.mockImplementation(() => {
+        let done = false;
+        return {
+          close: mockQueryClose,
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                if (!done) {
+                  done = true;
+                  return {
+                    done: false,
+                    value: {
+                      type: "result",
+                      subtype: "success",
+                      is_error: false,
+                      result: '{"entities":[],"relationships":[]}',
+                      structured_output: { entities: [], relationships: [] },
+                    },
+                  };
+                }
+                return { done: true, value: undefined };
+              },
+            };
+          },
+        };
+      });
+
+      await runAnalysisPhase("analyze", "sys", "model", { type: "object" }, {
+        webSearch: false,
+      });
+
+      expect(mockQuery.mock.calls[0][0].options.allowedTools).toEqual(
+        ANALYSIS_TOOL_NAMES.map(
+          (toolName) => `mcp__game-theory-analysis__${toolName}`,
+        ),
+      );
+    });
+
     it("returns parsed structured output", async () => {
       const { runAnalysisPhase } = await import("../claude-adapter");
 

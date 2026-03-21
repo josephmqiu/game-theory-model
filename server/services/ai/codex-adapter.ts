@@ -7,6 +7,7 @@ import { filterCodexEnv } from "../../utils/codex-client";
 import { serverLog, serverWarn } from "../../utils/ai-logger";
 import { resolveMcpServerScript } from "../../utils/mcp-server-manager";
 import type { ChatEvent } from "../../../shared/types/events";
+import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 import {
   CODEX_MCP_SERVER_NAME,
   installMcpServer,
@@ -30,6 +31,7 @@ export interface AnalysisRunOptions {
   runId?: string;
   maxTurns?: number;
   signal?: AbortSignal;
+  webSearch?: boolean;
 }
 
 interface JsonRpcRequest {
@@ -303,7 +305,7 @@ function handleIncomingLine(conn: AppServerConnection, line: string): void {
   }
 }
 
-const ANALYSIS_TIMEOUT_MS = 5 * 60 * 1000;
+const ANALYSIS_TIMEOUT_MS = analysisRuntimeConfig.codex.analysisTimeoutMs;
 
 function resolveMcpServerCommand(): string {
   return process.release?.name === "node" ? process.execPath : "node";
@@ -375,7 +377,7 @@ async function ensureConfiguredMcpServerAvailable(
 
 // ── App-server lifecycle ──
 
-const INITIALIZE_TIMEOUT_MS = 15_000;
+const INITIALIZE_TIMEOUT_MS = analysisRuntimeConfig.codex.initializeTimeoutMs;
 
 /**
  * Spawn the `codex app-server` subprocess and perform the JSON-RPC initialize handshake.
@@ -489,7 +491,7 @@ export async function stopAppServer(runId?: string): Promise<void> {
         conn.process.kill("SIGKILL");
       }
       resolve();
-    }, 2000);
+    }, analysisRuntimeConfig.codex.gracefulShutdownTimeoutMs);
 
     conn.process.on("close", () => {
       clearTimeout(timer);
@@ -500,8 +502,9 @@ export async function stopAppServer(runId?: string): Promise<void> {
 
 // ── Chat profile ──
 
-const CHAT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-const MAX_TOOL_CALLS_PER_TURN = 50;
+const CHAT_TIMEOUT_MS = analysisRuntimeConfig.codex.chatTimeoutMs;
+const MAX_TOOL_CALLS_PER_TURN =
+  analysisRuntimeConfig.codex.maxToolCallsPerTurn;
 
 // Approval notification methods that require a response
 const MCP_TOOL_APPROVAL = "item/tool/requestUserInput";
@@ -775,7 +778,7 @@ export async function* streamChat(
         await new Promise<void>((resolve) => {
           resolveWait = resolve;
           // Wake up periodically to check timeout
-          setTimeout(resolve, 1000);
+          setTimeout(resolve, analysisRuntimeConfig.codex.chatPollIntervalMs);
         });
       }
     }
@@ -821,11 +824,12 @@ export async function runAnalysisPhase<T = unknown>(
     await reloadMcpServerConfig(conn, runId);
     await ensureConfiguredMcpServerAvailable(conn, ANALYSIS_TOOL_NAMES, runId);
 
+    const webSearchMode = options?.webSearch === false ? "disabled" : "live";
     const threadResult = await sendRequest(conn, "thread/start", {
       developerInstructions: systemPrompt,
       model,
       config: {
-        web_search: "live",
+        web_search: webSearchMode,
       },
     });
     threadId = extractThreadId(threadResult);
@@ -1055,7 +1059,9 @@ export async function runAnalysisPhase<T = unknown>(
           }
           throw new Error("Analysis phase timed out");
         }
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        await new Promise((resolve) =>
+          setTimeout(resolve, analysisRuntimeConfig.codex.analysisPollIntervalMs),
+        );
       }
 
       if (fatalError) {

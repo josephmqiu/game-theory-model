@@ -608,6 +608,7 @@ describe("analysis-service", () => {
       expect(options).toEqual({
         signal: undefined,
         runId: undefined,
+        webSearch: undefined,
       });
 
       expect(result.success).toBe(true);
@@ -1081,6 +1082,8 @@ describe("analysis-service", () => {
       );
       expect(user).toContain("request_loopback");
       expect(user).toContain("Return only the final JSON object");
+      expect(user).toContain('Effort level: "standard"');
+      expect(user).toContain("Preserve the current expected level of depth");
       expect(user).not.toContain("Prior phase");
     });
 
@@ -1094,6 +1097,50 @@ describe("analysis-service", () => {
 
       expect(user).toContain("Prior phase output");
       expect(user).toContain('{"entities":[]}');
+    });
+
+    it("builds prompt with quick effort guidance", async () => {
+      const { _buildPrompt } = await importService();
+      const { user } = _buildPrompt(
+        "situational-grounding",
+        "US-China trade war",
+        undefined,
+        undefined,
+        undefined,
+        { webSearch: true, effortLevel: "quick" },
+      );
+
+      expect(user).toContain('Effort level: "quick"');
+      expect(user).toContain(
+        "Prioritize core players, objectives, strategic structure, and the minimum research needed for a useful answer.",
+      );
+      expect(user).toContain(
+        "Avoid unnecessary branching or long-tail possibilities.",
+      );
+      expect(user).toContain("Prefer concise outputs when uncertainty is high.");
+    });
+
+    it("builds prompt with thorough effort guidance", async () => {
+      const { _buildPrompt } = await importService();
+      const { user } = _buildPrompt(
+        "situational-grounding",
+        "US-China trade war",
+        undefined,
+        undefined,
+        undefined,
+        { webSearch: true, effortLevel: "thorough" },
+      );
+
+      expect(user).toContain('Effort level: "thorough"');
+      expect(user).toContain(
+        "Allow broader research and comparison when it materially improves the analysis.",
+      );
+      expect(user).toContain(
+        "Surface more alternatives, assumptions, and uncertainty explicitly.",
+      );
+      expect(user).toContain(
+        "Spend more attention on edge cases and competing explanations.",
+      );
     });
   });
 

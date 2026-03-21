@@ -1,4 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import type { ResolvedAnalysisRuntime } from "../../../shared/types/analysis-runtime";
 import type { MethodologyPhase } from "../../../shared/types/methodology";
 import type { AnalysisProgressEvent } from "../../../shared/types/events";
 import type {
@@ -18,6 +19,7 @@ const mockRunPhase = vi.fn<
       revisionRetryInstruction?: string;
       provider?: string;
       model?: string;
+      runtime?: ResolvedAnalysisRuntime;
       runId?: string;
       signal?: AbortSignal;
     },
@@ -280,6 +282,30 @@ describe("revalidation-service", () => {
     expect(revalidation._getDeferredStaleIds().size).toBe(0);
   });
 
+  it("suppresses deferred auto-revalidation for subset runs", async () => {
+    mockIsRunning.mockReturnValue(true);
+
+    revalidation.scheduleRevalidation(["e1", "e2"]);
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(revalidation._getDeferredStaleIds().size).toBe(2);
+    expect(revalidation._getPendingStaleIds().size).toBe(2);
+
+    mockIsRunning.mockReturnValue(false);
+    revalidation.onRunComplete(
+      "openai",
+      "gpt-5.4",
+      { webSearch: false, effortLevel: "thorough" },
+      false,
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(mockRunPhase).not.toHaveBeenCalled();
+    expect(revalidation._getDeferredStaleIds().size).toBe(0);
+    expect(revalidation._getPendingStaleIds().size).toBe(0);
+  });
+
   // ── 5. revalidate(staleEntityIds) determines earliest stale phase ──
 
   it("revalidate determines earliest stale phase and re-runs from there", async () => {
@@ -484,6 +510,31 @@ describe("revalidation-service", () => {
   it("onRunComplete does nothing when there are no deferred staleIds", () => {
     revalidation.onRunComplete();
     expect(mockRunPhase).not.toHaveBeenCalled();
+  });
+
+  it("reuses the last resolved runtime for revalidation phase reruns", async () => {
+    revalidation.onRunComplete("openai", "gpt-5.4", {
+      webSearch: false,
+      effortLevel: "thorough",
+    });
+    mockEntityGraph.getAnalysis.mockReturnValue({
+      id: "test",
+      name: "test",
+      topic: "test topic",
+      entities: [makeEntity("e1", "situational-grounding", true)],
+      relationships: [],
+      phases: [],
+    });
+    mockRunPhase.mockResolvedValue(makePhaseResult("situational-grounding"));
+
+    revalidation.revalidate(["e1"]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(mockRunPhase.mock.calls[0][2]).toMatchObject({
+      provider: "openai",
+      model: "gpt-5.4",
+      runtime: { webSearch: false, effortLevel: "thorough" },
+    });
   });
 
   // ── 14. revalidate with no stale entities returns immediately ──

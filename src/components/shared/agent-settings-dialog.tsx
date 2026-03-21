@@ -30,6 +30,8 @@ import {
   ALLOWED_PROVIDERS,
   PROVIDER_LABELS,
 } from "@/services/ai/allowed-providers";
+import { PHASE_LABELS, V3_PHASES } from "@/types/methodology";
+import type { AnalysisEffortLevel } from "../../../shared/types/analysis-runtime";
 import ClaudeLogo from "@/components/icons/claude-logo";
 import OpenAILogo from "@/components/icons/openai-logo";
 import OpenCodeLogo from "@/components/icons/opencode-logo";
@@ -74,6 +76,18 @@ const PROVIDER_META: Record<
     agent: "copilot",
     Icon: CopilotLogo,
   },
+};
+
+const ANALYSIS_EFFORT_OPTIONS: AnalysisEffortLevel[] = [
+  "quick",
+  "standard",
+  "thorough",
+];
+
+const ANALYSIS_EFFORT_LABEL_KEYS: Record<AnalysisEffortLevel, string> = {
+  quick: "agents.analysisEffortQuick",
+  standard: "agents.analysisEffortStandard",
+  thorough: "agents.analysisEffortThorough",
 };
 
 async function connectAgent(
@@ -355,6 +369,26 @@ export default function AgentSettingsDialog() {
   const mcpHttpPort = useAgentSettingsStore((s) => s.mcpHttpPort);
   const toggleMCP = useAgentSettingsStore((s) => s.toggleMCPIntegration);
   const setMCPTransport = useAgentSettingsStore((s) => s.setMCPTransport);
+  const analysisWebSearch = useAgentSettingsStore((s) => s.analysisWebSearch);
+  const analysisEffortLevel = useAgentSettingsStore(
+    (s) => s.analysisEffortLevel,
+  );
+  const analysisPhaseMode = useAgentSettingsStore((s) => s.analysisPhaseMode);
+  const analysisCustomPhases = useAgentSettingsStore(
+    (s) => s.analysisCustomPhases,
+  );
+  const setAnalysisWebSearch = useAgentSettingsStore(
+    (s) => s.setAnalysisWebSearch,
+  );
+  const setAnalysisEffortLevel = useAgentSettingsStore(
+    (s) => s.setAnalysisEffortLevel,
+  );
+  const setAnalysisPhaseMode = useAgentSettingsStore(
+    (s) => s.setAnalysisPhaseMode,
+  );
+  const toggleAnalysisPhase = useAgentSettingsStore(
+    (s) => s.toggleAnalysisPhase,
+  );
   const persist = useAgentSettingsStore((s) => s.persist);
   const mcpServerRunning = useAgentSettingsStore((s) => s.mcpServerRunning);
   const mcpServerLocalIp = useAgentSettingsStore((s) => s.mcpServerLocalIp);
@@ -416,6 +450,42 @@ export default function AgentSettingsDialog() {
       console.error("[auto-update toggle]", err);
     }
   }, []);
+
+  const selectedAnalysisEffort = analysisEffortLevel ?? "standard";
+  const selectedAnalysisWebSearch = analysisWebSearch ?? true;
+  const selectedPhaseCount = analysisCustomPhases.length;
+
+  const handleAnalysisWebSearchChange = useCallback(
+    (checked: boolean) => {
+      setAnalysisWebSearch(checked);
+      persist();
+    },
+    [persist, setAnalysisWebSearch],
+  );
+
+  const handleAnalysisEffortChange = useCallback(
+    (effortLevel: AnalysisEffortLevel) => {
+      setAnalysisEffortLevel(effortLevel);
+      persist();
+    },
+    [persist, setAnalysisEffortLevel],
+  );
+
+  const handleAnalysisPhaseModeChange = useCallback(
+    (mode: "all" | "custom") => {
+      setAnalysisPhaseMode(mode);
+      persist();
+    },
+    [persist, setAnalysisPhaseMode],
+  );
+
+  const handleAnalysisPhaseToggle = useCallback(
+    (phase: (typeof V3_PHASES)[number]) => {
+      toggleAnalysisPhase(phase);
+      persist();
+    },
+    [persist, toggleAnalysisPhase],
+  );
 
   const handleMcpServerToggle = useCallback(async () => {
     setMcpServerLoading(true);
@@ -548,6 +618,133 @@ export default function AgentSettingsDialog() {
               {ALLOWED_PROVIDERS.map((type) => (
                 <ProviderRow key={type} type={type} />
               ))}
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="h-px bg-border mb-3" />
+
+          {/* Analysis runtime section */}
+          <div className="mb-3">
+            <div className="flex items-center gap-2 mb-1.5 px-1">
+              <RefreshCw size={12} className="text-muted-foreground" />
+              <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                {t("agents.analysisRuntime")}
+              </h4>
+            </div>
+
+            <div className="space-y-2">
+              <div className="rounded-lg bg-secondary/30 px-3 py-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-medium text-foreground">
+                      {t("agents.analysisWebSearch")}
+                    </div>
+                    <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+                      {t("agents.analysisWebSearchHint")}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={selectedAnalysisWebSearch}
+                    onCheckedChange={handleAnalysisWebSearchChange}
+                    aria-label={t("agents.analysisWebSearch")}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-lg bg-secondary/30 px-3 py-2">
+                <div className="text-[12px] font-medium text-foreground">
+                  {t("agents.analysisEffort")}
+                </div>
+                <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+                  {t("agents.analysisEffortHint")}
+                </p>
+                <div className="mt-2 grid grid-cols-3 gap-1.5">
+                  {ANALYSIS_EFFORT_OPTIONS.map((effortLevel) => (
+                    <Button
+                      key={effortLevel}
+                      type="button"
+                      size="sm"
+                      variant={
+                        selectedAnalysisEffort === effortLevel
+                          ? "default"
+                          : "outline"
+                      }
+                      onClick={() => handleAnalysisEffortChange(effortLevel)}
+                      className="h-8 px-2 text-[11px]"
+                    >
+                      {t(ANALYSIS_EFFORT_LABEL_KEYS[effortLevel])}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-lg bg-secondary/30 px-3 py-2">
+                <div className="text-[12px] font-medium text-foreground">
+                  {t("agents.analysisPhases")}
+                </div>
+                <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+                  {t("agents.analysisPhasesHint")}
+                </p>
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      analysisPhaseMode === "all" ? "default" : "outline"
+                    }
+                    onClick={() => handleAnalysisPhaseModeChange("all")}
+                    className="h-8 px-2 text-[11px]"
+                  >
+                    {t("agents.analysisPhasesAll")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      analysisPhaseMode === "custom" ? "default" : "outline"
+                    }
+                    onClick={() => handleAnalysisPhaseModeChange("custom")}
+                    className="h-8 px-2 text-[11px]"
+                  >
+                    {t("agents.analysisPhasesCustom")}
+                  </Button>
+                </div>
+
+                {analysisPhaseMode === "custom" && (
+                  <div className="mt-2 space-y-1.5">
+                    {V3_PHASES.map((phase) => {
+                      const checked = analysisCustomPhases.includes(phase);
+                      const disableToggle =
+                        checked && selectedPhaseCount === 1;
+
+                      return (
+                        <label
+                          key={phase}
+                          className={cn(
+                            "flex cursor-pointer items-start gap-2 rounded-md border border-border/60 px-2.5 py-2 text-[11px] transition-colors",
+                            checked
+                              ? "bg-background/80 text-foreground"
+                              : "text-muted-foreground hover:bg-background/50",
+                            disableToggle && "cursor-not-allowed opacity-70",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 h-3.5 w-3.5 rounded border-input"
+                            checked={checked}
+                            disabled={disableToggle}
+                            onChange={() => handleAnalysisPhaseToggle(phase)}
+                          />
+                          <span className="min-w-0 flex-1">
+                            {PHASE_LABELS[phase]}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
