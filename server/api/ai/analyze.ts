@@ -11,6 +11,7 @@ import {
 import type { AnalysisRuntimeOverrides } from "../../../shared/types/analysis-runtime";
 import * as analysisOrchestrator from "../../agents/analysis-agent";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
+import { normalizeRequestedActivePhases } from "../../services/analysis-phase-selection";
 import * as entityGraphService from "../../services/entity-graph-service";
 
 interface AnalyzeBody {
@@ -34,6 +35,16 @@ export default defineEventHandler(async (event) => {
   if (!body?.topic) {
     setResponseStatus(event, 400);
     return { error: "Missing required field: topic" };
+  }
+
+  try {
+    normalizeRequestedActivePhases(body.runtime?.activePhases);
+  } catch (error) {
+    setResponseStatus(event, 400);
+    return {
+      error:
+        error instanceof Error ? error.message : "Invalid runtime.activePhases",
+    };
   }
 
   setResponseHeaders(event, {

@@ -15,9 +15,14 @@ import type {
   AnalysisRuntimeOverrides,
   ResolvedAnalysisRuntime,
 } from "../../shared/types/analysis-runtime";
-import { V3_PHASES } from "../../src/types/methodology";
 import type { PhaseResult } from "../services/analysis-service";
 import { runPhase } from "../services/analysis-service";
+import {
+  SUPPORTED_ANALYSIS_PHASES,
+  getCanonicalAnalysisPhaseIndex,
+  normalizeRequestedActivePhases,
+  type SupportedAnalysisPhase,
+} from "../services/analysis-phase-selection";
 import * as entityGraphService from "../services/entity-graph-service";
 import * as revalidationService from "../services/revalidation-service";
 import { commitPhaseSnapshot } from "../services/revision-diff";
@@ -82,31 +87,9 @@ interface ActiveRun {
 
 // ── Constants ──
 
-type SupportedPhase = Extract<
-  MethodologyPhase,
-  | "situational-grounding"
-  | "player-identification"
-  | "baseline-model"
-  | "historical-game"
-  | "formal-modeling"
-  | "assumptions"
-  | "elimination"
-  | "scenarios"
-  | "meta-check"
->;
+type SupportedPhase = SupportedAnalysisPhase;
 
-const SUPPORTED_PHASES: SupportedPhase[] = V3_PHASES.filter(
-  (p): p is SupportedPhase =>
-    p === "situational-grounding" ||
-    p === "player-identification" ||
-    p === "baseline-model" ||
-    p === "historical-game" ||
-    p === "formal-modeling" ||
-    p === "assumptions" ||
-    p === "elimination" ||
-    p === "scenarios" ||
-    p === "meta-check",
-);
+const SUPPORTED_PHASES: SupportedPhase[] = SUPPORTED_ANALYSIS_PHASES;
 
 const MAX_RETRIES = analysisRuntimeConfig.orchestrator.maxRetries;
 const MAX_LOOPBACK_PASSES =
@@ -143,46 +126,6 @@ const resultSnapshots = new Map<
   string,
   { entities: AnalysisEntity[]; relationships: AnalysisRelationship[] }
 >();
-
-function getCanonicalPhaseIndex(phase: MethodologyPhase): number {
-  return SUPPORTED_PHASES.indexOf(phase as SupportedPhase);
-}
-
-function normalizeActivePhases(
-  requestedPhases?: MethodologyPhase[],
-): SupportedPhase[] {
-  if (requestedPhases === undefined) {
-    return [...SUPPORTED_PHASES];
-  }
-
-  if (!Array.isArray(requestedPhases)) {
-    throw new Error("activePhases must be an array of supported phases");
-  }
-
-  const invalidPhases = requestedPhases.filter(
-    (phase): phase is MethodologyPhase =>
-      !SUPPORTED_PHASES.includes(phase as SupportedPhase),
-  );
-
-  if (invalidPhases.length > 0) {
-    throw new Error(
-      `Invalid activePhases: ${invalidPhases.join(", ")}. Allowed phases: ${SUPPORTED_PHASES.join(", ")}`,
-    );
-  }
-
-  const requestedPhaseSet = new Set(requestedPhases as SupportedPhase[]);
-  const normalized = SUPPORTED_PHASES.filter((phase) =>
-    requestedPhaseSet.has(phase),
-  );
-
-  if (normalized.length === 0) {
-    throw new Error(
-      "activePhases must include at least one supported canonical phase",
-    );
-  }
-
-  return normalized;
-}
 
 // ── Progress event helpers ──
 
@@ -244,13 +187,13 @@ function buildPriorContext(
 ): string | undefined {
   if (completedPhases.length === 0) return undefined;
 
-  const currentPhaseIndex = getCanonicalPhaseIndex(currentPhase);
+  const currentPhaseIndex = getCanonicalAnalysisPhaseIndex(currentPhase);
   const priorCompletedPhases = completedPhases.filter((phase) => {
     if (!activePhases.includes(phase as SupportedPhase)) {
       return false;
     }
 
-    const phaseIndex = getCanonicalPhaseIndex(phase);
+    const phaseIndex = getCanonicalAnalysisPhaseIndex(phase);
     return phaseIndex !== -1 && phaseIndex < currentPhaseIndex;
   });
 
@@ -292,7 +235,7 @@ function resolveLoopbackJumpIndex(
 
   for (const trigger of triggers) {
     const targetPhase = TRIGGER_TARGET_PHASE[trigger.trigger_type];
-    const targetCanonicalIndex = getCanonicalPhaseIndex(targetPhase);
+    const targetCanonicalIndex = getCanonicalAnalysisPhaseIndex(targetPhase);
 
     if (targetCanonicalIndex === -1) {
       continue;
@@ -312,7 +255,7 @@ function resolveLoopbackJumpIndex(
     const resolvedActiveIndex = run.activePhases.findIndex(
       (activePhase, activeIndex) =>
         activeIndex < phaseIndex &&
-        getCanonicalPhaseIndex(activePhase) >= targetCanonicalIndex,
+        getCanonicalAnalysisPhaseIndex(activePhase) >= targetCanonicalIndex,
     );
 
     if (resolvedActiveIndex !== -1) {
@@ -630,7 +573,9 @@ export async function runFull(
   const analysisTimer = timer();
   const abortController = new AbortController();
   const runtime = resolveAnalysisRuntime(runtimeOverrides);
-  const activePhases = normalizeActivePhases(runtimeOverrides?.activePhases);
+  const activePhases = normalizeRequestedActivePhases(
+    runtimeOverrides?.activePhases,
+  );
   const autoRevalidationEnabled = activePhases.length === SUPPORTED_PHASES.length;
 
   // Use an explicit timeout controller so runtime behavior is testable with fake timers.

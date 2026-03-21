@@ -8,6 +8,9 @@ import {
 // ── Mock the Agent SDK ──
 
 const mockQueryClose = vi.fn();
+const serverLogMock = vi.fn();
+const serverWarnMock = vi.fn();
+const serverErrorMock = vi.fn();
 
 const mockQuery = vi.fn();
 const mockCreateSdkMcpServer = vi.fn((opts: Record<string, unknown>) => ({
@@ -38,6 +41,12 @@ vi.mock("../../../utils/resolve-claude-agent-env", () => ({
 
 vi.mock("../../../utils/resolve-claude-cli", () => ({
   resolveClaudeCli: () => "/usr/local/bin/claude",
+}));
+
+vi.mock("../../../utils/ai-logger", () => ({
+  serverLog: (...args: unknown[]) => serverLogMock(...args),
+  serverWarn: (...args: unknown[]) => serverWarnMock(...args),
+  serverError: (...args: unknown[]) => serverErrorMock(...args),
 }));
 
 vi.mock("@/mcp/server", () => ({
@@ -823,6 +832,192 @@ describe("claude-adapter", () => {
       await expect(
         runAnalysisPhase("analyze", "sys", "model", { type: "object" }),
       ).rejects.toThrow("Model error");
+    });
+
+    it("falls back once for supported models when structured output ends without a result", async () => {
+      const { runAnalysisPhase } = await import("../claude-adapter");
+
+      mockQuery
+        .mockImplementationOnce(() => ({
+          close: mockQueryClose,
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                return { done: true, value: undefined };
+              },
+            };
+          },
+        }))
+        .mockImplementationOnce(() => {
+          let done = false;
+          return {
+            close: mockQueryClose,
+            [Symbol.asyncIterator]() {
+              return {
+                async next() {
+                  if (!done) {
+                    done = true;
+                    return {
+                      done: false,
+                      value: {
+                        type: "result",
+                        subtype: "success",
+                        is_error: false,
+                        result: '{"entities":[],"relationships":[]}',
+                      },
+                    };
+                  }
+                  return { done: true, value: undefined };
+                },
+              };
+            },
+          };
+        });
+
+      const result = await runAnalysisPhase(
+        "analyze",
+        "sys",
+        "default",
+        { type: "object" },
+        { runId: "run-1" },
+      );
+
+      expect(result).toBe('{"entities":[],"relationships":[]}');
+      expect(mockQuery).toHaveBeenCalledTimes(2);
+      expect(mockQuery.mock.calls[0][0].options.outputFormat).toEqual({
+        type: "json_schema",
+        schema: { type: "object" },
+      });
+      expect(mockQuery.mock.calls[1][0].options.outputFormat).toBeUndefined();
+      expect(mockQuery.mock.calls[1][0].options.systemPrompt).toContain(
+        "Structured output fallback mode",
+      );
+      expect(serverWarnMock).toHaveBeenCalledWith(
+        "run-1",
+        "claude-adapter",
+        "analysis-fallback-start",
+        expect.objectContaining({ model: "default" }),
+      );
+      expect(serverLogMock).toHaveBeenCalledWith(
+        "run-1",
+        "claude-adapter",
+        "analysis-fallback-success",
+        { model: "default" },
+      );
+    });
+
+    it("does not fall back for unsupported models when structured output ends without a result", async () => {
+      const { runAnalysisPhase } = await import("../claude-adapter");
+
+      mockQuery.mockImplementationOnce(() => ({
+        close: mockQueryClose,
+        [Symbol.asyncIterator]() {
+          return {
+            async next() {
+              return { done: true, value: undefined };
+            },
+          };
+        },
+      }));
+
+      await expect(
+        runAnalysisPhase("analyze", "sys", "haiku", { type: "object" }, {
+          runId: "run-2",
+        }),
+      ).rejects.toThrow("Claude structured output ended without terminal result");
+
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+      expect(serverWarnMock).not.toHaveBeenCalledWith(
+        "run-2",
+        "claude-adapter",
+        "analysis-fallback-start",
+        expect.anything(),
+      );
+    });
+
+    it("does not fall back on aborts", async () => {
+      const { runAnalysisPhase } = await import("../claude-adapter");
+
+      const controller = new AbortController();
+      controller.abort();
+
+      mockQuery.mockImplementationOnce(() => ({
+        close: mockQueryClose,
+        [Symbol.asyncIterator]() {
+          return {
+            async next() {
+              return { done: true, value: undefined };
+            },
+          };
+        },
+      }));
+
+      await expect(
+        runAnalysisPhase("analyze", "sys", "default", { type: "object" }, {
+          runId: "run-3",
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow("Aborted");
+
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+    });
+
+    it("reports fallback failure clearly", async () => {
+      const { runAnalysisPhase } = await import("../claude-adapter");
+
+      mockQuery
+        .mockImplementationOnce(() => ({
+          close: mockQueryClose,
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                return { done: true, value: undefined };
+              },
+            };
+          },
+        }))
+        .mockImplementationOnce(() => ({
+          close: mockQueryClose,
+          [Symbol.asyncIterator]() {
+            let done = false;
+            return {
+              async next() {
+                if (!done) {
+                  done = true;
+                  return {
+                    done: false,
+                    value: {
+                      type: "result",
+                      subtype: "error_during_execution",
+                      is_error: true,
+                      errors: ["Fallback failed"],
+                      result: "",
+                    },
+                  };
+                }
+                return { done: true, value: undefined };
+              },
+            };
+          },
+        }));
+
+      await expect(
+        runAnalysisPhase("analyze", "sys", "sonnet", { type: "object" }, {
+          runId: "run-4",
+        }),
+      ).rejects.toThrow(
+        "Claude structured-output attempt failed (Claude structured output ended without terminal result); JSON fallback failed: Fallback failed",
+      );
+
+      expect(serverErrorMock).toHaveBeenCalledWith(
+        "run-4",
+        "claude-adapter",
+        "analysis-fallback-failed",
+        expect.objectContaining({
+          model: "sonnet",
+          fallbackError: "Fallback failed",
+        }),
+      );
     });
   });
 });

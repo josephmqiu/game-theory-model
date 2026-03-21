@@ -83,6 +83,58 @@ describe("/api/ai/analyze", () => {
     expect(runFullMock).not.toHaveBeenCalled();
   });
 
+  it("returns 400 when activePhases is not an array", async () => {
+    readBodyMock.mockResolvedValue({
+      topic: "Trade conflict",
+      runtime: { activePhases: "baseline-model" },
+    });
+
+    const route = (await import("../analyze")).default;
+    const result = await route(createEvent() as never);
+
+    expect(result).toEqual({
+      error: "activePhases must be an array of supported phases",
+    });
+    expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 400);
+    expect(newAnalysisMock).not.toHaveBeenCalled();
+    expect(runFullMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when activePhases contains an unknown phase", async () => {
+    readBodyMock.mockResolvedValue({
+      topic: "Trade conflict",
+      runtime: { activePhases: ["revalidation"] },
+    });
+
+    const route = (await import("../analyze")).default;
+    const result = await route(createEvent() as never);
+
+    expect(result).toEqual({
+      error:
+        "Invalid activePhases: revalidation. Allowed phases: situational-grounding, player-identification, baseline-model, historical-game, formal-modeling, assumptions, elimination, scenarios, meta-check",
+    });
+    expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 400);
+    expect(newAnalysisMock).not.toHaveBeenCalled();
+    expect(runFullMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when activePhases normalizes to an empty set", async () => {
+    readBodyMock.mockResolvedValue({
+      topic: "Trade conflict",
+      runtime: { activePhases: [] },
+    });
+
+    const route = (await import("../analyze")).default;
+    const result = await route(createEvent() as never);
+
+    expect(result).toEqual({
+      error: "activePhases must include at least one supported canonical phase",
+    });
+    expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 400);
+    expect(newAnalysisMock).not.toHaveBeenCalled();
+    expect(runFullMock).not.toHaveBeenCalled();
+  });
+
   it("forwards runtime overrides through the analyze request path", async () => {
     const runtime: AnalysisRuntimeOverrides = {
       webSearch: false,

@@ -10,7 +10,7 @@ import {
   requestLoopback,
 } from "../analysis-tools";
 import { ANALYSIS_TOOL_NAMES, CHAT_TOOL_NAMES } from "./tool-surfaces";
-import { serverLog } from "../../utils/ai-logger";
+import { serverError, serverLog, serverWarn } from "../../utils/ai-logger";
 import {
   handleStartAnalysis,
   handleGetAnalysisStatus,
@@ -40,6 +40,8 @@ export interface AnalysisRunOptions {
   signal?: AbortSignal;
   webSearch?: boolean;
 }
+
+type ClaudeAnalysisMode = "structured" | "json-fallback";
 
 // Re-export McpSdkServerConfigWithInstance so callers don't import the SDK directly
 export type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
@@ -497,6 +499,8 @@ export async function* streamChat(
 // ── Analysis profile ──
 
 const ANALYSIS_MAX_TURNS = analysisRuntimeConfig.claude.analysisMaxTurns;
+const CLAUDE_JSON_FALLBACK_INSTRUCTION =
+  "Structured output fallback mode: return JSON only with no prose, no markdown fences, and no explanations. The JSON must match the requested schema shape exactly.";
 
 function createStreamingPrompt(prompt: string): AsyncIterable<SDKUserMessage> {
   return (async function* (): AsyncGenerator<SDKUserMessage> {
@@ -510,6 +514,189 @@ function createStreamingPrompt(prompt: string): AsyncIterable<SDKUserMessage> {
       session_id: "analysis-phase",
     };
   })();
+}
+
+function supportsClaudeAnalysisHardening(model: string): boolean {
+  return model === "default" || /sonnet/i.test(model);
+}
+
+function shouldAttemptClaudeJsonFallback(
+  model: string,
+  errorMessage: string,
+): boolean {
+  if (!supportsClaudeAnalysisHardening(model)) {
+    return false;
+  }
+
+  if (
+    /aborted|invalid api key|auth|unauthorized|forbidden|unknown model|model.*not|not found|enoent|process exited/i.test(
+      errorMessage,
+    )
+  ) {
+    return false;
+  }
+
+  return /structured output|output format|response_format|outputschema|json_schema|without a usable result|without terminal result|invalid json text|empty result/i.test(
+    errorMessage,
+  );
+}
+
+function buildClaudeJsonFallbackSystemPrompt(
+  systemPrompt: string,
+  schema: Record<string, unknown>,
+): string {
+  return `${systemPrompt}\n\n${CLAUDE_JSON_FALLBACK_INSTRUCTION}\nSchema:\n${JSON.stringify(schema, null, 2)}`;
+}
+
+function buildAnalysisQuery(
+  query: typeof import("@anthropic-ai/claude-agent-sdk").query,
+  prompt: string,
+  systemPrompt: string,
+  model: string,
+  schema: Record<string, unknown>,
+  allowedTools: string[],
+  readOnlyMcp: unknown,
+  env: Record<string, string | undefined>,
+  mode: ClaudeAnalysisMode,
+  options?: AnalysisRunOptions,
+  debugFile?: string,
+  claudePath?: string,
+) {
+  return query({
+    prompt: createStreamingPrompt(prompt),
+    options: {
+      systemPrompt,
+      model,
+      maxTurns: options?.maxTurns ?? ANALYSIS_MAX_TURNS,
+      allowedTools,
+      mcpServers: { analysis: readOnlyMcp as any },
+      includePartialMessages: true,
+      permissionMode: "dontAsk",
+      persistSession: false,
+      settingSources: [],
+      plugins: [],
+      ...(mode === "structured"
+        ? { outputFormat: { type: "json_schema" as const, schema } }
+        : {}),
+      env,
+      ...(debugFile ? { debugFile } : {}),
+      ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
+    },
+  });
+}
+
+async function runClaudeAnalysisAttempt<T>(
+  q: { close: () => void } & AsyncIterable<any>,
+  mode: ClaudeAnalysisMode,
+  model: string,
+  options?: AnalysisRunOptions,
+): Promise<T | string> {
+  try {
+    serverLog(options?.runId, "claude-adapter", "analysis-query-start", {
+      mode,
+      model,
+    });
+
+    for await (const message of q) {
+      if (options?.signal?.aborted) {
+        serverWarn(options?.runId, "claude-adapter", "analysis-query-aborted", {
+          mode,
+          model,
+        });
+        throw new Error("Aborted");
+      }
+
+      if (message.type === "stream_event") {
+        const ev = message.event;
+        if (
+          ev?.type === "content_block_start" &&
+          (ev.content_block as any)?.type === "tool_use"
+        ) {
+          const toolName = (ev.content_block as any)?.name ?? "unknown";
+          serverLog(options?.runId, "claude-adapter", "analysis-tool-call", {
+            mode,
+            toolName,
+          });
+        }
+      }
+
+      if (message.type === "result") {
+        const isError =
+          "is_error" in message && Boolean((message as any).is_error);
+        const textResult =
+          "result" in message ? String((message as any).result ?? "") : "";
+        const structured = (message as any).structured_output;
+        const errors =
+          "errors" in message ? ((message as any).errors as string[]) : [];
+
+        serverLog(options?.runId, "claude-adapter", "analysis-query-result", {
+          mode,
+          model,
+          subtype: message.subtype,
+          isError,
+          hasStructuredOutput: structured !== undefined,
+          hasTextResult: textResult.length > 0,
+          errorCount: errors.length,
+        });
+
+        if (message.subtype === "success" && !isError) {
+          if (mode === "structured") {
+            if (structured !== undefined) {
+              return structured as T;
+            }
+            if (textResult.trim().length > 0) {
+              try {
+                return JSON.parse(textResult) as T;
+              } catch (error) {
+                throw new Error(
+                  `Claude structured output returned invalid JSON text: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`,
+                );
+              }
+            }
+            throw new Error(
+              "Claude structured output completed without a usable result",
+            );
+          }
+
+          if (textResult.trim().length > 0) {
+            return textResult;
+          }
+          if (structured !== undefined) {
+            return JSON.stringify(structured);
+          }
+          throw new Error("Claude JSON fallback completed without text result");
+        }
+
+        throw new Error(
+          errors.join("; ") ||
+            textResult ||
+            `Claude ${mode} analysis ended with: ${message.subtype}`,
+        );
+      }
+    }
+
+    if (options?.signal?.aborted) {
+      serverWarn(options?.runId, "claude-adapter", "analysis-query-aborted", {
+        mode,
+        model,
+      });
+      throw new Error("Aborted");
+    }
+
+    serverWarn(options?.runId, "claude-adapter", "analysis-query-no-result", {
+      mode,
+      model,
+    });
+    throw new Error(
+      mode === "structured"
+        ? "Claude structured output ended without terminal result"
+        : "Claude JSON fallback ended without terminal result",
+    );
+  } finally {
+    q.close();
+  }
 }
 
 /**
@@ -548,91 +735,79 @@ export async function runAnalysisPhase<T = unknown>(
     allowedTools.push("WebSearch");
   }
 
-  const q = query({
-    prompt: createStreamingPrompt(prompt),
-    options: {
-      systemPrompt,
+  const runAttempt = async (
+    mode: ClaudeAnalysisMode,
+    attemptSystemPrompt: string,
+  ): Promise<T | string> => {
+    const q = buildAnalysisQuery(
+      query,
+      prompt,
+      attemptSystemPrompt,
       model,
-      maxTurns: options?.maxTurns ?? ANALYSIS_MAX_TURNS,
+      schema,
       allowedTools,
-      mcpServers: { analysis: readOnlyMcp },
-      includePartialMessages: true,
-      permissionMode: "dontAsk",
-      persistSession: false,
-      settingSources: [],
-      plugins: [],
-      outputFormat: { type: "json_schema", schema },
+      readOnlyMcp,
       env,
-      ...(debugFile ? { debugFile } : {}),
-      ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
-    },
-  });
+      mode,
+      options,
+      debugFile,
+      claudePath,
+    );
 
-  // Close query on abort signal
-  if (options?.signal) {
+    if (!options?.signal) {
+      return runClaudeAnalysisAttempt<T>(q, mode, model, options);
+    }
+
     const onAbort = () => q.close();
     options.signal.addEventListener("abort", onAbort, { once: true });
-    // Clean up listener when we're done (in finally)
-    const cleanup = () => options.signal?.removeEventListener("abort", onAbort);
     try {
-      return await _runAnalysisQuery<T>(q, options);
+      return await runClaudeAnalysisAttempt<T>(q, mode, model, options);
     } finally {
-      cleanup();
+      options.signal.removeEventListener("abort", onAbort);
     }
-  }
+  };
 
-  return _runAnalysisQuery<T>(q, options);
-}
-
-/** Internal: consume the query iterator and extract the result. */
-async function _runAnalysisQuery<T>(
-  q: { close: () => void } & AsyncIterable<any>,
-  options?: AnalysisRunOptions,
-): Promise<T> {
   try {
-    for await (const message of q) {
-      if (options?.signal?.aborted) {
-        throw new Error("Aborted");
-      }
-      if (message.type === "stream_event") {
-        const ev = message.event;
-        if (
-          ev?.type === "content_block_start" &&
-          (ev.content_block as any)?.type === "tool_use"
-        ) {
-          const toolName = (ev.content_block as any)?.name ?? "unknown";
-          serverLog(options?.runId, "claude-adapter", "analysis-tool-call", {
-            toolName,
-          });
-        }
-      }
-      if (message.type === "result") {
-        const isError =
-          "is_error" in message && Boolean((message as any).is_error);
-        if (message.subtype === "success" && !isError) {
-          // Prefer structured_output; fall back to parsing result text
-          const structured = (message as any).structured_output;
-          if (structured !== undefined) return structured as T;
-          const text = (message as any).result;
-          if (text) return JSON.parse(text) as T;
-          throw new Error("Analysis phase returned empty result");
-        }
-        const errors =
-          "errors" in message ? ((message as any).errors as string[]) : [];
-        const resultText =
-          "result" in message ? String((message as any).result ?? "") : "";
-        throw new Error(
-          errors.join("; ") ||
-            resultText ||
-            `Analysis ended with: ${message.subtype}`,
-        );
-      }
+    return (await runAttempt("structured", systemPrompt)) as T;
+  } catch (error) {
+    const primaryMessage = error instanceof Error ? error.message : String(error);
+    serverWarn(options?.runId, "claude-adapter", "analysis-query-failed", {
+      mode: "structured",
+      model,
+      error: primaryMessage,
+    });
+
+    if (!shouldAttemptClaudeJsonFallback(model, primaryMessage)) {
+      throw error;
     }
-    if (options?.signal?.aborted) {
-      throw new Error("Aborted");
+
+    serverWarn(options?.runId, "claude-adapter", "analysis-fallback-start", {
+      model,
+      reason: primaryMessage,
+    });
+
+    try {
+      const fallbackResult = await runAttempt(
+        "json-fallback",
+        buildClaudeJsonFallbackSystemPrompt(systemPrompt, schema),
+      );
+      serverLog(options?.runId, "claude-adapter", "analysis-fallback-success", {
+        model,
+      });
+      return fallbackResult as T;
+    } catch (fallbackError) {
+      const fallbackMessage =
+        fallbackError instanceof Error
+          ? fallbackError.message
+          : String(fallbackError);
+      serverError(options?.runId, "claude-adapter", "analysis-fallback-failed", {
+        model,
+        primaryError: primaryMessage,
+        fallbackError: fallbackMessage,
+      });
+      throw new Error(
+        `Claude structured-output attempt failed (${primaryMessage}); JSON fallback failed: ${fallbackMessage}`,
+      );
     }
-    throw new Error("Analysis phase completed without result");
-  } finally {
-    q.close();
   }
 }
