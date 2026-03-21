@@ -4,6 +4,7 @@
 
 import { create } from "zustand";
 import { nanoid } from "nanoid";
+import { layoutEntities } from "@/services/entity/entity-layout";
 import type {
   AnalysisEntity,
   AnalysisFileReference,
@@ -66,6 +67,14 @@ interface EntityGraphStoreState extends AnalysisFileReference {
   markDirty: () => void;
 
   // SSE sync methods — used by analysis-client for renderer-side updates
+  upsertEntityFromServer: (entity: AnalysisEntity) => void;
+  removeEntityFromServer: (id: string) => void;
+  upsertRelationshipFromServer: (relationship: AnalysisRelationship) => void;
+  removeRelationshipFromServer: (id: string) => void;
+  markStaleFromServer: (entityIds: string[]) => void;
+  syncAnalysisFromServer: (analysis: Analysis) => void;
+  reconcileLayout: () => void;
+  pinEntityPosition: (id: string, x: number, y: number) => void;
   syncAnalysis: (analysis: Analysis) => void;
   setPhaseStatusLocal: (phase: string, status: PhaseStatus) => void;
 }
@@ -132,6 +141,36 @@ function pruneLayout(
   );
 }
 
+function reconcileLayoutState(
+  layout: LayoutState,
+  entities: AnalysisEntity[],
+): LayoutState {
+  const prunedLayout = pruneLayout(layout, entities);
+  const computedPositions = layoutEntities(entities);
+  const nextLayout: LayoutState = { ...prunedLayout };
+
+  for (const entity of entities) {
+    const existingEntry = prunedLayout[entity.id];
+    if (existingEntry?.pinned) {
+      nextLayout[entity.id] = existingEntry;
+      continue;
+    }
+
+    const computedPosition = computedPositions.get(entity.id);
+    if (!computedPosition) {
+      continue;
+    }
+
+    nextLayout[entity.id] = {
+      x: computedPosition.x,
+      y: computedPosition.y,
+      pinned: false,
+    };
+  }
+
+  return nextLayout;
+}
+
 // ── Store ──
 // This store is a LOCAL state container for the renderer.
 // In browser mode, state arrives via analysis-client SSE (syncAnalysis / setPhaseStatusLocal).
@@ -165,7 +204,7 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
     loadAnalysis: (analysis, layout, source) => {
       set((state) => ({
         analysis,
-        layout: pruneLayout(layout ?? {}, analysis.entities),
+        layout: reconcileLayoutState(layout ?? {}, analysis.entities),
         isDirty: false,
         revision: state.revision + 1,
         fileName: source?.fileName ?? null,
@@ -177,7 +216,7 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
 
     setLayout: (layout) => {
       set((state) => ({
-        layout: pruneLayout(layout, state.analysis.entities),
+        layout: reconcileLayoutState(layout, state.analysis.entities),
         isDirty: true,
         revision: state.revision + 1,
       }));
@@ -185,7 +224,7 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
 
     updateLayout: (updates) => {
       set((state) => ({
-        layout: pruneLayout(
+        layout: reconcileLayoutState(
           {
             ...state.layout,
             ...updates,
@@ -219,7 +258,7 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
               ...newRelationships,
             ],
           },
-          layout: pruneLayout(state.layout, [
+          layout: reconcileLayoutState(state.layout, [
             ...state.analysis.entities,
             ...newEntities,
           ]),
@@ -261,8 +300,11 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
             (r) => r.fromEntityId !== id && r.toEntityId !== id,
           ),
         },
-        layout: Object.fromEntries(
-          Object.entries(state.layout).filter(([entityId]) => entityId !== id),
+        layout: reconcileLayoutState(
+          Object.fromEntries(
+            Object.entries(state.layout).filter(([entityId]) => entityId !== id),
+          ),
+          state.analysis.entities.filter((entity) => entity.id !== id),
         ),
         isDirty: true,
         revision: state.revision + 1,
@@ -366,14 +408,121 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
       set({ isDirty: true });
     },
 
-    // syncAnalysis: like loadAnalysis but preserves isDirty and file refs (for SSE sync)
-    syncAnalysis: (analysis) =>
+    upsertEntityFromServer: (entity) =>
+      set((state) => {
+        const exists = state.analysis.entities.some((existing) => existing.id === entity.id);
+        const entities = exists
+          ? state.analysis.entities.map((existing) =>
+              existing.id === entity.id ? entity : existing,
+            )
+          : [...state.analysis.entities, entity];
+
+        return {
+          analysis: {
+            ...state.analysis,
+            entities,
+          },
+          layout: reconcileLayoutState(state.layout, entities),
+          revision: state.revision + 1,
+        };
+      }),
+
+    removeEntityFromServer: (id) =>
+      set((state) => {
+        const entities = state.analysis.entities.filter((entity) => entity.id !== id);
+        const relationships = state.analysis.relationships.filter(
+          (relationship) =>
+            relationship.fromEntityId !== id && relationship.toEntityId !== id,
+        );
+
+        return {
+          analysis: {
+            ...state.analysis,
+            entities,
+            relationships,
+          },
+          layout: reconcileLayoutState(state.layout, entities),
+          revision: state.revision + 1,
+        };
+      }),
+
+    upsertRelationshipFromServer: (relationship) =>
+      set((state) => {
+        const exists = state.analysis.relationships.some(
+          (existing) => existing.id === relationship.id,
+        );
+        const relationships = exists
+          ? state.analysis.relationships.map((existing) =>
+              existing.id === relationship.id ? relationship : existing,
+            )
+          : [...state.analysis.relationships, relationship];
+
+        return {
+          analysis: {
+            ...state.analysis,
+            relationships,
+          },
+          revision: state.revision + 1,
+        };
+      }),
+
+    removeRelationshipFromServer: (id) =>
+      set((state) => ({
+        analysis: {
+          ...state.analysis,
+          relationships: state.analysis.relationships.filter(
+            (relationship) => relationship.id !== id,
+          ),
+        },
+        revision: state.revision + 1,
+      })),
+
+    markStaleFromServer: (entityIds) => {
+      const idSet = new Set(entityIds);
+      set((state) => ({
+        analysis: {
+          ...state.analysis,
+          entities: state.analysis.entities.map((entity) =>
+            idSet.has(entity.id) ? { ...entity, stale: true } : entity,
+          ),
+        },
+        revision: state.revision + 1,
+      }));
+    },
+
+    syncAnalysisFromServer: (analysis) =>
       set((state) => ({
         analysis,
-        layout: pruneLayout(state.layout, analysis.entities),
+        layout: reconcileLayoutState(state.layout, analysis.entities),
         revision: state.revision + 1,
-        // Note: does NOT clear isDirty or file refs — those are for save/load lifecycle
       })),
+
+    reconcileLayout: () =>
+      set((state) => ({
+        layout: reconcileLayoutState(state.layout, state.analysis.entities),
+        revision: state.revision + 1,
+      })),
+
+    pinEntityPosition: (id, x, y) =>
+      set((state) => {
+        if (!state.analysis.entities.some((entity) => entity.id === id)) {
+          return { revision: state.revision };
+        }
+
+        return {
+          layout: {
+            ...state.layout,
+            [id]: { x, y, pinned: true },
+          },
+          isDirty: true,
+          revision: state.revision + 1,
+        };
+      }),
+
+    // syncAnalysis: like loadAnalysis but preserves isDirty and file refs (for SSE sync)
+    syncAnalysis: (analysis) => {
+      get().syncAnalysisFromServer(analysis);
+    },
 
     // setPhaseStatusLocal: local phase status update from SSE progress events
     setPhaseStatusLocal: (phase, status) =>

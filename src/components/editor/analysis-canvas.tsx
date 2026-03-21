@@ -2,7 +2,6 @@ import { useEffect, useRef, useCallback } from "react";
 import { loadCanvasKit } from "@/canvas/skia/skia-init";
 import { SkiaEngine, screenToScene } from "@/canvas/skia/skia-engine";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
-import { layoutEntities } from "@/services/entity/entity-layout";
 import { entityToRenderNode } from "@/services/entity/entity-to-pennode";
 import { getCanvasBackground } from "@/canvas/canvas-constants";
 import { parseColor } from "@/canvas/skia/skia-paint-utils";
@@ -28,10 +27,39 @@ export default function AnalysisCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<SkiaEngine | null>(null);
-  const panRef = useRef<{ active: boolean; lastX: number; lastY: number }>({
+  const panRef = useRef<{
+    active: boolean;
+    startX: number;
+    startY: number;
+    lastX: number;
+    lastY: number;
+  }>({
     active: false,
+    startX: 0,
+    startY: 0,
     lastX: 0,
     lastY: 0,
+  });
+  const dragRef = useRef<{
+    active: boolean;
+    entityId: string | null;
+    startClientX: number;
+    startClientY: number;
+    startSceneX: number;
+    startSceneY: number;
+    startEntityX: number;
+    startEntityY: number;
+    moved: boolean;
+  }>({
+    active: false,
+    entityId: null,
+    startClientX: 0,
+    startClientY: 0,
+    startSceneX: 0,
+    startSceneY: 0,
+    startEntityX: 0,
+    startEntityY: 0,
+    moved: false,
   });
 
   // Track entity graph revision to trigger re-renders
@@ -91,21 +119,6 @@ export default function AnalysisCanvas({
     const visibleEntities = phaseFilter
       ? entities.filter((e) => e.phase === phaseFilter)
       : entities;
-
-    const missingLayoutEntities = visibleEntities.filter((entity) => !layout[entity.id]);
-    if (missingLayoutEntities.length > 0) {
-      const positions = layoutEntities(visibleEntities);
-      const store = useEntityGraphStore.getState();
-      const updates = Object.fromEntries(
-        Array.from(positions.entries())
-          .filter(([id]) => !layout[id])
-          .map(([id, position]) => [id, { ...position, pinned: false }]),
-      );
-      if (Object.keys(updates).length > 0) {
-        store.updateLayout(updates);
-      }
-      return;
-    }
 
     // Build render nodes
     const renderNodes = visibleEntities
@@ -187,14 +200,115 @@ export default function AnalysisCanvas({
 
   // ── Pan (mouse drag) ──
 
-  const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    // Only start pan on left button on canvas background (not on entity)
-    if (e.button !== 0) return;
-    panRef.current = { active: true, lastX: e.clientX, lastY: e.clientY };
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-  }, []);
+  const getHitEntity = useCallback(
+    (clientX: number, clientY: number): AnalysisEntity | null => {
+      const engine = engineRef.current;
+      const canvas = canvasRef.current;
+      if (!engine || !canvas) return null;
+
+      const rect = canvas.getBoundingClientRect();
+      const scene = screenToScene(clientX, clientY, rect, {
+        zoom: engine.zoom,
+        panX: engine.panX,
+        panY: engine.panY,
+      });
+
+      const visibleEntities = phaseFilter
+        ? entities.filter((entity) => entity.phase === phaseFilter)
+        : entities;
+
+      for (const entity of visibleEntities) {
+        const renderNode = engine.spatialIndex.get(entity.id);
+        if (!renderNode) continue;
+        if (
+          scene.x >= renderNode.absX &&
+          scene.x <= renderNode.absX + renderNode.absW &&
+          scene.y >= renderNode.absY &&
+          scene.y <= renderNode.absY + renderNode.absH
+        ) {
+          return entity;
+        }
+      }
+
+      return null;
+    },
+    [entities, phaseFilter],
+  );
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (e.button !== 0) return;
+
+      const hitEntity = getHitEntity(e.clientX, e.clientY);
+      if (hitEntity) {
+        const engine = engineRef.current;
+        const canvas = canvasRef.current;
+        const layoutEntry = layout[hitEntity.id];
+        if (!engine || !canvas || !layoutEntry) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const scene = screenToScene(e.clientX, e.clientY, rect, {
+          zoom: engine.zoom,
+          panX: engine.panX,
+          panY: engine.panY,
+        });
+
+        dragRef.current = {
+          active: true,
+          entityId: hitEntity.id,
+          startClientX: e.clientX,
+          startClientY: e.clientY,
+          startSceneX: scene.x,
+          startSceneY: scene.y,
+          startEntityX: layoutEntry.x,
+          startEntityY: layoutEntry.y,
+          moved: false,
+        };
+      } else {
+        panRef.current = {
+          active: true,
+          startX: e.clientX,
+          startY: e.clientY,
+          lastX: e.clientX,
+          lastY: e.clientY,
+        };
+      }
+
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    },
+    [getHitEntity, layout],
+  );
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (dragRef.current.active && dragRef.current.entityId) {
+      const engine = engineRef.current;
+      const canvas = canvasRef.current;
+      if (!engine || !canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const scene = screenToScene(e.clientX, e.clientY, rect, {
+        zoom: engine.zoom,
+        panX: engine.panX,
+        panY: engine.panY,
+      });
+      const dx = scene.x - dragRef.current.startSceneX;
+      const dy = scene.y - dragRef.current.startSceneY;
+      const movedEnough =
+        Math.abs(e.clientX - dragRef.current.startClientX) > 3 ||
+        Math.abs(e.clientY - dragRef.current.startClientY) > 3;
+
+      if (movedEnough) {
+        dragRef.current.moved = true;
+      }
+
+      useEntityGraphStore.getState().pinEntityPosition(
+        dragRef.current.entityId,
+        dragRef.current.startEntityX + dx,
+        dragRef.current.startEntityY + dy,
+      );
+      return;
+    }
+
     if (!panRef.current.active) return;
     const engine = engineRef.current;
     if (!engine) return;
@@ -209,48 +323,46 @@ export default function AnalysisCanvas({
 
   const handlePointerUp = useCallback(
     (e: React.PointerEvent) => {
+      if (dragRef.current.active) {
+        const hitEntityId = dragRef.current.entityId;
+        const dragged = dragRef.current.moved;
+        dragRef.current = {
+          active: false,
+          entityId: null,
+          startClientX: 0,
+          startClientY: 0,
+          startSceneX: 0,
+          startSceneY: 0,
+          startEntityX: 0,
+          startEntityY: 0,
+          moved: false,
+        };
+
+        if (!dragged && hitEntityId) {
+          const hit = entities.find((entity) => entity.id === hitEntityId) ?? null;
+          onEntitySelect(hit);
+        }
+
+        return;
+      }
+
       const wasDrag =
-        Math.abs(e.clientX - panRef.current.lastX) > 3 ||
-        Math.abs(e.clientY - panRef.current.lastY) > 3;
-      panRef.current.active = false;
+        Math.abs(e.clientX - panRef.current.startX) > 3 ||
+        Math.abs(e.clientY - panRef.current.startY) > 3;
+      panRef.current = {
+        active: false,
+        startX: 0,
+        startY: 0,
+        lastX: 0,
+        lastY: 0,
+      };
 
       // If it was a click (not a drag), perform hit test
       if (!wasDrag) {
-        const engine = engineRef.current;
-        const canvas = canvasRef.current;
-        if (!engine || !canvas) return;
-
-        const rect = canvas.getBoundingClientRect();
-        const scene = screenToScene(e.clientX, e.clientY, rect, {
-          zoom: engine.zoom,
-          panX: engine.panX,
-          panY: engine.panY,
-        });
-
-        // Hit test: check if the click is within any entity's bounds
-        let hit: AnalysisEntity | null = null;
-        const visibleEntities = phaseFilter
-          ? entities.filter((ent) => ent.phase === phaseFilter)
-          : entities;
-
-        for (const entity of visibleEntities) {
-          const rn = engine.spatialIndex.get(entity.id);
-          if (!rn) continue;
-          if (
-            scene.x >= rn.absX &&
-            scene.x <= rn.absX + rn.absW &&
-            scene.y >= rn.absY &&
-            scene.y <= rn.absY + rn.absH
-          ) {
-            hit = entity;
-            break;
-          }
-        }
-
-        onEntitySelect(hit);
+        onEntitySelect(getHitEntity(e.clientX, e.clientY));
       }
     },
-    [entities, phaseFilter, onEntitySelect],
+    [entities, getHitEntity, onEntitySelect],
   );
 
   // ── Zoom (wheel) ──

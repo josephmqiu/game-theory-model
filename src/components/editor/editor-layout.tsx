@@ -129,6 +129,9 @@ export default function EditorLayout() {
   useEffect(() => {
     void initAppStorage().then(() => {
       useAgentSettingsStore.getState().hydrate();
+      void analysisClient.hydrateAnalysisState({
+        enableRecoveryPolling: true,
+      });
     });
   }, []);
 

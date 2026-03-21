@@ -3,13 +3,160 @@
 // NEVER imports Node.js modules or server-side services.
 
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
-import type { AnalysisProgressEvent } from "../../../shared/types/events";
+import type {
+  AbortAnalysisResponse,
+  AnalysisStateResponse,
+  RunStatus,
+} from "../../../shared/types/api";
+import type {
+  AnalysisMutationEvent,
+  AnalysisProgressEvent,
+} from "../../../shared/types/events";
 import type { Analysis } from "../../../shared/types/entity";
+import { V1_PHASES } from "@/types/methodology";
 
 type ProgressCallback = (event: AnalysisProgressEvent) => void;
 
+const ANALYSIS_TIMEOUT_MS = 15 * 60 * 1000;
+const RECOVERY_POLL_INTERVAL_MS = 2_000;
+
 let currentController: AbortController | null = null;
 let progressListeners: ProgressCallback[] = [];
+let currentRunStatus: RunStatus = {
+  status: "idle",
+  runId: null,
+  activePhase: null,
+  progress: {
+    completed: 0,
+    total: V1_PHASES.length,
+  },
+};
+let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+let recoveryRequest: Promise<AnalysisStateResponse> | null = null;
+
+function setRunStatus(runStatus: RunStatus): void {
+  currentRunStatus = runStatus;
+}
+
+function clearRecoveryTimer(): void {
+  if (!recoveryTimer) return;
+  clearTimeout(recoveryTimer);
+  recoveryTimer = null;
+}
+
+function scheduleRecoveryPolling(): void {
+  clearRecoveryTimer();
+  if (currentController || currentRunStatus.status !== "running") {
+    return;
+  }
+
+  recoveryTimer = setTimeout(() => {
+    void hydrateAnalysisState({ enableRecoveryPolling: true });
+  }, RECOVERY_POLL_INTERVAL_MS);
+}
+
+function stopRecoveryPolling(): void {
+  clearRecoveryTimer();
+}
+
+async function fetchAnalysisState(): Promise<AnalysisStateResponse> {
+  const response = await fetch("/api/ai/state");
+  if (!response.ok) {
+    throw new Error(`State sync failed: HTTP ${response.status}`);
+  }
+  return response.json() as Promise<AnalysisStateResponse>;
+}
+
+function applyAnalysisSnapshot(analysis: Analysis): void {
+  const store = useEntityGraphStore.getState();
+  if (store.syncAnalysisFromServer) {
+    store.syncAnalysisFromServer(analysis);
+  } else if (store.syncAnalysis) {
+    store.syncAnalysis(analysis);
+  } else {
+    store.loadAnalysis(analysis, undefined);
+  }
+}
+
+function applyMutationEvent(event: AnalysisMutationEvent): void {
+  const store = useEntityGraphStore.getState();
+
+  switch (event.type) {
+    case "entity_created":
+      store.upsertEntityFromServer(event.entity);
+      return;
+    case "entity_updated":
+      store.upsertEntityFromServer(event.entity);
+      return;
+    case "entity_deleted":
+      store.removeEntityFromServer(event.entityId);
+      return;
+    case "relationship_created":
+      store.upsertRelationshipFromServer(event.relationship);
+      return;
+    case "relationship_updated":
+      store.upsertRelationshipFromServer(event.relationship);
+      return;
+    case "relationship_deleted":
+      store.removeRelationshipFromServer(event.relationshipId);
+      return;
+    case "stale_marked":
+      store.markStaleFromServer(event.entityIds);
+      return;
+    case "state_changed":
+      void hydrateAnalysisState({
+        enableRecoveryPolling: !currentController,
+      });
+      return;
+  }
+}
+
+function notifyProgress(event: AnalysisProgressEvent): void {
+  progressListeners.forEach((cb) => cb(event));
+}
+
+function updateRunStatusFromProgress(event: AnalysisProgressEvent): void {
+  if (event.type === "phase_started") {
+    setRunStatus({
+      status: "running",
+      runId: event.runId,
+      activePhase: event.phase as RunStatus["activePhase"],
+      progress: {
+        completed: currentRunStatus.progress.completed,
+        total: currentRunStatus.progress.total,
+      },
+    });
+    return;
+  }
+
+  if (event.type === "phase_completed") {
+    setRunStatus({
+      status: "running",
+      runId: event.runId,
+      activePhase: null,
+      progress: {
+        completed: Math.min(
+          currentRunStatus.progress.completed + 1,
+          currentRunStatus.progress.total,
+        ),
+        total: currentRunStatus.progress.total,
+      },
+    });
+    return;
+  }
+
+  if (event.type === "analysis_completed" || event.type === "analysis_failed") {
+    setRunStatus({
+      status: "idle",
+      runId: null,
+      activePhase: null,
+      progress: {
+        completed: currentRunStatus.progress.completed,
+        total: currentRunStatus.progress.total,
+      },
+    });
+  }
+}
 
 export function onProgress(cb: ProgressCallback): () => void {
   progressListeners.push(cb);
@@ -19,12 +166,59 @@ export function onProgress(cb: ProgressCallback): () => void {
 }
 
 export function isRunning(): boolean {
-  return currentController !== null;
+  return currentController !== null || currentRunStatus.status === "running";
 }
 
 export function abort(): void {
+  stopRecoveryPolling();
+  setRunStatus({
+    status: "idle",
+    runId: null,
+    activePhase: null,
+    progress: {
+      completed: 0,
+      total: currentRunStatus.progress.total,
+    },
+  });
+
+  void fetch("/api/ai/abort", { method: "POST" })
+    .then(async (response) => {
+      if (!response.ok) return;
+      await response.json().catch(() => null as AbortAnalysisResponse | null);
+    })
+    .catch(() => {
+      // Best effort only — local abort still happens below.
+    });
+
   currentController?.abort();
   currentController = null;
+}
+
+export async function hydrateAnalysisState(options?: {
+  enableRecoveryPolling?: boolean;
+}): Promise<AnalysisStateResponse | null> {
+  if (recoveryRequest) {
+    return null;
+  }
+
+  recoveryRequest = (async () => {
+    const state = await fetchAnalysisState();
+    applyAnalysisSnapshot(state.analysis);
+    setRunStatus(state.runStatus);
+
+    if (options?.enableRecoveryPolling && state.runStatus.status === "running") {
+      scheduleRecoveryPolling();
+    } else {
+      stopRecoveryPolling();
+    }
+
+    return state;
+  })()
+    .finally(() => {
+      recoveryRequest = null;
+    });
+
+  return recoveryRequest;
 }
 
 export async function startAnalysis(
@@ -34,9 +228,20 @@ export async function startAnalysis(
 ): Promise<{ runId: string }> {
   if (currentController) throw new Error("Analysis already running");
 
+  stopRecoveryPolling();
+
   const controller = new AbortController();
   currentController = controller;
-  const timeout = setTimeout(() => controller.abort(), 15 * 60 * 1000);
+  setRunStatus({
+    status: "running",
+    runId: null,
+    activePhase: null,
+    progress: {
+      completed: 0,
+      total: V1_PHASES.length,
+    },
+  });
+  const timeout = setTimeout(() => controller.abort(), ANALYSIS_TIMEOUT_MS);
 
   try {
     const response = await fetch("/api/ai/analyze", {
@@ -79,32 +284,32 @@ export async function startAnalysis(
 
           if (event.channel === "started") {
             runId = event.runId;
+            setRunStatus({
+              ...currentRunStatus,
+              status: "running",
+              runId,
+            });
           } else if (event.channel === "progress") {
-            // Update phase statuses in real-time
             const store = useEntityGraphStore.getState();
             if (event.type === "phase_started") {
               store.setPhaseStatusLocal(event.phase, "running");
             } else if (event.type === "phase_completed") {
               store.setPhaseStatusLocal(event.phase, "complete");
             } else if (event.type === "analysis_failed") {
-              // Mark any phase still "running" as "failed" so the UI
-              // shows the failure banner immediately (not only after snapshot).
-              for (const ps of store.analysis.phases) {
-                if (ps.status === "running") {
-                  store.setPhaseStatusLocal(ps.phase, "failed");
+              for (const phaseState of store.analysis.phases) {
+                if (phaseState.status === "running") {
+                  store.setPhaseStatusLocal(phaseState.phase, "failed");
                 }
               }
             }
-            progressListeners.forEach((cb) => cb(event));
+
+            updateRunStatusFromProgress(event as AnalysisProgressEvent);
+            notifyProgress(event as AnalysisProgressEvent);
+          } else if (event.channel === "mutation") {
+            applyMutationEvent(event as AnalysisMutationEvent);
           } else if (event.channel === "snapshot") {
-            // Full state sync
             if (event.analysis) {
-              const store = useEntityGraphStore.getState();
-              if (store.syncAnalysis) {
-                store.syncAnalysis(event.analysis);
-              } else {
-                store.loadAnalysis(event.analysis, undefined);
-              }
+              applyAnalysisSnapshot(event.analysis);
             }
           } else if (event.channel === "error") {
             throw new Error(event.message);
@@ -123,6 +328,12 @@ export async function startAnalysis(
   } finally {
     clearTimeout(timeout);
     currentController = null;
+
+    if (currentRunStatus.status === "running" && !controller.signal.aborted) {
+      scheduleRecoveryPolling();
+    } else {
+      stopRecoveryPolling();
+    }
   }
 }
 
@@ -139,29 +350,18 @@ export async function updateEntity(
   if (!res.ok) return;
   const result = await res.json();
   if (result.queued) {
-    // Optimistic local update — will be reconciled by final snapshot
     const store = useEntityGraphStore.getState();
     store.updateEntity(id, updates);
     return;
   }
   if (result.error) return;
-  // Normal path: re-fetch full state to sync
-  const stateRes = await fetch("/api/ai/entity", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "get" }),
-  });
-  const data = await stateRes.json();
-  if (data.analysis) {
-    const store = useEntityGraphStore.getState();
-    if (store.syncAnalysis) store.syncAnalysis(data.analysis);
-    else store.loadAnalysis(data.analysis, undefined);
+  const state = await hydrateAnalysisState();
+  if (state?.analysis) {
+    applyAnalysisSnapshot(state.analysis);
   }
 }
 
 // Handle entity_snapshot from chat SSE stream
 export function handleChatEntitySnapshot(analysis: Analysis): void {
-  const store = useEntityGraphStore.getState();
-  if (store.syncAnalysis) store.syncAnalysis(analysis);
-  else store.loadAnalysis(analysis, undefined);
+  applyAnalysisSnapshot(analysis);
 }

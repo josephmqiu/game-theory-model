@@ -790,4 +790,105 @@ describe("entity-graph-store", () => {
       expect(state.layout.e1).toEqual({ x: 100, y: 200, pinned: true });
     });
   });
+
+  describe("server sync and layout reconciliation", () => {
+    it("upserts server entities without mutating provenance and auto-layouts them", () => {
+      useEntityGraphStore.getState().newAnalysis("test");
+
+      const entity = makeEntity({
+        id: "server-e1",
+        type: "fact",
+        phase: "situational-grounding",
+        provenance: {
+          source: "phase-derived",
+          runId: "run-1",
+          timestamp: 123,
+        },
+      });
+
+      useEntityGraphStore.getState().upsertEntityFromServer(entity);
+
+      const state = useEntityGraphStore.getState();
+      expect(state.analysis.entities).toEqual([entity]);
+      expect(state.layout["server-e1"]).toEqual({ x: 100, y: 0, pinned: false });
+      expect(state.isDirty).toBe(false);
+    });
+
+    it("preserves pinned layout entries while reconciling unpinned positions", () => {
+      useEntityGraphStore.getState().loadAnalysis(
+        {
+          ...useEntityGraphStore.getState().analysis,
+          topic: "loaded topic",
+          entities: [
+            makeEntity({
+              id: "e1",
+              type: "fact",
+              phase: "situational-grounding",
+            }),
+            makeEntity({
+              id: "e2",
+              type: "fact",
+              phase: "situational-grounding",
+            }),
+          ],
+        },
+        {
+          e1: { x: 999, y: 555, pinned: true },
+        },
+      );
+
+      useEntityGraphStore.getState().reconcileLayout();
+
+      const state = useEntityGraphStore.getState();
+      expect(state.layout.e1).toEqual({ x: 999, y: 555, pinned: true });
+      expect(state.layout.e2).toEqual({ x: 100, y: 84, pinned: false });
+    });
+
+    it("prunes layout for removed server entities", () => {
+      useEntityGraphStore.getState().loadAnalysis(
+        {
+          ...useEntityGraphStore.getState().analysis,
+          entities: [
+            makeEntity({
+              id: "e1",
+              type: "fact",
+              phase: "situational-grounding",
+            }),
+          ],
+        },
+        {
+          e1: { x: 100, y: 200, pinned: true },
+        },
+      );
+
+      useEntityGraphStore.getState().removeEntityFromServer("e1");
+
+      const state = useEntityGraphStore.getState();
+      expect(state.analysis.entities).toEqual([]);
+      expect(state.layout).toEqual({});
+      expect(state.isDirty).toBe(false);
+    });
+
+    it("pinEntityPosition stores coordinates and marks the layout pinned", () => {
+      useEntityGraphStore.getState().loadAnalysis(
+        {
+          ...useEntityGraphStore.getState().analysis,
+          entities: [
+            makeEntity({
+              id: "e1",
+              type: "fact",
+              phase: "situational-grounding",
+            }),
+          ],
+        },
+        {},
+      );
+
+      useEntityGraphStore.getState().pinEntityPosition("e1", 320, 240);
+
+      const state = useEntityGraphStore.getState();
+      expect(state.layout.e1).toEqual({ x: 320, y: 240, pinned: true });
+      expect(state.isDirty).toBe(true);
+    });
+  });
 });
