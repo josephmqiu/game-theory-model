@@ -407,7 +407,7 @@ const ko: TranslationKeys = {
   'figma.tryAgain': '다시 시도',
   'figma.layoutMode': '레이아웃 모드:',
   'figma.preserveLayout': 'Figma 레이아웃 유지',
-  'figma.autoLayout': 'OpenPencil 자동 레이아웃',
+  'figma.autoLayout': '자동 레이아웃',
   'figma.comingSoon': '출시 예정',
 
   // ── Landing Page ──

@@ -407,7 +407,7 @@ const hi: TranslationKeys = {
   'figma.tryAgain': 'पुनः प्रयास करें',
   'figma.layoutMode': 'लेआउट मोड:',
   'figma.preserveLayout': 'Figma लेआउट संरक्षित करें',
-  'figma.autoLayout': 'OpenPencil ऑटो लेआउट',
+  'figma.autoLayout': 'ऑटो लेआउट',
   'figma.comingSoon': 'जल्द आ रहा है',
 
   // ── Landing Page ──

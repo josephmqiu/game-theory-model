@@ -407,7 +407,7 @@ const tr: TranslationKeys = {
   'figma.tryAgain': 'Tekrar Dene',
   'figma.layoutMode': 'Düzen modu:',
   'figma.preserveLayout': 'Figma düzenini koru',
-  'figma.autoLayout': 'OpenPencil otomatik düzen',
+  'figma.autoLayout': 'otomatik düzen',
   'figma.comingSoon': 'Yakında',
 
   // ── Landing Page ──

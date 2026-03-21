@@ -76,7 +76,7 @@ export const MCP_HTTP_HOST = "127.0.0.1";
 // --- Tool definitions (shared across all Server instances) ---
 
 // When PRODUCT_ONLY is set (e.g. by the Codex adapter), expose only the
-// product-facing tool surface — not the OpenPencil design tools.
+// product-facing tool surface — not the design tools.
 const PRODUCT_ONLY = process.env.PRODUCT_ONLY === "1";
 
 interface ToolDefinition {
@@ -898,8 +898,7 @@ export const CHAT_MODE_TOOL_DEFINITIONS = [
   },
   {
     name: "get_analysis_status",
-    description:
-      "Get the current status of the active analysis or rerun job.",
+    description: "Get the current status of the active analysis or rerun job.",
     inputSchema: {
       type: "object" as const,
       properties: {},
@@ -950,7 +949,8 @@ export const CHAT_MODE_TOOL_DEFINITIONS = [
         id: { type: "string", description: "Entity ID to update" },
         updates: {
           type: "object",
-          description: "Updated entity fields to merge into the existing entity",
+          description:
+            "Updated entity fields to merge into the existing entity",
         },
       },
       required: ["id", "updates"],
@@ -1029,7 +1029,7 @@ export const CHAT_MODE_TOOL_DEFINITIONS = [
 
 const PRODUCT_TOOL_DEFINITIONS = CHAT_MODE_TOOL_DEFINITIONS;
 
-// Merged set: OpenPencil tools + product tools (full profile), or product-only
+// Merged set: design tools + product tools (full profile), or product-only
 const ALL_TOOL_DEFINITIONS = PRODUCT_ONLY
   ? PRODUCT_TOOL_DEFINITIONS
   : [...TOOL_DEFINITIONS, ...PRODUCT_TOOL_DEFINITIONS];
@@ -1139,7 +1139,9 @@ function resolveEarliestRerunPhase(
   }
 
   const earliestPhase = [...phases].sort(
-    (left, right) => V1_PHASES.indexOf(left as MethodologyPhase) - V1_PHASES.indexOf(right as MethodologyPhase),
+    (left, right) =>
+      V1_PHASES.indexOf(left as MethodologyPhase) -
+      V1_PHASES.indexOf(right as MethodologyPhase),
   )[0];
 
   return earliestPhase as MethodologyPhase;
@@ -1272,15 +1274,18 @@ export function handleCreateRelationship(args: {
 }): string {
   try {
     const runId = resolveToolRunId();
-    const result = createRelationship({
-      type: args.type as RelationshipType,
-      fromEntityId: args.fromId,
-      toEntityId: args.toId,
-      metadata: args.metadata,
-    }, {
-      source: "ai-edited",
-      ...(runId ? { runId } : {}),
-    });
+    const result = createRelationship(
+      {
+        type: args.type as RelationshipType,
+        fromEntityId: args.fromId,
+        toEntityId: args.toId,
+        metadata: args.metadata,
+      },
+      {
+        source: "ai-edited",
+        ...(runId ? { runId } : {}),
+      },
+    );
     return JSON.stringify(result);
   } catch (err) {
     return JSON.stringify({
@@ -1430,7 +1435,10 @@ async function handleToolCall(
   }
 }
 
-function registerToolSet(server: Server, toolDefinitions: readonly ToolDefinition[]): void {
+function registerToolSet(
+  server: Server,
+  toolDefinitions: readonly ToolDefinition[],
+): void {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: toolDefinitions,
   }));

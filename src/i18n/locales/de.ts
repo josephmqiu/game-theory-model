@@ -409,7 +409,7 @@ const de: TranslationKeys = {
   'figma.tryAgain': 'Erneut versuchen',
   'figma.layoutMode': 'Layout-Modus:',
   'figma.preserveLayout': 'Figma-Layout beibehalten',
-  'figma.autoLayout': 'OpenPencil Auto-Layout',
+  'figma.autoLayout': 'Auto-Layout',
   'figma.comingSoon': 'Demnächst',
 
   // ── Landing Page ──

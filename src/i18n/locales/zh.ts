@@ -398,7 +398,7 @@ const zh: TranslationKeys = {
   'figma.tryAgain': '重试',
   'figma.layoutMode': '布局模式：',
   'figma.preserveLayout': '保留 Figma 布局',
-  'figma.autoLayout': 'OpenPencil 自动布局',
+  'figma.autoLayout': '自动布局',
   'figma.comingSoon': '即将推出',
 
   // ── Landing Page ──

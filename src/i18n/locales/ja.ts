@@ -411,7 +411,7 @@ const ja: TranslationKeys = {
   'figma.tryAgain': '再試行',
   'figma.layoutMode': 'レイアウトモード：',
   'figma.preserveLayout': 'Figma のレイアウトを維持',
-  'figma.autoLayout': 'OpenPencil 自動レイアウト',
+  'figma.autoLayout': '自動レイアウト',
   'figma.comingSoon': '近日公開',
 
   // ── Landing Page ──

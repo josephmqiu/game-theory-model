@@ -398,7 +398,7 @@ const zhTW: TranslationKeys = {
   'figma.tryAgain': '重試',
   'figma.layoutMode': '佈局模式：',
   'figma.preserveLayout': '保留 Figma 佈局',
-  'figma.autoLayout': 'OpenPencil 自動佈局',
+  'figma.autoLayout': '自動佈局',
   'figma.comingSoon': '即將推出',
 
   // ── Landing Page ──
