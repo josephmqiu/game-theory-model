@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { runModelGraders } from "../model-graders";
 
 // Mock streamChat as an async generator that yields a score response
@@ -10,11 +10,14 @@ async function* mockStreamChat() {
   yield { type: "turn_complete" as const };
 }
 
-vi.mock("../../services/ai/claude-adapter", () => ({
-  streamChat: vi.fn(() => mockStreamChat()),
-}));
+const streamChatMock = vi.fn(() => mockStreamChat());
 
 describe("runModelGraders", () => {
+  beforeEach(() => {
+    streamChatMock.mockReset();
+    streamChatMock.mockImplementation(() => mockStreamChat());
+  });
+
   it("returns empty results when no rubrics defined", async () => {
     const results = await runModelGraders(
       [],
@@ -31,6 +34,7 @@ describe("runModelGraders", () => {
       entities,
       "player-identification",
       rubrics,
+      { streamChatImpl: streamChatMock },
     );
     expect(results).toHaveLength(1);
     expect(results[0].score).toBe(0.85);
@@ -38,8 +42,7 @@ describe("runModelGraders", () => {
   });
 
   it("marks rubric as failed when score is below 0.7", async () => {
-    const adapter = await import("../../services/ai/claude-adapter");
-    vi.mocked(adapter.streamChat).mockImplementationOnce(async function* () {
+    streamChatMock.mockImplementationOnce(async function* () {
       yield {
         type: "text_delta" as const,
         content: '{ "score": 0.3, "reasoning": "Bad" }',
@@ -50,6 +53,7 @@ describe("runModelGraders", () => {
       [{ type: "player", data: { name: "Referee" } }],
       "player-identification",
       ["No reified concepts as players"],
+      { streamChatImpl: streamChatMock },
     );
     expect(results[0].score).toBe(0.3);
     expect(results[0].passed).toBe(false);

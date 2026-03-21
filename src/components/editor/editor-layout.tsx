@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PanelRight, PanelRightClose } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
   buildAnalysisRuntimeOverrides,
   useAgentSettingsStore,
 } from "@/stores/agent-settings-store";
+import { useCanvasStore } from "@/stores/canvas-store";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useElectronMenu } from "@/hooks/use-electron-menu";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
@@ -23,6 +24,8 @@ import {
   openAnalysis,
   openAnalysisFromPath,
 } from "@/services/analysis/analysis-persistence";
+import { sceneToScreen } from "@/canvas/skia/skia-viewport";
+import { getEntityCardMetrics } from "@/services/entity/entity-card-metrics";
 import type { AnalysisEntity } from "@/types/entity";
 import type { MethodologyPhase } from "@/types/methodology";
 
@@ -38,8 +41,9 @@ export default function EditorLayout() {
       : null,
   );
   const layout = useEntityGraphStore((state) => state.layout);
-  const [overlayPosition, setOverlayPosition] = useState({ x: 0, y: 0 });
+  const viewport = useCanvasStore((state) => state.viewport);
   const [chatCollapsed, setChatCollapsed] = useState(false);
+  const canvasSurfaceRef = useRef<HTMLDivElement>(null);
 
   const clearEditorChrome = useCallback(() => {
     setPhaseFilter(null);
@@ -182,20 +186,26 @@ export default function EditorLayout() {
 
   const handleEntitySelect = useCallback((entity: AnalysisEntity | null) => {
     setSelectedEntityId(entity?.id ?? null);
-    if (!entity) {
-      return;
-    }
+  }, []);
 
-    const layoutEntry = layout[entity.id];
-    if (!layoutEntry) {
-      return;
-    }
+  const selectedEntityScreenPosition =
+    selectedEntity && canvasSurfaceRef.current
+      ? (() => {
+          const layoutEntry = layout[selectedEntity.id];
+          if (!layoutEntry) {
+            return null;
+          }
 
-    setOverlayPosition({
-      x: layoutEntry.x + 180,
-      y: layoutEntry.y + 40,
-    });
-  }, [layout]);
+          const metrics = getEntityCardMetrics(selectedEntity.type);
+          const rect = canvasSurfaceRef.current.getBoundingClientRect();
+          return sceneToScreen(
+            layoutEntry.x + metrics.width,
+            layoutEntry.y + Math.min(16, metrics.height / 2),
+            rect,
+            viewport,
+          );
+        })()
+      : null;
 
   const handleRerunPhase = useCallback(
     (_phase: MethodologyPhase) => {
@@ -226,7 +236,10 @@ export default function EditorLayout() {
             activeFilter={phaseFilter}
           />
 
-          <div className="relative flex min-w-0 flex-1 flex-col">
+          <div
+            ref={canvasSurfaceRef}
+            className="relative flex min-w-0 flex-1 flex-col"
+          >
             <AnalysisCanvas
               onEntitySelect={handleEntitySelect}
               phaseFilter={phaseFilter}
@@ -235,10 +248,10 @@ export default function EditorLayout() {
 
             <PhaseProgress className="absolute bottom-4 left-1/2 -translate-x-1/2" />
 
-            {selectedEntity && (
+            {selectedEntity && selectedEntityScreenPosition && (
               <EntityOverlayCard
                 entity={selectedEntity}
-                screenPosition={overlayPosition}
+                screenPosition={selectedEntityScreenPosition}
                 onEdit={() => {}}
                 onChallenge={() => {}}
                 onClose={() => setSelectedEntityId(null)}

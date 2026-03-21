@@ -1,38 +1,11 @@
 import type { AnalysisEntity, EntityType, LayoutState } from "@/types/entity";
 import type { FrameNode, TextNode } from "@/types/pen";
 import type { RenderNode } from "@/canvas/skia/skia-renderer";
-
-// ── Entity node sizes by type (from DESIGN.md Canvas Rendering) ──
-
-const ENTITY_SIZE: Record<EntityType, { w: number; h: number }> = {
-  player: { w: 160, h: 80 },
-  game: { w: 160, h: 80 },
-  fact: { w: 140, h: 60 },
-  objective: { w: 120, h: 50 },
-  strategy: { w: 120, h: 50 },
-  payoff: { w: 120, h: 50 },
-  "institutional-rule": { w: 140, h: 60 },
-  "escalation-rung": { w: 120, h: 50 },
-  "interaction-history": { w: 160, h: 80 },
-  "repeated-game-pattern": { w: 140, h: 60 },
-  "trust-assessment": { w: 140, h: 60 },
-  "dynamic-inconsistency": { w: 140, h: 60 },
-  "signaling-effect": { w: 120, h: 50 },
-  "payoff-matrix": { w: 180, h: 100 },
-  "game-tree": { w: 180, h: 100 },
-  "equilibrium-result": { w: 160, h: 80 },
-  "cross-game-constraint-table": { w: 180, h: 100 },
-  "cross-game-effect": { w: 140, h: 60 },
-  "signal-classification": { w: 140, h: 60 },
-  "bargaining-dynamics": { w: 160, h: 80 },
-  "option-value-assessment": { w: 140, h: 60 },
-  "behavioral-overlay": { w: 140, h: 60 },
-  assumption: { w: 120, h: 50 },
-  "eliminated-outcome": { w: 140, h: 60 },
-  scenario: { w: 160, h: 80 },
-  "central-thesis": { w: 180, h: 100 },
-  "meta-check": { w: 180, h: 100 },
-};
+import {
+  ENTITY_CARD_LAYOUT,
+  getEntityCardMetrics,
+  truncateEntityCardText,
+} from "@/services/entity/entity-card-metrics";
 
 // ── Display helpers ──
 
@@ -43,25 +16,19 @@ function entityDisplayName(entity: AnalysisEntity): string {
   if ("gameName" in d && typeof d.gameName === "string" && d.gameName)
     return d.gameName;
   if ("negotiation" in d && typeof d.negotiation === "string" && d.negotiation)
-    return d.negotiation.length > 30
-      ? d.negotiation.slice(0, 27) + "..."
-      : d.negotiation;
-  if ("content" in d && typeof d.content === "string" && d.content) {
-    return d.content.length > 30 ? d.content.slice(0, 27) + "..." : d.content;
-  }
-  if (
-    "description" in d &&
-    typeof d.description === "string" &&
-    d.description
-  ) {
-    return d.description.length > 30
-      ? d.description.slice(0, 27) + "..."
-      : d.description;
-  }
-  if ("action" in d && typeof d.action === "string" && d.action) {
-    return d.action.length > 30 ? d.action.slice(0, 27) + "..." : d.action;
-  }
+    return d.negotiation;
+  if ("content" in d && typeof d.content === "string" && d.content)
+    return d.content;
+  if ("description" in d && typeof d.description === "string" && d.description)
+    return d.description;
+  if ("action" in d && typeof d.action === "string" && d.action)
+    return d.action;
   return entity.type;
+}
+
+/** Uppercase type badge label for display. */
+function entityTypeBadge(type: EntityType): string {
+  return type.replace(/-/g, " ").toUpperCase();
 }
 
 /** Short meta line for the entity (type + extra info). */
@@ -125,12 +92,24 @@ function entityMetaLine(entity: AnalysisEntity): string {
   }
 }
 
+function entityCanvasTitle(entity: AnalysisEntity): string {
+  const fullTitle = entityDisplayName(entity);
+  const { titleMaxChars } = getEntityCardMetrics(entity.type);
+  return truncateEntityCardText(fullTitle, titleMaxChars);
+}
+
+function entityCanvasMetaLine(entity: AnalysisEntity): string {
+  const fullMetaLine = entityMetaLine(entity);
+  const { metaMaxChars } = getEntityCardMetrics(entity.type);
+  return truncateEntityCardText(fullMetaLine, metaMaxChars);
+}
+
 // ── Mapping ──
 
 /**
  * Map an AnalysisEntity to a RenderNode for the Skia canvas.
  *
- * Builds a FrameNode with two TextNode children (name + meta line),
+ * Builds a FrameNode with three TextNode children (badge + name + meta),
  * using the entity's position, type-based size, and a semantic role
  * prefixed with "entity-".
  */
@@ -138,37 +117,61 @@ export function entityToRenderNode(
   entity: AnalysisEntity,
   layoutEntry: LayoutState[string],
 ): RenderNode {
-  const size = ENTITY_SIZE[entity.type] ?? { w: 120, h: 50 };
+  const size = getEntityCardMetrics(entity.type);
   const { x, y } = layoutEntry;
+
+  const padL = ENTITY_CARD_LAYOUT.padLeft;
+  const padR = ENTITY_CARD_LAYOUT.padRight;
+  const padT = ENTITY_CARD_LAYOUT.padTop;
+  const contentW = size.width - padL - padR;
+
+  const badgeText: TextNode = {
+    id: `${entity.id}__badge`,
+    type: "text",
+    x: padL,
+    y: padT,
+    width: contentW,
+    height: ENTITY_CARD_LAYOUT.badgeHeight,
+    content: entityTypeBadge(entity.type),
+    fontFamily: "Geist",
+    fontSize: 11,
+    fontWeight: 500,
+    letterSpacing: 0.06,
+    textGrowth: "fixed-width",
+    fill: [{ type: "solid", color: "#A1A1AA" }], // placeholder — overridden at render time
+  };
 
   const nameText: TextNode = {
     id: `${entity.id}__name`,
     type: "text",
-    x: 10,
-    y: 10,
-    width: size.w - 20,
-    height: 18,
-    content: entityDisplayName(entity),
+    x: padL,
+    y: padT + ENTITY_CARD_LAYOUT.badgeHeight + ENTITY_CARD_LAYOUT.badgeGap,
+    width: contentW,
+    height: ENTITY_CARD_LAYOUT.titleHeight,
+    content: entityCanvasTitle(entity),
     fontFamily: "Geist",
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: 600,
     textGrowth: "fixed-width",
-    fill: [{ type: "solid", color: "#FAFAFA" }],
+    fill: [{ type: "solid", color: "#F4F4F5" }],
   };
 
   const metaText: TextNode = {
     id: `${entity.id}__meta`,
     type: "text",
-    x: 10,
-    y: 32,
-    width: size.w - 20,
-    height: 16,
-    content: entityMetaLine(entity),
+    x: padL,
+    y:
+      size.height -
+      ENTITY_CARD_LAYOUT.padBottom -
+      ENTITY_CARD_LAYOUT.metaHeight,
+    width: contentW,
+    height: ENTITY_CARD_LAYOUT.metaHeight,
+    content: entityCanvasMetaLine(entity),
     fontFamily: "Geist",
     fontSize: 12,
     fontWeight: 400,
     textGrowth: "fixed-width",
-    fill: [{ type: "solid", color: "#A1A1AA" }],
+    fill: [{ type: "solid", color: "#71717A" }],
   };
 
   const frame: FrameNode = {
@@ -178,17 +181,17 @@ export function entityToRenderNode(
     name: entityDisplayName(entity),
     x,
     y,
-    width: size.w,
-    height: size.h,
-    cornerRadius: 6,
-    children: [nameText, metaText],
+    width: size.width,
+    height: size.height,
+    cornerRadius: ENTITY_CARD_LAYOUT.cornerRadius,
+    children: [badgeText, nameText, metaText],
   };
 
   return {
     node: frame,
     absX: x,
     absY: y,
-    absW: size.w,
-    absH: size.h,
+    absW: size.width,
+    absH: size.height,
   };
 }

@@ -4,9 +4,15 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 15],
+      "entityCountRange": [4, 10],
+      "requiredFactCategories": ["economic", "rule", "position", "capability"],
+      "minDistinctFactCategories": 3,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredPatterns": ["bid|proposal", "procurement|tender", "contract"],
       "rubrics": [
-        "Facts should cover the bidding structure, key players, and competitive dynamics without inventing specific company names or contract details not in the prompt"
+        "Facts should cover the bidding structure, the players, and the competitive dynamics.",
+        "Facts should surface procurement rules or constraints without inventing contract details.",
+        "Facts should avoid making up company names or supply-chain specifics that are not in the prompt."
       ]
     }
   }

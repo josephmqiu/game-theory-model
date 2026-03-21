@@ -4,9 +4,15 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 15],
+      "entityCountRange": [4, 10],
+      "requiredFactCategories": ["position", "economic", "rule", "action"],
+      "minDistinctFactCategories": 3,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredPatterns": ["union|management", "contract", "fallback|strike"],
       "rubrics": [
-        "Facts should cover bargaining structure, information asymmetry, and fallback positions without assuming a specific industry or inventing details"
+        "Facts should cover the bargaining structure and the information asymmetry between the parties.",
+        "Facts should include fallback positions or strike leverage without assuming a specific industry.",
+        "Facts should avoid inventing facts that are not grounded in the prompt."
       ]
     }
   }

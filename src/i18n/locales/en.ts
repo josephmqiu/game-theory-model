@@ -369,8 +369,7 @@ const en = {
   "agents.viewDocs": "Docs",
   "agents.analysisRuntime": "Analysis Runtime",
   "agents.analysisWebSearch": "Web search",
-  "agents.analysisWebSearchHint":
-    "Use live web research during analysis runs.",
+  "agents.analysisWebSearchHint": "Use live web research during analysis runs.",
   "agents.analysisEffort": "Analysis effort",
   "agents.analysisEffortHint":
     "Controls analysis depth guidance for analysis runs, not model selection.",
@@ -402,7 +401,7 @@ const en = {
   "figma.tryAgain": "Try Again",
   "figma.layoutMode": "Layout mode:",
   "figma.preserveLayout": "Preserve Figma layout",
-  "figma.autoLayout": "OpenPencil auto layout",
+  "figma.autoLayout": "Auto layout",
   "figma.comingSoon": "Coming soon",
 
   // ── Landing Page ──

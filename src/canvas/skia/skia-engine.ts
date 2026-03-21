@@ -30,6 +30,7 @@ import { SkiaRenderer, type RenderNode } from "./skia-renderer";
 import { SpatialIndex } from "./skia-hit-test";
 import { parseColor, wrapLine, cssFontFamily } from "./skia-paint-utils";
 import { viewportMatrix, zoomToPoint as vpZoomToPoint } from "./skia-viewport";
+import { shouldDrawFrameLabel } from "./frame-label-utils";
 import {
   getActiveAgentIndicators,
   getActiveAgentFrames,
@@ -478,6 +479,11 @@ export class SkiaEngine {
   spatialIndex = new SpatialIndex();
   renderNodes: RenderNode[] = [];
 
+  // Entity graph data (set by analysis-canvas, consumed by render loop)
+  entityMap = new Map<string, AnalysisEntity>();
+  entityRelationships: AnalysisRelationship[] = [];
+  searchHighlightIds = new Set<string>();
+
   // Component/instance IDs for colored frame labels
   private reusableIds = new Set<string>();
   private instanceIds = new Set<string>();
@@ -666,21 +672,83 @@ export class SkiaEngine {
     // Pass current zoom to renderer for zoom-aware text rasterization
     this.renderer.zoom = this.zoom;
 
-    // Draw all render nodes
+    // Draw relationship edges (behind entity nodes)
+    if (this.entityMap.size > 0) {
+      const posMap = new Map<string, { cx: number; cy: number }>();
+      for (const rn of this.renderNodes) {
+        if (
+          typeof rn.node.role === "string" &&
+          rn.node.role.startsWith("entity-")
+        ) {
+          posMap.set(rn.node.id, {
+            cx: rn.absX + rn.absW / 2,
+            cy: rn.absY + rn.absH / 2,
+          });
+        }
+      }
+      for (const rel of this.entityRelationships) {
+        const from = posMap.get(rel.fromEntityId);
+        const to = posMap.get(rel.toEntityId);
+        if (from && to) this.drawRelationshipEdge(canvas, from, to, rel.type);
+      }
+    }
+
+    // Draw all render nodes (entity nodes use custom renderer, others use generic)
     for (const rn of this.renderNodes) {
-      this.renderer.drawNode(canvas, rn, selectedIds);
+      if (
+        typeof rn.node.role === "string" &&
+        rn.node.role.startsWith("entity-")
+      ) {
+        const entity = this.entityMap.get(rn.node.id);
+        this.drawEntityNode(canvas, rn, entity);
+      } else {
+        this.renderer.drawNode(canvas, rn, selectedIds);
+      }
+    }
+
+    // Draw search highlight rings on matched entity nodes
+    if (this.searchHighlightIds.size > 0) {
+      for (const rn of this.renderNodes) {
+        if (!this.searchHighlightIds.has(rn.node.id)) continue;
+        const hlPaint = new ck.Paint();
+        hlPaint.setStyle(ck.PaintStyle.Stroke);
+        hlPaint.setAntiAlias(true);
+        hlPaint.setStrokeWidth(2.5);
+        hlPaint.setColor(parseColor(ck, "#FBBF24"));
+        const hlRRect = ck.RRectXY(
+          ck.LTRBRect(
+            rn.absX - 3,
+            rn.absY - 3,
+            rn.absX + rn.absW + 3,
+            rn.absY + rn.absH + 3,
+          ),
+          8,
+          8,
+        );
+        canvas.drawRRect(hlRRect, hlPaint);
+        hlPaint.delete();
+      }
     }
 
     // Draw frame labels (root frames + reusable components + instances at any depth)
     for (const rn of this.renderNodes) {
-      if (!rn.node.name) continue;
-      const isRootFrame = rn.node.type === "frame" && !rn.clipRect;
       const isReusable = this.reusableIds.has(rn.node.id);
       const isInstance = this.instanceIds.has(rn.node.id);
-      if (!isRootFrame && !isReusable && !isInstance) continue;
+      const label = rn.node.name;
+      if (
+        !label ||
+        !shouldDrawFrameLabel(
+          rn.node,
+          rn.clipRect,
+          isReusable,
+          isInstance,
+        )
+      ) {
+        continue;
+      }
       this.renderer.drawFrameLabelColored(
         canvas,
-        rn.node.name,
+        label,
         rn.absX,
         rn.absY,
         isReusable,
@@ -889,14 +957,29 @@ export class SkiaEngine {
   // ── Entity type colors (from DESIGN.md Entity Type Palette) ──
 
   private static ENTITY_TYPE_COLOR: Record<string, string> = {
-    fact: "#94A3B8",
     player: "#60A5FA",
-    objective: "#60A5FA", // inherits player color at 40% (approximated as base)
+    objective: "#818CF8",
     game: "#FBBF24",
-    strategy: "#FBBF24", // inherits game color lighter variant
+    strategy: "#F59E0B",
+    fact: "#94A3B8",
     payoff: "#FCD34D",
     "institutional-rule": "#A1A1AA",
     "escalation-rung": "#4ADE80",
+    "interaction-history": "#60A5FA",
+    "repeated-game-pattern": "#94A3B8",
+    "trust-assessment": "#34D399",
+    "dynamic-inconsistency": "#F472B6",
+    "signaling-effect": "#F472B6",
+    "payoff-matrix": "#FCD34D",
+    "game-tree": "#FBBF24",
+    "equilibrium-result": "#A78BFA",
+    "cross-game-constraint-table": "#A1A1AA",
+    "cross-game-effect": "#A1A1AA",
+    "signal-classification": "#F472B6",
+    "bargaining-dynamics": "#F59E0B",
+    "option-value-assessment": "#FCD34D",
+    "behavioral-overlay": "#F97316",
+    assumption: "#CBD5E1",
     "eliminated-outcome": "#EF4444",
     scenario: "#22D3EE",
     "central-thesis": "#A78BFA",
@@ -945,78 +1028,106 @@ export class SkiaEngine {
       glowPaint.delete();
     }
 
-    // ── Fill background ──
-    const bgPaint = new ck.Paint();
-    bgPaint.setStyle(ck.PaintStyle.Fill);
-    bgPaint.setAntiAlias(true);
-    const bgC = parseColor(ck, "#18181B"); // zinc-900 elevated surface
-    bgC[3] *= nodeOpacity;
-    bgPaint.setColor(bgC);
+    // ── Fill background (base + tinted overlay) ──
     const rrect = ck.RRectXY(
       ck.LTRBRect(absX, absY, absX + absW, absY + absH),
       6,
       6,
     );
+    // Base fill: zinc-800 elevated surface (distinct from canvas bg #1a1a1a)
+    const bgPaint = new ck.Paint();
+    bgPaint.setStyle(ck.PaintStyle.Fill);
+    bgPaint.setAntiAlias(true);
+    const bgC = parseColor(ck, "#27272A");
+    bgC[3] *= nodeOpacity;
+    bgPaint.setColor(bgC);
     canvas.drawRRect(rrect, bgPaint);
     bgPaint.delete();
+    // Tint overlay: entity type color at 12% opacity
+    const tintPaint = new ck.Paint();
+    tintPaint.setStyle(ck.PaintStyle.Fill);
+    tintPaint.setAntiAlias(true);
+    const tintC = parseColor(ck, color);
+    tintC[3] = 0.12 * nodeOpacity;
+    tintPaint.setColor(tintC);
+    canvas.drawRRect(rrect, tintPaint);
+    tintPaint.delete();
 
-    // ── Confidence border ──
-    const borderPaint = new ck.Paint();
-    borderPaint.setStyle(ck.PaintStyle.Stroke);
-    borderPaint.setAntiAlias(true);
-    const bc = parseColor(ck, color);
-
-    switch (confidence) {
-      case "high":
-        borderPaint.setStrokeWidth(2);
-        bc[3] = 1.0 * nodeOpacity;
-        break;
-      case "medium":
-        borderPaint.setStrokeWidth(1.5);
-        bc[3] = 0.8 * nodeOpacity;
-        break;
-      case "low":
-        borderPaint.setStrokeWidth(1.5);
-        bc[3] = 0.6 * nodeOpacity;
-        // Dashed for low confidence
-        const dashEffect = ck.PathEffect.MakeDash([6, 4], 0);
-        if (dashEffect) borderPaint.setPathEffect(dashEffect);
-        break;
+    // ── Left accent bar (confidence-encoded) ──
+    const accentColor = parseColor(ck, color);
+    if (confidence === "low") {
+      // Dashed accent bar via stroked vertical path
+      const accentPaint = new ck.Paint();
+      accentPaint.setStyle(ck.PaintStyle.Stroke);
+      accentPaint.setAntiAlias(true);
+      accentPaint.setStrokeWidth(2);
+      accentPaint.setStrokeCap(ck.StrokeCap.Butt);
+      accentColor[3] = 0.5 * nodeOpacity;
+      accentPaint.setColor(accentColor);
+      const dashEffect = ck.PathEffect.MakeDash([6, 4], 0);
+      if (dashEffect) accentPaint.setPathEffect(dashEffect);
+      const accentPath = new ck.Path();
+      accentPath.moveTo(absX + 1, absY + 6);
+      accentPath.lineTo(absX + 1, absY + absH - 6);
+      canvas.drawPath(accentPath, accentPaint);
+      accentPath.delete();
+      accentPaint.delete();
+    } else {
+      // Solid accent bar via filled rect
+      const barW = confidence === "high" ? 3 : 2;
+      accentColor[3] = (confidence === "high" ? 0.8 : 0.6) * nodeOpacity;
+      const accentPaint = new ck.Paint();
+      accentPaint.setStyle(ck.PaintStyle.Fill);
+      accentPaint.setAntiAlias(true);
+      accentPaint.setColor(accentColor);
+      canvas.drawRect(
+        ck.LTRBRect(absX, absY + 6, absX + barW, absY + absH - 6),
+        accentPaint,
+      );
+      accentPaint.delete();
     }
-    borderPaint.setColor(bc);
-    canvas.drawRRect(rrect, borderPaint);
-    borderPaint.delete();
 
     // ── Stale badge ──
     if (isStale) {
-      // Draw a small warning dot at top-right corner
+      // Draw warning circle at top-right corner (16px diameter)
       const badgePaint = new ck.Paint();
       badgePaint.setStyle(ck.PaintStyle.Fill);
       badgePaint.setAntiAlias(true);
       badgePaint.setColor(parseColor(ck, "#FBBF24"));
-      canvas.drawCircle(absX + absW - 8, absY + 8, 4, badgePaint);
+      canvas.drawCircle(absX + absW - 12, absY + 12, 8, badgePaint);
       badgePaint.delete();
-      // Draw inner exclamation stroke
+      // Draw inner exclamation mark
       const excPaint = new ck.Paint();
       excPaint.setStyle(ck.PaintStyle.Stroke);
       excPaint.setAntiAlias(true);
       excPaint.setStrokeWidth(1.5);
       excPaint.setStrokeCap(ck.StrokeCap.Round);
       excPaint.setColor(parseColor(ck, "#09090B"));
+      // Stem
       canvas.drawLine(
-        absX + absW - 8,
-        absY + 6,
-        absX + absW - 8,
-        absY + 9,
+        absX + absW - 12,
+        absY + 8,
+        absX + absW - 12,
+        absY + 13,
+        excPaint,
+      );
+      // Dot
+      canvas.drawLine(
+        absX + absW - 12,
+        absY + 15.5,
+        absX + absW - 12,
+        absY + 15.5,
         excPaint,
       );
       excPaint.delete();
     }
 
-    // ── Draw child text nodes (name + meta) via renderer ──
+    // ── Draw child text nodes (badge + name + meta) via renderer ──
     const children =
       "children" in rn.node ? (rn.node as any).children : undefined;
     if (children && Array.isArray(children)) {
+      canvas.save();
+      canvas.clipRRect(rrect, ck.ClipOp.Intersect, true);
       const emptySet = new Set<string>();
       for (const child of children) {
         const childRN: RenderNode = {
@@ -1027,15 +1138,26 @@ export class SkiaEngine {
           },
           absX: absX + (child.x ?? 0),
           absY: absY + (child.y ?? 0),
-          absW: typeof child.width === "number" ? child.width : absW - 20,
+          absW: typeof child.width === "number" ? child.width : absW - 31,
           absH: typeof child.height === "number" ? child.height : 20,
         };
+        // Override badge text color to entity type color at 70%
+        if (child.id?.endsWith("__badge")) {
+          const alpha = Math.round(0.7 * 255)
+            .toString(16)
+            .padStart(2, "0");
+          childRN.node = {
+            ...childRN.node,
+            fill: [{ type: "solid", color: color + alpha }],
+          } as PenNode;
+        }
         // Adjust text opacity for stale nodes
         if (isStale) {
           childRN.node = { ...childRN.node, opacity: 0.4 } as PenNode;
         }
         this.renderer.drawNode(canvas, childRN, emptySet);
       }
+      canvas.restore();
     }
   }
 
@@ -1045,10 +1167,10 @@ export class SkiaEngine {
     string,
     { color: string; dash?: number[]; width: number }
   > = {
-    "plays-in": { color: "#3F3F46", width: 1 },
-    supports: { color: "#34D399", dash: [6, 4], width: 1 },
-    contradicts: { color: "#F87171", dash: [6, 4], width: 1 },
-    constrains: { color: "#3F3F46", dash: [2, 3], width: 1 },
+    "plays-in": { color: "#52525B", width: 1.5 },
+    supports: { color: "#34D399", dash: [6, 4], width: 1.5 },
+    contradicts: { color: "#F87171", dash: [6, 4], width: 1.5 },
+    constrains: { color: "#52525B", dash: [2, 3], width: 1.5 },
   };
 
   private drawRelationshipEdge(
@@ -1059,8 +1181,8 @@ export class SkiaEngine {
   ) {
     const ck = this.ck;
     const style = SkiaEngine.EDGE_STYLE[relType] ?? {
-      color: "#3F3F46",
-      width: 1,
+      color: "#52525B",
+      width: 1.5,
     };
 
     const paint = new ck.Paint();

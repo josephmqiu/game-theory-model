@@ -4,10 +4,15 @@
   "complexityTier": "trivial",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [2, 8],
-      "forbiddenPatterns": ["Cuban missile", "nuclear"],
+      "entityCountRange": [2, 5],
+      "requiredFactCategories": ["rule"],
+      "minDistinctFactCategories": 1,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "forbiddenPatterns": ["Cuban missile", "nuclear", "historical application", "missile crisis"],
       "rubrics": [
-        "Facts should describe the abstract game structure and its two Nash equilibria without expanding into historical applications unless the prompt asks"
+        "Facts should stay at the abstract brinkmanship level and describe the one-shot structure cleanly.",
+        "Facts should reflect the two-player escalation logic without inventing historical parallels or extra actors.",
+        "Facts should stay compact and proportional to a solved toy game."
       ]
     }
   }

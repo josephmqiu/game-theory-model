@@ -4,10 +4,16 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 15],
-      "forbiddenPatterns": ["geopolitical", "international", "military"],
+      "entityCountRange": [4, 8],
+      "requiredFactCategories": ["position", "rule"],
+      "minDistinctFactCategories": 2,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredPatterns": ["fence|boundary|property line"],
+      "forbiddenPatterns": ["geopolitical", "international", "military", "war", "sanctions"],
       "rubrics": [
-        "Facts should be proportional to the low stakes of the scenario without over-dramatizing or importing frameworks from high-stakes conflicts"
+        "Facts should stay proportional to a low-stakes neighbor dispute.",
+        "Facts should capture each side's position and the fence or boundary facts that matter.",
+        "Facts should avoid importing frameworks from high-stakes conflicts."
       ]
     }
   }

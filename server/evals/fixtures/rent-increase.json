@@ -4,9 +4,15 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 15],
+      "entityCountRange": [4, 8],
+      "requiredFactCategories": ["economic", "position", "rule"],
+      "minDistinctFactCategories": 2,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredPatterns": ["rent", "landlord", "tenant"],
       "rubrics": [
-        "Facts should focus on the landlord-tenant dynamic, costs, and market conditions without expanding into housing policy or macroeconomics"
+        "Facts should focus on the landlord-tenant dynamic and the costs that motivate the rent decision.",
+        "Facts should capture market conditions without expanding into housing policy or macroeconomics.",
+        "Facts should stay grounded in the specific rent-increase choice rather than generic housing commentary."
       ]
     }
   }

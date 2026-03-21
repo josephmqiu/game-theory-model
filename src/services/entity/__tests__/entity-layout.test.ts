@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { AnalysisEntity } from "@/types/entity";
 import { layoutEntities } from "@/services/entity/entity-layout";
+import {
+  ENTITY_CARD_LAYOUT,
+  getEntityCardMetrics,
+} from "@/services/entity/entity-card-metrics";
 
 function makeEntity(
   overrides: Partial<AnalysisEntity> &
@@ -34,9 +38,11 @@ describe("entity layout", () => {
 
     expect(positions.get("f1")!.x).toBe(100);
     expect(positions.get("f2")!.x).toBe(100);
-    // Stacked vertically with 60px height + 24px gap
+    // Stacked vertically with shared card height + shared gap
     expect(positions.get("f1")!.y).toBe(0);
-    expect(positions.get("f2")!.y).toBe(84); // 60 + 24
+    expect(positions.get("f2")!.y).toBe(
+      getEntityCardMetrics("fact").height + ENTITY_CARD_LAYOUT.verticalGap,
+    );
   });
 
   it("positions Phase 2 (player/objective) entities in the center column", () => {
@@ -53,9 +59,11 @@ describe("entity layout", () => {
 
     expect(positions.get("p1")!.x).toBe(500);
     expect(positions.get("o1")!.x).toBe(500);
-    // Player 80px + 24px gap = 104
+    // Player card height + shared gap
     expect(positions.get("p1")!.y).toBe(0);
-    expect(positions.get("o1")!.y).toBe(104);
+    expect(positions.get("o1")!.y).toBe(
+      getEntityCardMetrics("player").height + ENTITY_CARD_LAYOUT.verticalGap,
+    );
   });
 
   it("positions Phase 3 (game/strategy) entities in the right column", () => {
@@ -68,9 +76,11 @@ describe("entity layout", () => {
 
     expect(positions.get("g1")!.x).toBe(900);
     expect(positions.get("s1")!.x).toBe(900);
-    // Game 80px + 24px gap = 104
+    // Game card height + shared gap
     expect(positions.get("g1")!.y).toBe(0);
-    expect(positions.get("s1")!.y).toBe(104);
+    expect(positions.get("s1")!.y).toBe(
+      getEntityCardMetrics("game").height + ENTITY_CARD_LAYOUT.verticalGap,
+    );
   });
 
   it("assigns non-overlapping positions across mixed phases", () => {
@@ -92,13 +102,13 @@ describe("entity layout", () => {
     expect(positions.get("s1")!.x).toBe(900);
 
     // No vertical overlaps within same column
-    // Phase 1: f1 at y=0 (h=60), f2 at y=84
+    // Phase 1: f1 at y=0, f2 starts after fact height + shared gap
     expect(positions.get("f2")!.y).toBeGreaterThanOrEqual(
-      positions.get("f1")!.y + 60,
+      positions.get("f1")!.y + getEntityCardMetrics("fact").height,
     );
-    // Phase 3: g1 at y=0 (h=80), s1 at y=104
+    // Phase 3: g1 at y=0, s1 starts after game height + shared gap
     expect(positions.get("s1")!.y).toBeGreaterThanOrEqual(
-      positions.get("g1")!.y + 80,
+      positions.get("g1")!.y + getEntityCardMetrics("game").height,
     );
   });
 

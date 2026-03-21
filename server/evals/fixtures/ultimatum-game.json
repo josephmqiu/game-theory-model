@@ -4,10 +4,15 @@
   "complexityTier": "trivial",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [2, 8],
-      "forbiddenPatterns": ["fMRI", "neuroscience", "cultural variation"],
+      "entityCountRange": [2, 5],
+      "requiredFactCategories": ["rule"],
+      "minDistinctFactCategories": 1,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "forbiddenPatterns": ["fMRI", "neuroscience", "cross-cultural", "cultural variation"],
       "rubrics": [
-        "Facts should describe the game rules and subgame-perfect equilibrium without expanding into behavioral economics experiments or cross-cultural studies"
+        "Facts should describe the proposal-and-response structure and the subgame-perfect equilibrium directly.",
+        "Facts may mention the well-known tendency for very low offers to be rejected, but should not drift into experimental-literature details, neuroscience, or cultural surveys.",
+        "Facts should stay compact and bounded to the toy game itself."
       ]
     }
   }

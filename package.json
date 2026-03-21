@@ -1,12 +1,21 @@
 {
+  "private": false,
   "name": "game-theory-analyzer",
   "version": "0.4.0",
   "description": "A desktop game-theory analysis workspace for evidence-backed modeling, workflow-guided review, and AI-assisted strategic analysis.",
   "author": {
-    "name": "ZSeven-W",
+    "name": "josephmqiu",
     "email": "maintainers@game-theory-analyzer.invalid"
   },
-  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/josephmqiu/game-theory-model.git"
+  },
+  "homepage": "https://github.com/josephmqiu/game-theory-model#readme",
+  "bugs": {
+    "url": "https://github.com/josephmqiu/game-theory-model/issues"
+  },
   "type": "module",
   "main": "electron-dist/main.cjs",
   "bin": {

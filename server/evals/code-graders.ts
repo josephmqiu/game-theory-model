@@ -4,12 +4,13 @@ import { ALLOWED_ENTITY_TYPES } from "./eval-types";
 interface GradeableEntity {
   type: string;
   ref?: string;
-  data?: Record<string, unknown>;
+  data?: Record<string, unknown> & { category?: string };
   [key: string]: unknown;
 }
 
 interface GradeableRelationship {
   id: string;
+  type?: string;
   fromEntityId: string;
   toEntityId: string;
   [key: string]: unknown;
@@ -119,7 +120,92 @@ export function runCodeGraders(
     });
   }
 
-  // 5. relationship-refs: every relationship fromEntityId/toEntityId resolves to an entity ref
+  // 5. required-fact-categories: expected Phase 1 fact categories are present
+  if (expectations.requiredFactCategories?.length) {
+    const categories = new Set(
+      entities
+        .filter((e) => e.type === "fact")
+        .map((e) => e.data?.category)
+        .filter((category): category is string => Boolean(category)),
+    );
+    const missingCategories = expectations.requiredFactCategories.filter(
+      (category) => !categories.has(category),
+    );
+    const categoriesPassed = missingCategories.length === 0;
+    results.push({
+      grader: "required-fact-categories",
+      passed: categoriesPassed,
+      score: categoriesPassed ? 1 : 0,
+      message: categoriesPassed
+        ? "All required fact categories are present"
+        : `Missing fact categories: ${missingCategories.join(", ")}`,
+    });
+  }
+
+  // 6. distinct-fact-categories: ensure adequate category diversity for Phase 1
+  if (expectations.minDistinctFactCategories != null) {
+    const categoryCount = new Set(
+      entities
+        .filter((e) => e.type === "fact")
+        .map((e) => e.data?.category)
+        .filter((category): category is string => Boolean(category)),
+    ).size;
+    const distinctPassed =
+      categoryCount >= expectations.minDistinctFactCategories;
+    results.push({
+      grader: "distinct-fact-categories",
+      passed: distinctPassed,
+      score: distinctPassed ? 1 : 0,
+      message: distinctPassed
+        ? `Observed ${categoryCount} distinct fact categories`
+        : `Observed ${categoryCount} distinct fact categories, expected at least ${expectations.minDistinctFactCategories}`,
+    });
+  }
+
+  // 7. allowed-relationship-types: every relationship.type is permitted for the phase
+  if (expectations.allowedRelationshipTypes?.length) {
+    const invalidRelationshipTypes = relationships
+      .map((r) => r.type ?? "(missing)")
+      .filter(
+        (type) =>
+          !expectations.allowedRelationshipTypes!.includes(
+            type as (typeof expectations.allowedRelationshipTypes)[number],
+          ),
+      );
+    const relationshipTypesPassed = invalidRelationshipTypes.length === 0;
+    results.push({
+      grader: "allowed-relationship-types",
+      passed: relationshipTypesPassed,
+      score: relationshipTypesPassed ? 1 : 0,
+      message: relationshipTypesPassed
+        ? "All relationship types are allowed"
+        : `Invalid relationship types: ${invalidRelationshipTypes.join(", ")}`,
+    });
+  }
+
+  // 8. required-relationship-types: expected relationship types are present
+  if (expectations.requiredRelationshipTypes?.length) {
+    const relationshipTypes = new Set(
+      relationships
+        .map((r) => r.type)
+        .filter((type): type is string => Boolean(type)),
+    );
+    const missingRelationshipTypes = expectations.requiredRelationshipTypes.filter(
+      (type) => !relationshipTypes.has(type),
+    );
+    const requiredRelationshipTypesPassed =
+      missingRelationshipTypes.length === 0;
+    results.push({
+      grader: "required-relationship-types",
+      passed: requiredRelationshipTypesPassed,
+      score: requiredRelationshipTypesPassed ? 1 : 0,
+      message: requiredRelationshipTypesPassed
+        ? "All required relationship types are present"
+        : `Missing relationship types: ${missingRelationshipTypes.join(", ")}`,
+    });
+  }
+
+  // 9. relationship-refs: every relationship fromEntityId/toEntityId resolves to an entity ref
   const entityRefs = new Set(entities.map((e) => e.ref).filter(Boolean));
   const danglingRefs = relationships.flatMap((r) => {
     const dangling: string[] = [];

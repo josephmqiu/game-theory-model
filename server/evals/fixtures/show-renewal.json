@@ -4,9 +4,15 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 15],
+      "entityCountRange": [4, 10],
+      "requiredFactCategories": ["economic", "position", "impact"],
+      "minDistinctFactCategories": 3,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredPatterns": ["subscriber|viewership|ratings", "renewal", "competitor|competition"],
       "rubrics": [
-        "Facts should cover the cost-benefit dynamics, subscriber impact, and competitive positioning without expanding into general media industry trends"
+        "Facts should cover the cost-benefit dynamics that drive the renewal choice.",
+        "Facts should include subscriber or audience impact and the competitive position of the service.",
+        "Facts should avoid broad media-industry commentary that does not change the decision."
       ]
     }
   }

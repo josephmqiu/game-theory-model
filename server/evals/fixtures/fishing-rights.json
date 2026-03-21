@@ -4,9 +4,15 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 15],
+      "entityCountRange": [4, 10],
+      "requiredFactCategories": ["position", "economic", "rule", "impact"],
+      "minDistinctFactCategories": 3,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredPatterns": ["treaty|quota", "enforcement", "sustainability"],
       "rubrics": [
-        "Facts should cover the bilateral negotiation over shared resources, enforcement mechanisms, and sustainability concerns without expanding into broader ocean governance"
+        "Facts should cover the bilateral negotiation over the shared resource itself.",
+        "Facts should include enforcement and sustainability concerns, not just a generic resource dispute.",
+        "Facts should avoid drifting into broader ocean-governance commentary."
       ]
     }
   }

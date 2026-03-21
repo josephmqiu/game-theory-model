@@ -18,3 +18,10 @@ dist-electron/
 scripts/figma-*
 .gstack/
 server/evals/results/
+
+# Internal development docs
+CLAUDE.md
+AGENTS.md
+DESIGN.md
+TODOS.md
+docs/

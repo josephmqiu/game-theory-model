@@ -18,6 +18,7 @@ export function parseArgs(): {
   chain: boolean;
   provider?: string;
   model?: string;
+  graderModel?: string;
 } {
   const args = process.argv.slice(2);
   const parsed: Record<string, string> = {};
@@ -48,6 +49,7 @@ export function parseArgs(): {
     chain,
     provider: parsed.provider,
     model: parsed.model,
+    graderModel: parsed["grader-model"],
   };
 }
 
@@ -138,6 +140,7 @@ async function main() {
     chain: args.chain,
     provider: args.provider,
     model: args.model,
+    graderModel: args.graderModel,
   });
 
   for (const report of reports) {

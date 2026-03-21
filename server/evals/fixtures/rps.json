@@ -4,10 +4,24 @@
   "complexityTier": "trivial",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [2, 8],
-      "forbiddenPatterns": ["lizard", "evolutionary", "biological"],
+      "entityCountRange": [2, 5],
+      "requiredFactCategories": ["rule"],
+      "minDistinctFactCategories": 1,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredPatterns": ["rock", "paper", "scissors"],
+      "forbiddenPatterns": [
+        "lizard",
+        "spock",
+        "evolutionary",
+        "biological",
+        "behavioral psychology",
+        "referee",
+        "cheating"
+      ],
       "rubrics": [
-        "Facts should describe the game rules and known solution, not tangential research areas like evolutionary biology or behavioral psychology experiments"
+        "Facts should describe the rules, the cyclic win-loss structure, and the standard mixed-strategy equilibrium.",
+        "Facts should stay focused on the abstract game and not introduce variants, extra actors, or behavioral detours.",
+        "Facts should remain compact and proportional to a solved toy game."
       ]
     },
     "player-identification": {

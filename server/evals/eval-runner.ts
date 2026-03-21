@@ -4,6 +4,8 @@ import type { MethodologyPhase } from "../../shared/types/methodology";
 import { runCodeGraders } from "./code-graders";
 import { runModelGraders } from "./model-graders";
 
+type RunPhaseImpl = typeof import("../services/analysis-service").runPhase;
+
 export interface EvalOptions {
   fixtures: EvalFixture[];
   phases?: MethodologyPhase[];
@@ -11,8 +13,10 @@ export interface EvalOptions {
   trials?: number;
   provider?: string;
   model?: string;
+  graderModel?: string; // model for rubric grading (default: opus)
   fast?: boolean; // skip model graders
   chain?: boolean; // feed phase output as prior context to next phase
+  runPhaseImpl?: RunPhaseImpl;
 }
 
 export async function runEval(
@@ -26,9 +30,12 @@ export async function runEval(
     model,
     fast = false,
     chain = false,
+    graderModel,
   } = options;
 
-  const { runPhase } = await import("../services/analysis-service");
+  const runPhase =
+    options.runPhaseImpl ??
+    (await import("../services/analysis-service")).runPhase;
   const reports: PhaseEvalReport[] = [];
 
   for (const fixture of fixtures) {
@@ -82,7 +89,7 @@ export async function runEval(
                 result.entities,
                 phase,
                 expectations.rubrics,
-                { provider, model },
+                { model: graderModel },
               );
 
           const allGraders = [...codeResults, ...modelResults];

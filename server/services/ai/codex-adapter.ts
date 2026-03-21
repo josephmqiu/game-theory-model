@@ -8,14 +8,8 @@ import { serverLog, serverWarn } from "../../utils/ai-logger";
 import { resolveMcpServerScript } from "../../utils/mcp-server-manager";
 import type { ChatEvent } from "../../../shared/types/events";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
-import {
-  CODEX_MCP_SERVER_NAME,
-  installMcpServer,
-} from "./codex-config";
-import {
-  ANALYSIS_TOOL_NAMES,
-  CHAT_TOOL_NAMES,
-} from "./tool-surfaces";
+import { CODEX_MCP_SERVER_NAME, installMcpServer } from "./codex-config";
+import { ANALYSIS_TOOL_NAMES, CHAT_TOOL_NAMES } from "./tool-surfaces";
 
 // ── Types ──
 
@@ -198,8 +192,8 @@ function normalizeAnalysisError(error: unknown): Error {
     return new Error("Aborted");
   }
   if (
-    message.startsWith("Codex turn failed:")
-    || message.startsWith("Failed to restore chat MCP config:")
+    message.startsWith("Codex turn failed:") ||
+    message.startsWith("Failed to restore chat MCP config:")
   ) {
     return error instanceof Error ? error : new Error(message);
   }
@@ -308,6 +302,10 @@ function handleIncomingLine(conn: AppServerConnection, line: string): void {
 const ANALYSIS_TIMEOUT_MS = analysisRuntimeConfig.codex.analysisTimeoutMs;
 
 function resolveMcpServerCommand(): string {
+  // In Electron, process.execPath is the Electron binary (GUI app), not a
+  // Node.js runtime. Codex needs a real Node/Bun binary to spawn the MCP
+  // server subprocess. Fall back to "node" (on PATH) in Electron production.
+  if (process.env.ELECTRON_RESOURCES_PATH) return "node";
   return process.release?.name === "node" ? process.execPath : "node";
 }
 
@@ -345,34 +343,95 @@ async function ensureConfiguredMcpServerAvailable(
   toolNames: readonly string[],
   runId?: string,
 ): Promise<void> {
-  const result = await sendRequest(conn, "mcpServerStatus/list", {
-    limit: 100,
-  });
-  const data = asRecord(result)?.data;
-  if (!Array.isArray(data)) {
-    throw new Error("App-server returned an invalid MCP status payload");
-  }
+  // Retry with backoff: config/mcpServer/reload may return before Codex
+  // finishes initializing the MCP subprocess (initialize + tools/list).
+  const MAX_ATTEMPTS = 5;
+  const RETRY_DELAYS = [0, 300, 600, 1200, 2400];
 
-  const target = data
-    .map((entry) => asRecord(entry))
-    .find((entry) => entry?.name === CODEX_MCP_SERVER_NAME);
+  let lastError: Error | null = null;
 
-  if (!target) {
-    throw new Error(`MCP server "${CODEX_MCP_SERVER_NAME}" is not loaded`);
-  }
-
-  const availableTools = Object.keys(asRecord(target.tools) ?? {});
-  for (const toolName of toolNames) {
-    if (!availableTools.includes(toolName)) {
-      throw new Error(
-        `MCP server "${CODEX_MCP_SERVER_NAME}" is missing tool "${toolName}"`,
-      );
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]));
     }
+
+    // Wrap entire check in try-catch: sendRequest can reject with a JSON-RPC
+    // error during MCP server restart, and the response shape may be transient.
+    let result: unknown;
+    try {
+      result = await sendRequest(conn, "mcpServerStatus/list", {
+        limit: 100,
+      });
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      serverLog(runId, "codex-adapter", "mcp-status-retry", {
+        attempt: attempt + 1,
+        reason: "sendRequest rejected",
+        error: lastError.message,
+      });
+      continue;
+    }
+
+    const data = asRecord(result)?.data;
+    if (!Array.isArray(data)) {
+      lastError = new Error(
+        `App-server returned non-array MCP status (got ${typeof data})`,
+      );
+      if (attempt < MAX_ATTEMPTS - 1) {
+        serverLog(runId, "codex-adapter", "mcp-status-retry", {
+          attempt: attempt + 1,
+          reason: "invalid payload shape",
+          dataType: typeof data,
+        });
+        continue;
+      }
+      throw lastError;
+    }
+
+    const target = data
+      .map((entry) => asRecord(entry))
+      .find((entry) => entry?.name === CODEX_MCP_SERVER_NAME);
+
+    if (!target) {
+      if (attempt < MAX_ATTEMPTS - 1) {
+        serverLog(runId, "codex-adapter", "mcp-status-retry", {
+          attempt: attempt + 1,
+          reason: "server not loaded",
+          serverNames: data.map((e) => asRecord(e)?.name).filter(Boolean),
+        });
+        continue;
+      }
+      throw new Error(`MCP server "${CODEX_MCP_SERVER_NAME}" is not loaded`);
+    }
+
+    const availableTools = Object.keys(asRecord(target.tools) ?? {});
+    const missing = toolNames.filter((t) => !availableTools.includes(t));
+
+    if (missing.length === 0) {
+      serverLog(runId, "codex-adapter", "mcp-status-ready", {
+        toolNames: availableTools,
+        attempts: attempt + 1,
+      });
+      return;
+    }
+
+    if (attempt < MAX_ATTEMPTS - 1) {
+      serverLog(runId, "codex-adapter", "mcp-status-retry", {
+        attempt: attempt + 1,
+        reason: "missing tools",
+        missing,
+        available: availableTools,
+      });
+      continue;
+    }
+
+    throw new Error(
+      `MCP server "${CODEX_MCP_SERVER_NAME}" is missing tool "${missing[0]}"`,
+    );
   }
 
-  serverLog(runId, "codex-adapter", "mcp-status-ready", {
-    toolNames: availableTools,
-  });
+  // Should not reach here, but guard against it
+  throw lastError ?? new Error("MCP status check exhausted retries");
 }
 
 // ── App-server lifecycle ──
@@ -503,8 +562,7 @@ export async function stopAppServer(runId?: string): Promise<void> {
 // ── Chat profile ──
 
 const CHAT_TIMEOUT_MS = analysisRuntimeConfig.codex.chatTimeoutMs;
-const MAX_TOOL_CALLS_PER_TURN =
-  analysisRuntimeConfig.codex.maxToolCallsPerTurn;
+const MAX_TOOL_CALLS_PER_TURN = analysisRuntimeConfig.codex.maxToolCallsPerTurn;
 
 // Approval notification methods that require a response
 const MCP_TOOL_APPROVAL = "item/tool/requestUserInput";
@@ -623,7 +681,9 @@ export async function* streamChat(
           threadId,
         });
         if (turnId) {
-          sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(() => {});
+          sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(
+            () => {},
+          );
         }
         turnError = `Turn interrupted: exceeded ${MAX_TOOL_CALLS_PER_TURN} tool calls`;
       }
@@ -728,7 +788,9 @@ export async function* streamChat(
     if (signal.aborted) {
       aborted = true;
       if (turnId) {
-        sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(() => {});
+        sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(
+          () => {},
+        );
       }
     } else {
       signal.addEventListener("abort", onAbort, { once: true });
@@ -752,7 +814,9 @@ export async function* streamChat(
           threadId,
         });
         if (turnId) {
-          await sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(() => {});
+          await sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(
+            () => {},
+          );
         }
         yield {
           type: "error",
@@ -921,17 +985,18 @@ export async function runAnalysisPhase<T = unknown>(
         completionErrorDetails = errorDetails;
         completed = true;
         completionError =
-          errorDetails.message
-          ?? completionError
-          ?? (
-            turnFailureStatus && turnFailureStatus !== "completed"
-              ? buildCodexTurnFailureMessage("Turn completed with non-success status", {
+          errorDetails.message ??
+          completionError ??
+          (turnFailureStatus && turnFailureStatus !== "completed"
+            ? buildCodexTurnFailureMessage(
+                "Turn completed with non-success status",
+                {
                   status: turnFailureStatus,
                   additionalDetails: errorDetails.additionalDetails,
                   codexErrorInfo: errorDetails.codexErrorInfo,
-                })
-              : null
-          );
+                },
+              )
+            : null);
         if (result === undefined) {
           result = params.structuredOutput ?? params.content ?? params.result;
         }
@@ -995,8 +1060,7 @@ export async function runAnalysisPhase<T = unknown>(
             {
               id: approvalId,
               approved: false,
-              reason:
-                "Analysis mode only permits read-only MCP tool access",
+              reason: "Analysis mode only permits read-only MCP tool access",
             },
           ).catch(() => {});
         }
@@ -1060,7 +1124,10 @@ export async function runAnalysisPhase<T = unknown>(
           throw new Error("Analysis phase timed out");
         }
         await new Promise((resolve) =>
-          setTimeout(resolve, analysisRuntimeConfig.codex.analysisPollIntervalMs),
+          setTimeout(
+            resolve,
+            analysisRuntimeConfig.codex.analysisPollIntervalMs,
+          ),
         );
       }
 
@@ -1073,9 +1140,9 @@ export async function runAnalysisPhase<T = unknown>(
         const additionalDetails =
           (completionErrorDetails as CodexTurnErrorDetails | null)
             ?.additionalDetails ?? null;
-        const codexErrorInfo =
-          (completionErrorDetails as CodexTurnErrorDetails | null)
-            ?.codexErrorInfo;
+        const codexErrorInfo = (
+          completionErrorDetails as CodexTurnErrorDetails | null
+        )?.codexErrorInfo;
         if (errorMessage.startsWith("Codex turn failed:")) {
           throw new Error(errorMessage);
         }

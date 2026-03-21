@@ -37,6 +37,18 @@ describe("editor layout", () => {
     );
   });
 
+  it("derives entity overlay position from live viewport state", () => {
+    const source = readFileSync(
+      join(process.cwd(), "src/components/editor/editor-layout.tsx"),
+      "utf8",
+    );
+
+    expect(source).toContain("useCanvasStore");
+    expect(source).toContain("sceneToScreen");
+    expect(source).toContain("selectedEntityScreenPosition");
+    expect(source).not.toContain("setOverlayPosition");
+  });
+
   it("keeps the editor route and landing page analysis-focused", () => {
     const landingLocaleSource = readFileSync(englishLocalePath, "utf8");
     const landingSource = readFileSync(landingPath, "utf8");

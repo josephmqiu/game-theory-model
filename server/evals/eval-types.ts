@@ -1,5 +1,6 @@
 import type { MethodologyPhase } from "../../shared/types/methodology";
 import type { AnalysisEffortLevel } from "../../shared/types/analysis-runtime";
+import type { FactCategory, RelationshipType } from "../../src/types/entity";
 
 export interface EvalFixture {
   name: string;
@@ -12,6 +13,10 @@ export interface PhaseExpectations {
   entityCountRange: [min: number, max: number];
   forbiddenPatterns?: string[];
   requiredPatterns?: string[];
+  requiredFactCategories?: FactCategory[];
+  minDistinctFactCategories?: number;
+  allowedRelationshipTypes?: RelationshipType[];
+  requiredRelationshipTypes?: RelationshipType[];
   rubrics?: string[];
 }
 
@@ -71,3 +76,18 @@ export const ALLOWED_ENTITY_TYPES: Record<string, string[]> = {
   scenarios: ["scenario", "central-thesis"],
   "meta-check": ["meta-check"],
 };
+
+export const ALLOWED_FACT_CATEGORIES: FactCategory[] = [
+  "capability",
+  "economic",
+  "position",
+  "impact",
+  "action",
+  "rule",
+];
+
+export const ALLOWED_PHASE_1_RELATIONSHIP_TYPES: RelationshipType[] = [
+  "supports",
+  "contradicts",
+  "precedes",
+];

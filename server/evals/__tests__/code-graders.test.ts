@@ -124,4 +124,176 @@ describe("runCodeGraders", () => {
     expect(forbiddenResult?.passed).toBe(false);
     expect(forbiddenResult?.message).toContain("[invalid regex:");
   });
+
+  it("fails when required fact categories are missing", () => {
+    const entities = [
+      {
+        type: "fact",
+        ref: "fact-1",
+        data: { category: "action", content: "A move happened" },
+      },
+      {
+        type: "fact",
+        ref: "fact-2",
+        data: { category: "economic", content: "Costs changed" },
+      },
+    ];
+    const results = runCodeGraders(
+      entities,
+      [],
+      "situational-grounding",
+      {
+        entityCountRange: [2, 6],
+        requiredFactCategories: ["action", "rule", "position"],
+      },
+    );
+    const categoryResult = results.find(
+      (r) => r.grader === "required-fact-categories",
+    );
+    expect(categoryResult?.passed).toBe(false);
+    expect(categoryResult?.message).toContain("rule");
+    expect(categoryResult?.message).toContain("position");
+  });
+
+  it("fails when fact category diversity is too low", () => {
+    const entities = [
+      {
+        type: "fact",
+        ref: "fact-1",
+        data: { category: "rule", content: "Rule one" },
+      },
+      {
+        type: "fact",
+        ref: "fact-2",
+        data: { category: "rule", content: "Rule two" },
+      },
+      {
+        type: "fact",
+        ref: "fact-3",
+        data: { category: "action", content: "Action" },
+      },
+    ];
+    const results = runCodeGraders(
+      entities,
+      [],
+      "situational-grounding",
+      {
+        entityCountRange: [2, 6],
+        minDistinctFactCategories: 3,
+      },
+    );
+    const distinctResult = results.find(
+      (r) => r.grader === "distinct-fact-categories",
+    );
+    expect(distinctResult?.passed).toBe(false);
+  });
+
+  it("fails when relationship types fall outside the allowed Phase 1 set", () => {
+    const entities = [
+      { type: "fact", ref: "fact-1", data: { category: "action" } },
+      { type: "fact", ref: "fact-2", data: { category: "rule" } },
+    ];
+    const relationships = [
+      {
+        id: "rel-1",
+        type: "supports",
+        fromEntityId: "fact-1",
+        toEntityId: "fact-2",
+      },
+      {
+        id: "rel-2",
+        type: "depends-on",
+        fromEntityId: "fact-2",
+        toEntityId: "fact-1",
+      },
+    ];
+    const results = runCodeGraders(
+      entities,
+      relationships,
+      "situational-grounding",
+      {
+        entityCountRange: [2, 6],
+        allowedRelationshipTypes: ["supports", "contradicts", "precedes"],
+      },
+    );
+    const relationshipTypeResult = results.find(
+      (r) => r.grader === "allowed-relationship-types",
+    );
+    expect(relationshipTypeResult?.passed).toBe(false);
+    expect(relationshipTypeResult?.message).toContain("depends-on");
+  });
+
+  it("fails when a required relationship type is missing", () => {
+    const entities = [
+      { type: "fact", ref: "fact-1", data: { category: "action" } },
+      { type: "fact", ref: "fact-2", data: { category: "action" } },
+    ];
+    const relationships = [
+      {
+        id: "rel-1",
+        type: "supports",
+        fromEntityId: "fact-1",
+        toEntityId: "fact-2",
+      },
+    ];
+    const results = runCodeGraders(
+      entities,
+      relationships,
+      "situational-grounding",
+      {
+        entityCountRange: [2, 6],
+        requiredRelationshipTypes: ["precedes"],
+      },
+    );
+    const requiredRelationshipTypeResult = results.find(
+      (r) => r.grader === "required-relationship-types",
+    );
+    expect(requiredRelationshipTypeResult?.passed).toBe(false);
+    expect(requiredRelationshipTypeResult?.message).toContain("precedes");
+  });
+
+  it("catches rps-style Phase 1 drift with forbidden patterns and overproduction", () => {
+    const entities = [
+      {
+        type: "fact",
+        ref: "fact-1",
+        data: { category: "rule", content: "Rock beats scissors" },
+      },
+      {
+        type: "fact",
+        ref: "fact-2",
+        data: { category: "rule", content: "Paper beats rock" },
+      },
+      {
+        type: "fact",
+        ref: "fact-3",
+        data: { category: "rule", content: "Scissors beats paper" },
+      },
+      {
+        type: "fact",
+        ref: "fact-4",
+        data: { category: "impact", content: "Lizard-Spock variants exist" },
+      },
+      {
+        type: "fact",
+        ref: "fact-5",
+        data: { category: "impact", content: "Evolutionary biology studies exist" },
+      },
+    ];
+    const results = runCodeGraders(
+      entities,
+      [],
+      "situational-grounding",
+      {
+        entityCountRange: [3, 4],
+        forbiddenPatterns: ["lizard", "evolutionary"],
+      },
+    );
+    expect(results.find((r) => r.grader === "entity-count")?.passed).toBe(
+      false,
+    );
+    expect(
+      results.find((r) => r.grader === "forbidden-pattern")?.passed,
+    ).toBe(false);
+  });
 });

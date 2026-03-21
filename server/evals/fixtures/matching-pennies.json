@@ -4,9 +4,15 @@
   "complexityTier": "trivial",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [2, 8],
+      "entityCountRange": [2, 5],
+      "requiredFactCategories": ["rule"],
+      "minDistinctFactCategories": 1,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "forbiddenPatterns": ["real-world analogy", "behavioral experiment", "psychology"],
       "rubrics": [
-        "Facts should describe the game rules and mixed-strategy equilibrium concisely without inventing real-world analogies"
+        "Facts should describe the head-to-head game rules and the mixed-strategy equilibrium directly.",
+        "Facts should avoid turning the toy game into a real-world analogy or research vignette.",
+        "Facts should stay small and bounded rather than adding decorative context."
       ]
     }
   }

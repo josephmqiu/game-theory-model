@@ -4,14 +4,15 @@
   "complexityTier": "trivial",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [2, 8],
-      "forbiddenPatterns": [
-        "evolutionary",
-        "biological",
-        "population dynamics"
-      ],
+      "entityCountRange": [2, 5],
+      "requiredFactCategories": ["rule"],
+      "minDistinctFactCategories": 1,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "forbiddenPatterns": ["evolutionary", "biological", "population dynamics", "iterated", "repeated"],
       "rubrics": [
-        "Facts should describe the game structure and known solution, not tangential extensions like iterated or evolutionary variants"
+        "Facts should describe the one-shot prisoner's dilemma structure and its known solution.",
+        "Facts should not drift into evolutionary, repeated, or population-level variants.",
+        "Facts should stay compact and not manufacture extra strategic context."
       ]
     }
   }

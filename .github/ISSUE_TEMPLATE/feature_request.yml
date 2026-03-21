@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Have an idea to make OpenPencil better? We'd love to hear it!
+        Have an idea to make Game Theory Analyzer better? We'd love to hear it!
 
   - type: textarea
     id: problem

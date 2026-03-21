@@ -1,10 +1,20 @@
 import type { GraderResult } from "./eval-types";
 
+type StreamChatImpl = (
+  userPrompt: string,
+  systemPrompt: string,
+  model: string,
+) => AsyncIterable<{ type: string; content?: string }>;
+
 export async function runModelGraders(
   entities: unknown[],
   phase: string,
   rubrics: string[] | undefined,
-  options?: { provider?: string; model?: string },
+  options?: {
+    provider?: string;
+    model?: string;
+    streamChatImpl?: StreamChatImpl;
+  },
 ): Promise<GraderResult[]> {
   if (!rubrics?.length) return [];
 
@@ -34,9 +44,15 @@ async function gradeWithRubric(
   entities: unknown[],
   phase: string,
   rubric: string,
-  options?: { provider?: string; model?: string },
+  options?: {
+    provider?: string;
+    model?: string;
+    streamChatImpl?: StreamChatImpl;
+  },
 ): Promise<number> {
-  const adapter = await import("../services/ai/claude-adapter");
+  const streamChat =
+    options?.streamChatImpl ??
+    (await import("../services/ai/claude-adapter")).streamChat;
 
   const systemPrompt =
     "You are a strict evaluator of AI-generated game theory analysis. " +
@@ -55,16 +71,12 @@ async function gradeWithRubric(
     "Score 0.0 (criterion fully violated) to 1.0 (criterion fully met).",
   ].join("\n");
 
-  const model = options?.model ?? "claude-sonnet-4-20250514";
+  const model = options?.model ?? "claude-opus-4-20250514";
 
   // streamChat is AsyncGenerator<ChatEvent>
   // ChatEvent = { type: "text_delta"; content: string } | { type: "turn_complete" } | ...
   let responseText = "";
-  for await (const event of adapter.streamChat(
-    userPrompt,
-    systemPrompt,
-    model,
-  )) {
+  for await (const event of streamChat(userPrompt, systemPrompt, model)) {
     if (event.type === "text_delta") {
       responseText += event.content;
     }

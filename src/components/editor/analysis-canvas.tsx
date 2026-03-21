@@ -3,9 +3,6 @@ import { loadCanvasKit } from "@/canvas/skia/skia-init";
 import { SkiaEngine, screenToScene } from "@/canvas/skia/skia-engine";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { entityToRenderNode } from "@/services/entity/entity-to-pennode";
-import { getCanvasBackground } from "@/canvas/canvas-constants";
-import { parseColor } from "@/canvas/skia/skia-paint-utils";
-import { viewportMatrix } from "@/canvas/skia/skia-viewport";
 import type { AnalysisEntity } from "@/types/entity";
 import type { MethodologyPhase } from "@/types/methodology";
 
@@ -134,67 +131,14 @@ export default function AnalysisCanvas({
       (r) => visibleIds.has(r.fromEntityId) && visibleIds.has(r.toEntityId),
     );
 
-    // Highlight search results by adding glow (handled via custom render)
-    const highlightSet = new Set(searchHighlight);
-
-    // Store render nodes on the engine for hit testing
+    // Store render data on the engine — the render loop handles drawing
     engine.renderNodes = renderNodes;
     engine.spatialIndex.rebuild(renderNodes);
+    engine.entityMap.clear();
+    for (const e of visibleEntities) engine.entityMap.set(e.id, e);
+    engine.entityRelationships = visibleRelationships;
+    engine.searchHighlightIds = new Set(searchHighlight);
 
-    // Custom render: draw the entity graph
-    const canvas = engine.surface!.getCanvas();
-    const ck = engine.ck;
-    const dpr = window.devicePixelRatio || 1;
-
-    // Clear
-    const bgColor = getCanvasBackground();
-    canvas.clear(parseColor(ck, bgColor));
-
-    // Apply viewport transform
-    canvas.save();
-    canvas.scale(dpr, dpr);
-    canvas.concat(
-      viewportMatrix({
-        zoom: engine.zoom,
-        panX: engine.panX,
-        panY: engine.panY,
-      }),
-    );
-
-    // Render entity graph
-    engine.renderEntityGraph(
-      canvas,
-      renderNodes,
-      visibleRelationships,
-      visibleEntities,
-    );
-
-    // Draw search highlight rings
-    if (highlightSet.size > 0) {
-      for (const rn of renderNodes) {
-        if (!highlightSet.has(rn.node.id)) continue;
-        const paint = new ck.Paint();
-        paint.setStyle(ck.PaintStyle.Stroke);
-        paint.setAntiAlias(true);
-        paint.setStrokeWidth(2.5);
-        paint.setColor(parseColor(ck, "#FBBF24"));
-        const rrect = ck.RRectXY(
-          ck.LTRBRect(
-            rn.absX - 3,
-            rn.absY - 3,
-            rn.absX + rn.absW + 3,
-            rn.absY + rn.absH + 3,
-          ),
-          8,
-          8,
-        );
-        canvas.drawRRect(rrect, paint);
-        paint.delete();
-      }
-    }
-
-    canvas.restore();
-    engine.surface!.flush();
     engine.markDirty();
   }, [revision, entities, relationships, layout, phaseFilter, searchHighlight]);
 
@@ -301,11 +245,13 @@ export default function AnalysisCanvas({
         dragRef.current.moved = true;
       }
 
-      useEntityGraphStore.getState().pinEntityPosition(
-        dragRef.current.entityId,
-        dragRef.current.startEntityX + dx,
-        dragRef.current.startEntityY + dy,
-      );
+      useEntityGraphStore
+        .getState()
+        .pinEntityPosition(
+          dragRef.current.entityId,
+          dragRef.current.startEntityX + dx,
+          dragRef.current.startEntityY + dy,
+        );
       return;
     }
 
@@ -339,7 +285,8 @@ export default function AnalysisCanvas({
         };
 
         if (!dragged && hitEntityId) {
-          const hit = entities.find((entity) => entity.id === hitEntityId) ?? null;
+          const hit =
+            entities.find((entity) => entity.id === hitEntityId) ?? null;
           onEntitySelect(hit);
         }
 

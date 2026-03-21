@@ -4,9 +4,16 @@
   "complexityTier": "complex",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [8, 25],
+      "entityCountRange": [8, 20],
+      "requiredFactCategories": ["economic", "position", "rule", "impact", "action"],
+      "minDistinctFactCategories": 4,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredPatterns": ["patent", "public health", "free-rider|free rider", "pharma|pharmaceutical"],
       "rubrics": [
-        "Facts should cover the multi-player dynamics, public health pressure, IP economics, and free-rider incentives with specifics rather than generic corporate ethics framing"
+        "Facts should cover the multi-player dynamics rather than framing the issue as a single corporate choice.",
+        "Facts should include public-health pressure, IP economics, and free-rider incentives with specifics.",
+        "Facts should keep the grounding factual and avoid generic corporate-ethics language.",
+        "Facts should distinguish policy pressure from the companies' own strategic positions."
       ]
     }
   }

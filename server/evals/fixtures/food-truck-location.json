@@ -4,9 +4,15 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 15],
+      "entityCountRange": [4, 8],
+      "requiredFactCategories": ["position", "economic"],
+      "minDistinctFactCategories": 2,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredPatterns": ["location|park", "customer|foot traffic"],
       "rubrics": [
-        "Facts should describe the location choice dynamics and customer distribution without over-formalizing into Hotelling's model theory"
+        "Facts should describe the location-choice dynamics and customer distribution clearly.",
+        "Facts should keep the competitive positioning concrete without over-formalizing into Hotelling's model theory.",
+        "Facts should stay proportional to a one-day parking decision."
       ]
     }
   }

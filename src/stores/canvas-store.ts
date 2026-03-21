@@ -9,7 +9,7 @@ import type { PenNode } from "@/types/pen";
 import { DEFAULT_PAGE_ID } from "@/stores/document-tree-utils";
 import { appStorage } from "@/utils/app-storage";
 
-const PREFS_KEY = "openpencil-canvas-preferences";
+const PREFS_KEY = "game-theory-canvas-preferences";
 
 export type RightPanelTab = "design" | "code";
 

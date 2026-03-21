@@ -4,9 +4,15 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 15],
+      "entityCountRange": [4, 10],
+      "requiredFactCategories": ["position", "rule", "action", "economic"],
+      "minDistinctFactCategories": 3,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredPatterns": ["prosecutor|defense", "plea", "fallback|sentence"],
       "rubrics": [
-        "Facts should cover the negotiation structure, information asymmetry, and fallback positions without expanding into criminal justice reform or legal philosophy"
+        "Facts should cover the negotiation structure and the information asymmetry between prosecutor and defense.",
+        "Facts should include the relevant fallback positions or sentencing stakes.",
+        "Facts should avoid drifting into criminal-justice reform or legal philosophy."
       ]
     }
   }

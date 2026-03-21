@@ -4,9 +4,17 @@
   "complexityTier": "complex",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [8, 25],
+      "entityCountRange": [8, 20],
+      "requiredFactCategories": ["economic", "position", "rule", "action", "capability"],
+      "minDistinctFactCategories": 4,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredRelationshipTypes": ["precedes"],
+      "requiredPatterns": ["OPEC", "quota|production", "capacity|capabilities", "defection|cheat"],
       "rubrics": [
-        "Facts should cover multiple member states, production capacities, market conditions, and defection incentives with specific data points"
+        "Facts should cover multiple member states or blocs rather than treating OPEC as a single actor.",
+        "Facts should include production capacities, market conditions, and defection incentives with specifics.",
+        "Facts should capture the quota-setting sequence when it matters for the analysis.",
+        "Facts should avoid generic oil-market commentary that does not change the strategic picture."
       ]
     }
   }

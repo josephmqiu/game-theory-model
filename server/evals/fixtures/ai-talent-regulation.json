@@ -4,9 +4,16 @@
   "complexityTier": "complex",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [8, 25],
+      "entityCountRange": [8, 18],
+      "requiredFactCategories": ["economic", "position", "rule", "action"],
+      "minDistinctFactCategories": 4,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredPatterns": ["talent", "lobby|lobbying", "regulat|regulation"],
       "rubrics": [
-        "Facts should cover both the talent market competition and the regulatory lobbying as distinct but interacting domains without collapsing them into one"
+        "Facts should keep talent-market competition and regulatory lobbying as distinct but interacting domains.",
+        "Facts should identify the concrete incentives, constraints, and policy signals that shape each domain.",
+        "Facts should avoid collapsing hiring pressure, policy advocacy, and product strategy into one storyline.",
+        "Facts should stay anchored in specific actors or moves rather than generic AI-industry commentary."
       ]
     }
   }

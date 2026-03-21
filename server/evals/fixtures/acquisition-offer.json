@@ -4,9 +4,15 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 15],
+      "entityCountRange": [4, 10],
+      "requiredFactCategories": ["position", "economic", "rule"],
+      "minDistinctFactCategories": 3,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredPatterns": ["valuation|price", "fallback|alternative", "acquisition|offer"],
       "rubrics": [
-        "Facts should cover the bilateral negotiation dynamics, valuation considerations, and alternatives without inventing specific financials"
+        "Facts should separate each side's position from the valuation facts that shape the deal.",
+        "Facts should cover the offer, the outside option, and the bargaining leverage without inventing company-specific numbers.",
+        "Facts should stay on the acquisition decision and not drift into generic startup advice."
       ]
     }
   }

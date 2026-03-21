@@ -4,9 +4,15 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 15],
+      "entityCountRange": [4, 10],
+      "requiredFactCategories": ["economic", "position", "capability"],
+      "minDistinctFactCategories": 3,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredPatterns": ["price|pricing", "cost", "demand"],
       "rubrics": [
-        "Facts should cover the duopoly pricing dynamics, cost structures, and demand characteristics without expanding into general airline industry analysis"
+        "Facts should cover the duopoly pricing dynamic rather than a broad airline-industry survey.",
+        "Facts should identify the relevant cost structure and demand characteristics that shape pricing moves.",
+        "Facts should keep competitor positioning explicit without turning the fixture into a generic market summary."
       ]
     }
   }

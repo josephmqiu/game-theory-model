@@ -3,6 +3,10 @@ import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import type { AnalysisEntity, AnalysisRelationship } from "@/types/entity";
 import type { MethodologyPhase } from "@/types/methodology";
 import { V3_PHASES } from "@/types/methodology";
+import {
+  ENTITY_CARD_LAYOUT,
+  getEntityCardMetrics,
+} from "@/services/entity/entity-card-metrics";
 
 function makeEntity(
   overrides: Partial<AnalysisEntity> & {
@@ -824,9 +828,9 @@ describe("entity-graph-store", () => {
       );
 
       const state = useEntityGraphStore.getState();
-      expect(state.analysis.phases.map((phaseState) => phaseState.phase)).toEqual(
-        V3_PHASES,
-      );
+      expect(
+        state.analysis.phases.map((phaseState) => phaseState.phase),
+      ).toEqual(V3_PHASES);
       expect(
         state.analysis.phases.find(
           (phaseState) => phaseState.phase === "historical-game",
@@ -862,7 +866,11 @@ describe("entity-graph-store", () => {
 
       const state = useEntityGraphStore.getState();
       expect(state.analysis.entities).toEqual([entity]);
-      expect(state.layout["server-e1"]).toEqual({ x: 100, y: 0, pinned: false });
+      expect(state.layout["server-e1"]).toEqual({
+        x: 100,
+        y: 0,
+        pinned: false,
+      });
       expect(state.isDirty).toBe(false);
     });
 
@@ -893,7 +901,12 @@ describe("entity-graph-store", () => {
 
       const state = useEntityGraphStore.getState();
       expect(state.layout.e1).toEqual({ x: 999, y: 555, pinned: true });
-      expect(state.layout.e2).toEqual({ x: 100, y: 84, pinned: false });
+      expect(state.layout.e2).toEqual({
+        x: 100,
+        y:
+          getEntityCardMetrics("fact").height + ENTITY_CARD_LAYOUT.verticalGap,
+        pinned: false,
+      });
     });
 
     it("prunes layout for removed server entities", () => {

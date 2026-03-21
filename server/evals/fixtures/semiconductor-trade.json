@@ -4,9 +4,17 @@
   "complexityTier": "complex",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [8, 25],
+      "entityCountRange": [8, 20],
+      "requiredFactCategories": ["economic", "position", "rule", "action", "capability"],
+      "minDistinctFactCategories": 4,
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredRelationshipTypes": ["precedes"],
+      "requiredPatterns": ["US|United States", "China", "EU|European Union", "export control|export controls", "supply chain"],
       "rubrics": [
-        "Facts should cover the three major blocs, specific export controls, supply chain dependencies, and retaliatory measures with dates and specifics"
+        "Facts should cover the three major blocs and keep their positions distinct.",
+        "Facts should name specific export controls, supply-chain dependencies, and retaliatory measures.",
+        "Facts should include dated developments when the sequence changes the strategic picture.",
+        "Facts should avoid collapsing the topic into generic great-power rivalry or general tech policy."
       ]
     }
   }

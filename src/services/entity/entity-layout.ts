@@ -1,5 +1,9 @@
-import type { AnalysisEntity, EntityType } from "@/types/entity";
+import type { AnalysisEntity } from "@/types/entity";
 import type { MethodologyPhase } from "@/types/methodology";
+import {
+  ENTITY_CARD_LAYOUT,
+  getEntityCardMetrics,
+} from "@/services/entity/entity-card-metrics";
 
 // ── Column x-offsets by methodology phase ──
 
@@ -16,40 +20,6 @@ const PHASE_COLUMN_X: Record<string, number> = {
 };
 
 const DEFAULT_COLUMN_X = 100;
-
-// ── Node height estimates by entity type ──
-
-const ENTITY_HEIGHT: Record<EntityType, number> = {
-  player: 80,
-  game: 80,
-  fact: 60,
-  objective: 50,
-  strategy: 50,
-  payoff: 50,
-  "institutional-rule": 60,
-  "escalation-rung": 50,
-  "interaction-history": 80,
-  "repeated-game-pattern": 60,
-  "trust-assessment": 60,
-  "dynamic-inconsistency": 60,
-  "signaling-effect": 50,
-  "payoff-matrix": 100,
-  "game-tree": 100,
-  "equilibrium-result": 80,
-  "cross-game-constraint-table": 100,
-  "cross-game-effect": 60,
-  "signal-classification": 60,
-  "bargaining-dynamics": 80,
-  "option-value-assessment": 60,
-  "behavioral-overlay": 60,
-  assumption: 50,
-  "eliminated-outcome": 60,
-  scenario: 80,
-  "central-thesis": 100,
-  "meta-check": 100,
-};
-
-const VERTICAL_GAP = 24;
 
 /**
  * Assign spatial positions to entities based on their methodology phase.
@@ -74,8 +44,11 @@ export function layoutEntities(
 
     positions.set(entity.id, { x, y });
 
-    const height = ENTITY_HEIGHT[entity.type] ?? 50;
-    columnCursors.set(entity.phase, y + height + VERTICAL_GAP);
+    const { height } = getEntityCardMetrics(entity.type);
+    columnCursors.set(
+      entity.phase,
+      y + height + ENTITY_CARD_LAYOUT.verticalGap,
+    );
   }
 
   return positions;
