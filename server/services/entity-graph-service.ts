@@ -11,10 +11,13 @@ import type {
   EntitySource,
   RelationshipType,
 } from "../../shared/types/entity";
-import type { MethodologyPhase, PhaseStatus } from "../../shared/types/methodology";
+import type {
+  MethodologyPhase,
+  PhaseStatus,
+} from "../../shared/types/methodology";
 import type { AnalysisMutationEvent } from "../../shared/types/events";
 import { RELATIONSHIP_CATEGORY } from "../../src/types/entity";
-import { V1_PHASES } from "../../src/types/methodology";
+import { V2_PHASES } from "../../src/types/methodology";
 
 // ── Module-level state ──
 
@@ -36,7 +39,7 @@ function createEmptyAnalysis(topic: string): Analysis {
     topic,
     entities: [],
     relationships: [],
-    phases: V1_PHASES.map((phase) => ({
+    phases: V2_PHASES.map((phase) => ({
       phase,
       status: "pending" as const,
       entityIds: [],

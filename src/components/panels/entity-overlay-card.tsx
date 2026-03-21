@@ -19,6 +19,12 @@ import type {
   PayoffData,
   InstitutionalRuleData,
   EscalationRungData,
+  InteractionHistoryData,
+  RepeatedGamePatternData,
+  TrustAssessmentData,
+  DynamicInconsistencyData,
+  SignalingEffectData,
+  AssumptionData,
 } from "@/types/entity";
 
 // ── Props ──
@@ -42,6 +48,12 @@ const ENTITY_TYPE_COLORS: Record<EntityType, string> = {
   payoff: "#FCD34D",
   "institutional-rule": "#A1A1AA",
   "escalation-rung": "#4ADE80",
+  "interaction-history": "#818CF8",
+  "repeated-game-pattern": "#C084FC",
+  "trust-assessment": "#2DD4BF",
+  "dynamic-inconsistency": "#FB923C",
+  "signaling-effect": "#F472B6",
+  assumption: "#E879F9",
 };
 
 const ENTITY_TYPE_LABELS: Record<EntityType, string> = {
@@ -53,6 +65,12 @@ const ENTITY_TYPE_LABELS: Record<EntityType, string> = {
   payoff: "Payoff",
   "institutional-rule": "Rule",
   "escalation-rung": "Escalation",
+  "interaction-history": "History",
+  "repeated-game-pattern": "Pattern",
+  "trust-assessment": "Trust",
+  "dynamic-inconsistency": "Commitment",
+  "signaling-effect": "Signal",
+  assumption: "Assumption",
 };
 
 // ── Confidence dot colors ──
@@ -104,6 +122,24 @@ function getEntityName(entity: AnalysisEntity): string {
       return d.name;
     case "escalation-rung":
       return d.action;
+    case "interaction-history":
+      return d.playerPair.join(" \u2194 ");
+    case "repeated-game-pattern":
+      return d.description.length > 60
+        ? d.description.slice(0, 60) + "\u2026"
+        : d.description;
+    case "trust-assessment":
+      return `${d.playerPair[0]} \u2192 ${d.playerPair[1]}`;
+    case "dynamic-inconsistency":
+      return d.commitment.length > 60
+        ? d.commitment.slice(0, 60) + "\u2026"
+        : d.commitment;
+    case "signaling-effect":
+      return d.signal.length > 60 ? d.signal.slice(0, 60) + "\u2026" : d.signal;
+    case "assumption":
+      return d.description.length > 60
+        ? d.description.slice(0, 60) + "\u2026"
+        : d.description;
   }
 }
 
@@ -207,6 +243,74 @@ function EscalationRungDetails({ data }: { data: EscalationRungData }) {
       <DetailRow label="Reversibility" value={data.reversibility} />
       <DetailRow label="Order" value={String(data.order)} />
       <DetailRow label="Climbed" value={data.climbed ? "Yes" : "No"} />
+    </dl>
+  );
+}
+
+function InteractionHistoryDetails({ data }: { data: InteractionHistoryData }) {
+  return (
+    <dl className="space-y-1.5">
+      <DetailRow label="Timespan" value={data.timespan} />
+      <DetailRow label="Players" value={data.playerPair.join(" \u2194 ")} />
+    </dl>
+  );
+}
+
+function RepeatedGamePatternDetails({
+  data,
+}: {
+  data: RepeatedGamePatternData;
+}) {
+  return (
+    <dl className="space-y-1.5">
+      <DetailRow label="Pattern" value={data.patternType} />
+      <DetailRow label="Description" value={data.description} />
+      <DetailRow label="Evidence" value={data.evidence} />
+    </dl>
+  );
+}
+
+function TrustAssessmentDetails({ data }: { data: TrustAssessmentData }) {
+  return (
+    <dl className="space-y-1.5">
+      <DetailRow label="Trust level" value={data.trustLevel} />
+      <DetailRow label="Direction" value={data.direction} />
+      <DetailRow label="Evidence" value={data.evidence} />
+    </dl>
+  );
+}
+
+function DynamicInconsistencyDetails({
+  data,
+}: {
+  data: DynamicInconsistencyData;
+}) {
+  return (
+    <dl className="space-y-1.5">
+      <DetailRow label="Commitment" value={data.commitment} />
+      <DetailRow label="Institutional form" value={data.institutionalForm} />
+      <DetailRow label="Durability" value={data.durability} />
+    </dl>
+  );
+}
+
+function SignalingEffectDetails({ data }: { data: SignalingEffectData }) {
+  return (
+    <dl className="space-y-1.5">
+      <DetailRow label="Signal" value={data.signal} />
+      <DetailRow label="Observers" value={data.observers.join(", ")} />
+      <DetailRow label="Lesson" value={data.lesson} />
+    </dl>
+  );
+}
+
+function AssumptionDetails({ data }: { data: AssumptionData }) {
+  return (
+    <dl className="space-y-1.5">
+      <DetailRow label="Description" value={data.description} />
+      <DetailRow label="Sensitivity" value={data.sensitivity} />
+      <DetailRow label="Category" value={data.category} />
+      <DetailRow label="Classification" value={data.classification} />
     </dl>
   );
 }
@@ -401,6 +505,86 @@ function EditableEntityData({
           />
         </div>
       );
+    case "interaction-history":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Timespan"
+            value={data.timespan}
+            onChange={(v) => set("timespan", v)}
+          />
+        </div>
+      );
+    case "repeated-game-pattern":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Description"
+            value={data.description}
+            onChange={(v) => set("description", v)}
+          />
+          <EditField
+            label="Evidence"
+            value={data.evidence}
+            onChange={(v) => set("evidence", v)}
+          />
+        </div>
+      );
+    case "trust-assessment":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Direction"
+            value={data.direction}
+            onChange={(v) => set("direction", v)}
+          />
+          <EditField
+            label="Evidence"
+            value={data.evidence}
+            onChange={(v) => set("evidence", v)}
+          />
+        </div>
+      );
+    case "dynamic-inconsistency":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Commitment"
+            value={data.commitment}
+            onChange={(v) => set("commitment", v)}
+          />
+        </div>
+      );
+    case "signaling-effect":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Signal"
+            value={data.signal}
+            onChange={(v) => set("signal", v)}
+          />
+          <EditField
+            label="Lesson"
+            value={data.lesson}
+            onChange={(v) => set("lesson", v)}
+          />
+        </div>
+      );
+    case "assumption":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Description"
+            value={data.description}
+            onChange={(v) => set("description", v)}
+          />
+          <EditField
+            label="Rationale"
+            value={data.rationale}
+            onChange={(v) => set("rationale", v)}
+          />
+        </div>
+      );
   }
 }
 
@@ -422,6 +606,18 @@ function EntityDataSection({ entity }: { entity: AnalysisEntity }) {
       return <InstitutionalRuleDetails data={entity.data} />;
     case "escalation-rung":
       return <EscalationRungDetails data={entity.data} />;
+    case "interaction-history":
+      return <InteractionHistoryDetails data={entity.data} />;
+    case "repeated-game-pattern":
+      return <RepeatedGamePatternDetails data={entity.data} />;
+    case "trust-assessment":
+      return <TrustAssessmentDetails data={entity.data} />;
+    case "dynamic-inconsistency":
+      return <DynamicInconsistencyDetails data={entity.data} />;
+    case "signaling-effect":
+      return <SignalingEffectDetails data={entity.data} />;
+    case "assumption":
+      return <AssumptionDetails data={entity.data} />;
   }
 }
 

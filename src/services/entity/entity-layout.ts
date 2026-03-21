@@ -7,6 +7,8 @@ const PHASE_COLUMN_X: Record<string, number> = {
   "situational-grounding": 100,
   "player-identification": 500,
   "baseline-model": 900,
+  "historical-game": 1300,
+  assumptions: 1700,
 };
 
 const DEFAULT_COLUMN_X = 100;
@@ -22,6 +24,12 @@ const ENTITY_HEIGHT: Record<EntityType, number> = {
   payoff: 50,
   "institutional-rule": 60,
   "escalation-rung": 50,
+  "interaction-history": 80,
+  "repeated-game-pattern": 60,
+  "trust-assessment": 60,
+  "dynamic-inconsistency": 60,
+  "signaling-effect": 50,
+  assumption: 50,
 };
 
 const VERTICAL_GAP = 24;

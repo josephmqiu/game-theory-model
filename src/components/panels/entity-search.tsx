@@ -23,6 +23,12 @@ const ENTITY_TYPE_COLORS: Record<EntityType, string> = {
   payoff: "#FCD34D",
   "institutional-rule": "#A1A1AA",
   "escalation-rung": "#4ADE80",
+  "interaction-history": "#818CF8",
+  "repeated-game-pattern": "#C084FC",
+  "trust-assessment": "#2DD4BF",
+  "dynamic-inconsistency": "#FB923C",
+  "signaling-effect": "#F472B6",
+  assumption: "#E879F9",
 };
 
 const ENTITY_TYPE_LABELS: Record<EntityType, string> = {
@@ -34,6 +40,12 @@ const ENTITY_TYPE_LABELS: Record<EntityType, string> = {
   payoff: "Payoff",
   "institutional-rule": "Rule",
   "escalation-rung": "Esc",
+  "interaction-history": "Hist",
+  "repeated-game-pattern": "Pat",
+  "trust-assessment": "Trust",
+  "dynamic-inconsistency": "Commit",
+  "signaling-effect": "Sig",
+  assumption: "Asmp",
 };
 
 // ── Helpers ──
@@ -58,6 +70,18 @@ function getSearchableText(entity: AnalysisEntity): string {
       return `${d.name} ${d.ruleType} ${d.effectOnStrategies}`;
     case "escalation-rung":
       return `${d.action} ${d.reversibility}`;
+    case "interaction-history":
+      return `${d.playerPair.join(" ")} ${d.timespan}`;
+    case "repeated-game-pattern":
+      return `${d.patternType} ${d.description} ${d.evidence}`;
+    case "trust-assessment":
+      return `${d.playerPair.join(" ")} ${d.trustLevel} ${d.direction} ${d.evidence}`;
+    case "dynamic-inconsistency":
+      return `${d.commitment} ${d.institutionalForm} ${d.durability}`;
+    case "signaling-effect":
+      return `${d.signal} ${d.observers.join(" ")} ${d.lesson}`;
+    case "assumption":
+      return `${d.description} ${d.sensitivity} ${d.category} ${d.classification}`;
   }
 }
 
@@ -89,6 +113,24 @@ function getEntityDisplayName(entity: AnalysisEntity): string {
       return d.name;
     case "escalation-rung":
       return d.action;
+    case "interaction-history":
+      return d.playerPair.join(" \u2194 ");
+    case "repeated-game-pattern":
+      return d.description.length > 50
+        ? d.description.slice(0, 50) + "\u2026"
+        : d.description;
+    case "trust-assessment":
+      return `${d.playerPair[0]} \u2192 ${d.playerPair[1]}`;
+    case "dynamic-inconsistency":
+      return d.commitment.length > 50
+        ? d.commitment.slice(0, 50) + "\u2026"
+        : d.commitment;
+    case "signaling-effect":
+      return d.signal.length > 50 ? d.signal.slice(0, 50) + "\u2026" : d.signal;
+    case "assumption":
+      return d.description.length > 50
+        ? d.description.slice(0, 50) + "\u2026"
+        : d.description;
   }
 }
 

@@ -80,18 +80,20 @@ beforeEach(() => {
 // ── Tests ──
 
 describe("newAnalysis", () => {
-  it("creates empty analysis with V1_PHASES", () => {
+  it("creates empty analysis with V2_PHASES", () => {
     newAnalysis("US-China trade war");
     const a = getAnalysis();
     expect(a.topic).toBe("US-China trade war");
     expect(a.name).toBe("US-China trade war");
     expect(a.entities).toEqual([]);
     expect(a.relationships).toEqual([]);
-    expect(a.phases).toHaveLength(3);
+    expect(a.phases).toHaveLength(5);
     expect(a.phases.map((p) => p.phase)).toEqual([
       "situational-grounding",
       "player-identification",
       "baseline-model",
+      "historical-game",
+      "assumptions",
     ]);
     expect(a.phases.every((p) => p.status === "pending")).toBe(true);
   });

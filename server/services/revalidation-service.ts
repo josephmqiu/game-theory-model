@@ -5,7 +5,7 @@
 
 import type { MethodologyPhase } from "../../shared/types/methodology";
 import type { AnalysisProgressEvent } from "../../shared/types/events";
-import { V1_PHASES, PHASE_NUMBERS } from "../../src/types/methodology";
+import { V2_PHASES, PHASE_NUMBERS } from "../../src/types/methodology";
 import * as entityGraphService from "./entity-graph-service";
 import * as orchestrator from "../agents/analysis-agent";
 import { runPhase } from "./analysis-service";
@@ -90,9 +90,9 @@ function findEarliestStalePhase(staleIds: string[]): MethodologyPhase | null {
  * Get the ordered list of V1 phases starting from a given phase through the end.
  */
 function phasesFrom(startPhase: MethodologyPhase): MethodologyPhase[] {
-  const startIdx = V1_PHASES.indexOf(startPhase);
+  const startIdx = V2_PHASES.indexOf(startPhase);
   if (startIdx === -1) return [];
-  return V1_PHASES.slice(startIdx);
+  return V2_PHASES.slice(startIdx);
 }
 
 // ── Core API ──
@@ -231,7 +231,7 @@ async function executeRevalidation(
     const freshAnalysis = entityGraphService.getAnalysis();
 
     // Build prior context from entities in earlier completed phases
-    const completedPhases = V1_PHASES.slice(0, V1_PHASES.indexOf(p));
+    const completedPhases = V2_PHASES.slice(0, V2_PHASES.indexOf(p));
     const priorEntities = freshAnalysis.entities
       .filter((e) => completedPhases.includes(e.phase))
       .map((e) => ({
@@ -312,7 +312,9 @@ async function executeRevalidation(
         }
 
         if (commitResult.summary.currentPhaseEntityIds.length > 0) {
-          entityGraphService.clearStale(commitResult.summary.currentPhaseEntityIds);
+          entityGraphService.clearStale(
+            commitResult.summary.currentPhaseEntityIds,
+          );
         }
 
         phasesCompleted++;

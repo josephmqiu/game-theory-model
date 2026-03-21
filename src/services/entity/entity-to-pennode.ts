@@ -13,6 +13,12 @@ const ENTITY_SIZE: Record<EntityType, { w: number; h: number }> = {
   payoff: { w: 120, h: 50 },
   "institutional-rule": { w: 140, h: 60 },
   "escalation-rung": { w: 120, h: 50 },
+  "interaction-history": { w: 160, h: 80 },
+  "repeated-game-pattern": { w: 140, h: 60 },
+  "trust-assessment": { w: 140, h: 60 },
+  "dynamic-inconsistency": { w: 140, h: 60 },
+  "signaling-effect": { w: 120, h: 50 },
+  assumption: { w: 120, h: 50 },
 };
 
 // ── Display helpers ──
@@ -59,6 +65,18 @@ function entityMetaLine(entity: AnalysisEntity): string {
       return `rule / ${d.ruleType}`;
     case "escalation-rung":
       return `rung #${d.order}`;
+    case "interaction-history":
+      return `history / ${d.playerPair.join(" \u2194 ")}`;
+    case "repeated-game-pattern":
+      return `pattern / ${d.patternType}`;
+    case "trust-assessment":
+      return `trust / ${d.trustLevel}`;
+    case "dynamic-inconsistency":
+      return `commitment / ${d.durability}`;
+    case "signaling-effect":
+      return `signal`;
+    case "assumption":
+      return `assumption / ${d.sensitivity}`;
   }
 }
 

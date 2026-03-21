@@ -1,13 +1,17 @@
 import { defineEventHandler } from "h3";
-import type { AnalysisStateResponse, RunStatus } from "../../../shared/types/api";
-import { V1_PHASES } from "../../../src/types/methodology";
+import type {
+  AnalysisStateResponse,
+  RunStatus,
+} from "../../../shared/types/api";
+import { V2_PHASES } from "../../../src/types/methodology";
 import * as analysisOrchestrator from "../../agents/analysis-agent";
 import * as entityGraphService from "../../services/entity-graph-service";
 
 function buildIdleRunStatus(): RunStatus {
   const analysis = entityGraphService.getAnalysis();
-  const completed = analysis.phases.filter((phase) => phase.status === "complete")
-    .length;
+  const completed = analysis.phases.filter(
+    (phase) => phase.status === "complete",
+  ).length;
 
   return {
     status: "idle",
@@ -15,7 +19,7 @@ function buildIdleRunStatus(): RunStatus {
     activePhase: null,
     progress: {
       completed,
-      total: V1_PHASES.length,
+      total: V2_PHASES.length,
     },
   };
 }

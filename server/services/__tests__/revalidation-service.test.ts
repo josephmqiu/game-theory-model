@@ -1,7 +1,10 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import type { MethodologyPhase } from "../../../shared/types/methodology";
 import type { AnalysisProgressEvent } from "../../../shared/types/events";
-import type { AnalysisEntity, AnalysisRelationship } from "../../../shared/types/entity";
+import type {
+  AnalysisEntity,
+  AnalysisRelationship,
+} from "../../../shared/types/entity";
 import type { PhaseOutputEntity, PhaseResult } from "../analysis-service";
 
 // ── Mock analysis-service ──
@@ -293,7 +296,9 @@ describe("revalidation-service", () => {
     });
     mockRunPhase
       .mockResolvedValueOnce(makePhaseResult("player-identification"))
-      .mockResolvedValueOnce(makePhaseResult("baseline-model"));
+      .mockResolvedValueOnce(makePhaseResult("baseline-model"))
+      .mockResolvedValueOnce(makePhaseResult("historical-game"))
+      .mockResolvedValueOnce(makePhaseResult("assumptions"));
 
     const result = revalidation.revalidate(["e1", "e2"]);
 
@@ -302,10 +307,12 @@ describe("revalidation-service", () => {
     // Flush microtasks to let async execution complete
     await vi.advanceTimersByTimeAsync(0);
 
-    // Should run from player-identification (earliest) through baseline-model
-    expect(mockRunPhase).toHaveBeenCalledTimes(2);
+    // Should run from player-identification (earliest) through assumptions
+    expect(mockRunPhase).toHaveBeenCalledTimes(4);
     expect(mockRunPhase.mock.calls[0][0]).toBe("player-identification");
     expect(mockRunPhase.mock.calls[1][0]).toBe("baseline-model");
+    expect(mockRunPhase.mock.calls[2][0]).toBe("historical-game");
+    expect(mockRunPhase.mock.calls[3][0]).toBe("assumptions");
   });
 
   // ── 6. revalidate(undefined, phase) re-runs from explicit phase ──
@@ -319,7 +326,10 @@ describe("revalidation-service", () => {
       relationships: [],
       phases: [],
     });
-    mockRunPhase.mockResolvedValueOnce(makePhaseResult("baseline-model"));
+    mockRunPhase
+      .mockResolvedValueOnce(makePhaseResult("baseline-model"))
+      .mockResolvedValueOnce(makePhaseResult("historical-game"))
+      .mockResolvedValueOnce(makePhaseResult("assumptions"));
 
     const result = revalidation.revalidate(undefined, "baseline-model");
 
@@ -328,9 +338,11 @@ describe("revalidation-service", () => {
     // Flush microtasks to let async execution complete
     await vi.advanceTimersByTimeAsync(0);
 
-    // Should only run baseline-model (last phase, nothing after it in V1)
-    expect(mockRunPhase).toHaveBeenCalledTimes(1);
+    // Should run baseline-model through assumptions (3 phases in V2)
+    expect(mockRunPhase).toHaveBeenCalledTimes(3);
     expect(mockRunPhase.mock.calls[0][0]).toBe("baseline-model");
+    expect(mockRunPhase.mock.calls[1][0]).toBe("historical-game");
+    expect(mockRunPhase.mock.calls[2][0]).toBe("assumptions");
   });
 
   // ── 7. Returns runId ──
@@ -354,7 +366,9 @@ describe("revalidation-service", () => {
     mockRunPhase
       .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
       .mockResolvedValueOnce(makePhaseResult("player-identification"))
-      .mockResolvedValueOnce(makePhaseResult("baseline-model"));
+      .mockResolvedValueOnce(makePhaseResult("baseline-model"))
+      .mockResolvedValueOnce(makePhaseResult("historical-game"))
+      .mockResolvedValueOnce(makePhaseResult("assumptions"));
 
     const events: AnalysisProgressEvent[] = [];
     const unsubscribe = revalidation.onProgress((event) => events.push(event));
@@ -366,12 +380,12 @@ describe("revalidation-service", () => {
 
     unsubscribe();
 
-    // Should have phase_started + phase_completed for each of the 3 phases
+    // Should have phase_started + phase_completed for each of the 5 phases
     const started = events.filter((e) => e.type === "phase_started");
     const completed = events.filter((e) => e.type === "phase_completed");
 
-    expect(started).toHaveLength(3);
-    expect(completed).toHaveLength(3);
+    expect(started).toHaveLength(5);
+    expect(completed).toHaveLength(5);
     expect(started[0]).toMatchObject({
       type: "phase_started",
       phase: "situational-grounding",
@@ -509,7 +523,9 @@ describe("revalidation-service", () => {
     mockRunPhase
       .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
       .mockResolvedValueOnce(makePhaseResult("player-identification"))
-      .mockResolvedValueOnce(makePhaseResult("baseline-model"));
+      .mockResolvedValueOnce(makePhaseResult("baseline-model"))
+      .mockResolvedValueOnce(makePhaseResult("historical-game"))
+      .mockResolvedValueOnce(makePhaseResult("assumptions"));
 
     revalidation.revalidate(["e1"]);
 
@@ -517,7 +533,7 @@ describe("revalidation-service", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(mockEntityGraph.removePhaseEntities).not.toHaveBeenCalled();
-    expect(mockCommitPhaseSnapshot).toHaveBeenCalledTimes(3);
+    expect(mockCommitPhaseSnapshot).toHaveBeenCalledTimes(5);
   });
 
   // ── 16. getRevalStatus returns status for tracked runs ──
@@ -534,7 +550,9 @@ describe("revalidation-service", () => {
     mockRunPhase
       .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
       .mockResolvedValueOnce(makePhaseResult("player-identification"))
-      .mockResolvedValueOnce(makePhaseResult("baseline-model"));
+      .mockResolvedValueOnce(makePhaseResult("baseline-model"))
+      .mockResolvedValueOnce(makePhaseResult("historical-game"))
+      .mockResolvedValueOnce(makePhaseResult("assumptions"));
 
     const { runId } = revalidation.revalidate(["e1"]);
 
@@ -550,7 +568,7 @@ describe("revalidation-service", () => {
     const statusAfter = revalidation.getRevalStatus(runId);
     expect(statusAfter).not.toBeNull();
     expect(statusAfter!.status).toBe("completed");
-    expect(statusAfter!.phasesCompleted).toBe(3);
+    expect(statusAfter!.phasesCompleted).toBe(5);
   });
 
   // ── 17. getRevalStatus returns null for unknown runIds ──
@@ -602,7 +620,9 @@ describe("revalidation-service", () => {
     mockRunPhase
       .mockResolvedValueOnce(phaseResult)
       .mockResolvedValueOnce(makePhaseResult("player-identification"))
-      .mockResolvedValueOnce(makePhaseResult("baseline-model"));
+      .mockResolvedValueOnce(makePhaseResult("baseline-model"))
+      .mockResolvedValueOnce(makePhaseResult("historical-game"))
+      .mockResolvedValueOnce(makePhaseResult("assumptions"));
 
     revalidation.revalidate(["e1"]);
     await vi.advanceTimersByTimeAsync(0);

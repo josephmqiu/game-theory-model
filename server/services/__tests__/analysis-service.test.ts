@@ -107,6 +107,147 @@ const VALID_PHASE_3_STRUCTURED = {
   relationships: [],
 };
 
+const VALID_PHASE_4_STRUCTURED = {
+  entities: [
+    {
+      id: null,
+      ref: "history-1",
+      type: "interaction-history",
+      phase: "historical-game",
+      data: {
+        type: "interaction-history",
+        playerPair: ["Country A", "Country B"],
+        moves: [
+          {
+            actor: "Country A",
+            action: "defection",
+            description: "Imposed 10% tariffs on steel",
+            date: "2022-03-01",
+            otherSideAction: "Cooperative trade policy",
+            outcome: "Trade tensions increased",
+            beliefChange: "Country B views A as aggressive",
+          },
+        ],
+        timespan: "2020-2025",
+      },
+      confidence: "high",
+      rationale: "Documented trade history",
+    },
+    {
+      id: null,
+      ref: "pattern-1",
+      type: "repeated-game-pattern",
+      phase: "historical-game",
+      data: {
+        type: "repeated-game-pattern",
+        patternType: "tit-for-tat",
+        description: "Retaliatory tariff escalation",
+        evidence: "Each round of tariffs met with counter-tariffs",
+        frequency: "Every 6 months since 2022",
+      },
+      confidence: "high",
+      rationale: "Clear pattern of retaliation",
+    },
+    {
+      id: null,
+      ref: "trust-1",
+      type: "trust-assessment",
+      phase: "historical-game",
+      data: {
+        type: "trust-assessment",
+        playerPair: ["Country A", "Country B"],
+        trustLevel: "low",
+        direction: "Mutual distrust",
+        evidence: "Repeated defections and broken agreements",
+        implication: "Cooperation unlikely without enforcement",
+      },
+      confidence: "medium",
+      rationale: "Track record of broken commitments",
+    },
+    {
+      id: null,
+      ref: "commitment-1",
+      type: "dynamic-inconsistency",
+      phase: "historical-game",
+      data: {
+        type: "dynamic-inconsistency",
+        commitment: "Free trade agreement",
+        institutionalForm: "treaty-ratified",
+        durability: "fragile",
+        transitionRisk: "New administration may withdraw",
+        timeHorizon: "2-4 years",
+      },
+      confidence: "medium",
+      rationale: "Political transition risk",
+    },
+    {
+      id: null,
+      ref: "signal-1",
+      type: "signaling-effect",
+      phase: "historical-game",
+      data: {
+        type: "signaling-effect",
+        signal: "Country A imposed tariffs despite WTO ruling",
+        observers: ["EU", "Japan", "South Korea"],
+        lesson: "WTO enforcement is weak",
+        reputationEffect: "A seen as unilateral actor",
+      },
+      confidence: "high",
+      rationale: "Major signal to global trade community",
+    },
+  ],
+  relationships: [
+    {
+      id: "rel-h1",
+      type: "derived-from",
+      fromEntityId: "pattern-1",
+      toEntityId: "history-1",
+    },
+  ],
+};
+
+const VALID_PHASE_7_STRUCTURED = {
+  entities: [
+    {
+      id: null,
+      ref: "assumption-1",
+      type: "assumption",
+      phase: "assumptions",
+      data: {
+        type: "assumption",
+        description: "Both players are rational utility maximizers",
+        sensitivity: "critical",
+        category: "rationality",
+        classification: "game-theoretic",
+        correlatedClusterId: "cluster-rationality",
+        rationale: "Foundation of all game-theoretic predictions",
+        dependencies: ["game-1", "player-a"],
+      },
+      confidence: "medium",
+      rationale: "Standard assumption but may not hold under domestic pressure",
+    },
+    {
+      id: null,
+      ref: "assumption-2",
+      type: "assumption",
+      phase: "assumptions",
+      data: {
+        type: "assumption",
+        description: "Steel tariffs are the primary trade friction",
+        sensitivity: "high",
+        category: "structural",
+        classification: "empirical",
+        correlatedClusterId: null,
+        rationale: "Other sectors may also be significant",
+        dependencies: ["fact-1"],
+      },
+      confidence: "high",
+      rationale: "Directly observable from trade data",
+    },
+  ],
+  relationships: [],
+};
+
 // ── Mock adapters ──
 
 const mockClaudeRunAnalysisPhase = vi.fn();
@@ -297,7 +438,7 @@ describe("analysis-service", () => {
 
     it("returns error for unsupported phase", async () => {
       const { runPhase } = await importService();
-      const result = await runPhase("historical-game", "US-China trade war");
+      const result = await runPhase("formal-modeling", "US-China trade war");
 
       expect(result.success).toBe(false);
       expect(result.error).toContain("Unsupported phase");
@@ -381,7 +522,8 @@ describe("analysis-service", () => {
       const objective = result.entities.find((e) => e.type === "objective");
       expect(objective).toBeDefined();
 
-      const [, systemPrompt, , schema] = mockClaudeRunAnalysisPhase.mock.calls[0];
+      const [, systemPrompt, , schema] =
+        mockClaudeRunAnalysisPhase.mock.calls[0];
       expect(systemPrompt).toContain("Phase 2");
       expect(systemPrompt).toContain("Player Identification");
 
@@ -404,6 +546,82 @@ describe("analysis-service", () => {
       const [, systemPrompt] = mockClaudeRunAnalysisPhase.mock.calls[0];
       expect(systemPrompt).toContain("Phase 3");
       expect(systemPrompt).toContain("Baseline Strategic Model");
+    });
+
+    it("works for phase 4 — historical game", async () => {
+      mockClaudeRunAnalysisPhase.mockResolvedValue(VALID_PHASE_4_STRUCTURED);
+
+      const { runPhase } = await importService();
+      const result = await runPhase("historical-game", "US-China trade war");
+
+      expect(result.success).toBe(true);
+      expect(result.entities).toHaveLength(5);
+
+      const history = result.entities.find(
+        (e) => e.type === "interaction-history",
+      );
+      expect(history).toBeDefined();
+      expect(history!.data.type).toBe("interaction-history");
+
+      const pattern = result.entities.find(
+        (e) => e.type === "repeated-game-pattern",
+      );
+      expect(pattern).toBeDefined();
+
+      const trust = result.entities.find((e) => e.type === "trust-assessment");
+      expect(trust).toBeDefined();
+
+      const commitment = result.entities.find(
+        (e) => e.type === "dynamic-inconsistency",
+      );
+      expect(commitment).toBeDefined();
+
+      const signal = result.entities.find((e) => e.type === "signaling-effect");
+      expect(signal).toBeDefined();
+
+      const [, systemPrompt, , schema] =
+        mockClaudeRunAnalysisPhase.mock.calls[0];
+      expect(systemPrompt).toContain("Phase 4");
+      expect(systemPrompt).toContain("Historical Repeated Game");
+
+      // Phase 4 schema uses oneOf for 5 entity types
+      const entityItems = (schema as any).properties.entities.items;
+      expect(entityItems).toHaveProperty("oneOf");
+      expect(entityItems.oneOf).toHaveLength(5);
+    });
+
+    it("works for phase 7 — assumptions", async () => {
+      mockClaudeRunAnalysisPhase.mockResolvedValue(VALID_PHASE_7_STRUCTURED);
+
+      const { runPhase } = await importService();
+      const result = await runPhase("assumptions", "US-China trade war");
+
+      expect(result.success).toBe(true);
+      expect(result.entities).toHaveLength(2);
+
+      const assumption = result.entities.find((e) => e.type === "assumption");
+      expect(assumption).toBeDefined();
+      expect(assumption!.data.type).toBe("assumption");
+
+      const [, systemPrompt, , schema] =
+        mockClaudeRunAnalysisPhase.mock.calls[0];
+      expect(systemPrompt).toContain("Phase 7");
+      expect(systemPrompt).toContain("Assumption");
+
+      // Phase 7 schema uses a single entity type (no oneOf)
+      const entityItems = (schema as any).properties.entities.items;
+      expect(entityItems).not.toHaveProperty("oneOf");
+      expect(entityItems.properties).toHaveProperty("type");
+    });
+
+    it("rejects phase 4 entities in phase 7 slot", async () => {
+      mockClaudeRunAnalysisPhase.mockResolvedValue(VALID_PHASE_4_STRUCTURED);
+
+      const { runPhase } = await importService();
+      const result = await runPhase("assumptions", "US-China trade war");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/Entity 0/);
     });
 
     it("returns validation error for invalid relationship type in structured output", async () => {
@@ -459,7 +677,9 @@ describe("analysis-service", () => {
       expect(system).toContain("Phase 1");
       expect(user).toContain("US-China trade war");
       expect(user).toContain("Use web search");
-      expect(user).toContain("get_entity, query_entities, and query_relationships");
+      expect(user).toContain(
+        "get_entity, query_entities, and query_relationships",
+      );
       expect(user).toContain("request_loopback");
       expect(user).toContain("Return only the final JSON object");
       expect(user).not.toContain("Prior phase");

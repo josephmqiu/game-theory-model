@@ -30,7 +30,13 @@ export type EntityType =
   | "strategy"
   | "payoff"
   | "institutional-rule"
-  | "escalation-rung";
+  | "escalation-rung"
+  | "interaction-history"
+  | "repeated-game-pattern"
+  | "trust-assessment"
+  | "dynamic-inconsistency"
+  | "signaling-effect"
+  | "assumption";
 
 // ── Phase 1: Situational Grounding ──
 
@@ -185,6 +191,111 @@ export const escalationRungDataSchema = z.object({
 });
 export type EscalationRungData = z.infer<typeof escalationRungDataSchema>;
 
+// ── Phase 4: Historical Repeated Game ──
+
+export const interactionHistoryDataSchema = z.object({
+  type: z.literal("interaction-history"),
+  playerPair: z.tuple([z.string(), z.string()]),
+  moves: z.array(
+    z.object({
+      actor: z.string(),
+      action: z.enum([
+        "cooperation",
+        "defection",
+        "punishment",
+        "concession",
+        "delay",
+      ]),
+      description: z.string(),
+      date: z.string(),
+      otherSideAction: z.string(),
+      outcome: z.string(),
+      beliefChange: z.string(),
+    }),
+  ),
+  timespan: z.string(),
+});
+export type InteractionHistoryData = z.infer<
+  typeof interactionHistoryDataSchema
+>;
+
+export const repeatedGamePatternDataSchema = z.object({
+  type: z.literal("repeated-game-pattern"),
+  patternType: z.enum([
+    "tit-for-tat",
+    "grim-trigger",
+    "selective-forgiveness",
+    "dual-track-deception",
+    "adverse-selection",
+    "defection-during-cooperation",
+  ]),
+  description: z.string(),
+  evidence: z.string(),
+  frequency: z.string(),
+});
+export type RepeatedGamePatternData = z.infer<
+  typeof repeatedGamePatternDataSchema
+>;
+
+export const trustAssessmentDataSchema = z.object({
+  type: z.literal("trust-assessment"),
+  playerPair: z.tuple([z.string(), z.string()]),
+  trustLevel: z.enum(["zero", "low", "moderate", "high"]),
+  direction: z.string(),
+  evidence: z.string(),
+  implication: z.string(),
+});
+export type TrustAssessmentData = z.infer<typeof trustAssessmentDataSchema>;
+
+export const dynamicInconsistencyDataSchema = z.object({
+  type: z.literal("dynamic-inconsistency"),
+  commitment: z.string(),
+  institutionalForm: z.enum([
+    "treaty-ratified",
+    "legislation",
+    "executive-order",
+    "executive-discretion",
+    "bureaucratic-lock-in",
+    "informal-agreement",
+  ]),
+  durability: z.enum(["durable", "fragile", "transitional"]),
+  transitionRisk: z.string(),
+  timeHorizon: z.string(),
+});
+export type DynamicInconsistencyData = z.infer<
+  typeof dynamicInconsistencyDataSchema
+>;
+
+export const signalingEffectDataSchema = z.object({
+  type: z.literal("signaling-effect"),
+  signal: z.string(),
+  observers: z.array(z.string()),
+  lesson: z.string(),
+  reputationEffect: z.string(),
+});
+export type SignalingEffectData = z.infer<typeof signalingEffectDataSchema>;
+
+// ── Phase 7: Assumption Extraction ──
+
+export const assumptionDataSchema = z.object({
+  type: z.literal("assumption"),
+  description: z.string(),
+  sensitivity: z.enum(["critical", "high", "medium", "low"]),
+  category: z.enum([
+    "behavioral",
+    "capability",
+    "structural",
+    "institutional",
+    "rationality",
+    "information",
+  ]),
+  classification: z.enum(["game-theoretic", "empirical"]),
+  correlatedClusterId: z.string().nullable(),
+  rationale: z.string().min(1),
+  dependencies: z.array(z.string()),
+});
+export type AssumptionData = z.infer<typeof assumptionDataSchema>;
+
 // ── Entity Data Union ──
 
 export type EntityData =
@@ -195,7 +306,13 @@ export type EntityData =
   | StrategyData
   | PayoffData
   | InstitutionalRuleData
-  | EscalationRungData;
+  | EscalationRungData
+  | InteractionHistoryData
+  | RepeatedGamePatternData
+  | TrustAssessmentData
+  | DynamicInconsistencyData
+  | SignalingEffectData
+  | AssumptionData;
 
 export const entityDataSchema = z.discriminatedUnion("type", [
   factDataSchema,
@@ -206,6 +323,12 @@ export const entityDataSchema = z.discriminatedUnion("type", [
   payoffDataSchema,
   institutionalRuleDataSchema,
   escalationRungDataSchema,
+  interactionHistoryDataSchema,
+  repeatedGamePatternDataSchema,
+  trustAssessmentDataSchema,
+  dynamicInconsistencyDataSchema,
+  signalingEffectDataSchema,
+  assumptionDataSchema,
 ]);
 
 // ── Core Entity ──

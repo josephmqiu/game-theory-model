@@ -11,12 +11,17 @@ import type {
   AnalysisProgressEvent,
   PhaseSummary,
 } from "../../shared/types/events";
-import { V1_PHASES } from "../../src/types/methodology";
+import { V2_PHASES } from "../../src/types/methodology";
 import type { PhaseResult } from "../services/analysis-service";
 import { runPhase } from "../services/analysis-service";
 import * as entityGraphService from "../services/entity-graph-service";
 import * as revalidationService from "../services/revalidation-service";
 import { commitPhaseSnapshot } from "../services/revision-diff";
+import {
+  getRecordedLoopbackTriggers,
+  clearRecordedLoopbackTriggers,
+} from "../services/analysis-tools";
+import type { LoopbackTriggerType } from "../services/analysis-tools";
 import { createRunLogger, timer } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
 
@@ -70,17 +75,39 @@ interface ActiveRun {
 
 type SupportedPhase = Extract<
   MethodologyPhase,
-  "situational-grounding" | "player-identification" | "baseline-model"
+  | "situational-grounding"
+  | "player-identification"
+  | "baseline-model"
+  | "historical-game"
+  | "assumptions"
 >;
 
-const SUPPORTED_PHASES: SupportedPhase[] = V1_PHASES.filter(
+const SUPPORTED_PHASES: SupportedPhase[] = V2_PHASES.filter(
   (p): p is SupportedPhase =>
     p === "situational-grounding" ||
     p === "player-identification" ||
-    p === "baseline-model",
+    p === "baseline-model" ||
+    p === "historical-game" ||
+    p === "assumptions",
 );
 
 const MAX_RETRIES = 2;
+const MAX_LOOPBACK_PASSES = 4;
+
+/** Maps loopback trigger types to the phase that needs re-running */
+const TRIGGER_TARGET_PHASE: Record<LoopbackTriggerType, MethodologyPhase> = {
+  new_player: "player-identification",
+  objective_changed: "player-identification",
+  new_game: "baseline-model",
+  game_reframed: "baseline-model",
+  repeated_dominates: "baseline-model",
+  new_cross_game_link: "baseline-model",
+  escalation_revision: "baseline-model",
+  institutional_change: "baseline-model",
+  assumption_invalidated: "assumptions",
+  model_unexplained_fact: "baseline-model",
+  behavioral_overlay_change: "baseline-model",
+};
 const PHASE_TIMEOUT_MS = 9 * 60 * 1000; // 9 minutes
 const RUN_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -505,8 +532,13 @@ export async function runFull(
   const run = activeRun;
   const executeAsync = async () => {
     try {
-      for (const phase of SUPPORTED_PHASES) {
+      let phaseIndex = 0;
+      let passCount = 0;
+
+      while (phaseIndex < SUPPORTED_PHASES.length) {
         if (run.status !== "running") break;
+
+        const phase = SUPPORTED_PHASES[phaseIndex];
 
         const result = await executeSinglePhase(
           phase,
@@ -549,7 +581,62 @@ export async function runFull(
           break;
         }
 
-        run.phasesCompleted.push(phase);
+        if (!run.phasesCompleted.includes(phase)) {
+          run.phasesCompleted.push(phase);
+        }
+
+        // Check for loopback triggers after each phase
+        const triggers = getRecordedLoopbackTriggers(run.runId);
+        if (triggers.length > 0) {
+          clearRecordedLoopbackTriggers(run.runId);
+
+          // Find the earliest target phase among all triggers
+          let earliestTargetIndex = SUPPORTED_PHASES.length;
+          for (const trigger of triggers) {
+            const targetPhase = TRIGGER_TARGET_PHASE[trigger.trigger_type];
+            const targetIndex = SUPPORTED_PHASES.findIndex(
+              (p) => p === targetPhase,
+            );
+            if (targetIndex !== -1 && targetIndex < earliestTargetIndex) {
+              earliestTargetIndex = targetIndex;
+            }
+          }
+
+          // Only jump back if the target is before the current position
+          if (earliestTargetIndex < phaseIndex) {
+            passCount++;
+
+            if (passCount >= MAX_LOOPBACK_PASSES) {
+              run.logger.error("orchestrator", "loopback-divergence", {
+                passCount,
+                triggers: triggers.map((t) => t.trigger_type),
+              });
+              run.status = "failed";
+              run.error = `Loopback convergence failed after ${passCount} passes`;
+              emitProgress({
+                type: "analysis_failed",
+                runId: run.runId,
+                error: run.error,
+              });
+              break;
+            }
+
+            run.logger.log("orchestrator", "loopback-jump", {
+              from: phase,
+              to: SUPPORTED_PHASES[earliestTargetIndex],
+              pass: passCount,
+              triggers: triggers.map((t) => ({
+                type: t.trigger_type,
+                justification: t.justification,
+              })),
+            });
+
+            phaseIndex = earliestTargetIndex;
+            continue;
+          }
+        }
+
+        phaseIndex++;
       }
 
       if (run.status === "running") {

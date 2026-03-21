@@ -7,6 +7,7 @@
 
 import { z } from "zod/v4";
 import type { MethodologyPhase } from "../../shared/types/methodology";
+import { V2_PHASES } from "../../shared/types/methodology";
 import type { RelationshipType } from "../../shared/types/entity";
 import {
   entityConfidenceSchema,
@@ -15,6 +16,12 @@ import {
   objectiveDataSchema,
   gameDataSchema,
   strategyDataSchema,
+  interactionHistoryDataSchema,
+  repeatedGamePatternDataSchema,
+  trustAssessmentDataSchema,
+  dynamicInconsistencyDataSchema,
+  signalingEffectDataSchema,
+  assumptionDataSchema,
 } from "../../src/types/entity";
 import { PHASE_PROMPTS } from "../agents/phase-prompts";
 import { createRunLogger } from "../utils/ai-logger";
@@ -58,6 +65,7 @@ export interface PhaseResult {
 export interface PhaseContext {
   priorEntities?: string;
   revisionRetryInstruction?: string;
+  revisionSystemPrompt?: string;
   provider?: string;
   model?: string;
   runId?: string;
@@ -69,14 +77,21 @@ export interface PhaseContext {
 
 type SupportedPhase = Extract<
   MethodologyPhase,
-  "situational-grounding" | "player-identification" | "baseline-model"
+  | "situational-grounding"
+  | "player-identification"
+  | "baseline-model"
+  | "historical-game"
+  | "assumptions"
 >;
 
-const SUPPORTED_PHASES: SupportedPhase[] = [
-  "situational-grounding",
-  "player-identification",
-  "baseline-model",
-];
+const SUPPORTED_PHASES: SupportedPhase[] = V2_PHASES.filter(
+  (p): p is SupportedPhase =>
+    p === "situational-grounding" ||
+    p === "player-identification" ||
+    p === "baseline-model" ||
+    p === "historical-game" ||
+    p === "assumptions",
+);
 
 function isSupportedPhase(phase: MethodologyPhase): phase is SupportedPhase {
   return (SUPPORTED_PHASES as string[]).includes(phase);
@@ -126,6 +141,48 @@ const strategyEntitySchema = z.object({
   data: strategyDataSchema,
 });
 
+const interactionHistoryEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("interaction-history"),
+  phase: z.literal("historical-game"),
+  data: interactionHistoryDataSchema,
+});
+
+const repeatedGamePatternEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("repeated-game-pattern"),
+  phase: z.literal("historical-game"),
+  data: repeatedGamePatternDataSchema,
+});
+
+const trustAssessmentEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("trust-assessment"),
+  phase: z.literal("historical-game"),
+  data: trustAssessmentDataSchema,
+});
+
+const dynamicInconsistencyEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("dynamic-inconsistency"),
+  phase: z.literal("historical-game"),
+  data: dynamicInconsistencyDataSchema,
+});
+
+const signalingEffectEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("signaling-effect"),
+  phase: z.literal("historical-game"),
+  data: signalingEffectDataSchema,
+});
+
+const assumptionEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("assumption"),
+  phase: z.literal("assumptions"),
+  data: assumptionDataSchema,
+});
+
 const relationshipTypeSchema = z.enum([
   "plays-in",
   "has-objective",
@@ -157,6 +214,14 @@ const PHASE_ENTITY_SCHEMAS: Record<SupportedPhase, z.ZodType[]> = {
   "situational-grounding": [factEntitySchema],
   "player-identification": [playerEntitySchema, objectiveEntitySchema],
   "baseline-model": [gameEntitySchema, strategyEntitySchema],
+  "historical-game": [
+    interactionHistoryEntitySchema,
+    repeatedGamePatternEntitySchema,
+    trustAssessmentEntitySchema,
+    dynamicInconsistencyEntitySchema,
+    signalingEffectEntitySchema,
+  ],
+  assumptions: [assumptionEntitySchema],
 };
 
 export type PhaseOutputEntity =
@@ -164,7 +229,13 @@ export type PhaseOutputEntity =
   | z.infer<typeof playerEntitySchema>
   | z.infer<typeof objectiveEntitySchema>
   | z.infer<typeof gameEntitySchema>
-  | z.infer<typeof strategyEntitySchema>;
+  | z.infer<typeof strategyEntitySchema>
+  | z.infer<typeof interactionHistoryEntitySchema>
+  | z.infer<typeof repeatedGamePatternEntitySchema>
+  | z.infer<typeof trustAssessmentEntitySchema>
+  | z.infer<typeof dynamicInconsistencyEntitySchema>
+  | z.infer<typeof signalingEffectEntitySchema>
+  | z.infer<typeof assumptionEntitySchema>;
 
 export interface PhaseOutputRelationship {
   id: string;
@@ -289,8 +360,9 @@ function buildPrompt(
   topic: string,
   priorContext?: string,
   revisionRetryInstruction?: string,
+  revisionSystemPrompt?: string,
 ): { system: string; user: string } {
-  const systemPrompt = PHASE_PROMPTS[phase];
+  const systemPrompt = revisionSystemPrompt ?? PHASE_PROMPTS[phase];
   const parts = [
     `Analyze the following topic:\n\n${topic}`,
     [
@@ -505,6 +577,233 @@ const STRATEGY_ENTITY_SCHEMA = {
   required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
 };
 
+const INTERACTION_HISTORY_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["interaction-history"] },
+    phase: { type: "string", enum: ["historical-game"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["interaction-history"] },
+        playerPair: { type: "array", items: { type: "string" } },
+        moves: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              actor: { type: "string" },
+              action: {
+                type: "string",
+                enum: [
+                  "cooperation",
+                  "defection",
+                  "punishment",
+                  "concession",
+                  "delay",
+                ],
+              },
+              description: { type: "string" },
+              date: { type: "string" },
+              otherSideAction: { type: "string" },
+              outcome: { type: "string" },
+              beliefChange: { type: "string" },
+            },
+            required: [
+              "actor",
+              "action",
+              "description",
+              "date",
+              "otherSideAction",
+              "outcome",
+              "beliefChange",
+            ],
+          },
+        },
+        timespan: { type: "string" },
+      },
+      required: ["type", "playerPair", "moves", "timespan"],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
+const REPEATED_GAME_PATTERN_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["repeated-game-pattern"] },
+    phase: { type: "string", enum: ["historical-game"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["repeated-game-pattern"] },
+        patternType: {
+          type: "string",
+          enum: [
+            "tit-for-tat",
+            "grim-trigger",
+            "selective-forgiveness",
+            "dual-track-deception",
+            "adverse-selection",
+            "defection-during-cooperation",
+          ],
+        },
+        description: { type: "string" },
+        evidence: { type: "string" },
+        frequency: { type: "string" },
+      },
+      required: ["type", "patternType", "description", "evidence", "frequency"],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
+const TRUST_ASSESSMENT_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["trust-assessment"] },
+    phase: { type: "string", enum: ["historical-game"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["trust-assessment"] },
+        playerPair: { type: "array", items: { type: "string" } },
+        trustLevel: {
+          type: "string",
+          enum: ["zero", "low", "moderate", "high"],
+        },
+        direction: { type: "string" },
+        evidence: { type: "string" },
+        implication: { type: "string" },
+      },
+      required: [
+        "type",
+        "playerPair",
+        "trustLevel",
+        "direction",
+        "evidence",
+        "implication",
+      ],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
+const DYNAMIC_INCONSISTENCY_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["dynamic-inconsistency"] },
+    phase: { type: "string", enum: ["historical-game"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["dynamic-inconsistency"] },
+        commitment: { type: "string" },
+        institutionalForm: {
+          type: "string",
+          enum: [
+            "treaty-ratified",
+            "legislation",
+            "executive-order",
+            "executive-discretion",
+            "bureaucratic-lock-in",
+            "informal-agreement",
+          ],
+        },
+        durability: {
+          type: "string",
+          enum: ["durable", "fragile", "transitional"],
+        },
+        transitionRisk: { type: "string" },
+        timeHorizon: { type: "string" },
+      },
+      required: [
+        "type",
+        "commitment",
+        "institutionalForm",
+        "durability",
+        "transitionRisk",
+        "timeHorizon",
+      ],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
+const SIGNALING_EFFECT_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["signaling-effect"] },
+    phase: { type: "string", enum: ["historical-game"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["signaling-effect"] },
+        signal: { type: "string" },
+        observers: { type: "array", items: { type: "string" } },
+        lesson: { type: "string" },
+        reputationEffect: { type: "string" },
+      },
+      required: ["type", "signal", "observers", "lesson", "reputationEffect"],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
+const ASSUMPTION_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["assumption"] },
+    phase: { type: "string", enum: ["assumptions"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["assumption"] },
+        description: { type: "string" },
+        sensitivity: {
+          type: "string",
+          enum: ["critical", "high", "medium", "low"],
+        },
+        category: {
+          type: "string",
+          enum: [
+            "behavioral",
+            "capability",
+            "structural",
+            "institutional",
+            "rationality",
+            "information",
+          ],
+        },
+        classification: {
+          type: "string",
+          enum: ["game-theoretic", "empirical"],
+        },
+        correlatedClusterId: { type: ["string", "null"] },
+        rationale: { type: "string" },
+        dependencies: { type: "array", items: { type: "string" } },
+      },
+      required: [
+        "type",
+        "description",
+        "sensitivity",
+        "category",
+        "classification",
+        "correlatedClusterId",
+        "rationale",
+        "dependencies",
+      ],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
 const RELATIONSHIP_SCHEMA = {
   type: "object",
   properties: {
@@ -544,6 +843,14 @@ const PHASE_ENTITY_JSON_SCHEMAS: Record<
   "situational-grounding": [FACT_ENTITY_SCHEMA],
   "player-identification": [PLAYER_ENTITY_SCHEMA, OBJECTIVE_ENTITY_SCHEMA],
   "baseline-model": [GAME_ENTITY_SCHEMA, STRATEGY_ENTITY_SCHEMA],
+  "historical-game": [
+    INTERACTION_HISTORY_ENTITY_SCHEMA,
+    REPEATED_GAME_PATTERN_ENTITY_SCHEMA,
+    TRUST_ASSESSMENT_ENTITY_SCHEMA,
+    DYNAMIC_INCONSISTENCY_ENTITY_SCHEMA,
+    SIGNALING_EFFECT_ENTITY_SCHEMA,
+  ],
+  assumptions: [ASSUMPTION_ENTITY_SCHEMA],
 };
 
 /**
@@ -687,6 +994,7 @@ export async function runPhase(
     topic,
     context?.priorEntities,
     context?.revisionRetryInstruction,
+    context?.revisionSystemPrompt,
   );
   const model = context?.model ?? "claude-sonnet-4-20250514";
   const provider = context?.provider ?? "anthropic";

@@ -39,6 +39,16 @@ function createAnalysis(): Analysis {
         status: "pending",
         entityIds: [],
       },
+      {
+        phase: "historical-game",
+        status: "pending",
+        entityIds: [],
+      },
+      {
+        phase: "assumptions",
+        status: "pending",
+        entityIds: [],
+      },
     ],
   };
 }
@@ -62,7 +72,7 @@ describe("/api/ai/state and /api/ai/abort", () => {
       activePhase: null,
       progress: {
         completed: 1,
-        total: 3,
+        total: 5,
       },
     });
   });
@@ -73,7 +83,7 @@ describe("/api/ai/state and /api/ai/abort", () => {
       status: "running",
       activePhase: "player-identification",
       phasesCompleted: 1,
-      totalPhases: 3,
+      totalPhases: 5,
     });
 
     const route = (await import("../state")).default;
@@ -85,7 +95,7 @@ describe("/api/ai/state and /api/ai/abort", () => {
       activePhase: "player-identification",
       progress: {
         completed: 1,
-        total: 3,
+        total: 5,
       },
     });
   });
