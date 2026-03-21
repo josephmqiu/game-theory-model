@@ -1,4 +1,7 @@
-import type { AnalysisEntity, RelationshipType } from "../../shared/types/entity";
+import type {
+  AnalysisEntity,
+  RelationshipType,
+} from "../../shared/types/entity";
 import type { MethodologyPhase } from "../../shared/types/methodology";
 import { getAnalysis, getRelationships } from "./entity-graph-service";
 
@@ -14,6 +17,7 @@ export const LOOPBACK_TRIGGER_TYPES = [
   "assumption_invalidated",
   "model_unexplained_fact",
   "behavioral_overlay_change",
+  "meta_check_blind_spot",
 ] as const;
 
 export type LoopbackTriggerType = (typeof LOOPBACK_TRIGGER_TYPES)[number];
@@ -40,7 +44,9 @@ function resolveRunKey(explicitRunId?: string): string {
   return UNASSIGNED_RUN_KEY;
 }
 
-function assertTriggerType(value: string): asserts value is LoopbackTriggerType {
+function assertTriggerType(
+  value: string,
+): asserts value is LoopbackTriggerType {
   if ((LOOPBACK_TRIGGER_TYPES as readonly string[]).includes(value)) {
     return;
   }

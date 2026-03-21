@@ -42,6 +42,19 @@ export const V2_PHASES: MethodologyPhase[] = [
   "assumptions",
 ];
 
+/** All runnable phases in order (excludes revalidation, which is the orthogonal loopback mechanism) */
+export const V3_PHASES: MethodologyPhase[] = [
+  "situational-grounding",
+  "player-identification",
+  "baseline-model",
+  "historical-game",
+  "formal-modeling",
+  "assumptions",
+  "elimination",
+  "scenarios",
+  "meta-check",
+];
+
 /** All 10 methodology phases in order */
 export const ALL_PHASES: MethodologyPhase[] = [
   "situational-grounding",

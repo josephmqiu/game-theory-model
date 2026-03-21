@@ -10,6 +10,9 @@ const PHASE_COLUMN_X: Record<string, number> = {
   "historical-game": 1300,
   "formal-modeling": 1700,
   assumptions: 2100,
+  elimination: 2500,
+  scenarios: 2900,
+  "meta-check": 3300,
 };
 
 const DEFAULT_COLUMN_X = 100;
@@ -40,6 +43,10 @@ const ENTITY_HEIGHT: Record<EntityType, number> = {
   "option-value-assessment": 60,
   "behavioral-overlay": 60,
   assumption: 50,
+  "eliminated-outcome": 60,
+  scenario: 80,
+  "central-thesis": 100,
+  "meta-check": 100,
 };
 
 const VERTICAL_GAP = 24;

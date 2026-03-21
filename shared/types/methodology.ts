@@ -4,4 +4,4 @@ export type {
   PhaseStatus,
 } from "../../src/types/methodology";
 
-export { V2_PHASES } from "../../src/types/methodology";
+export { V2_PHASES, V3_PHASES } from "../../src/types/methodology";

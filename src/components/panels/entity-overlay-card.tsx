@@ -34,6 +34,10 @@ import type {
   OptionValueAssessmentData,
   BehavioralOverlayData,
   AssumptionData,
+  EliminatedOutcomeData,
+  ScenarioData,
+  CentralThesisData,
+  MetaCheckData,
 } from "@/types/entity";
 
 // ── Props ──
@@ -72,6 +76,10 @@ const ENTITY_TYPE_COLORS: Record<EntityType, string> = {
   "option-value-assessment": "#2DD4BF",
   "behavioral-overlay": "#C084FC",
   assumption: "#E879F9",
+  "eliminated-outcome": "#EF4444",
+  scenario: "#22D3EE",
+  "central-thesis": "#A78BFA",
+  "meta-check": "#F97316",
 };
 
 const ENTITY_TYPE_LABELS: Record<EntityType, string> = {
@@ -98,6 +106,10 @@ const ENTITY_TYPE_LABELS: Record<EntityType, string> = {
   "option-value-assessment": "Option Value",
   "behavioral-overlay": "Behavioral",
   assumption: "Assumption",
+  "eliminated-outcome": "Eliminated",
+  scenario: "Scenario",
+  "central-thesis": "Thesis",
+  "meta-check": "Meta-Check",
 };
 
 // ── Confidence dot colors ──
@@ -189,6 +201,18 @@ function getEntityName(entity: AnalysisEntity): string {
       return d.description.length > 60
         ? d.description.slice(0, 60) + "\u2026"
         : d.description;
+    case "eliminated-outcome":
+      return d.description.length > 60
+        ? d.description.slice(0, 60) + "\u2026"
+        : d.description;
+    case "scenario":
+      return d.narrative.length > 60
+        ? d.narrative.slice(0, 60) + "\u2026"
+        : d.narrative;
+    case "central-thesis":
+      return d.thesis.length > 60 ? d.thesis.slice(0, 60) + "\u2026" : d.thesis;
+    case "meta-check":
+      return `Meta-Check (${d.questions.filter((q) => q.disruption_trigger_identified).length} triggers)`;
   }
 }
 
@@ -529,6 +553,59 @@ function AssumptionDetails({ data }: { data: AssumptionData }) {
       <DetailRow label="Sensitivity" value={data.sensitivity} />
       <DetailRow label="Category" value={data.category} />
       <DetailRow label="Classification" value={data.classification} />
+    </dl>
+  );
+}
+
+function EliminatedOutcomeDetails({ data }: { data: EliminatedOutcomeData }) {
+  return (
+    <dl className="space-y-1.5">
+      <DetailRow label="Description" value={data.description} />
+      <DetailRow label="Reasoning" value={data.traced_reasoning} />
+      <DetailRow label="Source Phase" value={data.source_phase} />
+    </dl>
+  );
+}
+
+function ScenarioDetails({ data }: { data: ScenarioData }) {
+  return (
+    <dl className="space-y-1.5">
+      <DetailRow label="Subtype" value={data.subtype} />
+      <DetailRow label="Narrative" value={data.narrative} />
+      <DetailRow
+        label="Probability"
+        value={`${data.probability.point}% (${data.probability.rangeLow}-${data.probability.rangeHigh}%)`}
+      />
+      <DetailRow label="Prediction Basis" value={data.prediction_basis} />
+      <DetailRow label="Invalidation" value={data.invalidation_conditions} />
+      {data.trigger && <DetailRow label="Trigger" value={data.trigger} />}
+    </dl>
+  );
+}
+
+function CentralThesisDetails({ data }: { data: CentralThesisData }) {
+  return (
+    <dl className="space-y-1.5">
+      <DetailRow label="Thesis" value={data.thesis} />
+      <DetailRow label="Falsification" value={data.falsification_conditions} />
+    </dl>
+  );
+}
+
+function MetaCheckDetails({ data }: { data: MetaCheckData }) {
+  return (
+    <dl className="space-y-1.5">
+      {data.questions.map((q) => (
+        <div key={q.question_number}>
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-500">
+            Q{q.question_number}
+            {q.disruption_trigger_identified && (
+              <span className="ml-1 text-orange-400">[TRIGGER]</span>
+            )}
+          </dt>
+          <dd className="text-[13px] text-zinc-300">{q.answer}</dd>
+        </div>
+      ))}
     </dl>
   );
 }
@@ -896,6 +973,53 @@ function EditableEntityData({
           />
         </div>
       );
+    case "eliminated-outcome":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Description"
+            value={data.description}
+            onChange={(v) => set("description", v)}
+          />
+          <EditField
+            label="Reasoning"
+            value={data.traced_reasoning}
+            onChange={(v) => set("traced_reasoning", v)}
+          />
+        </div>
+      );
+    case "scenario":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Narrative"
+            value={data.narrative}
+            onChange={(v) => set("narrative", v)}
+          />
+          <EditField
+            label="Invalidation"
+            value={data.invalidation_conditions}
+            onChange={(v) => set("invalidation_conditions", v)}
+          />
+        </div>
+      );
+    case "central-thesis":
+      return (
+        <div className="space-y-1.5">
+          <EditField
+            label="Thesis"
+            value={data.thesis}
+            onChange={(v) => set("thesis", v)}
+          />
+          <EditField
+            label="Falsification"
+            value={data.falsification_conditions}
+            onChange={(v) => set("falsification_conditions", v)}
+          />
+        </div>
+      );
+    case "meta-check":
+      return null;
   }
 }
 
@@ -947,6 +1071,14 @@ function EntityDataSection({ entity }: { entity: AnalysisEntity }) {
       return <BehavioralOverlayDetails data={entity.data} />;
     case "assumption":
       return <AssumptionDetails data={entity.data} />;
+    case "eliminated-outcome":
+      return <EliminatedOutcomeDetails data={entity.data} />;
+    case "scenario":
+      return <ScenarioDetails data={entity.data} />;
+    case "central-thesis":
+      return <CentralThesisDetails data={entity.data} />;
+    case "meta-check":
+      return <MetaCheckDetails data={entity.data} />;
   }
 }
 

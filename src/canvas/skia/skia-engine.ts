@@ -897,6 +897,10 @@ export class SkiaEngine {
     payoff: "#FCD34D",
     "institutional-rule": "#A1A1AA",
     "escalation-rung": "#4ADE80",
+    "eliminated-outcome": "#EF4444",
+    scenario: "#22D3EE",
+    "central-thesis": "#A78BFA",
+    "meta-check": "#F97316",
   };
 
   /** Resolve entity type color, with player index hue pool support. */

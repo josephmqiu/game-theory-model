@@ -11,7 +11,7 @@ import type {
   AnalysisProgressEvent,
   PhaseSummary,
 } from "../../shared/types/events";
-import { V2_PHASES } from "../../src/types/methodology";
+import { V3_PHASES } from "../../src/types/methodology";
 import type { PhaseResult } from "../services/analysis-service";
 import { runPhase } from "../services/analysis-service";
 import * as entityGraphService from "../services/entity-graph-service";
@@ -79,16 +79,24 @@ type SupportedPhase = Extract<
   | "player-identification"
   | "baseline-model"
   | "historical-game"
+  | "formal-modeling"
   | "assumptions"
+  | "elimination"
+  | "scenarios"
+  | "meta-check"
 >;
 
-const SUPPORTED_PHASES: SupportedPhase[] = V2_PHASES.filter(
+const SUPPORTED_PHASES: SupportedPhase[] = V3_PHASES.filter(
   (p): p is SupportedPhase =>
     p === "situational-grounding" ||
     p === "player-identification" ||
     p === "baseline-model" ||
     p === "historical-game" ||
-    p === "assumptions",
+    p === "formal-modeling" ||
+    p === "assumptions" ||
+    p === "elimination" ||
+    p === "scenarios" ||
+    p === "meta-check",
 );
 
 const MAX_RETRIES = 2;
@@ -107,6 +115,7 @@ const TRIGGER_TARGET_PHASE: Record<LoopbackTriggerType, MethodologyPhase> = {
   assumption_invalidated: "assumptions",
   model_unexplained_fact: "baseline-model",
   behavioral_overlay_change: "baseline-model",
+  meta_check_blind_spot: "player-identification",
 };
 const PHASE_TIMEOUT_MS = 9 * 60 * 1000; // 9 minutes
 const RUN_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes

@@ -38,6 +38,10 @@ const ENTITY_TYPE_COLORS: Record<EntityType, string> = {
   "option-value-assessment": "#2DD4BF",
   "behavioral-overlay": "#C084FC",
   assumption: "#E879F9",
+  "eliminated-outcome": "#EF4444",
+  scenario: "#22D3EE",
+  "central-thesis": "#A78BFA",
+  "meta-check": "#F97316",
 };
 
 const ENTITY_TYPE_LABELS: Record<EntityType, string> = {
@@ -64,6 +68,10 @@ const ENTITY_TYPE_LABELS: Record<EntityType, string> = {
   "option-value-assessment": "OptVal",
   "behavioral-overlay": "Behav",
   assumption: "Asmp",
+  "eliminated-outcome": "Elim",
+  scenario: "Scen",
+  "central-thesis": "Thesis",
+  "meta-check": "Check",
 };
 
 // ── Helpers ──
@@ -118,6 +126,14 @@ function getSearchableText(entity: AnalysisEntity): string {
       return `${d.overlayType} ${d.description} ${d.affectedPlayers.join(" ")}`;
     case "assumption":
       return `${d.description} ${d.sensitivity} ${d.category} ${d.classification}`;
+    case "eliminated-outcome":
+      return `${d.description} ${d.traced_reasoning} ${d.source_phase}`;
+    case "scenario":
+      return `${d.narrative} ${d.subtype} ${d.prediction_basis}`;
+    case "central-thesis":
+      return `${d.thesis} ${d.falsification_conditions}`;
+    case "meta-check":
+      return d.questions.map((q) => q.answer).join(" ");
   }
 }
 
@@ -189,6 +205,18 @@ function getEntityDisplayName(entity: AnalysisEntity): string {
       return d.description.length > 50
         ? d.description.slice(0, 50) + "\u2026"
         : d.description;
+    case "eliminated-outcome":
+      return d.description.length > 50
+        ? d.description.slice(0, 50) + "\u2026"
+        : d.description;
+    case "scenario":
+      return d.narrative.length > 50
+        ? d.narrative.slice(0, 50) + "\u2026"
+        : d.narrative;
+    case "central-thesis":
+      return d.thesis.length > 50 ? d.thesis.slice(0, 50) + "\u2026" : d.thesis;
+    case "meta-check":
+      return `Meta-Check (${d.questions.filter((q) => q.disruption_trigger_identified).length} triggers)`;
   }
 }
 

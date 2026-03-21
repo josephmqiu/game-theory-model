@@ -11,6 +11,10 @@ import type {
   InstitutionalRuleData,
   EscalationRungData,
   PayoffData,
+  EliminatedOutcomeData,
+  ScenarioData,
+  CentralThesisData,
+  MetaCheckData,
 } from "@/types/entity";
 import type { MethodologyPhase } from "@/types/methodology";
 import { PHASE_LABELS, PHASE_NUMBERS, ALL_PHASES } from "@/types/methodology";
@@ -144,6 +148,58 @@ function renderEscalationLadder(entities: AnalysisEntity[]): string {
   return lines.join("\n");
 }
 
+function renderEliminatedOutcomes(entities: AnalysisEntity[]): string {
+  const lines = ["### Eliminated Outcomes"];
+  for (const e of entities) {
+    const d = e.data as EliminatedOutcomeData;
+    lines.push(
+      `- **${or(d.description)}** — ${or(d.traced_reasoning)} (Source: ${d.source_phase}) [Confidence: ${e.confidence}]`,
+    );
+  }
+  return lines.join("\n");
+}
+
+function renderScenarios(entities: AnalysisEntity[]): string {
+  const lines = ["### Scenarios"];
+  for (const e of entities) {
+    const d = e.data as ScenarioData;
+    const prob = `${d.probability.point}% (${d.probability.rangeLow}-${d.probability.rangeHigh}%)`;
+    lines.push(
+      `#### ${d.subtype === "tail-risk" ? "[Tail Risk] " : ""}${d.narrative.slice(0, 80)}`,
+    );
+    lines.push(`- **Probability:** ${prob}`);
+    lines.push(`- **Prediction basis:** ${d.prediction_basis}`);
+    lines.push(`- **Invalidation:** ${or(d.invalidation_conditions)}`);
+    if (d.trigger) lines.push(`- **Trigger:** ${d.trigger}`);
+    lines.push(`- [Confidence: ${e.confidence}]`);
+  }
+  return lines.join("\n");
+}
+
+function renderCentralTheses(entities: AnalysisEntity[]): string {
+  const lines = ["### Central Thesis"];
+  for (const e of entities) {
+    const d = e.data as CentralThesisData;
+    lines.push(`- **Thesis:** ${or(d.thesis)}`);
+    lines.push(`- **Falsification:** ${or(d.falsification_conditions)}`);
+    lines.push(`- [Confidence: ${e.confidence}]`);
+  }
+  return lines.join("\n");
+}
+
+function renderMetaCheck(entities: AnalysisEntity[]): string {
+  const lines = ["### Meta-Check"];
+  for (const e of entities) {
+    const d = e.data as MetaCheckData;
+    for (const q of d.questions) {
+      const flag = q.disruption_trigger_identified ? " **[TRIGGER]**" : "";
+      lines.push(`${q.question_number}. ${or(q.answer)}${flag}`);
+    }
+    lines.push(`- [Confidence: ${e.confidence}]`);
+  }
+  return lines.join("\n");
+}
+
 const TYPE_RENDERERS: Partial<
   Record<EntityType, (entities: AnalysisEntity[]) => string>
 > = {
@@ -155,6 +211,10 @@ const TYPE_RENDERERS: Partial<
   payoff: renderPayoffs,
   "institutional-rule": renderInstitutionalRules,
   "escalation-rung": renderEscalationLadder,
+  "eliminated-outcome": renderEliminatedOutcomes,
+  scenario: renderScenarios,
+  "central-thesis": renderCentralTheses,
+  "meta-check": renderMetaCheck,
 };
 
 // Stable ordering within a phase
@@ -167,6 +227,10 @@ const TYPE_ORDER: EntityType[] = [
   "payoff",
   "institutional-rule",
   "escalation-rung",
+  "eliminated-outcome",
+  "scenario",
+  "central-thesis",
+  "meta-check",
 ];
 
 // ── Relationships ──

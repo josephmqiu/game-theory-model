@@ -7,7 +7,7 @@
 
 import { z } from "zod/v4";
 import type { MethodologyPhase } from "../../shared/types/methodology";
-import { V2_PHASES } from "../../shared/types/methodology";
+import { V3_PHASES } from "../../shared/types/methodology";
 import type { RelationshipType } from "../../shared/types/entity";
 import {
   entityConfidenceSchema,
@@ -31,6 +31,10 @@ import {
   bargainingDynamicsDataSchema,
   optionValueAssessmentDataSchema,
   behavioralOverlayDataSchema,
+  eliminatedOutcomeDataSchema,
+  scenarioDataSchema,
+  centralThesisDataSchema,
+  metaCheckDataSchema,
 } from "../../src/types/entity";
 import { PHASE_PROMPTS } from "../agents/phase-prompts";
 import { createRunLogger } from "../utils/ai-logger";
@@ -92,16 +96,22 @@ type SupportedPhase = Extract<
   | "historical-game"
   | "formal-modeling"
   | "assumptions"
+  | "elimination"
+  | "scenarios"
+  | "meta-check"
 >;
 
-const SUPPORTED_PHASES: SupportedPhase[] = V2_PHASES.filter(
+const SUPPORTED_PHASES: SupportedPhase[] = V3_PHASES.filter(
   (p): p is SupportedPhase =>
     p === "situational-grounding" ||
     p === "player-identification" ||
     p === "baseline-model" ||
     p === "historical-game" ||
     p === "formal-modeling" ||
-    p === "assumptions",
+    p === "assumptions" ||
+    p === "elimination" ||
+    p === "scenarios" ||
+    p === "meta-check",
 );
 
 function isSupportedPhase(phase: MethodologyPhase): phase is SupportedPhase {
@@ -192,6 +202,34 @@ const assumptionEntitySchema = z.object({
   type: z.literal("assumption"),
   phase: z.literal("assumptions"),
   data: assumptionDataSchema,
+});
+
+const eliminatedOutcomeEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("eliminated-outcome"),
+  phase: z.literal("elimination"),
+  data: eliminatedOutcomeDataSchema,
+});
+
+const scenarioEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("scenario"),
+  phase: z.literal("scenarios"),
+  data: scenarioDataSchema,
+});
+
+const centralThesisEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("central-thesis"),
+  phase: z.literal("scenarios"),
+  data: centralThesisDataSchema,
+});
+
+const metaCheckEntitySchema = z.object({
+  ...baseEntityFields,
+  type: z.literal("meta-check"),
+  phase: z.literal("meta-check"),
+  data: metaCheckDataSchema,
 });
 
 const payoffMatrixEntitySchema = z.object({
@@ -307,6 +345,9 @@ const PHASE_ENTITY_SCHEMAS: Record<SupportedPhase, z.ZodType[]> = {
     behavioralOverlayEntitySchema,
   ],
   assumptions: [assumptionEntitySchema],
+  elimination: [eliminatedOutcomeEntitySchema],
+  scenarios: [scenarioEntitySchema, centralThesisEntitySchema],
+  "meta-check": [metaCheckEntitySchema],
 };
 
 export type PhaseOutputEntity =
@@ -329,7 +370,11 @@ export type PhaseOutputEntity =
   | z.infer<typeof signalClassificationEntitySchema>
   | z.infer<typeof bargainingDynamicsEntitySchema>
   | z.infer<typeof optionValueAssessmentEntitySchema>
-  | z.infer<typeof behavioralOverlayEntitySchema>;
+  | z.infer<typeof behavioralOverlayEntitySchema>
+  | z.infer<typeof eliminatedOutcomeEntitySchema>
+  | z.infer<typeof scenarioEntitySchema>
+  | z.infer<typeof centralThesisEntitySchema>
+  | z.infer<typeof metaCheckEntitySchema>;
 
 export interface PhaseOutputRelationship {
   id: string;
@@ -442,6 +487,25 @@ function validatePhaseOutput(
       };
     }
     relationships.push(result.data);
+  }
+
+  // Phase-specific validation: scenario probability sum
+  if (phase === "scenarios") {
+    const scenarios = entities.filter((e) => e.type === "scenario");
+    if (scenarios.length > 0) {
+      const sum = scenarios.reduce((acc, e) => {
+        const data = e.data as { probability: { point: number } };
+        return acc + data.probability.point;
+      }, 0);
+      if (sum < 95 || sum > 105) {
+        return {
+          success: false,
+          entities: [],
+          relationships: [],
+          error: `Scenario probabilities sum to ${sum.toFixed(1)}%, expected 95-105%`,
+        };
+      }
+    }
   }
 
   return { success: true, entities, relationships };
@@ -1419,6 +1483,159 @@ const BEHAVIORAL_OVERLAY_ENTITY_SCHEMA = {
   required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
 };
 
+const ELIMINATED_OUTCOME_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["eliminated-outcome"] },
+    phase: { type: "string", enum: ["elimination"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["eliminated-outcome"] },
+        description: { type: "string" },
+        traced_reasoning: { type: "string" },
+        source_phase: {
+          type: "string",
+          enum: [
+            "situational-grounding",
+            "player-identification",
+            "baseline-model",
+            "historical-game",
+            "revalidation",
+            "formal-modeling",
+            "assumptions",
+            "elimination",
+            "scenarios",
+            "meta-check",
+          ],
+        },
+        source_entity_ids: { type: "array", items: { type: "string" } },
+      },
+      required: [
+        "type",
+        "description",
+        "traced_reasoning",
+        "source_phase",
+        "source_entity_ids",
+      ],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
+const SCENARIO_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["scenario"] },
+    phase: { type: "string", enum: ["scenarios"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["scenario"] },
+        subtype: { type: "string", enum: ["baseline", "tail-risk"] },
+        narrative: { type: "string" },
+        probability: {
+          type: "object",
+          properties: {
+            point: { type: "number" },
+            rangeLow: { type: "number" },
+            rangeHigh: { type: "number" },
+          },
+          required: ["point", "rangeLow", "rangeHigh"],
+        },
+        key_assumptions: { type: "array", items: { type: "string" } },
+        invalidation_conditions: { type: "string" },
+        model_basis: { type: "array", items: { type: "string" } },
+        cross_game_interactions: { type: "string" },
+        prediction_basis: {
+          type: "string",
+          enum: ["equilibrium", "discretionary", "behavioral-overlay"],
+        },
+        trigger: { type: ["string", "null"] },
+        why_unlikely: { type: ["string", "null"] },
+        consequences: { type: ["string", "null"] },
+        drift_trajectory: { type: ["string", "null"] },
+      },
+      required: [
+        "type",
+        "subtype",
+        "narrative",
+        "probability",
+        "key_assumptions",
+        "invalidation_conditions",
+        "model_basis",
+        "cross_game_interactions",
+        "prediction_basis",
+        "trigger",
+        "why_unlikely",
+        "consequences",
+        "drift_trajectory",
+      ],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
+const CENTRAL_THESIS_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["central-thesis"] },
+    phase: { type: "string", enum: ["scenarios"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["central-thesis"] },
+        thesis: { type: "string" },
+        falsification_conditions: { type: "string" },
+        supporting_scenarios: { type: "array", items: { type: "string" } },
+      },
+      required: [
+        "type",
+        "thesis",
+        "falsification_conditions",
+        "supporting_scenarios",
+      ],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
+const META_CHECK_ENTITY_SCHEMA = {
+  type: "object",
+  properties: {
+    ...BASE_ENTITY_SCHEMA,
+    type: { type: "string", enum: ["meta-check"] },
+    phase: { type: "string", enum: ["meta-check"] },
+    data: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["meta-check"] },
+        questions: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              question_number: { type: "number" },
+              answer: { type: "string" },
+              disruption_trigger_identified: { type: "boolean" },
+            },
+            required: [
+              "question_number",
+              "answer",
+              "disruption_trigger_identified",
+            ],
+          },
+        },
+      },
+      required: ["type", "questions"],
+    },
+  },
+  required: ["id", "ref", "type", "phase", "data", "confidence", "rationale"],
+};
+
 const RELATIONSHIP_SCHEMA = {
   type: "object",
   properties: {
@@ -1477,6 +1694,9 @@ const PHASE_ENTITY_JSON_SCHEMAS: Record<
     BEHAVIORAL_OVERLAY_ENTITY_SCHEMA,
   ],
   assumptions: [ASSUMPTION_ENTITY_SCHEMA],
+  elimination: [ELIMINATED_OUTCOME_ENTITY_SCHEMA],
+  scenarios: [SCENARIO_ENTITY_SCHEMA, CENTRAL_THESIS_ENTITY_SCHEMA],
+  "meta-check": [META_CHECK_ENTITY_SCHEMA],
 };
 
 /**

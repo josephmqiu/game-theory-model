@@ -35,6 +35,7 @@ vi.mock("../../services/analysis-tools", () => ({
     "assumption_invalidated",
     "model_unexplained_fact",
     "behavioral_overlay_change",
+    "meta_check_blind_spot",
   ],
 }));
 
@@ -181,7 +182,40 @@ function makePhaseResult(
         confidence: "high" as const,
         rationale: "Test",
       });
-    } else {
+    } else if (phase === "formal-modeling") {
+      entities.push({
+        id: null,
+        ref: `matrix-${i + 1}`,
+        type: "payoff-matrix" as const,
+        phase: "formal-modeling" as const,
+        data: {
+          type: "payoff-matrix" as const,
+          gameName: `Game ${i + 1}`,
+          players: ["A", "B"],
+          strategies: { row: ["S1"], column: ["S2"] },
+          cells: [
+            {
+              row: "S1",
+              column: "S2",
+              payoffs: [
+                {
+                  player: "A",
+                  ordinalRank: 1,
+                  cardinalValue: null,
+                  rangeLow: 0,
+                  rangeHigh: 10,
+                  confidence: "medium" as const,
+                  rationale: "Test",
+                  dependencies: ["game-1"],
+                },
+              ],
+            },
+          ],
+        },
+        confidence: "medium" as const,
+        rationale: "Test",
+      });
+    } else if (phase === "assumptions") {
       entities.push({
         id: null,
         ref: `assumption-${i + 1}`,
@@ -196,6 +230,64 @@ function makePhaseResult(
           correlatedClusterId: null,
           rationale: "Test rationale",
           dependencies: [],
+        },
+        confidence: "medium" as const,
+        rationale: "Test",
+      });
+    } else if (phase === "elimination") {
+      entities.push({
+        id: null,
+        ref: `elim-${i + 1}`,
+        type: "eliminated-outcome" as const,
+        phase: "elimination" as const,
+        data: {
+          type: "eliminated-outcome" as const,
+          description: `Eliminated ${i + 1}`,
+          traced_reasoning: "Test reasoning",
+          source_phase: "baseline-model" as const,
+          source_entity_ids: ["game-1"],
+        },
+        confidence: "high" as const,
+        rationale: "Test",
+      });
+    } else if (phase === "scenarios") {
+      entities.push({
+        id: null,
+        ref: `scenario-${i + 1}`,
+        type: "scenario" as const,
+        phase: "scenarios" as const,
+        data: {
+          type: "scenario" as const,
+          subtype: "baseline" as const,
+          narrative: `Scenario ${i + 1}`,
+          probability: { point: 100, rangeLow: 90, rangeHigh: 100 },
+          key_assumptions: [],
+          invalidation_conditions: "Never",
+          model_basis: [],
+          cross_game_interactions: "",
+          prediction_basis: "equilibrium" as const,
+          trigger: null,
+          why_unlikely: null,
+          consequences: null,
+          drift_trajectory: null,
+        },
+        confidence: "medium" as const,
+        rationale: "Test",
+      });
+    } else {
+      // meta-check
+      entities.push({
+        id: null,
+        ref: `check-${i + 1}`,
+        type: "meta-check" as const,
+        phase: "meta-check" as const,
+        data: {
+          type: "meta-check" as const,
+          questions: Array.from({ length: 10 }, (_, j) => ({
+            question_number: j + 1,
+            answer: "Test answer",
+            disruption_trigger_identified: false,
+          })),
         },
         confidence: "medium" as const,
         rationale: "Test",
@@ -253,7 +345,11 @@ describe("analysis-orchestrator", () => {
       .mockResolvedValueOnce(makePhaseResult("player-identification"))
       .mockResolvedValueOnce(makePhaseResult("baseline-model"))
       .mockResolvedValueOnce(makePhaseResult("historical-game"))
-      .mockResolvedValueOnce(makePhaseResult("assumptions"));
+      .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
+      .mockResolvedValueOnce(makePhaseResult("assumptions"))
+      .mockResolvedValueOnce(makePhaseResult("elimination"))
+      .mockResolvedValueOnce(makePhaseResult("scenarios"))
+      .mockResolvedValueOnce(makePhaseResult("meta-check"));
 
     const { runId } = await orchestrator.runFull("US-China trade war");
     expect(runId).toMatch(/^run-/);
@@ -261,13 +357,17 @@ describe("analysis-orchestrator", () => {
     // Let phases execute
     await flushAsync();
 
-    // All 5 phases should have been called in order
-    expect(mockRunPhase).toHaveBeenCalledTimes(5);
+    // All 9 phases should have been called in order
+    expect(mockRunPhase).toHaveBeenCalledTimes(9);
     expect(mockRunPhase.mock.calls[0][0]).toBe("situational-grounding");
     expect(mockRunPhase.mock.calls[1][0]).toBe("player-identification");
     expect(mockRunPhase.mock.calls[2][0]).toBe("baseline-model");
     expect(mockRunPhase.mock.calls[3][0]).toBe("historical-game");
-    expect(mockRunPhase.mock.calls[4][0]).toBe("assumptions");
+    expect(mockRunPhase.mock.calls[4][0]).toBe("formal-modeling");
+    expect(mockRunPhase.mock.calls[5][0]).toBe("assumptions");
+    expect(mockRunPhase.mock.calls[6][0]).toBe("elimination");
+    expect(mockRunPhase.mock.calls[7][0]).toBe("scenarios");
+    expect(mockRunPhase.mock.calls[8][0]).toBe("meta-check");
 
     // Topic passed to each phase
     expect(mockRunPhase.mock.calls[0][1]).toBe("US-China trade war");
@@ -275,8 +375,8 @@ describe("analysis-orchestrator", () => {
 
     const status = orchestrator.getStatus(runId);
     expect(status.status).toBe("completed");
-    expect(status.phasesCompleted).toBe(5);
-    expect(status.totalPhases).toBe(5);
+    expect(status.phasesCompleted).toBe(9);
+    expect(status.totalPhases).toBe(9);
   });
 
   // ── 2. getStatus returns progress during active run ──
@@ -293,7 +393,11 @@ describe("analysis-orchestrator", () => {
       .mockResolvedValueOnce(makePhaseResult("player-identification"))
       .mockResolvedValueOnce(makePhaseResult("baseline-model"))
       .mockResolvedValueOnce(makePhaseResult("historical-game"))
-      .mockResolvedValueOnce(makePhaseResult("assumptions"));
+      .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
+      .mockResolvedValueOnce(makePhaseResult("assumptions"))
+      .mockResolvedValueOnce(makePhaseResult("elimination"))
+      .mockResolvedValueOnce(makePhaseResult("scenarios"))
+      .mockResolvedValueOnce(makePhaseResult("meta-check"));
 
     const { runId } = await orchestrator.runFull("Test topic");
     await flushAsync();
@@ -310,7 +414,7 @@ describe("analysis-orchestrator", () => {
 
     const finalStatus = orchestrator.getStatus(runId);
     expect(finalStatus.status).toBe("completed");
-    expect(finalStatus.phasesCompleted).toBe(5);
+    expect(finalStatus.phasesCompleted).toBe(9);
   });
 
   // ── 3. No concurrent runs ──
@@ -423,7 +527,11 @@ describe("analysis-orchestrator", () => {
       .mockResolvedValueOnce(makePhaseResult("player-identification"))
       .mockResolvedValueOnce(makePhaseResult("baseline-model"))
       .mockResolvedValueOnce(makePhaseResult("historical-game"))
-      .mockResolvedValueOnce(makePhaseResult("assumptions"));
+      .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
+      .mockResolvedValueOnce(makePhaseResult("assumptions"))
+      .mockResolvedValueOnce(makePhaseResult("elimination"))
+      .mockResolvedValueOnce(makePhaseResult("scenarios"))
+      .mockResolvedValueOnce(makePhaseResult("meta-check"));
 
     const { runId } = await orchestrator.runFull("Test topic");
     await flushAsync();
@@ -491,7 +599,11 @@ describe("analysis-orchestrator", () => {
       .mockResolvedValueOnce(makePhaseResult("player-identification"))
       .mockResolvedValueOnce(makePhaseResult("baseline-model"))
       .mockResolvedValueOnce(makePhaseResult("historical-game"))
-      .mockResolvedValueOnce(makePhaseResult("assumptions"));
+      .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
+      .mockResolvedValueOnce(makePhaseResult("assumptions"))
+      .mockResolvedValueOnce(makePhaseResult("elimination"))
+      .mockResolvedValueOnce(makePhaseResult("scenarios"))
+      .mockResolvedValueOnce(makePhaseResult("meta-check"));
 
     await orchestrator.runFull("Test topic");
     await flushAsync();
@@ -563,7 +675,11 @@ describe("analysis-orchestrator", () => {
       .mockResolvedValueOnce(makePhaseResult("player-identification"))
       .mockResolvedValueOnce(makePhaseResult("baseline-model"))
       .mockResolvedValueOnce(makePhaseResult("historical-game"))
-      .mockResolvedValueOnce(makePhaseResult("assumptions"));
+      .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
+      .mockResolvedValueOnce(makePhaseResult("assumptions"))
+      .mockResolvedValueOnce(makePhaseResult("elimination"))
+      .mockResolvedValueOnce(makePhaseResult("scenarios"))
+      .mockResolvedValueOnce(makePhaseResult("meta-check"));
 
     const events: AnalysisProgressEvent[] = [];
     const unsubscribe = orchestrator.onProgress((event) => events.push(event));
@@ -573,15 +689,15 @@ describe("analysis-orchestrator", () => {
 
     unsubscribe();
 
-    // Should have: 5 phase_started + 5 phase_completed + 1 analysis_completed = 11
+    // Should have: 9 phase_started + 9 phase_completed + 1 analysis_completed = 19
     const phaseStarted = events.filter((e) => e.type === "phase_started");
     const phaseCompleted = events.filter((e) => e.type === "phase_completed");
     const analysisCompleted = events.filter(
       (e) => e.type === "analysis_completed",
     );
 
-    expect(phaseStarted).toHaveLength(5);
-    expect(phaseCompleted).toHaveLength(5);
+    expect(phaseStarted).toHaveLength(9);
+    expect(phaseCompleted).toHaveLength(9);
     expect(analysisCompleted).toHaveLength(1);
 
     // Verify phase order
@@ -603,7 +719,23 @@ describe("analysis-orchestrator", () => {
     });
     expect(phaseStarted[4]).toMatchObject({
       type: "phase_started",
+      phase: "formal-modeling",
+    });
+    expect(phaseStarted[5]).toMatchObject({
+      type: "phase_started",
       phase: "assumptions",
+    });
+    expect(phaseStarted[6]).toMatchObject({
+      type: "phase_started",
+      phase: "elimination",
+    });
+    expect(phaseStarted[7]).toMatchObject({
+      type: "phase_started",
+      phase: "scenarios",
+    });
+    expect(phaseStarted[8]).toMatchObject({
+      type: "phase_started",
+      phase: "meta-check",
     });
   });
 
@@ -717,7 +849,11 @@ describe("analysis-orchestrator", () => {
       .mockResolvedValueOnce(makePhaseResult("player-identification"))
       .mockResolvedValueOnce(makePhaseResult("baseline-model"))
       .mockResolvedValueOnce(makePhaseResult("historical-game"))
-      .mockResolvedValueOnce(makePhaseResult("assumptions"));
+      .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
+      .mockResolvedValueOnce(makePhaseResult("assumptions"))
+      .mockResolvedValueOnce(makePhaseResult("elimination"))
+      .mockResolvedValueOnce(makePhaseResult("scenarios"))
+      .mockResolvedValueOnce(makePhaseResult("meta-check"));
 
     await orchestrator.runFull("Test topic");
     await flushAsync();
@@ -740,7 +876,7 @@ describe("analysis-orchestrator", () => {
         status: "idle",
         activePhase: null,
         phasesCompleted: 0,
-        totalPhases: 5,
+        totalPhases: 9,
       });
     });
   });
@@ -782,7 +918,11 @@ describe("analysis-orchestrator", () => {
         .mockResolvedValueOnce(makePhaseResult("player-identification"))
         .mockResolvedValueOnce(makePhaseResult("baseline-model"))
         .mockResolvedValueOnce(makePhaseResult("historical-game"))
-        .mockResolvedValueOnce(makePhaseResult("assumptions"));
+        .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
+        .mockResolvedValueOnce(makePhaseResult("assumptions"))
+        .mockResolvedValueOnce(makePhaseResult("elimination"))
+        .mockResolvedValueOnce(makePhaseResult("scenarios"))
+        .mockResolvedValueOnce(makePhaseResult("meta-check"));
 
       const { runId } = await orchestrator.runFull("Test topic");
       await flushAsync();
@@ -884,7 +1024,11 @@ describe("analysis-orchestrator", () => {
         .mockResolvedValueOnce(makePhaseResult("player-identification"))
         .mockResolvedValueOnce(makePhaseResult("baseline-model"))
         .mockResolvedValueOnce(makePhaseResult("historical-game"))
-        .mockResolvedValueOnce(makePhaseResult("assumptions"));
+        .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
+        .mockResolvedValueOnce(makePhaseResult("assumptions"))
+        .mockResolvedValueOnce(makePhaseResult("elimination"))
+        .mockResolvedValueOnce(makePhaseResult("scenarios"))
+        .mockResolvedValueOnce(makePhaseResult("meta-check"));
 
       const events: AnalysisProgressEvent[] = [];
       const unsubscribe = orchestrator.onProgress((event) =>
@@ -908,13 +1052,17 @@ describe("analysis-orchestrator", () => {
         .mockResolvedValueOnce(makePhaseResult("player-identification"))
         .mockResolvedValueOnce(makePhaseResult("baseline-model"))
         .mockResolvedValueOnce(makePhaseResult("historical-game"))
-        .mockResolvedValueOnce(makePhaseResult("assumptions"));
+        .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
+        .mockResolvedValueOnce(makePhaseResult("assumptions"))
+        .mockResolvedValueOnce(makePhaseResult("elimination"))
+        .mockResolvedValueOnce(makePhaseResult("scenarios"))
+        .mockResolvedValueOnce(makePhaseResult("meta-check"));
 
       await orchestrator.runFull("Test topic", "openai", "gpt-4o");
       await flushAsync();
 
-      // All 5 phases must have been called
-      expect(mockRunPhase).toHaveBeenCalledTimes(5);
+      // All 9 phases must have been called
+      expect(mockRunPhase).toHaveBeenCalledTimes(9);
 
       // Every call gets the same provider+model
       for (const call of mockRunPhase.mock.calls) {
@@ -937,7 +1085,11 @@ describe("analysis-orchestrator", () => {
         .mockResolvedValueOnce(makePhaseResult("player-identification"))
         .mockResolvedValueOnce(makePhaseResult("baseline-model"))
         .mockResolvedValueOnce(makePhaseResult("historical-game"))
-        .mockResolvedValueOnce(makePhaseResult("assumptions"));
+        .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
+        .mockResolvedValueOnce(makePhaseResult("assumptions"))
+        .mockResolvedValueOnce(makePhaseResult("elimination"))
+        .mockResolvedValueOnce(makePhaseResult("scenarios"))
+        .mockResolvedValueOnce(makePhaseResult("meta-check"));
 
       mockCommitPhaseSnapshot
         .mockReturnValueOnce({
@@ -1001,18 +1153,62 @@ describe("analysis-orchestrator", () => {
             relationshipsDeleted: 0,
             currentPhaseEntityIds: [],
           },
+        })
+        .mockReturnValueOnce({
+          status: "applied",
+          summary: {
+            entitiesCreated: 1,
+            entitiesUpdated: 0,
+            entitiesDeleted: 0,
+            relationshipsCreated: 0,
+            relationshipsDeleted: 0,
+            currentPhaseEntityIds: [],
+          },
+        })
+        .mockReturnValueOnce({
+          status: "applied",
+          summary: {
+            entitiesCreated: 1,
+            entitiesUpdated: 0,
+            entitiesDeleted: 0,
+            relationshipsCreated: 0,
+            relationshipsDeleted: 0,
+            currentPhaseEntityIds: [],
+          },
+        })
+        .mockReturnValueOnce({
+          status: "applied",
+          summary: {
+            entitiesCreated: 1,
+            entitiesUpdated: 0,
+            entitiesDeleted: 0,
+            relationshipsCreated: 0,
+            relationshipsDeleted: 0,
+            currentPhaseEntityIds: [],
+          },
+        })
+        .mockReturnValueOnce({
+          status: "applied",
+          summary: {
+            entitiesCreated: 1,
+            entitiesUpdated: 0,
+            entitiesDeleted: 0,
+            relationshipsCreated: 0,
+            relationshipsDeleted: 0,
+            currentPhaseEntityIds: [],
+          },
         });
 
       await orchestrator.runFull("Test topic");
       await flushAsync();
 
-      expect(mockRunPhase).toHaveBeenCalledTimes(6);
+      expect(mockRunPhase).toHaveBeenCalledTimes(10);
       expect(mockRunPhase.mock.calls[1][0]).toBe("player-identification");
       expect(mockRunPhase.mock.calls[2][0]).toBe("player-identification");
       expect(mockRunPhase.mock.calls[2][2]?.revisionRetryInstruction).toContain(
         "appeared truncated",
       );
-      expect(mockCommitPhaseSnapshot).toHaveBeenCalledTimes(6);
+      expect(mockCommitPhaseSnapshot).toHaveBeenCalledTimes(10);
       expect(mockCommitPhaseSnapshot.mock.calls[2][0]).toMatchObject({
         allowLargeReductionCommit: true,
       });
@@ -1028,7 +1224,11 @@ describe("analysis-orchestrator", () => {
         .mockResolvedValueOnce(makePhaseResult("player-identification"))
         .mockResolvedValueOnce(makePhaseResult("baseline-model"))
         .mockResolvedValueOnce(makePhaseResult("historical-game"))
-        .mockResolvedValueOnce(makePhaseResult("assumptions"));
+        .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
+        .mockResolvedValueOnce(makePhaseResult("assumptions"))
+        .mockResolvedValueOnce(makePhaseResult("elimination"))
+        .mockResolvedValueOnce(makePhaseResult("scenarios"))
+        .mockResolvedValueOnce(makePhaseResult("meta-check"));
 
       await orchestrator.runFull("Test topic");
       await flushAsync();
@@ -1077,7 +1277,7 @@ describe("analysis-orchestrator", () => {
       expect(status.status).toBe("completed");
 
       // Should have re-run from baseline-model forward:
-      // P1, P2, P3, P4 (trigger), P3 (re-run), P4 (re-run), P7
+      // P1, P2, P3, P4 (trigger), P3 (re-run), P4 (re-run), P5, P6, P7, P8, P9
       const calledPhases = mockRunPhase.mock.calls.map((c) => c[0]);
       expect(calledPhases[0]).toBe("situational-grounding");
       expect(calledPhases[1]).toBe("player-identification");
@@ -1086,7 +1286,11 @@ describe("analysis-orchestrator", () => {
       // After loopback: jump back to baseline-model
       expect(calledPhases[4]).toBe("baseline-model");
       expect(calledPhases[5]).toBe("historical-game");
-      expect(calledPhases[6]).toBe("assumptions");
+      expect(calledPhases[6]).toBe("formal-modeling");
+      expect(calledPhases[7]).toBe("assumptions");
+      expect(calledPhases[8]).toBe("elimination");
+      expect(calledPhases[9]).toBe("scenarios");
+      expect(calledPhases[10]).toBe("meta-check");
     });
 
     it("halts after MAX_LOOPBACK_PASSES with convergence failure", async () => {
@@ -1133,8 +1337,8 @@ describe("analysis-orchestrator", () => {
       const status = orchestrator.getStatus(runId);
       expect(status.status).toBe("completed");
 
-      // Should run normally: P1, P2, P3, P4, P7 — no loopback
-      expect(mockRunPhase).toHaveBeenCalledTimes(5);
+      // Should run normally: all 9 phases — no loopback
+      expect(mockRunPhase).toHaveBeenCalledTimes(9);
     });
   });
 });

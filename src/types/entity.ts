@@ -45,7 +45,11 @@ export type EntityType =
   | "bargaining-dynamics"
   | "option-value-assessment"
   | "behavioral-overlay"
-  | "assumption";
+  | "assumption"
+  | "eliminated-outcome"
+  | "scenario"
+  | "central-thesis"
+  | "meta-check";
 
 // ── Phase 1: Situational Grounding ──
 
@@ -591,6 +595,80 @@ export const assumptionDataSchema = z.object({
 });
 export type AssumptionData = z.infer<typeof assumptionDataSchema>;
 
+// ── Phase 8: Elimination ──
+
+const methodologyPhaseEnum = z.enum([
+  "situational-grounding",
+  "player-identification",
+  "baseline-model",
+  "historical-game",
+  "revalidation",
+  "formal-modeling",
+  "assumptions",
+  "elimination",
+  "scenarios",
+  "meta-check",
+]);
+
+export const eliminatedOutcomeDataSchema = z.object({
+  type: z.literal("eliminated-outcome"),
+  description: z.string().min(1),
+  traced_reasoning: z.string().min(1),
+  source_phase: methodologyPhaseEnum,
+  source_entity_ids: z.array(z.string().min(1)).min(1),
+});
+export type EliminatedOutcomeData = z.infer<typeof eliminatedOutcomeDataSchema>;
+
+// ── Phase 9: Scenario Generation ──
+
+export const scenarioDataSchema = z.object({
+  type: z.literal("scenario"),
+  subtype: z.enum(["baseline", "tail-risk"]),
+  narrative: z.string().min(1),
+  probability: z.object({
+    point: z.number(),
+    rangeLow: z.number(),
+    rangeHigh: z.number(),
+  }),
+  key_assumptions: z.array(z.string()),
+  invalidation_conditions: z.string().min(1),
+  model_basis: z.array(z.string()),
+  cross_game_interactions: z.string(),
+  prediction_basis: z.enum([
+    "equilibrium",
+    "discretionary",
+    "behavioral-overlay",
+  ]),
+  // Tail-risk fields (nullable — required only when subtype is "tail-risk")
+  trigger: z.string().nullable(),
+  why_unlikely: z.string().nullable(),
+  consequences: z.string().nullable(),
+  drift_trajectory: z.string().nullable(),
+});
+export type ScenarioData = z.infer<typeof scenarioDataSchema>;
+
+export const centralThesisDataSchema = z.object({
+  type: z.literal("central-thesis"),
+  thesis: z.string().min(1),
+  falsification_conditions: z.string().min(1),
+  supporting_scenarios: z.array(z.string().min(1)).min(1),
+});
+export type CentralThesisData = z.infer<typeof centralThesisDataSchema>;
+
+// ── Phase 10: Meta-Check ──
+
+export const metaCheckQuestionSchema = z.object({
+  question_number: z.number().int().min(1).max(10),
+  answer: z.string().min(1),
+  disruption_trigger_identified: z.boolean(),
+});
+
+export const metaCheckDataSchema = z.object({
+  type: z.literal("meta-check"),
+  questions: z.array(metaCheckQuestionSchema).length(10),
+});
+export type MetaCheckData = z.infer<typeof metaCheckDataSchema>;
+
 // ── Entity Data Union ──
 
 export type EntityData =
@@ -616,7 +694,11 @@ export type EntityData =
   | BargainingDynamicsData
   | OptionValueAssessmentData
   | BehavioralOverlayData
-  | AssumptionData;
+  | AssumptionData
+  | EliminatedOutcomeData
+  | ScenarioData
+  | CentralThesisData
+  | MetaCheckData;
 
 export const entityDataSchema = z.discriminatedUnion("type", [
   factDataSchema,
@@ -642,6 +724,10 @@ export const entityDataSchema = z.discriminatedUnion("type", [
   optionValueAssessmentDataSchema,
   behavioralOverlayDataSchema,
   assumptionDataSchema,
+  eliminatedOutcomeDataSchema,
+  scenarioDataSchema,
+  centralThesisDataSchema,
+  metaCheckDataSchema,
 ]);
 
 // ── Core Entity ──

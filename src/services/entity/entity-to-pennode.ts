@@ -28,6 +28,10 @@ const ENTITY_SIZE: Record<EntityType, { w: number; h: number }> = {
   "option-value-assessment": { w: 140, h: 60 },
   "behavioral-overlay": { w: 140, h: 60 },
   assumption: { w: 120, h: 50 },
+  "eliminated-outcome": { w: 140, h: 60 },
+  scenario: { w: 160, h: 80 },
+  "central-thesis": { w: 180, h: 100 },
+  "meta-check": { w: 180, h: 100 },
 };
 
 // ── Display helpers ──
@@ -110,6 +114,14 @@ function entityMetaLine(entity: AnalysisEntity): string {
       return `behavioral / ${d.overlayType}`;
     case "assumption":
       return `assumption / ${d.sensitivity}`;
+    case "eliminated-outcome":
+      return `eliminated / ${d.source_phase}`;
+    case "scenario":
+      return `scenario / ${d.subtype}`;
+    case "central-thesis":
+      return `thesis`;
+    case "meta-check":
+      return `meta-check / ${d.questions.filter((q) => q.disruption_trigger_identified).length} triggers`;
   }
 }
 
