@@ -34,6 +34,15 @@ describe("AIChatPanel analysis mode", () => {
     expect(source).toContain("handleSendWrapped");
   });
 
+  it("keeps lifecycle announcements on one completion path", () => {
+    const source = readFileSync(aiChatPanelPath, "utf8");
+
+    expect(source).toContain("analysisClient.onProgress((event)");
+    expect(source).toContain("announcedPhaseStartsRef");
+    expect(source).toContain("completedRunIdsRef");
+    expect(source).toContain("buildAnalysisCompleteMessage");
+  });
+
   it("does not depend on the old analysis store", () => {
     const source = readFileSync(aiChatPanelPath, "utf8");
 

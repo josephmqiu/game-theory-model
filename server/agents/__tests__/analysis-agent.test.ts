@@ -482,6 +482,17 @@ describe("analysis-orchestrator", () => {
     ).toBe("terminal");
   });
 
+  it("classifies remote Codex aborts as retryable", () => {
+    expect(
+      orchestrator.classifyFailure("Codex turn failed: Aborted (status=failed)"),
+    ).toBe("retryable");
+    expect(
+      orchestrator.classifyFailure(
+        "Codex turn failed: operation aborted by runtime",
+      ),
+    ).toBe("retryable");
+  });
+
   it("classifies transport errors as retryable", () => {
     expect(orchestrator.classifyFailure("ECONNRESET")).toBe("retryable");
     expect(orchestrator.classifyFailure("Network error")).toBe("retryable");
@@ -552,6 +563,29 @@ describe("analysis-orchestrator", () => {
     expect(mockEntityGraph.removePhaseEntities).not.toHaveBeenCalled();
   });
 
+  it("retries Codex remote aborts and succeeds on a later attempt", async () => {
+    mockRunPhase
+      .mockResolvedValueOnce(makeFailedResult("Codex turn failed: Aborted"))
+      .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
+      .mockResolvedValueOnce(makePhaseResult("player-identification"))
+      .mockResolvedValueOnce(makePhaseResult("baseline-model"))
+      .mockResolvedValueOnce(makePhaseResult("historical-game"))
+      .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
+      .mockResolvedValueOnce(makePhaseResult("assumptions"))
+      .mockResolvedValueOnce(makePhaseResult("elimination"))
+      .mockResolvedValueOnce(makePhaseResult("scenarios"))
+      .mockResolvedValueOnce(makePhaseResult("meta-check"));
+
+    const { runId } = await orchestrator.runFull("Test topic", "openai", "gpt-5.4");
+    await flushAsync();
+
+    const status = orchestrator.getStatus(runId);
+    expect(status.status).toBe("completed");
+    expect(mockRunPhase).toHaveBeenCalledTimes(10);
+    expect(mockRunPhase.mock.calls[0][2]?.provider).toBe("openai");
+    expect(mockRunPhase.mock.calls[0][2]?.model).toBe("gpt-5.4");
+  });
+
   // ── 6. Max 2 retries then phase fails ──
 
   it("fails phase after exhausting max 2 retries", async () => {
@@ -593,6 +627,35 @@ describe("analysis-orchestrator", () => {
 
     // No direct phase clearing happens on terminal failure either
     expect(mockEntityGraph.removePhaseEntities).not.toHaveBeenCalled();
+  });
+
+  it("keeps terminal Codex schema failures descriptive for the user", async () => {
+    mockRunPhase.mockResolvedValueOnce(
+      makeFailedResult(
+        "Codex turn failed: invalid_json_schema: outputSchema rejected for model gpt-5.4",
+      ),
+    );
+
+    const events: AnalysisProgressEvent[] = [];
+    const unsubscribe = orchestrator.onProgress((event) => events.push(event));
+
+    const { runId } = await orchestrator.runFull("Test topic", "openai", "gpt-5.4");
+    await flushAsync();
+    unsubscribe();
+
+    const status = orchestrator.getStatus(runId);
+    expect(status.status).toBe("failed");
+    expect(status.error).toBe(
+      "Codex turn failed: invalid_json_schema: outputSchema rejected for model gpt-5.4",
+    );
+
+    const failEvents = events.filter((e) => e.type === "analysis_failed");
+    expect(failEvents).toHaveLength(1);
+    expect(failEvents[0]).toMatchObject({
+      type: "analysis_failed",
+      error:
+        "Codex turn failed: invalid_json_schema: outputSchema rejected for model gpt-5.4",
+    });
   });
 
   // ── 8. Edit queueing ──

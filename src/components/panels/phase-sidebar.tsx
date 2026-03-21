@@ -10,10 +10,9 @@ import {
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import type { MethodologyPhase } from "@/types/methodology";
 import {
-  ALL_PHASES,
-  V1_PHASES,
+  V3_PHASES,
   PHASE_LABELS,
-  PHASE_NUMBERS,
+  getRunnablePhaseNumber,
 } from "@/types/methodology";
 import {
   getPhaseFailureLabel,
@@ -31,12 +30,6 @@ export interface PhaseSidebarProps {
 }
 
 // ── Helpers ──
-
-const V1_PHASE_SET = new Set<MethodologyPhase>(V1_PHASES);
-
-function isV1Phase(phase: MethodologyPhase): boolean {
-  return V1_PHASE_SET.has(phase);
-}
 
 // ── Component ──
 
@@ -77,8 +70,7 @@ export function PhaseSidebar({
       {/* Phase list */}
       <nav className="flex-1 overflow-y-auto px-2 py-3">
         <ul className="space-y-0.5">
-          {ALL_PHASES.map((phase) => {
-            const v1 = isV1Phase(phase);
+          {V3_PHASES.map((phase) => {
             const phaseState = getPhaseState(phase);
             const status = phaseState?.status ?? "pending";
             const entityCount = getEntityCount(phase);
@@ -90,123 +82,95 @@ export function PhaseSidebar({
             const failureLabel = failure
               ? getPhaseFailureLabel(failure.failureKind)
               : null;
+            const phaseNumber = getRunnablePhaseNumber(phase);
 
-            if (v1) {
-              return (
-                <li key={phase}>
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => handlePhaseClick(phase)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        handlePhaseClick(phase);
-                      }
-                    }}
-                    onMouseEnter={() => setHoveredPhase(phase)}
-                    onMouseLeave={() => setHoveredPhase(null)}
-                    className={cn(
-                      "group flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
-                      isActive
-                        ? "border-l-2 border-amber-500 bg-amber-500/10 pl-1.5"
-                        : "border-l-2 border-transparent pl-1.5",
-                      isRunning &&
-                        !isActive &&
-                        "border-l-2 border-amber-500 pl-1.5",
-                      "hover:bg-zinc-800",
-                    )}
-                  >
-                    {/* Phase number circle */}
-                    <span
-                      className={cn(
-                        "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
-                        isActive
-                          ? "bg-amber-500 text-zinc-950"
-                          : "bg-zinc-700 text-zinc-300",
-                      )}
-                    >
-                      {PHASE_NUMBERS[phase]}
-                    </span>
-
-                    {/* Phase name */}
-                    <span className="flex-1 truncate font-[Geist,sans-serif] text-[13px] font-medium text-zinc-200">
-                      {PHASE_LABELS[phase]}
-                    </span>
-
-                    {/* Status dot */}
-                    {failureLabel ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span
-                            tabIndex={0}
-                            aria-label={`Phase ${PHASE_NUMBERS[phase]} failed: ${failureLabel}`}
-                            className="shrink-0"
-                          >
-                            <StatusDot status={status} />
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent side="right">
-                          {failureLabel}
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      <StatusDot status={status} />
-                    )}
-
-                    {/* Entity count badge */}
-                    {entityCount > 0 && (
-                      <span className="shrink-0 font-[Geist,sans-serif] text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-400">
-                        {entityCount}
-                      </span>
-                    )}
-
-                    {/* Rerun button (visible on hover) */}
-                    {isHovered && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            className="ml-auto h-5 w-5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onRerunPhase(phase);
-                            }}
-                          >
-                            <RefreshCw className="h-3 w-3 text-zinc-400" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="right">
-                          Rerun phase
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
-                  </div>
-                </li>
-              );
-            }
-
-            // Future phases (4-10): disabled
             return (
               <li key={phase}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 pl-[10px] opacity-60">
-                      {/* Phase number circle - muted */}
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[11px] font-semibold text-zinc-500">
-                        {PHASE_NUMBERS[phase]}
-                      </span>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handlePhaseClick(phase)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handlePhaseClick(phase);
+                    }
+                  }}
+                  onMouseEnter={() => setHoveredPhase(phase)}
+                  onMouseLeave={() => setHoveredPhase(null)}
+                  className={cn(
+                    "group flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+                    isActive
+                      ? "border-l-2 border-amber-500 bg-amber-500/10 pl-1.5"
+                      : "border-l-2 border-transparent pl-1.5",
+                    isRunning &&
+                      !isActive &&
+                      "border-l-2 border-amber-500 pl-1.5",
+                    "hover:bg-zinc-800",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
+                      isActive
+                        ? "bg-amber-500 text-zinc-950"
+                        : "bg-zinc-700 text-zinc-300",
+                    )}
+                  >
+                    {phaseNumber}
+                  </span>
 
-                      {/* Phase name - muted */}
-                      <span className="flex-1 truncate font-[Geist,sans-serif] text-[13px] font-medium text-zinc-500">
-                        {PHASE_LABELS[phase]}
-                      </span>
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">Coming soon</TooltipContent>
-                </Tooltip>
+                  <span className="flex-1 truncate font-[Geist,sans-serif] text-[13px] font-medium text-zinc-200">
+                    {PHASE_LABELS[phase]}
+                  </span>
+
+                  {failureLabel ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span
+                          tabIndex={0}
+                          aria-label={`Phase ${phaseNumber} failed: ${failureLabel}`}
+                          className="shrink-0"
+                        >
+                          <StatusDot status={status} />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="right">
+                        {failureLabel}
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    <StatusDot status={status} />
+                  )}
+
+                  {entityCount > 0 && (
+                    <span className="shrink-0 font-[Geist,sans-serif] text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-400">
+                      {entityCount}
+                    </span>
+                  )}
+
+                  {isHovered && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="ml-auto h-5 w-5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onRerunPhase(phase);
+                          }}
+                        >
+                          <RefreshCw className="h-3 w-3 text-zinc-400" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right">
+                        Rerun phase
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
               </li>
             );
           })}

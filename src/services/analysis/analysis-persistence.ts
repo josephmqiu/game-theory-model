@@ -68,6 +68,22 @@ function isUserAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
+function isBrowserSaveRestrictionError(error: unknown): boolean {
+  if (!(error instanceof DOMException || error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    error.name === "SecurityError" ||
+    error.name === "NotAllowedError" ||
+    message.includes("not allowed by the user agent") ||
+    message.includes("platform in the current context") ||
+    message.includes("secure context") ||
+    message.includes("user activation")
+  );
+}
+
 function getPickerAccept(): Record<string, string[]> {
   return {
     "application/json": [ANALYSIS_FILE_EXTENSION],
@@ -219,7 +235,19 @@ export async function saveAnalysisAs(): Promise<boolean> {
         payload.source.filePath ?? payload.fileName,
       );
     } else if (supportsFileSystemAccess()) {
-      source = await saveAnalysisAsWithPicker(payload.fileName, payload.text);
+      try {
+        source = await saveAnalysisAsWithPicker(payload.fileName, payload.text);
+      } catch (error) {
+        if (isUserAbortError(error)) {
+          return false;
+        }
+
+        if (!isBrowserSaveRestrictionError(error)) {
+          throw error;
+        }
+
+        source = saveAnalysisAsWithDownload(payload.fileName, payload.text);
+      }
     } else {
       source = saveAnalysisAsWithDownload(payload.fileName, payload.text);
     }
@@ -254,11 +282,33 @@ export async function saveAnalysis(): Promise<boolean> {
 
   try {
     if (payload.source.fileHandle) {
-      await writeTextToFileHandle(payload.source.fileHandle, payload.text);
-      useEntityGraphStore.getState().commitSave({
+      let source: AnalysisPersistenceSource = {
         fileName: payload.source.fileName ?? undefined,
         filePath: payload.source.filePath ?? undefined,
         fileHandle: payload.source.fileHandle ?? undefined,
+      };
+
+      try {
+        await writeTextToFileHandle(payload.source.fileHandle, payload.text);
+      } catch (error) {
+        if (isUserAbortError(error)) {
+          return false;
+        }
+
+        if (
+          window.electronAPI?.isElectron ||
+          !isBrowserSaveRestrictionError(error)
+        ) {
+          throw error;
+        }
+
+        source = saveAnalysisAsWithDownload(payload.fileName, payload.text);
+      }
+
+      useEntityGraphStore.getState().commitSave({
+        fileName: source.fileName ?? undefined,
+        filePath: source.filePath ?? undefined,
+        fileHandle: source.fileHandle ?? undefined,
       });
       return true;
     }

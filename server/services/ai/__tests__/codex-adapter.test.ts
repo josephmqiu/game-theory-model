@@ -88,6 +88,20 @@ function emitNotification(method: string, params: Record<string, unknown>) {
   mockChild.stdout.emit("data", Buffer.from(line));
 }
 
+function emitErrorNotification(
+  error: Record<string, unknown>,
+  threadId = "thread-1",
+  turnId = "turn-1",
+  willRetry = false,
+) {
+  emitNotification("error", {
+    error,
+    threadId,
+    turnId,
+    willRetry,
+  });
+}
+
 function emitThreadStartResponse(id: number, threadId = "thread-1") {
   emitResponse(id, { thread: { id: threadId } });
 }
@@ -106,7 +120,11 @@ function emitTurnCompleted(
   threadId = "thread-1",
   turnId = "turn-1",
   status = "completed",
-  error?: { message: string },
+  error?: {
+    message: string;
+    additionalDetails?: string;
+    codexErrorInfo?: unknown;
+  },
 ) {
   emitNotification("turn/completed", {
     threadId,
@@ -947,8 +965,11 @@ describe("codex-adapter", () => {
         }
       });
 
-      const result = await runAnalysisPhase("analyze", "system", "gpt-4o", {});
-      expect(result).toEqual({ entities: [] });
+      await expect(
+        runAnalysisPhase("analyze", "system", "gpt-4o", {}),
+      ).rejects.toThrow(
+        "Codex turn failed: Analysis rejected item/fileChange/requestApproval during structured-output turn",
+      );
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
       const rejectionReq = JSON.parse(
@@ -967,6 +988,186 @@ describe("codex-adapter", () => {
           approvalId: "file-approval-1",
         }),
       );
+    });
+
+    it("surfaces failed turn completion details with status and codex error info", async () => {
+      const { serverLog } = await import("../../../utils/ai-logger");
+      const { runAnalysisPhase, _resetConnection } =
+        await import("../codex-adapter");
+      _resetConnection();
+
+      setAutoResponder((method, id) => {
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "config/mcpServer/reload" && id !== undefined) {
+          emitResponse(id, { ok: true });
+        }
+        if (method === "mcpServerStatus/list" && id !== undefined) {
+          emitResponse(id, {
+            data: [
+              {
+                name: "game_theory_analyzer_mcp",
+                tools: {
+                  get_entity: {},
+                  query_entities: {},
+                  query_relationships: {},
+                  request_loopback: {},
+                },
+              },
+            ],
+          });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitThreadStartResponse(id);
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id, "turn-analysis-failed");
+          queueMicrotask(() => {
+            emitTurnCompleted("thread-1", "turn-analysis-failed", "failed", {
+              message: "Aborted",
+              additionalDetails: "output schema validation failed upstream",
+              codexErrorInfo: { code: "model_aborted", retryable: true },
+            });
+          });
+        }
+      });
+
+      await expect(
+        runAnalysisPhase("analyze", "system", "gpt-4o", {}),
+      ).rejects.toThrow(
+        'Codex turn failed: Aborted (status=failed; additionalDetails=output schema validation failed upstream; codexErrorInfo={"code":"model_aborted","retryable":true})',
+      );
+
+      expect(serverLog).toHaveBeenCalledWith(
+        undefined,
+        "codex-adapter",
+        "analysis-turn-completed",
+        expect.objectContaining({
+          turnId: "turn-analysis-failed",
+          status: "failed",
+          errorMessage: "Aborted",
+          additionalDetails: "output schema validation failed upstream",
+          codexErrorInfo: { code: "model_aborted", retryable: true },
+        }),
+      );
+    });
+
+    it("surfaces server error notifications during analysis", async () => {
+      const { serverWarn } = await import("../../../utils/ai-logger");
+      const { runAnalysisPhase, _resetConnection } =
+        await import("../codex-adapter");
+      _resetConnection();
+
+      setAutoResponder((method, id) => {
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "config/mcpServer/reload" && id !== undefined) {
+          emitResponse(id, { ok: true });
+        }
+        if (method === "mcpServerStatus/list" && id !== undefined) {
+          emitResponse(id, {
+            data: [
+              {
+                name: "game_theory_analyzer_mcp",
+                tools: {
+                  get_entity: {},
+                  query_entities: {},
+                  query_relationships: {},
+                  request_loopback: {},
+                },
+              },
+            ],
+          });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitThreadStartResponse(id);
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id, "turn-analysis-error");
+          queueMicrotask(() => {
+            emitErrorNotification(
+              {
+                message: "Model refused output schema",
+                additionalDetails: "invalid_json_schema",
+                codexErrorInfo: { type: "schema_refusal" },
+              },
+              "thread-1",
+              "turn-analysis-error",
+            );
+          });
+        }
+        if (method === "turn/interrupt" && id !== undefined) {
+          emitResponse(id, { ok: true });
+        }
+      });
+
+      await expect(
+        runAnalysisPhase("analyze", "system", "gpt-4o", {}),
+      ).rejects.toThrow(
+        'Codex turn failed: Model refused output schema (additionalDetails=invalid_json_schema; codexErrorInfo={"type":"schema_refusal"})',
+      );
+
+      expect(serverWarn).toHaveBeenCalledWith(
+        undefined,
+        "codex-adapter",
+        "analysis-error-notification",
+        expect.objectContaining({
+          turnId: "turn-analysis-error",
+          message: "Model refused output schema",
+          additionalDetails: "invalid_json_schema",
+          codexErrorInfo: { type: "schema_refusal" },
+        }),
+      );
+    });
+
+    it("keeps a local abort as plain Aborted", async () => {
+      const { runAnalysisPhase, _resetConnection } =
+        await import("../codex-adapter");
+      _resetConnection();
+
+      const controller = new AbortController();
+
+      setAutoResponder((method, id) => {
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "config/mcpServer/reload" && id !== undefined) {
+          emitResponse(id, { ok: true });
+        }
+        if (method === "mcpServerStatus/list" && id !== undefined) {
+          emitResponse(id, {
+            data: [
+              {
+                name: "game_theory_analyzer_mcp",
+                tools: {
+                  get_entity: {},
+                  query_entities: {},
+                  query_relationships: {},
+                  request_loopback: {},
+                },
+              },
+            ],
+          });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitThreadStartResponse(id);
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id, "turn-analysis-abort");
+          queueMicrotask(() => controller.abort());
+        }
+        if (method === "turn/interrupt" && id !== undefined) {
+          emitResponse(id, { ok: true });
+        }
+      });
+
+      await expect(
+        runAnalysisPhase("analyze", "system", "gpt-4o", {}, {
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow(/^Aborted$/);
     });
 
     it("throws when restoring the chat MCP surface fails", async () => {
@@ -1031,6 +1232,69 @@ describe("codex-adapter", () => {
       await expect(
         runAnalysisPhase("analyze", "system", "gpt-4o", {}),
       ).rejects.toThrow(/restore failed/);
+    });
+
+    it("keeps the primary turn failure when MCP restore also fails", async () => {
+      const { runAnalysisPhase, _resetConnection } =
+        await import("../codex-adapter");
+      _resetConnection();
+
+      let reloadCount = 0;
+      setAutoResponder((method, id) => {
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "config/mcpServer/reload" && id !== undefined) {
+          reloadCount += 1;
+          if (reloadCount === 1) {
+            emitResponse(id, { ok: true });
+            return;
+          }
+          const line =
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id,
+              error: {
+                code: -32000,
+                message: "restore failed",
+              },
+            }) + "\n";
+          mockChild.stdout.emit("data", Buffer.from(line));
+        }
+        if (method === "mcpServerStatus/list" && id !== undefined) {
+          emitResponse(id, {
+            data: [
+              {
+                name: "game_theory_analyzer_mcp",
+                tools: {
+                  get_entity: {},
+                  query_entities: {},
+                  query_relationships: {},
+                  request_loopback: {},
+                },
+              },
+            ],
+          });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitThreadStartResponse(id);
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id, "turn-analysis-primary-error");
+          queueMicrotask(() => {
+            emitTurnCompleted(
+              "thread-1",
+              "turn-analysis-primary-error",
+              "failed",
+              { message: "Aborted" },
+            );
+          });
+        }
+      });
+
+      await expect(
+        runAnalysisPhase("analyze", "system", "gpt-4o", {}),
+      ).rejects.toThrow("Codex turn failed: Aborted (status=failed)");
     });
   });
 

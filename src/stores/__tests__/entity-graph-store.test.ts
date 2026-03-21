@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import type { AnalysisEntity, AnalysisRelationship } from "@/types/entity";
 import type { MethodologyPhase } from "@/types/methodology";
-import { V1_PHASES } from "@/types/methodology";
+import { V3_PHASES } from "@/types/methodology";
 
 function makeEntity(
   overrides: Partial<AnalysisEntity> & {
@@ -53,7 +53,7 @@ describe("entity-graph-store", () => {
   // ── newAnalysis ──
 
   describe("newAnalysis", () => {
-    it("creates empty analysis with topic and initializes V1 phases as pending", () => {
+    it("creates empty analysis with topic and initializes runnable phases as pending", () => {
       useEntityGraphStore.getState().newAnalysis("US-China trade war");
 
       const state = useEntityGraphStore.getState();
@@ -61,10 +61,10 @@ describe("entity-graph-store", () => {
       expect(state.analysis.id).toBeTruthy();
       expect(state.analysis.entities).toEqual([]);
       expect(state.analysis.relationships).toEqual([]);
-      expect(state.analysis.phases).toHaveLength(V1_PHASES.length);
+      expect(state.analysis.phases).toHaveLength(V3_PHASES.length);
 
       for (const ps of state.analysis.phases) {
-        expect(V1_PHASES).toContain(ps.phase);
+        expect(V3_PHASES).toContain(ps.phase);
         expect(ps.status).toBe("pending");
         expect(ps.entityIds).toEqual([]);
       }
@@ -788,6 +788,58 @@ describe("entity-graph-store", () => {
       expect(state.fileName).toBe("loaded.gta");
       expect(state.isDirty).toBe(false);
       expect(state.layout.e1).toEqual({ x: 100, y: 200, pinned: true });
+    });
+
+    it("normalizes legacy phase lists to the 9 runnable phases", () => {
+      const entity = makeEntity({
+        id: "historical-entity",
+        type: "fact",
+        phase: "historical-game",
+      });
+
+      useEntityGraphStore.getState().loadAnalysis(
+        {
+          ...useEntityGraphStore.getState().analysis,
+          topic: "loaded topic",
+          entities: [entity],
+          phases: [
+            {
+              phase: "situational-grounding",
+              status: "complete",
+              entityIds: [],
+            },
+            {
+              phase: "player-identification",
+              status: "complete",
+              entityIds: [],
+            },
+            {
+              phase: "baseline-model",
+              status: "complete",
+              entityIds: [],
+            },
+          ],
+        },
+        {},
+      );
+
+      const state = useEntityGraphStore.getState();
+      expect(state.analysis.phases.map((phaseState) => phaseState.phase)).toEqual(
+        V3_PHASES,
+      );
+      expect(
+        state.analysis.phases.find(
+          (phaseState) => phaseState.phase === "historical-game",
+        ),
+      ).toMatchObject({
+        status: "complete",
+        entityIds: ["historical-entity"],
+      });
+      expect(
+        state.analysis.phases.find(
+          (phaseState) => phaseState.phase === "meta-check",
+        )?.status,
+      ).toBe("pending");
     });
   });
 

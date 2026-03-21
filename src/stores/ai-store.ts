@@ -85,6 +85,14 @@ function writeStoredConcurrency(n: number): void {
   }
 }
 
+function warnDuplicateMessageId(id: string): void {
+  if (!import.meta.env.DEV || typeof console === "undefined") {
+    return;
+  }
+
+  console.warn("[ai-store] duplicate message id", { id });
+}
+
 // Keep SSR/CSR first render deterministic to avoid hydration mismatch.
 // Real preference is loaded on mount via hydrateModelPreference().
 const initialPreferredModel = DEFAULT_MODEL;
@@ -187,7 +195,15 @@ export const useAIStore = create<AIState>((set, get) => ({
     if (prefs.codeFormat) set({ codeFormat: prefs.codeFormat });
   },
 
-  addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
+  addMessage: (msg) =>
+    set((s) => {
+      if (s.messages.some((existing) => existing.id === msg.id)) {
+        warnDuplicateMessageId(msg.id);
+        return s;
+      }
+
+      return { messages: [...s.messages, msg] };
+    }),
 
   updateLastMessage: (content) =>
     set((s) => {

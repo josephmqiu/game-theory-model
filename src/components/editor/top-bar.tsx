@@ -32,6 +32,9 @@ import {
 } from "@/services/analysis/analysis-persistence";
 import { exportToMarkdown } from "@/services/entity/entity-export";
 import type { AIProviderType } from "@/types/agent-settings";
+import {
+  countCompletedRunnablePhases,
+} from "@/types/methodology";
 
 /** Convert a computed CSS color value (oklch/rgb/etc.) to #rrggbb via an offscreen canvas. */
 function cssToHex(raw: string): string | null {
@@ -238,9 +241,7 @@ export default function TopBar({
     analysis.name.trim() || analysis.topic.trim() || "New Analysis";
   const fileStatusLabel = fileName ?? t("topbar.unsavedFile");
   const entityCount = analysis.entities.length;
-  const completedPhases = analysis.phases.filter(
-    (ps) => ps.status === "complete",
-  ).length;
+  const completedPhases = countCompletedRunnablePhases(analysis.phases);
   const statusLabel =
     entityCount > 0
       ? `${entityCount} entities / ${completedPhases} phases`

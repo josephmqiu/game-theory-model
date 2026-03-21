@@ -1,5 +1,7 @@
-import React, { useState, useMemo, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Copy, Check, Wand2, ChevronDown } from 'lucide-react'
+import ReactMarkdown, { type Components } from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import type { ChatAttachment } from '@/services/ai/ai-types'
@@ -295,22 +297,47 @@ function isDesignJson(code: string): boolean {
   return /^\s*[\[{]/.test(code) && /"type"\s*:/.test(code) && /"id"\s*:/.test(code)
 }
 
-function parseMarkdown(
-  text: string,
-  onApplyDesign?: (json: string) => void,
-  isApplied?: boolean,
-  isStreaming?: boolean,
-): ReactNode[] {
-  const parts: ReactNode[] = []
+function flashCopiedState(button: HTMLButtonElement) {
+  button.dataset.copied = 'true'
+  window.setTimeout(() => {
+    button.dataset.copied = 'false'
+  }, 2000)
+}
+
+type MarkdownSegment =
+  | {
+      type: 'markdown'
+      content: string
+    }
+  | {
+      type: 'code'
+      code: string
+      language: string
+      isStreaming?: boolean
+    }
+
+function splitMarkdownSegments(text: string, isStreaming = false): MarkdownSegment[] {
+  const segments: MarkdownSegment[] = []
+  const markdownLines: string[] = []
   const lines = text.split('\n')
   let inCodeBlock = false
   let codeContent = ''
   let codeLang = ''
-  let blockKey = 0
+  let openingFence = ''
+
+  const flushMarkdown = () => {
+    const content = markdownLines.join('\n').trim()
+    if (content) {
+      segments.push({ type: 'markdown', content })
+    }
+    markdownLines.length = 0
+  }
 
   for (const line of lines) {
     if (line.startsWith('```') && !inCodeBlock) {
+      flushMarkdown()
       inCodeBlock = true
+      openingFence = line
       codeLang = line.slice(3).trim()
       codeContent = ''
       continue
@@ -318,26 +345,14 @@ function parseMarkdown(
 
     if (line.startsWith('```') && inCodeBlock) {
       inCodeBlock = false
-      const code = codeContent.trimEnd()
-      // For JSON blocks that look like design data, use the collapsed view
-      if (codeLang === 'json' && isDesignJson(code)) {
-        parts.push(
-          <DesignJsonBlock
-            key={`design-${blockKey++}`}
-            code={code}
-            onApply={onApplyDesign}
-            isApplied={isApplied}
-          />,
-        )
-      } else {
-        parts.push(
-          <CodeBlock
-            key={`code-${blockKey++}`}
-            code={code}
-            language={codeLang}
-          />,
-        )
-      }
+      segments.push({
+        type: 'code',
+        code: codeContent.trimEnd(),
+        language: codeLang,
+      })
+      openingFence = ''
+      codeLang = ''
+      codeContent = ''
       continue
     }
 
@@ -346,140 +361,148 @@ function parseMarkdown(
       continue
     }
 
-    // Empty lines
-    if (!line) {
-      parts.push('\n')
-      continue
-    }
-
-    parts.push(
-      <span key={`line-${blockKey++}`}>
-        {parseInlineMarkdown(line)}
-        {'\n'}
-      </span>,
-    )
+    markdownLines.push(line)
   }
 
-  // Handle unclosed code block (streaming)
-  if (inCodeBlock && codeContent) {
-    const code = codeContent.trimEnd()
-    if (codeLang === 'json' && isDesignJson(code)) {
-      parts.push(
-        <DesignJsonBlock
-          key={`design-${blockKey++}`}
-          code={code}
-          isStreaming
-        />,
-      )
+  if (inCodeBlock) {
+    if (isStreaming && codeContent) {
+      segments.push({
+        type: 'code',
+        code: codeContent.trimEnd(),
+        language: codeLang,
+        isStreaming: true,
+      })
     } else {
-      parts.push(
-        <CodeBlock
-          key={`code-${blockKey++}`}
-          code={code}
-          language={codeLang}
-        />,
-      )
+      markdownLines.push(openingFence)
+      if (codeContent) {
+        markdownLines.push(codeContent)
+      }
     }
   }
 
-  // Strip bare '\n' entries adjacent to block-level components (DesignJsonBlock / CodeBlock)
-  const isBlock = (n: ReactNode) =>
-    typeof n === 'object' && n !== null && 'type' in n &&
-    ((n as React.ReactElement).type === DesignJsonBlock || (n as React.ReactElement).type === CodeBlock)
-
-  const cleaned: ReactNode[] = []
-  for (let i = 0; i < parts.length; i++) {
-    if (parts[i] === '\n' && (isBlock(parts[i + 1]) || isBlock(parts[i - 1]))) continue
-    cleaned.push(parts[i])
-  }
-
-  // Append inline streaming cursor — skip if last part is a block component
-  if (isStreaming && cleaned.length > 0) {
-    if (!isBlock(cleaned[cleaned.length - 1])) {
-      cleaned.push(
-        <span
-          key="streaming-cursor"
-          className="inline-block w-1.5 h-3.5 bg-muted-foreground/70 animate-pulse rounded-sm ml-0.5 align-text-bottom"
-        />,
-      )
-    }
-  }
-
-  return cleaned
+  flushMarkdown()
+  return segments
 }
 
-function parseInlineMarkdown(text: string): ReactNode[] | string {
-  // Fast path: no markdown syntax at all → return plain string (no wrapper spans)
-  if (!/[*`]/.test(text)) return text
+const markdownComponents: Components = {
+  h1: ({ children }) => (
+    <h1 className="mt-4 mb-2 text-lg font-semibold tracking-tight text-foreground first:mt-0">{children}</h1>
+  ),
+  h2: ({ children }) => (
+    <h2 className="mt-4 mb-2 text-base font-semibold tracking-tight text-foreground first:mt-0">{children}</h2>
+  ),
+  h3: ({ children }) => (
+    <h3 className="mt-3 mb-1.5 text-sm font-semibold text-foreground first:mt-0">{children}</h3>
+  ),
+  h4: ({ children }) => (
+    <h4 className="mt-3 mb-1 text-sm font-medium text-foreground first:mt-0">{children}</h4>
+  ),
+  p: ({ children }) => (
+    <p className="my-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground first:mt-0 last:mb-0">
+      {children}
+    </p>
+  ),
+  strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  ul: ({ children }) => <ul className="my-2 ml-5 list-disc space-y-1">{children}</ul>,
+  ol: ({ children }) => <ol className="my-2 ml-5 list-decimal space-y-1">{children}</ol>,
+  li: ({ children }) => <li className="whitespace-pre-wrap break-words marker:text-muted-foreground">{children}</li>,
+  blockquote: ({ children }) => (
+    <blockquote className="my-3 border-l-2 border-border/70 pl-3 text-muted-foreground">{children}</blockquote>
+  ),
+  hr: () => <hr className="my-3 border-0 border-t border-border/60" />,
+  a: ({ children, href }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="text-primary underline underline-offset-2 hover:text-primary/80"
+    >
+      {children}
+    </a>
+  ),
+  table: ({ children }) => (
+    <div className="my-3 overflow-x-auto rounded-md border border-border/50">
+      <table className="min-w-full border-collapse text-left text-xs text-foreground">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="bg-secondary/40">{children}</thead>,
+  tbody: ({ children }) => <tbody>{children}</tbody>,
+  tr: ({ children }) => <tr className="border-b border-border/40 last:border-b-0">{children}</tr>,
+  th: ({ children }) => <th className="px-3 py-2 font-medium text-foreground">{children}</th>,
+  td: ({ children }) => <td className="px-3 py-2 align-top text-muted-foreground">{children}</td>,
+  code: ({ children, className }) => (
+    <code className={cn('rounded bg-secondary px-1 py-0.5 text-[0.85em] text-foreground/80', className)}>{children}</code>
+  ),
+}
 
-  const parts: ReactNode[] = []
-  let remaining = text
-  let key = 0
+function MarkdownBody({
+  content,
+  isStreaming,
+}: {
+  content: string
+  isStreaming?: boolean
+}) {
+  return (
+    <div className="min-w-0">
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        {content}
+      </ReactMarkdown>
+      {isStreaming ? (
+        <span
+          aria-label="streaming cursor"
+          className="inline-block h-3.5 w-1.5 rounded-sm bg-muted-foreground/70 align-text-bottom animate-pulse"
+        />
+      ) : null}
+    </div>
+  )
+}
 
-  while (remaining.length > 0) {
-    // Bold
-    const boldMatch = remaining.match(/\*\*(.+?)\*\*/)
-    // Inline code
-    const codeMatch = remaining.match(/`([^`]+)`/)
-    // Italic
-    const italicMatch = remaining.match(/\*(.+?)\*/)
+function renderMarkdown(
+  text: string,
+  onApplyDesign?: (json: string) => void,
+  isApplied?: boolean,
+  isStreaming?: boolean,
+): ReactNode[] {
+  const segments = splitMarkdownSegments(text, isStreaming)
 
-    const matches = [
-      boldMatch && { match: boldMatch, type: 'bold' as const },
-      codeMatch && { match: codeMatch, type: 'code' as const },
-      italicMatch && { match: italicMatch, type: 'italic' as const },
-    ]
-      .filter(Boolean)
-      .sort((a, b) => a!.match.index! - b!.match.index!)
+  return segments.map((segment, index) => {
+    if (segment.type === 'code') {
+      if (segment.language === 'json' && isDesignJson(segment.code)) {
+        return (
+          <DesignJsonBlock
+            key={`design-${index}`}
+            code={segment.code}
+            onApply={onApplyDesign}
+            isApplied={isApplied}
+            isStreaming={segment.isStreaming}
+          />
+        )
+      }
 
-    if (matches.length === 0) {
-      parts.push(remaining)
-      break
+      return (
+        <CodeBlock
+          key={`code-${index}`}
+          code={segment.code}
+          language={segment.language}
+        />
+      )
     }
 
-    const first = matches[0]!
-    const idx = first.match.index!
-
-    if (idx > 0) {
-      parts.push(remaining.slice(0, idx))
-    }
-
-    if (first.type === 'bold') {
-      parts.push(
-        <strong key={key++} className="font-semibold">
-          {first.match[1]}
-        </strong>,
-      )
-    } else if (first.type === 'code') {
-      parts.push(
-        <code
-          key={key++}
-          className="bg-secondary text-foreground/80 px-1 py-0.5 rounded text-[0.85em]"
-        >
-          {first.match[1]}
-        </code>,
-      )
-    } else {
-      parts.push(
-        <em key={key++} className="italic">
-          {first.match[1]}
-        </em>,
-      )
-    }
-
-    remaining = remaining.slice(idx + first.match[0].length)
-  }
-
-  return parts
+    return (
+      <MarkdownBody
+        key={`markdown-${index}`}
+        content={segment.content}
+        isStreaming={!!isStreaming && index === segments.length - 1}
+      />
+    )
+  })
 }
 
 function CodeBlock({ code, language }: { code: string; language: string }) {
-  const [copied, setCopied] = useState(false)
-
-  const handleCopy = () => {
+  const handleCopy = (button: HTMLButtonElement) => {
     navigator.clipboard.writeText(code)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    flashCopiedState(button)
   }
 
   return (
@@ -488,11 +511,13 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
         <span className="text-[10px] text-muted-foreground uppercase">{language || 'code'}</span>
         <button
           type="button"
-          onClick={handleCopy}
-          className="text-muted-foreground hover:text-foreground transition-colors p-0.5"
+          onClick={(event) => handleCopy(event.currentTarget)}
+          className="group text-muted-foreground hover:text-foreground transition-colors p-0.5"
+          data-copied="false"
           title="Copy code"
         >
-          {copied ? <Check size={12} /> : <Copy size={12} />}
+          <Copy size={12} className="group-data-[copied=true]:hidden" />
+          <Check size={12} className="hidden group-data-[copied=true]:block" />
         </button>
       </div>
       <pre className="p-3 overflow-x-auto text-xs leading-relaxed">
@@ -514,10 +539,7 @@ function DesignJsonBlock({
   isApplied?: boolean
   isStreaming?: boolean
 }) {
-  const [expanded, setExpanded] = useState(false)
-  const [copied, setCopied] = useState(false)
-
-  const elementCount = useMemo(() => {
+  const elementCount = (() => {
     try {
       const parsed = JSON.parse(code)
       if (Array.isArray(parsed)) return parsed.length
@@ -529,80 +551,70 @@ function DesignJsonBlock({
       }
       return 0
     }
-  }, [code])
+  })()
 
   const handleCopy = () => {
     navigator.clipboard.writeText(code)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
   }
 
   return (
-    <div className="group mt-0.5 w-full">
-      <button
-        type="button"
-        onClick={() => setExpanded(!expanded)}
-        className={cn(
-          "flex items-center justify-between w-full px-3 py-2 text-left transition-all rounded-md border",
-          expanded 
-            ? "bg-secondary/40 border-border/60" 
-            : "bg-background/40 hover:bg-secondary/20 border-border/30 hover:border-border/50"
-        )}
-      >
+    <details className="group mt-0.5 w-full">
+      <summary className="flex items-center justify-between w-full list-none px-3 py-2 text-left transition-all rounded-md border bg-background/40 hover:bg-secondary/20 border-border/30 hover:border-border/50 cursor-pointer group-open:bg-secondary/40 group-open:border-border/60">
         <div className="flex items-center gap-2.5">
           <div className="w-4 h-4 rounded-full flex items-center justify-center bg-primary/10 text-primary shrink-0">
-             <Wand2 size={10} />
+            <Wand2 size={10} />
           </div>
-          <span className={cn(
-            "text-[11px] font-medium tracking-tight", 
-            isStreaming ? "text-muted-foreground animate-pulse" : "text-foreground/90 group-hover:text-foreground"
-          )}>
+          <span
+            className={cn(
+              "text-[11px] font-medium tracking-tight",
+              isStreaming ? "text-muted-foreground animate-pulse" : "text-foreground/90 group-hover:text-foreground",
+            )}
+          >
             {isStreaming
               ? 'Generating design...'
               : `${elementCount} design element${elementCount !== 1 ? 's' : ''}`}
           </span>
         </div>
-        
+
         <div className="flex items-center gap-1">
-          <span
-            role="button"
-            tabIndex={0}
+          <button
+            type="button"
             onClick={(e) => {
+              e.preventDefault()
               e.stopPropagation()
               handleCopy()
+              flashCopiedState(e.currentTarget)
             }}
-            className="text-muted-foreground/30 hover:text-foreground transition-colors p-1 opacity-0 group-hover:opacity-100 mr-1"
+            className="group text-muted-foreground/30 hover:text-foreground transition-colors p-1 opacity-0 group-hover:opacity-100 mr-1"
+            data-copied="false"
             title="Copy JSON"
           >
-            {copied ? <Check size={10} /> : <Copy size={10} />}
-          </span>
-          <ChevronDown size={12} className={cn("text-muted-foreground/30 transition-transform duration-200", expanded ? "rotate-180" : "")} />
+            <Copy size={10} className="group-data-[copied=true]:hidden" />
+            <Check size={10} className="hidden group-data-[copied=true]:block" />
+          </button>
+          <ChevronDown size={12} className="text-muted-foreground/30 transition-transform duration-200 group-open:rotate-180" />
         </div>
-      </button>
+      </summary>
 
-      {/* Expandable JSON content */}
-      {expanded && (
-        <div className="mt-1 rounded-md border border-border/30 overflow-hidden bg-card/50">
-           <pre className="p-3 overflow-x-auto text-[9px] leading-relaxed max-h-48 overflow-y-auto font-mono text-muted-foreground/80">
-            <code>{code}</code>
-          </pre>
-          
-          {/* Apply button - hidden if applied or streaming */}
-          {onApply && !isApplied && !isStreaming && (
-            <div className="px-2 py-1.5 border-t border-border/30 bg-secondary/10">
-              <Button
-                onClick={() => onApply(code)}
-                variant="ghost"
-                className="w-full h-7 text-[10px] font-medium text-muted-foreground hover:text-primary hover:bg-primary/5"
-                size="sm"
-              >
-                Apply to Canvas
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+      <div className="mt-1 rounded-md border border-border/30 overflow-hidden bg-card/50">
+        <pre className="p-3 overflow-x-auto text-[9px] leading-relaxed max-h-48 overflow-y-auto font-mono text-muted-foreground/80">
+          <code>{code}</code>
+        </pre>
+
+        {!isStreaming && onApply && !isApplied && (
+          <div className="px-2 py-1.5 border-t border-border/30 bg-secondary/10">
+            <Button
+              onClick={() => onApply(code)}
+              variant="ghost"
+              className="w-full h-7 text-[10px] font-medium text-muted-foreground hover:text-primary hover:bg-primary/5"
+              size="sm"
+            >
+              Apply to Canvas
+            </Button>
+          </div>
+        )}
+      </div>
+    </details>
   )
 }
 
@@ -613,24 +625,13 @@ export default function ChatMessage({
   onApplyDesign,
   attachments,
 }: ChatMessageProps) {
-  const isApplied = useMemo(
-    () => role === 'assistant' && (content.includes('\u2705') || content.includes('<!-- APPLIED -->')),
-    [role, content],
-  )
-
-
   const isUser = role === 'user'
+  const isApplied = role === 'assistant' && (content.includes('\u2705') || content.includes('<!-- APPLIED -->'))
   // Strip raw tool-call XML that the model may emit (should never be visible)
   const displayContent = isUser ? content : stripToolCallXml(content)
-  const steps = useMemo(
-    () => (isUser ? [] : parseStepBlocks(displayContent, isStreaming)),
-    [isUser, displayContent, isStreaming],
-  )
+  const steps = isUser ? [] : parseStepBlocks(displayContent, isStreaming)
   const hasFlow = !isUser && steps.length > 0
-  const contentWithoutSteps = useMemo(
-    () => (isUser ? displayContent : stripStepBlocks(displayContent)),
-    [isUser, displayContent],
-  )
+  const contentWithoutSteps = isUser ? displayContent : stripStepBlocks(displayContent)
   const isEmpty = !contentWithoutSteps.trim() && !hasFlow
 
   // Don't render an empty non-streaming assistant message
@@ -688,8 +689,8 @@ export default function ChatMessage({
                 </div>
               )}
               {contentWithoutSteps.trim() ? (
-                <div className="whitespace-pre-wrap">
-                  {parseMarkdown(
+                <div className="min-w-0">
+                  {renderMarkdown(
                     contentWithoutSteps,
                     onApplyDesign,
                     isApplied,

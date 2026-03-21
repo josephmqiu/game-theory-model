@@ -24,6 +24,8 @@ type NormalizedChunk =
   | { kind: "done" }
   | { kind: "error"; content: string };
 
+export type PendingToolMsgIds = Map<string, string[]>;
+
 /**
  * Normalizes either a legacy AIStreamChunk or a new ChatEvent into a
  * NormalizedChunk.  Unknown shapes are silently skipped (returns null).
@@ -82,6 +84,55 @@ function normalizeChunk(
   }
 
   return null;
+}
+
+export function enqueuePendingToolMessage(
+  pendingToolMsgIds: PendingToolMsgIds,
+  toolName: string,
+  messageId: string,
+): void {
+  const queue = pendingToolMsgIds.get(toolName) ?? [];
+  queue.push(messageId);
+  pendingToolMsgIds.set(toolName, queue);
+}
+
+export function dequeuePendingToolMessage(
+  pendingToolMsgIds: PendingToolMsgIds,
+  toolName: string,
+): string | undefined {
+  const queue = pendingToolMsgIds.get(toolName);
+  if (!queue || queue.length === 0) return undefined;
+
+  const messageId = queue.shift();
+  if (queue.length === 0) {
+    pendingToolMsgIds.delete(toolName);
+  } else {
+    pendingToolMsgIds.set(toolName, queue);
+  }
+  return messageId;
+}
+
+export function updateToolStatusMessage(
+  messages: ChatMessageType[],
+  messageId: string,
+  toolName: string,
+  toolStatus: NonNullable<ChatMessageType["toolStatus"]>,
+  error?: string,
+): ChatMessageType[] {
+  return messages.map((message) =>
+    message.id === messageId
+      ? {
+          ...message,
+          content:
+            toolStatus === "error"
+              ? `Tool ${toolName} failed: ${error ?? "Unknown error"}`
+              : `Used ${toolName}`,
+          isStreaming: false,
+          toolName,
+          toolStatus,
+        }
+      : message,
+  );
 }
 
 const ENTITY_GRAPH_CHAT_SYSTEM_PROMPT = `You are a game theory analyst assistant. You help the user understand the entity graph analysis displayed on the canvas.
@@ -182,9 +233,9 @@ export function useChatHandlers() {
       const abortController = new AbortController();
       useAIStore.getState().setAbortController(abortController);
 
-      // Track in-flight tool calls so we can update their status messages
-      // when results arrive.  Maps toolName -> message id in the store.
-      const pendingToolMsgIds = new Map<string, string>();
+      // Track in-flight tool calls so repeated calls to the same tool
+      // each get their own lifecycle in FIFO order.
+      const pendingToolMsgIds: PendingToolMsgIds = new Map();
 
       try {
         const context = buildEntityGraphContext();
@@ -235,45 +286,54 @@ export function useChatHandlers() {
             }
             case "tool_start": {
               const toolMsgId = `tool-${chunk.toolName}-${nanoid(6)}`;
-              pendingToolMsgIds.set(chunk.toolName, toolMsgId);
+              enqueuePendingToolMessage(
+                pendingToolMsgIds,
+                chunk.toolName,
+                toolMsgId,
+              );
               addMessage({
                 id: toolMsgId,
                 role: "assistant",
-                content: `Using ${chunk.toolName}...`,
+                content: `Using ${chunk.toolName}`,
                 timestamp: Date.now(),
                 isStreaming: true,
+                toolName: chunk.toolName,
+                toolStatus: "running",
               });
               break;
             }
             case "tool_result": {
-              const msgId = pendingToolMsgIds.get(chunk.toolName);
+              const msgId = dequeuePendingToolMessage(
+                pendingToolMsgIds,
+                chunk.toolName,
+              );
               if (msgId) {
-                useAIStore.setState((s) => {
-                  const msgs = [...s.messages];
-                  const msg = msgs.find((m) => m.id === msgId);
-                  if (msg) {
-                    msg.content = `Used ${chunk.toolName}`;
-                    msg.isStreaming = false;
-                  }
-                  return { messages: msgs };
-                });
-                pendingToolMsgIds.delete(chunk.toolName);
+                useAIStore.setState((s) => ({
+                  messages: updateToolStatusMessage(
+                    s.messages,
+                    msgId,
+                    chunk.toolName,
+                    "done",
+                  ),
+                }));
               }
               break;
             }
             case "tool_error": {
-              const msgId = pendingToolMsgIds.get(chunk.toolName);
+              const msgId = dequeuePendingToolMessage(
+                pendingToolMsgIds,
+                chunk.toolName,
+              );
               if (msgId) {
-                useAIStore.setState((s) => {
-                  const msgs = [...s.messages];
-                  const msg = msgs.find((m) => m.id === msgId);
-                  if (msg) {
-                    msg.content = `Tool ${chunk.toolName} failed: ${chunk.error}`;
-                    msg.isStreaming = false;
-                  }
-                  return { messages: msgs };
-                });
-                pendingToolMsgIds.delete(chunk.toolName);
+                useAIStore.setState((s) => ({
+                  messages: updateToolStatusMessage(
+                    s.messages,
+                    msgId,
+                    chunk.toolName,
+                    "error",
+                    chunk.error,
+                  ),
+                }));
               }
               break;
             }
@@ -298,14 +358,28 @@ export function useChatHandlers() {
         useAIStore.getState().setAbortController(null);
         setStreaming(false);
 
-        // Clean up any tool messages still marked as streaming
-        for (const msgId of pendingToolMsgIds.values()) {
-          useAIStore.setState((s) => {
-            const msgs = [...s.messages];
-            const msg = msgs.find((m) => m.id === msgId);
-            if (msg) msg.isStreaming = false;
-            return { messages: msgs };
-          });
+        // Mark any tool messages still pending as terminal so stale
+        // spinners never survive a completed or aborted turn.
+        for (const msgIds of pendingToolMsgIds.values()) {
+          for (const msgId of msgIds) {
+            useAIStore.setState((s) => ({
+              messages: s.messages.map((message) =>
+                message.id === msgId
+                  ? {
+                      ...message,
+                      content: message.toolName
+                        ? `Used ${message.toolName}`
+                        : message.content,
+                      isStreaming: false,
+                      toolStatus:
+                        message.toolStatus === "running"
+                          ? "done"
+                          : message.toolStatus,
+                    }
+                  : message,
+              ),
+            }));
+          }
         }
       }
 

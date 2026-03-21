@@ -150,6 +150,7 @@ function emitProgress(event: AnalysisProgressEvent): void {
 export function classifyFailure(error: string): FailureClass {
   // Only these specific patterns are retryable
   if (/connect|ECONNR|network|socket|EPIPE/i.test(error)) return "retryable"; // transport
+  if (/^Codex turn failed:.*\babort(ed)?\b/i.test(error)) return "retryable"; // remote Codex aborts
   if (/empty.*(response|output)|no.*(content|output|text)/i.test(error))
     return "retryable"; // empty
   if (

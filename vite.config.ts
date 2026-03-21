@@ -12,6 +12,11 @@ const isElectronBuild = process.env.BUILD_TARGET === 'electron'
 const config = defineConfig({
   test: {
     teardownTimeout: 1000,
+    server: {
+      deps: {
+        inline: ['react-markdown', 'remark-gfm'],
+      },
+    },
     exclude: [
       ...configDefaults.exclude,
       'legacy/**',

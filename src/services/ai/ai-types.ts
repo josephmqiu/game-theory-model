@@ -15,6 +15,8 @@ export interface ChatMessage {
   timestamp: number;
   isStreaming?: boolean;
   attachments?: ChatAttachment[];
+  toolName?: string;
+  toolStatus?: "running" | "done" | "error";
 }
 
 export interface AIDesignRequest {

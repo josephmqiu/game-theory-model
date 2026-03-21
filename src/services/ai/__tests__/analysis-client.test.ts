@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Analysis, AnalysisEntity, AnalysisRelationship } from "@/types/entity";
 import type { AnalysisStateResponse } from "../../../../shared/types/api";
 
+const originalFetch = globalThis.fetch;
+
 function makeEntity(id: string): AnalysisEntity {
   return {
     id,
@@ -84,17 +86,17 @@ async function flushMicrotasks(): Promise<void> {
 describe("analysis-client", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.unstubAllGlobals();
+    globalThis.fetch = originalFetch;
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    globalThis.fetch = originalFetch;
   });
 
   it("applies mutation events incrementally during analysis", async () => {
-    vi.resetModules();
     const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
+    globalThis.fetch = fetchMock as typeof fetch;
 
     const entity = makeEntity("entity-1");
     const relationship = makeRelationship("rel-1", entity.id, entity.id);
@@ -124,6 +126,7 @@ describe("analysis-client", () => {
 
     const { useEntityGraphStore } = await import("@/stores/entity-graph-store");
     const client = await import("../analysis-client");
+    client._resetForTest();
 
     useEntityGraphStore.getState().newAnalysis("Topic");
     await client.startAnalysis("Topic");
@@ -138,10 +141,57 @@ describe("analysis-client", () => {
     ).toBe("complete");
   });
 
-  it("re-syncs from /api/ai/state when a state_changed mutation arrives", async () => {
-    vi.resetModules();
+  it("upserts later runnable phases from SSE progress events", async () => {
     const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    fetchMock.mockResolvedValueOnce(
+      sseResponse([
+        { channel: "started", runId: "run-late-phase" },
+        {
+          channel: "progress",
+          type: "phase_started",
+          phase: "meta-check",
+          runId: "run-late-phase",
+        },
+        {
+          channel: "progress",
+          type: "phase_completed",
+          phase: "meta-check",
+          runId: "run-late-phase",
+          summary: {
+            entitiesCreated: 0,
+            relationshipsCreated: 0,
+            entitiesUpdated: 0,
+            durationMs: 10,
+          },
+        },
+        {
+          channel: "progress",
+          type: "analysis_completed",
+          runId: "run-late-phase",
+        },
+        { type: "done" },
+      ]),
+    );
+
+    const { useEntityGraphStore } = await import("@/stores/entity-graph-store");
+    const client = await import("../analysis-client");
+    client._resetForTest();
+
+    useEntityGraphStore.getState().newAnalysis("Topic");
+    await client.startAnalysis("Topic");
+
+    const state = useEntityGraphStore.getState();
+    expect(
+      state.analysis.phases.find((phase) => phase.phase === "meta-check")
+        ?.status,
+    ).toBe("complete");
+  });
+
+  it("re-syncs from /api/ai/state when a state_changed mutation arrives", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as typeof fetch;
 
     const entity = makeEntity("entity-state-sync");
 
@@ -161,7 +211,7 @@ describe("analysis-client", () => {
             status: "idle",
             runId: null,
             activePhase: null,
-            progress: { completed: 1, total: 3 },
+            progress: { completed: 1, total: 9 },
           },
         } satisfies AnalysisStateResponse),
         {
@@ -172,6 +222,7 @@ describe("analysis-client", () => {
 
     const { useEntityGraphStore } = await import("@/stores/entity-graph-store");
     const client = await import("../analysis-client");
+    client._resetForTest();
 
     useEntityGraphStore.getState().newAnalysis("Topic");
     await client.startAnalysis("Topic");
@@ -183,9 +234,8 @@ describe("analysis-client", () => {
 
   it("hydrates and polls /api/ai/state while a recovered run is still active", async () => {
     vi.useFakeTimers();
-    vi.resetModules();
     const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
+    globalThis.fetch = fetchMock as typeof fetch;
 
     const recoveredEntity = makeEntity("entity-recovered");
 
@@ -198,7 +248,7 @@ describe("analysis-client", () => {
               status: "running",
               runId: "run-3",
               activePhase: "situational-grounding",
-              progress: { completed: 0, total: 3 },
+              progress: { completed: 0, total: 9 },
             },
           } satisfies AnalysisStateResponse),
           {
@@ -214,7 +264,7 @@ describe("analysis-client", () => {
               status: "idle",
               runId: null,
               activePhase: null,
-              progress: { completed: 1, total: 3 },
+              progress: { completed: 1, total: 9 },
             },
           } satisfies AnalysisStateResponse),
           {
@@ -225,11 +275,12 @@ describe("analysis-client", () => {
 
     const { useEntityGraphStore } = await import("@/stores/entity-graph-store");
     const client = await import("../analysis-client");
+    client._resetForTest();
 
     await client.hydrateAnalysisState({ enableRecoveryPolling: true });
     expect(client.isRunning()).toBe(true);
 
-    await vi.advanceTimersByTimeAsync(2_000);
+    vi.advanceTimersByTime(2_000);
     await flushMicrotasks();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -240,9 +291,8 @@ describe("analysis-client", () => {
   });
 
   it("sends a best-effort abort request and clears local running state", async () => {
-    vi.resetModules();
     const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
+    globalThis.fetch = fetchMock as typeof fetch;
 
     fetchMock
       .mockResolvedValueOnce(
@@ -253,7 +303,7 @@ describe("analysis-client", () => {
               status: "running",
               runId: "run-4",
               activePhase: "situational-grounding",
-              progress: { completed: 0, total: 3 },
+              progress: { completed: 0, total: 9 },
             },
           } satisfies AnalysisStateResponse),
           {
@@ -268,6 +318,7 @@ describe("analysis-client", () => {
       );
 
     const client = await import("../analysis-client");
+    client._resetForTest();
 
     await client.hydrateAnalysisState({ enableRecoveryPolling: false });
     expect(client.isRunning()).toBe(true);

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import type { AnalysisMutationEvent } from "../../../shared/types/events";
+import { V3_PHASES } from "../../../src/types/methodology";
 import {
   newAnalysis,
   loadAnalysis,
@@ -80,22 +81,15 @@ beforeEach(() => {
 // ── Tests ──
 
 describe("newAnalysis", () => {
-  it("creates empty analysis with V2_PHASES", () => {
+  it("creates empty analysis with runnable phases", () => {
     newAnalysis("US-China trade war");
     const a = getAnalysis();
     expect(a.topic).toBe("US-China trade war");
     expect(a.name).toBe("US-China trade war");
     expect(a.entities).toEqual([]);
     expect(a.relationships).toEqual([]);
-    expect(a.phases).toHaveLength(6);
-    expect(a.phases.map((p) => p.phase)).toEqual([
-      "situational-grounding",
-      "player-identification",
-      "baseline-model",
-      "historical-game",
-      "formal-modeling",
-      "assumptions",
-    ]);
+    expect(a.phases).toHaveLength(V3_PHASES.length);
+    expect(a.phases.map((p) => p.phase)).toEqual(V3_PHASES);
     expect(a.phases.every((p) => p.status === "pending")).toBe(true);
   });
 });
@@ -544,6 +538,59 @@ describe("loadAnalysis", () => {
     expect(getFileName()).toBe("loaded.json");
     expect(getFilePath()).toBe("/tmp/loaded.json");
     expect(getIsDirty()).toBe(false);
+  });
+
+  it("normalizes legacy phase lists when loading", () => {
+    const analysis = {
+      id: "loaded-id",
+      name: "Loaded",
+      topic: "loaded topic",
+      entities: [
+        {
+          id: "historical-entity",
+          ...makeFactData(),
+          phase: "historical-game" as const,
+          source: "ai" as const,
+          provenance: {
+            source: "phase-derived" as const,
+            runId: "run-legacy",
+            phase: "historical-game",
+            timestamp: 123,
+          },
+        },
+      ],
+      relationships: [],
+      phases: [
+        {
+          phase: "situational-grounding" as const,
+          status: "complete" as const,
+          entityIds: [],
+        },
+        {
+          phase: "player-identification" as const,
+          status: "complete" as const,
+          entityIds: [],
+        },
+        {
+          phase: "baseline-model" as const,
+          status: "complete" as const,
+          entityIds: [],
+        },
+      ],
+    };
+
+    loadAnalysis(analysis);
+
+    const loaded = getAnalysis();
+    expect(loaded.phases.map((phaseState) => phaseState.phase)).toEqual(
+      V3_PHASES,
+    );
+    expect(
+      loaded.phases.find((phaseState) => phaseState.phase === "historical-game"),
+    ).toMatchObject({
+      status: "complete",
+      entityIds: ["historical-entity"],
+    });
   });
 });
 

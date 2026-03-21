@@ -1,6 +1,10 @@
 import { cn } from "@/lib/utils";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
-import { V1_PHASES, PHASE_LABELS } from "@/types/methodology";
+import {
+  V3_PHASES,
+  PHASE_LABELS,
+  getRunnablePhaseNumber,
+} from "@/types/methodology";
 import {
   getPhaseFailureLabel,
   type PhaseFailureState,
@@ -22,25 +26,25 @@ export function PhaseProgress({
   const phases = useEntityGraphStore((s) => s.analysis.phases);
   const entities = useEntityGraphStore((s) => s.analysis.entities);
 
-  // Only consider V1 phases
-  const v1Phases = phases.filter((ps) =>
-    (V1_PHASES as readonly string[]).includes(ps.phase),
+  const runnablePhases = phases.filter((ps) =>
+    (V3_PHASES as readonly string[]).includes(ps.phase),
   );
-  const completedCount = v1Phases.filter(
+  const completedCount = runnablePhases.filter(
     (ps) => ps.status === "complete",
   ).length;
-  const totalCount = v1Phases.length;
+  const totalCount = runnablePhases.length;
   const totalEntities = entities.length;
-  const failedPhase = v1Phases.find((ps) => ps.status === "failed");
+  const failedPhase = runnablePhases.find((ps) => ps.status === "failed");
   const failure =
     failedPhase !== undefined ? phaseFailures[failedPhase.phase] : undefined;
 
   // Find the currently running phase (first running, or first non-complete)
-  const runningPhase = v1Phases.find((ps) => ps.status === "running");
-  const anyRunning = v1Phases.some((ps) => ps.status === "running");
+  const runningPhase = runnablePhases.find((ps) => ps.status === "running");
+  const anyRunning = runnablePhases.some((ps) => ps.status === "running");
   const allDone =
-    v1Phases.length > 0 && v1Phases.every((ps) => ps.status === "complete");
-  const allPending = v1Phases.every((ps) => ps.status === "pending");
+    runnablePhases.length > 0 &&
+    runnablePhases.every((ps) => ps.status === "complete");
+  const allPending = runnablePhases.every((ps) => ps.status === "pending");
 
   // Hidden when all phases are complete/pending (no active work)
   if (!failedPhase && !anyRunning && (allDone || allPending)) {
@@ -73,7 +77,7 @@ export function PhaseProgress({
 
         <p className="truncate font-[Geist,sans-serif] text-[13px] font-medium text-zinc-200">
           <span className="text-red-400">
-            Phase {V1_PHASES.indexOf(failedPhase.phase) + 1} failed
+            Phase {getRunnablePhaseNumber(failedPhase.phase)} failed
           </span>
           <span className="mx-1.5 text-zinc-600">&mdash;</span>
           <span>{failureLabel}</span>
@@ -104,7 +108,9 @@ export function PhaseProgress({
           <>
             <span className="text-amber-500">
               Phase{" "}
-              {runningPhase ? V1_PHASES.indexOf(runningPhase.phase) + 1 : ""}:{" "}
+              {runningPhase
+                ? getRunnablePhaseNumber(runningPhase.phase)
+                : ""}:{" "}
               {currentPhaseName}
             </span>
             <span className="mx-1.5 text-zinc-600">&mdash;</span>

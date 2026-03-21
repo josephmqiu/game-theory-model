@@ -18,7 +18,8 @@ import { useAIStore } from "@/stores/ai-store";
 import type { PanelCorner } from "@/stores/ai-store";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
-import { PHASE_LABELS, V1_PHASES } from "@/types/methodology";
+import type { MethodologyPhase } from "@/types/methodology";
+import type { ChatMessage as ChatMessageType } from "@/services/ai/ai-types";
 import type { AIProviderType } from "@/types/agent-settings";
 import {
   PROVIDER_LABELS,
@@ -32,6 +33,12 @@ import CopilotLogo from "@/components/icons/copilot-logo";
 import ChatMessage from "./chat-message";
 import { useChatHandlers } from "./ai-chat-handlers";
 import { FixedChecklist } from "./ai-chat-checklist";
+import {
+  buildAnalysisCompleteMessage,
+  buildPhaseStartMessage,
+  getAnalysisCompleteMessageId,
+  getPhaseStartMessageId,
+} from "./ai-chat-lifecycle";
 
 export type AIChatMode = "analysis";
 export type AIChatPresentation = "floating" | "docked";
@@ -79,22 +86,24 @@ function isToolMessage(id: string): boolean {
 
 type ToolStatus = "running" | "done" | "error";
 
-function getToolStatus(content: string, isStreaming?: boolean): ToolStatus {
-  if (isStreaming || content.endsWith("...")) return "running";
-  if (content.startsWith("Tool ") && content.includes("failed:"))
-    return "error";
-  return "done";
+export function resolveToolStatus(
+  message: Pick<ChatMessageType, "isStreaming" | "toolStatus">,
+  chatIsStreaming: boolean,
+): ToolStatus {
+  if (message.toolStatus) {
+    return message.toolStatus;
+  }
+
+  return message.isStreaming && chatIsStreaming ? "running" : "done";
 }
 
 function ToolStatusMessage({
   content,
-  isStreaming,
+  status,
 }: {
   content: string;
-  isStreaming?: boolean;
+  status: ToolStatus;
 }) {
-  const status = getToolStatus(content, isStreaming);
-
   return (
     <div className="flex items-center gap-2 py-1 px-2 my-0.5">
       <div
@@ -201,9 +210,6 @@ export default function AIChatPanel({
   const providersHydrated = useAgentSettingsStore((s) => s.isHydrated);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const { input, setInput, handleSend } = useChatHandlers();
-  // Entity graph state
-  const entityGraphPhases = useEntityGraphStore((s) => s.analysis.phases);
-  const entityGraphEntities = useEntityGraphStore((s) => s.analysis.entities);
   const analysisId = useEntityGraphStore((s) => s.analysis.id);
 
   const [analysisRunning, setAnalysisRunning] = useState(false);
@@ -216,6 +222,8 @@ export default function AIChatPanel({
   const isAnalysisMode = mode === "analysis";
   const hasOnStartAnalysis = typeof onStartAnalysis === "function";
   const previousAnalysisIdRef = useRef<string | null>(null);
+  const announcedPhaseStartsRef = useRef<Set<string>>(new Set());
+  const completedRunIdsRef = useRef<Set<string>>(new Set());
 
   // Poll analysis orchestrator running state
   useEffect(() => {
@@ -224,23 +232,6 @@ export default function AIChatPanel({
       setAnalysisRunning((prev) => (prev !== running ? running : prev));
     }, 500);
     return () => clearInterval(interval);
-  }, []);
-
-  // Subscribe to analysis progress events for completion messages
-  useEffect(() => {
-    const unsubscribe = analysisClient.onProgress((event) => {
-      if (event.type === "analysis_completed") {
-        const entities =
-          useEntityGraphStore.getState().analysis.entities.length;
-        useAIStore.getState().addMessage({
-          id: `analysis-done-${event.runId}`,
-          role: "assistant",
-          content: `Analysis complete. ${entities} entities created.`,
-          timestamp: Date.now(),
-        });
-      }
-    });
-    return unsubscribe;
   }, []);
 
   // Enhanced stop handler: aborts analysis orchestrator if running,
@@ -252,52 +243,48 @@ export default function AIChatPanel({
     stopStreaming();
   }, [stopStreaming]);
 
-  // Track entity graph phase changes and inject status messages into chat
-  const prevEntityPhasesRef = useRef<string>("");
+  // Track orchestrator progress and inject phase/completion status into chat.
   useEffect(() => {
-    const key = entityGraphPhases
-      .map((ps) => `${ps.phase}:${ps.status}`)
-      .join(",");
-    if (key === prevEntityPhasesRef.current) return;
-    prevEntityPhasesRef.current = key;
-
-    // Find phases that just changed to running or complete
-    for (const ps of entityGraphPhases) {
-      if (ps.status === "running") {
-        const label = PHASE_LABELS[ps.phase];
-        const phaseNum = V1_PHASES.indexOf(ps.phase) + 1;
-        if (phaseNum > 0) {
-          useAIStore.getState().addMessage({
-            id: `phase-${ps.phase}-start`,
-            role: "assistant",
-            content: `Starting Phase ${phaseNum}: ${label}...`,
-            timestamp: Date.now(),
-          });
+    const unsubscribe = analysisClient.onProgress((event) => {
+      if (event.type === "phase_started") {
+        const messageId = getPhaseStartMessageId(
+          event.runId,
+          event.phase as MethodologyPhase,
+        );
+        if (announcedPhaseStartsRef.current.has(messageId)) {
+          return;
         }
-      }
-    }
-  }, [entityGraphPhases]);
 
-  // Show completion message when all V1 phases are done
-  const prevCompleteRef = useRef(false);
-  useEffect(() => {
-    const v1Statuses = entityGraphPhases
-      .filter((ps) => (V1_PHASES as readonly string[]).includes(ps.phase))
-      .map((ps) => ps.status);
-    const allComplete =
-      v1Statuses.length > 0 && v1Statuses.every((s) => s === "complete");
-    if (allComplete && !prevCompleteRef.current) {
-      prevCompleteRef.current = true;
-      useAIStore.getState().addMessage({
-        id: "analysis-complete",
-        role: "assistant",
-        content: `Analysis complete. ${entityGraphEntities.length} entities identified across ${v1Statuses.length} phases. Click any entity on the canvas to inspect.`,
-        timestamp: Date.now(),
-      });
-    } else if (!allComplete) {
-      prevCompleteRef.current = false;
-    }
-  }, [entityGraphPhases, entityGraphEntities.length]);
+        const message = buildPhaseStartMessage(
+          event.runId,
+          event.phase as MethodologyPhase,
+        );
+        if (!message) {
+          return;
+        }
+
+        announcedPhaseStartsRef.current.add(message.id);
+        useAIStore.getState().addMessage(message);
+        return;
+      }
+
+      if (event.type === "analysis_completed") {
+        const messageId = getAnalysisCompleteMessageId(event.runId);
+        if (completedRunIdsRef.current.has(messageId)) {
+          return;
+        }
+
+        completedRunIdsRef.current.add(messageId);
+        const entityCount =
+          useEntityGraphStore.getState().analysis.entities.length;
+        useAIStore
+          .getState()
+          .addMessage(buildAnalysisCompleteMessage(event.runId, entityCount));
+      }
+    });
+
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -380,6 +367,8 @@ export default function AIChatPanel({
 
     const previousAnalysisId = previousAnalysisIdRef.current;
     previousAnalysisIdRef.current = analysisId;
+    announcedPhaseStartsRef.current.clear();
+    completedRunIdsRef.current.clear();
     if (previousAnalysisId === null || previousAnalysisId === analysisId) {
       return;
     }
@@ -729,7 +718,7 @@ export default function AIChatPanel({
               <ToolStatusMessage
                 key={msg.id}
                 content={msg.content}
-                isStreaming={msg.isStreaming && isStreaming}
+                status={resolveToolStatus(msg, isStreaming)}
               />
             ) : (
               <ChatMessage

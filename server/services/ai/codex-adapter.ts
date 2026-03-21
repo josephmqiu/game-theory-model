@@ -114,6 +114,96 @@ function getTurnErrorMessage(params: Record<string, unknown>): string | null {
   return typeof error?.message === "string" ? error.message : null;
 }
 
+function getTurnStatus(params: Record<string, unknown>): string | null {
+  const turn = asRecord(params.turn);
+  return typeof turn?.status === "string" ? turn.status : null;
+}
+
+interface CodexTurnErrorDetails {
+  message: string | null;
+  additionalDetails: string | null;
+  codexErrorInfo: unknown;
+}
+
+function getTurnErrorDetails(
+  params: Record<string, unknown>,
+): CodexTurnErrorDetails {
+  const turn = asRecord(params.turn);
+  const error = asRecord(turn?.error);
+  return {
+    message: typeof error?.message === "string" ? error.message : null,
+    additionalDetails:
+      typeof error?.additionalDetails === "string"
+        ? error.additionalDetails
+        : null,
+    codexErrorInfo: error?.codexErrorInfo,
+  };
+}
+
+function getServerNotificationErrorDetails(
+  params: Record<string, unknown>,
+): CodexTurnErrorDetails {
+  const error = asRecord(params.error);
+  return {
+    message: typeof error?.message === "string" ? error.message : null,
+    additionalDetails:
+      typeof error?.additionalDetails === "string"
+        ? error.additionalDetails
+        : null,
+    codexErrorInfo: error?.codexErrorInfo,
+  };
+}
+
+function stringifyCodexErrorInfo(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function buildCodexTurnFailureMessage(
+  message: string,
+  details?: {
+    status?: string | null;
+    additionalDetails?: string | null;
+    codexErrorInfo?: unknown;
+  },
+): string {
+  const summary = message.trim().length > 0 ? message.trim() : "Unknown error";
+  const suffix: string[] = [];
+
+  if (details?.status) {
+    suffix.push(`status=${details.status}`);
+  }
+  if (details?.additionalDetails) {
+    suffix.push(`additionalDetails=${details.additionalDetails}`);
+  }
+  const codexErrorInfo = stringifyCodexErrorInfo(details?.codexErrorInfo);
+  if (codexErrorInfo) {
+    suffix.push(`codexErrorInfo=${codexErrorInfo}`);
+  }
+
+  return suffix.length > 0
+    ? `Codex turn failed: ${summary} (${suffix.join("; ")})`
+    : `Codex turn failed: ${summary}`;
+}
+
+function normalizeAnalysisError(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message === "Aborted") {
+    return new Error("Aborted");
+  }
+  if (
+    message.startsWith("Codex turn failed:")
+    || message.startsWith("Failed to restore chat MCP config:")
+  ) {
+    return error instanceof Error ? error : new Error(message);
+  }
+  return new Error(buildCodexTurnFailureMessage(message));
+}
+
 function createTurnInput(prompt: string): Array<Record<string, string>> {
   return [{ type: "text", text: prompt }];
 }
@@ -722,6 +812,7 @@ export async function runAnalysisPhase<T = unknown>(
 
   const conn = await startAppServer(runId);
   let restoreError: Error | null = null;
+  let primaryError: Error | null = null;
   let threadId = "";
   let turnId: string | null = null;
   let parsedResult: T | null = null;
@@ -745,7 +836,10 @@ export async function runAnalysisPhase<T = unknown>(
     let result: unknown = undefined;
     let completed = false;
     let completionError: string | null = null;
+    let turnFailureStatus: string | null = null;
+    let completionErrorDetails: CodexTurnErrorDetails | null = null;
     let streamedText = "";
+    let fatalError: string | null = null;
 
     const removeListener = onNotification(conn, (method, params) => {
       // Thread filtering: skip notifications for a different thread (best-effort).
@@ -754,6 +848,26 @@ export async function runAnalysisPhase<T = unknown>(
 
       if (method === "turn/started") {
         turnId = getTurnIdFromParams(params) ?? turnId;
+        return;
+      }
+
+      if (method === "error") {
+        const details = getServerNotificationErrorDetails(params);
+        fatalError = buildCodexTurnFailureMessage(
+          details.message ?? "Server notification error",
+          {
+            additionalDetails: details.additionalDetails,
+            codexErrorInfo: details.codexErrorInfo,
+          },
+        );
+        serverWarn(runId, "codex-adapter", "analysis-error-notification", {
+          threadId,
+          turnId,
+          message: details.message,
+          additionalDetails: details.additionalDetails,
+          codexErrorInfo: details.codexErrorInfo,
+          willRetry: params.willRetry,
+        });
         return;
       }
 
@@ -798,14 +912,37 @@ export async function runAnalysisPhase<T = unknown>(
 
       if (method === "turn/completed") {
         turnId = getTurnIdFromParams(params) ?? turnId;
+        turnFailureStatus = getTurnStatus(params);
+        const errorDetails = getTurnErrorDetails(params);
+        completionErrorDetails = errorDetails;
         completed = true;
-        completionError = getTurnErrorMessage(params) ?? completionError;
+        completionError =
+          errorDetails.message
+          ?? completionError
+          ?? (
+            turnFailureStatus && turnFailureStatus !== "completed"
+              ? buildCodexTurnFailureMessage("Turn completed with non-success status", {
+                  status: turnFailureStatus,
+                  additionalDetails: errorDetails.additionalDetails,
+                  codexErrorInfo: errorDetails.codexErrorInfo,
+                })
+              : null
+          );
         if (result === undefined) {
           result = params.structuredOutput ?? params.content ?? params.result;
         }
         if (result === undefined && streamedText.trim().length > 0) {
           result = streamedText;
         }
+        serverLog(runId, "codex-adapter", "analysis-turn-completed", {
+          threadId,
+          turnId,
+          status: turnFailureStatus,
+          hasResult: result !== undefined && result !== null,
+          errorMessage: errorDetails.message,
+          additionalDetails: errorDetails.additionalDetails,
+          codexErrorInfo: errorDetails.codexErrorInfo,
+        });
         return;
       }
 
@@ -839,6 +976,9 @@ export async function runAnalysisPhase<T = unknown>(
         method === PERMISSIONS_APPROVAL
       ) {
         const approvalId = params.id as string | undefined;
+        fatalError = buildCodexTurnFailureMessage(
+          `Analysis rejected ${method} during structured-output turn`,
+        );
         serverWarn(runId, "codex-adapter", "analysis-approval-rejected", {
           method,
           approvalId,
@@ -859,12 +999,30 @@ export async function runAnalysisPhase<T = unknown>(
       }
     });
 
-    const turnResult = await sendRequest(conn, "turn/start", {
+    serverLog(runId, "codex-adapter", "analysis-turn-start-request", {
       threadId,
-      input: createTurnInput(prompt),
-      outputSchema: schema,
+      model,
+      hasOutputSchema: true,
     });
+    let turnResult: unknown;
+    try {
+      turnResult = await sendRequest(conn, "turn/start", {
+        threadId,
+        input: createTurnInput(prompt),
+        outputSchema: schema,
+      });
+    } catch (error) {
+      throw new Error(
+        buildCodexTurnFailureMessage(
+          error instanceof Error ? error.message : String(error),
+        ),
+      );
+    }
     turnId = extractTurnId(turnResult);
+    serverLog(runId, "codex-adapter", "analysis-turn-started", {
+      threadId,
+      turnId,
+    });
 
     const startTime = Date.now();
 
@@ -879,6 +1037,15 @@ export async function runAnalysisPhase<T = unknown>(
           }
           throw new Error("Aborted");
         }
+        if (fatalError) {
+          if (turnId) {
+            await sendRequest(conn, "turn/interrupt", {
+              threadId,
+              turnId,
+            }).catch(() => {});
+          }
+          throw new Error(fatalError);
+        }
         if (Date.now() - startTime > ANALYSIS_TIMEOUT_MS) {
           if (turnId) {
             await sendRequest(conn, "turn/interrupt", {
@@ -891,8 +1058,28 @@ export async function runAnalysisPhase<T = unknown>(
         await new Promise((resolve) => setTimeout(resolve, 200));
       }
 
-      if (completionError) {
-        throw new Error(completionError);
+      if (fatalError) {
+        throw new Error(fatalError);
+      }
+
+      if (completionError !== null) {
+        const errorMessage = completionError as string;
+        const additionalDetails =
+          (completionErrorDetails as CodexTurnErrorDetails | null)
+            ?.additionalDetails ?? null;
+        const codexErrorInfo =
+          (completionErrorDetails as CodexTurnErrorDetails | null)
+            ?.codexErrorInfo;
+        if (errorMessage.startsWith("Codex turn failed:")) {
+          throw new Error(errorMessage);
+        }
+        throw new Error(
+          buildCodexTurnFailureMessage(errorMessage, {
+            status: turnFailureStatus,
+            additionalDetails,
+            codexErrorInfo,
+          }),
+        );
       }
 
       if (result === undefined || result === null) {
@@ -908,10 +1095,13 @@ export async function runAnalysisPhase<T = unknown>(
       removeListener();
       if (currentThreadId === threadId) currentThreadId = null;
     }
+  } catch (error) {
+    primaryError = normalizeAnalysisError(error);
   } finally {
     try {
       installChatToolSurface();
       await reloadMcpServerConfig(conn, runId);
+      serverLog(runId, "codex-adapter", "analysis-mcp-restored");
     } catch (err) {
       restoreError =
         err instanceof Error
@@ -920,11 +1110,14 @@ export async function runAnalysisPhase<T = unknown>(
       serverWarn(runId, "codex-adapter", "mcp-restore-failed", {
         message: restoreError.message,
       });
+      if (!primaryError) {
+        primaryError = restoreError;
+      }
     }
   }
 
-  if (restoreError) {
-    throw restoreError;
+  if (primaryError) {
+    throw primaryError;
   }
 
   if (parsedResult === null) {

@@ -209,11 +209,6 @@ export async function* streamChat(
               clearTimeout(hardTimeout);
               clearNoTextTimeout();
               clearFirstTextTimeout();
-              try {
-                await reader.cancel();
-              } catch {
-                // ignore cancellation errors
-              }
               return;
             }
 
@@ -276,11 +271,6 @@ export async function* streamChat(
               clearTimeout(hardTimeout);
               clearNoTextTimeout();
               clearFirstTextTimeout();
-              try {
-                await reader.cancel();
-              } catch {
-                // ignore cancellation errors
-              }
               return;
             }
 

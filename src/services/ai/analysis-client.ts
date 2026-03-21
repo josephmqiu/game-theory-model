@@ -13,7 +13,7 @@ import type {
   AnalysisProgressEvent,
 } from "../../../shared/types/events";
 import type { Analysis } from "../../../shared/types/entity";
-import { V1_PHASES } from "@/types/methodology";
+import { V3_PHASES } from "@/types/methodology";
 
 type ProgressCallback = (event: AnalysisProgressEvent) => void;
 
@@ -28,7 +28,7 @@ let currentRunStatus: RunStatus = {
   activePhase: null,
   progress: {
     completed: 0,
-    total: V1_PHASES.length,
+    total: V3_PHASES.length,
   },
 };
 let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -238,7 +238,7 @@ export async function startAnalysis(
     activePhase: null,
     progress: {
       completed: 0,
-      total: V1_PHASES.length,
+      total: V3_PHASES.length,
     },
   });
   const timeout = setTimeout(() => controller.abort(), ANALYSIS_TIMEOUT_MS);
@@ -359,6 +359,22 @@ export async function updateEntity(
   if (state?.analysis) {
     applyAnalysisSnapshot(state.analysis);
   }
+}
+
+export function _resetForTest(): void {
+  stopRecoveryPolling();
+  currentController = null;
+  progressListeners = [];
+  currentRunStatus = {
+    status: "idle",
+    runId: null,
+    activePhase: null,
+    progress: {
+      completed: 0,
+      total: V3_PHASES.length,
+    },
+  };
+  recoveryRequest = null;
 }
 
 // Handle entity_snapshot from chat SSE stream

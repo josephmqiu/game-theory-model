@@ -14,7 +14,10 @@ import type {
 } from "../../shared/types/entity";
 import { RELATIONSHIP_CATEGORY } from "@/types/entity";
 import type { MethodologyPhase, PhaseStatus } from "../../shared/types/methodology";
-import { V1_PHASES } from "@/types/methodology";
+import {
+  normalizePhaseStates,
+  upsertPhaseStatus,
+} from "@/types/methodology";
 
 // ── State shape ──
 
@@ -123,11 +126,14 @@ function createEmptyAnalysis(topic: string): Analysis {
     topic,
     entities: [],
     relationships: [],
-    phases: V1_PHASES.map((phase) => ({
-      phase,
-      status: "pending" as const,
-      entityIds: [],
-    })),
+    phases: normalizePhaseStates([], []),
+  };
+}
+
+function normalizeAnalysis(analysis: Analysis): Analysis {
+  return {
+    ...analysis,
+    phases: normalizePhaseStates(analysis.phases, analysis.entities),
   };
 }
 
@@ -202,9 +208,10 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
     },
 
     loadAnalysis: (analysis, layout, source) => {
+      const normalizedAnalysis = normalizeAnalysis(analysis);
       set((state) => ({
-        analysis,
-        layout: reconcileLayoutState(layout ?? {}, analysis.entities),
+        analysis: normalizedAnalysis,
+        layout: reconcileLayoutState(layout ?? {}, normalizedAnalysis.entities),
         isDirty: false,
         revision: state.revision + 1,
         fileName: source?.fileName ?? null,
@@ -326,8 +333,11 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
       set((state) => ({
         analysis: {
           ...state.analysis,
-          phases: state.analysis.phases.map((ps) =>
-            ps.phase === phase ? { ...ps, status } : ps,
+          phases: upsertPhaseStatus(
+            state.analysis.phases,
+            state.analysis.entities,
+            phase,
+            status,
           ),
         },
         isDirty: true,
@@ -492,7 +502,7 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
 
     syncAnalysisFromServer: (analysis) =>
       set((state) => ({
-        analysis,
+        analysis: normalizeAnalysis(analysis),
         layout: reconcileLayoutState(state.layout, analysis.entities),
         revision: state.revision + 1,
       })),
@@ -529,8 +539,11 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
       set((state) => ({
         analysis: {
           ...state.analysis,
-          phases: state.analysis.phases.map((ps) =>
-            ps.phase === phase ? { ...ps, status } : ps,
+          phases: upsertPhaseStatus(
+            state.analysis.phases,
+            state.analysis.entities,
+            phase as MethodologyPhase,
+            status,
           ),
         },
         revision: state.revision + 1,

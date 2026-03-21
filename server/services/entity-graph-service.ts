@@ -17,7 +17,10 @@ import type {
 } from "../../shared/types/methodology";
 import type { AnalysisMutationEvent } from "../../shared/types/events";
 import { RELATIONSHIP_CATEGORY } from "../../src/types/entity";
-import { V2_PHASES } from "../../src/types/methodology";
+import {
+  normalizePhaseStates,
+  upsertPhaseStatus,
+} from "../../src/types/methodology";
 
 // ── Module-level state ──
 
@@ -39,11 +42,14 @@ function createEmptyAnalysis(topic: string): Analysis {
     topic,
     entities: [],
     relationships: [],
-    phases: V2_PHASES.map((phase) => ({
-      phase,
-      status: "pending" as const,
-      entityIds: [],
-    })),
+    phases: normalizePhaseStates([], []),
+  };
+}
+
+function normalizeAnalysis(analysisState: Analysis): Analysis {
+  return {
+    ...analysisState,
+    phases: normalizePhaseStates(analysisState.phases, analysisState.entities),
   };
 }
 
@@ -122,7 +128,7 @@ export function loadAnalysis(
     fileHandle?: FileSystemFileHandle;
   },
 ): void {
-  analysis = loaded;
+  analysis = normalizeAnalysis(loaded);
   _isDirty = false;
   _revision += 1;
   _fileName = source?.fileName ?? null;
@@ -131,7 +137,7 @@ export function loadAnalysis(
 }
 
 export function getAnalysis(): Readonly<Analysis> {
-  return analysis;
+  return normalizeAnalysis(analysis);
 }
 
 export function createEntity(
@@ -428,9 +434,7 @@ export function setPhaseStatus(
 ): void {
   analysis = {
     ...analysis,
-    phases: analysis.phases.map((ps) =>
-      ps.phase === phase ? { ...ps, status } : ps,
-    ),
+    phases: upsertPhaseStatus(analysis.phases, analysis.entities, phase, status),
   };
   mutate();
   emit({ type: "state_changed" });
