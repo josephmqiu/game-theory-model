@@ -4,16 +4,50 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 8],
-      "requiredFactCategories": ["position", "economic"],
+      "entityCountRange": [
+        4,
+        8
+      ],
+      "requiredFactCategories": [
+        "position",
+        "economic"
+      ],
       "minDistinctFactCategories": 2,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "requiredPatterns": ["location|park", "customer|foot traffic"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "requiredPatterns": [
+        "location|park",
+        "customer|foot traffic"
+      ],
       "rubrics": [
         "Facts should describe the location-choice dynamics and customer distribution clearly.",
         "Facts should keep the competitive positioning concrete without over-formalizing into Hotelling's model theory.",
         "Facts should stay proportional to a one-day parking decision."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        4,
+        10
+      ],
+      "forbiddenPatterns": [
+        "internal agent",
+        "cognitive",
+        "heuristic",
+        "rational.?optimizer",
+        "pattern.?exploiter"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor with independent agency in the situation.",
+        "Each player should have at least one objective that is specific to their position in this scenario.",
+        "Do not invent players not implied by the prompt — if the prompt describes two parties, there should be two players unless a third party is clearly relevant."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"fact-1\",\"confidence\":\"high\",\"rationale\":\"Establishes the basic game structure with two players making simultaneous location decisions\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"Game theory framework\",\"content\":\"Two food trucks must simultaneously choose parking locations along a street or market area for the day\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-2\",\"confidence\":\"high\",\"rationale\":\"Defines the customer decision rule that drives the strategic incentives\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"Customer behavior assumption\",\"content\":\"Customers choose to buy from the food truck that is closest to their location\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-3\",\"confidence\":\"high\",\"rationale\":\"Establishes the payoff structure that motivates strategic positioning\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"Revenue mechanism\",\"content\":\"Each truck's revenue is directly proportional to the number of customers it serves based on its location choice\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-4\",\"confidence\":\"high\",\"rationale\":\"Identifies the key strategic tension that drives competitive positioning\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"Strategic incentive structure\",\"content\":\"Each truck has an incentive to locate close to its competitor to capture customers from the other truck's potential market\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-5\",\"confidence\":\"high\",\"rationale\":\"Describes the predicted outcome of rational strategic behavior in this location game\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"Equilibrium outcome\",\"content\":\"In Nash equilibrium, both trucks converge toward the center of the market to maximize their customer capture\",\"category\":\"rule\"}}]"
   }
 }

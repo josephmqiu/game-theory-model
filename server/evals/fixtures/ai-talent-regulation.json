@@ -4,17 +4,52 @@
   "complexityTier": "complex",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [8, 18],
-      "requiredFactCategories": ["economic", "position", "rule", "action"],
+      "entityCountRange": [
+        8,
+        18
+      ],
+      "requiredFactCategories": [
+        "economic",
+        "position",
+        "rule",
+        "action"
+      ],
       "minDistinctFactCategories": 4,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "requiredPatterns": ["talent", "lobby|lobbying", "regulat|regulation"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "requiredPatterns": [
+        "talent",
+        "lobby|lobbying",
+        "regulat|regulation"
+      ],
       "rubrics": [
         "Facts should keep talent-market competition and regulatory lobbying as distinct but interacting domains.",
         "Facts should identify the concrete incentives, constraints, and policy signals that shape each domain.",
         "Facts should avoid collapsing hiring pressure, policy advocacy, and product strategy into one storyline.",
         "Facts should stay anchored in specific actors or moves rather than generic AI-industry commentary."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        6,
+        20
+      ],
+      "forbiddenPatterns": [
+        "internal agent",
+        "cognitive",
+        "heuristic"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor with independent agency — name specific actors rather than generic blocs when possible.",
+        "Each player should have objectives that reflect their distinct position and incentives.",
+        "The player set should cover the key decision-makers without inflating the count with observers, commentators, or abstract forces."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"fact-1\",\"confidence\":\"high\",\"rationale\":\"Talent costs are a key economic driver in this competitive dynamic\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-2024\",\"source\":\"industry reports\",\"content\":\"Major tech companies increased AI researcher compensation by 30-50% annually, with total packages reaching $500K-$2M+ for senior talent\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"fact-2\",\"confidence\":\"high\",\"rationale\":\"Establishes the regulatory lobbying positions of major players\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2024-2025\",\"source\":\"congressional testimony and lobbying records\",\"content\":\"OpenAI, Google, and Microsoft testified before Congress supporting federal AI safety regulations and oversight frameworks\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-3\",\"confidence\":\"high\",\"rationale\":\"Quantifies the resource commitment enabling talent competition\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-2024\",\"source\":\"company financial disclosures\",\"content\":\"Google, Microsoft, and Meta collectively increased AI R&D spending to over $100 billion annually, primarily on talent and compute infrastructure\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"fact-4\",\"confidence\":\"high\",\"rationale\":\"Shows how talent competition affects the broader ecosystem\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2024\",\"source\":\"industry analysis\",\"content\":\"Startup AI companies face increasing difficulty recruiting senior researchers due to Big Tech compensation premiums and resource advantages\",\"category\":\"impact\"}},{\"id\":null,\"ref\":\"fact-5\",\"confidence\":\"medium\",\"rationale\":\"Regulatory framework shapes the competitive landscape\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2024\",\"source\":\"regulatory proposals\",\"content\":\"Proposed federal AI regulations include licensing requirements for large language models and mandatory safety testing protocols\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-6\",\"confidence\":\"medium\",\"rationale\":\"Reveals divergent regulatory positions among major companies\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2024-2025\",\"source\":\"company statements\",\"content\":\"Meta and Apple advocate for lighter-touch regulation emphasizing innovation and market-driven solutions over prescriptive federal oversight\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-7\",\"confidence\":\"medium\",\"rationale\":\"High turnover affects competitive strategies and reveals talent market dynamics\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-2024\",\"source\":\"talent mobility data\",\"content\":\"AI researchers change employers at 40% higher rates than other tech roles, with average tenure dropping to 18 months\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"fact-8\",\"confidence\":\"medium\",\"rationale\":\"Shows proactive moves to secure future talent supply\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2024\",\"source\":\"academic partnerships\",\"content\":\"Google, Microsoft, and OpenAI established exclusive partnerships with top universities, offering $10M+ research funding tied to talent pipeline agreements\",\"category\":\"action\"}},{\"id\":null,\"ref\":\"fact-9\",\"confidence\":\"medium\",\"rationale\":\"Quantifies the regulatory influence capability of major players\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2024-2025\",\"source\":\"lobbying expenditures\",\"content\":\"Tech industry AI lobbying spending increased 300% to over $50 million annually, with focus on preempting restrictive regulations\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"fact-10\",\"confidence\":\"high\",\"rationale\":\"Reveals strategic reasoning behind seemingly contradictory pro-regulation stance\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2024\",\"source\":\"market analysis\",\"content\":\"Regulation supportive companies argue compliance costs create barriers to entry that benefit established players over startups\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-11\",\"confidence\":\"medium\",\"rationale\":\"Government's limited technical capability affects the regulatory game dynamics\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2024\",\"source\":\"government capabilities assessment\",\"content\":\"Federal agencies lack sufficient AI expertise to effectively design or enforce technical regulations, creating regulatory capture risks\",\"category\":\"capability\"}}]"
   }
 }

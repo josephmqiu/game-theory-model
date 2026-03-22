@@ -4,16 +4,55 @@
   "complexityTier": "trivial",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [2, 5],
-      "requiredFactCategories": ["rule"],
+      "entityCountRange": [
+        2,
+        5
+      ],
+      "requiredFactCategories": [
+        "rule"
+      ],
       "minDistinctFactCategories": 1,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "forbiddenPatterns": ["fMRI", "neuroscience", "cross-cultural", "cultural variation"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "forbiddenPatterns": [
+        "fMRI",
+        "neuroscience",
+        "cross-cultural",
+        "cultural variation"
+      ],
       "rubrics": [
         "Facts should describe the proposal-and-response structure and the subgame-perfect equilibrium directly.",
         "Facts may mention the well-known tendency for very low offers to be rejected, but should not drift into experimental-literature details, neuroscience, or cultural surveys.",
         "Facts should stay compact and bounded to the toy game itself."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        2,
+        6
+      ],
+      "forbiddenPatterns": [
+        "referee",
+        "internal agent",
+        "cognitive",
+        "heuristic",
+        "rational.?optimizer",
+        "pattern.?exploiter",
+        "enforcer",
+        "audience",
+        "observer"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor who independently chooses actions in the game, not a cognitive mode, rule enforcer, or abstract concept.",
+        "Player count should match the actual number of independent decision-makers in the game.",
+        "Objectives should be specific to the game described, not generic game-theory goals like \"maximize utility\"."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"fact-1\",\"confidence\":\"high\",\"rationale\":\"Core game setup defining player roles and initial resource allocation\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"established game theory\",\"source\":\"experimental economics literature\",\"content\":\"Two-player game with asymmetric roles: Proposer receives a fixed sum of money (typically $10 in experiments) and must propose how to split it with Responder\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-2\",\"confidence\":\"high\",\"rationale\":\"Defines the complete action space available to the first player\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"established game theory\",\"source\":\"experimental economics literature\",\"content\":\"Proposer's strategy space consists of offering any amount from $0 to the full sum, with remainder kept by Proposer\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-3\",\"confidence\":\"high\",\"rationale\":\"Defines the complete action space and consequences for the second player\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"established game theory\",\"source\":\"experimental economics literature\",\"content\":\"Responder has binary choice: accept the offer (both players receive proposed amounts) or reject (both players receive nothing)\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-4\",\"confidence\":\"high\",\"rationale\":\"Critical constraint that eliminates reputation effects and future punishment mechanisms\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"established game theory\",\"source\":\"experimental economics literature\",\"content\":\"Game is one-shot with no repeated interaction, communication, or renegotiation allowed between players\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-5\",\"confidence\":\"high\",\"rationale\":\"Establishes the theoretical prediction versus observed behavior that makes this game strategically interesting\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"established game theory\",\"source\":\"experimental economics literature\",\"content\":\"Standard subgame perfect equilibrium predicts Proposer offers minimum unit and Responder accepts any positive amount, but experimental results show frequent rejection of offers below 30% of total\",\"category\":\"rule\"}}]"
   }
 }

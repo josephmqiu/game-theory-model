@@ -4,16 +4,53 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 10],
-      "requiredFactCategories": ["economic", "rule", "position", "capability"],
+      "entityCountRange": [
+        4,
+        10
+      ],
+      "requiredFactCategories": [
+        "economic",
+        "rule",
+        "position",
+        "capability"
+      ],
       "minDistinctFactCategories": 3,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "requiredPatterns": ["bid|proposal", "procurement|tender", "contract"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "requiredPatterns": [
+        "bid|proposal",
+        "procurement|tender",
+        "contract"
+      ],
       "rubrics": [
         "Facts should cover the bidding structure, the players, and the competitive dynamics.",
         "Facts should surface procurement rules or constraints without inventing contract details.",
         "Facts should avoid making up company names or supply-chain specifics that are not in the prompt."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        4,
+        10
+      ],
+      "forbiddenPatterns": [
+        "internal agent",
+        "cognitive",
+        "heuristic",
+        "rational.?optimizer",
+        "pattern.?exploiter"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor with independent agency in the situation.",
+        "Each player should have at least one objective that is specific to their position in this scenario.",
+        "Do not invent players not implied by the prompt — if the prompt describes two parties, there should be two players unless a third party is clearly relevant."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"fact-1\",\"confidence\":\"high\",\"rationale\":\"Federal procurement law establishes the fundamental rules governing how companies can compete\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026\",\"source\":\"Federal Acquisition Regulation (FAR)\",\"content\":\"Government contracts must follow competitive procurement rules under FAR, requiring sealed bids or competitive proposals with transparent evaluation criteria\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-2\",\"confidence\":\"high\",\"rationale\":\"Each competing company has identical formal requirements they must meet to be considered\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026\",\"source\":\"Standard procurement practice\",\"content\":\"Company A must submit a bid demonstrating technical capability, past performance, and price competitiveness within the solicitation deadline\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-3\",\"confidence\":\"high\",\"rationale\":\"Each competing company has identical formal requirements they must meet to be considered\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026\",\"source\":\"Standard procurement practice\",\"content\":\"Company B must submit a bid demonstrating technical capability, past performance, and price competitiveness within the solicitation deadline\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-4\",\"confidence\":\"high\",\"rationale\":\"Government's economic incentive structure drives the competitive dynamics between bidders\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026\",\"source\":\"Government procurement objectives\",\"content\":\"The government agency seeks to maximize value while minimizing cost, typically using lowest price technically acceptable (LPTA) or best value evaluation methods\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"fact-5\",\"confidence\":\"high\",\"rationale\":\"The core economic tension that creates the strategic interaction between competitors\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026\",\"source\":\"Corporate bidding strategy\",\"content\":\"Each company must balance bid competitiveness against profit margins, with aggressive pricing potentially winning the contract but reducing profitability\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"fact-6\",\"confidence\":\"high\",\"rationale\":\"These capability differences create asymmetries that affect bidding strategies\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026\",\"source\":\"Competitive advantage factors\",\"content\":\"Companies leverage their incumbent status, specialized expertise, past performance ratings, and cost structure as competitive advantages in bidding\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"fact-7\",\"confidence\":\"high\",\"rationale\":\"High-stakes outcome creates strong incentives for competitive bidding behavior\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026\",\"source\":\"Market impact analysis\",\"content\":\"The winning company gains significant revenue and potential follow-on opportunities, while the losing company faces opportunity costs and potential market share loss\",\"category\":\"impact\"}}]"
   }
 }

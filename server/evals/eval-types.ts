@@ -7,6 +7,7 @@ export interface EvalFixture {
   topic: string;
   complexityTier: "trivial" | "standard" | "complex";
   phases: Partial<Record<MethodologyPhase, PhaseExpectations>>;
+  priorContext?: Partial<Record<MethodologyPhase, string>>;
 }
 
 export interface PhaseExpectations {

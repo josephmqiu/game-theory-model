@@ -4,7 +4,10 @@
   "complexityTier": "complex",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [8, 20],
+      "entityCountRange": [
+        8,
+        20
+      ],
       "requiredFactCategories": [
         "economic",
         "position",
@@ -13,15 +16,43 @@
         "capability"
       ],
       "minDistinctFactCategories": 4,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "requiredRelationshipTypes": ["precedes"],
-      "requiredPatterns": ["OPEC", "quota|production"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "requiredRelationshipTypes": [
+        "precedes"
+      ],
+      "requiredPatterns": [
+        "OPEC",
+        "quota|production"
+      ],
       "rubrics": [
         "Facts should cover multiple member states or blocs rather than treating OPEC as a single actor.",
         "Facts should include production capacities, market conditions, and defection incentives with specifics.",
         "Facts should capture the quota-setting sequence when it matters for the analysis.",
         "Facts should avoid generic oil-market commentary that does not change the strategic picture."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        6,
+        20
+      ],
+      "forbiddenPatterns": [
+        "internal agent",
+        "cognitive",
+        "heuristic"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor with independent agency — name specific actors rather than generic blocs when possible.",
+        "Each player should have objectives that reflect their distinct position and incentives.",
+        "The player set should cover the key decision-makers without inflating the count with observers, commentators, or abstract forces."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"capability-saudi-swing\",\"confidence\":\"high\",\"rationale\":\"Saudi Arabia's excess capacity gives it unique leverage in quota negotiations\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2025-2026\",\"source\":\"Energy analysis\",\"content\":\"Saudi Arabia maintains 12-13 million bpd production capacity with 2-3 million bpd spare capacity, functioning as the cartel's swing producer\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"capability-russia-production\",\"confidence\":\"high\",\"rationale\":\"Russia's high baseline production but limited flexibility affects its negotiating position\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2025-2026\",\"source\":\"Energy analysis\",\"content\":\"Russia produces approximately 10-11 million bpd as OPEC+'s largest non-OPEC partner with limited spare capacity\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"economic-price-target\",\"confidence\":\"high\",\"rationale\":\"Fiscal needs directly influence Saudi willingness to sacrifice market share for price support\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2024-2026\",\"source\":\"OPEC policy analysis\",\"content\":\"Saudi Arabia's fiscal break-even oil price is approximately $80-85 per barrel, driving preference for production cuts when prices fall below this level\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"economic-compliance-challenge\",\"confidence\":\"medium\",\"rationale\":\"Poor compliance by high-cost producers undermines cartel effectiveness and creates tension\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2024-2026\",\"source\":\"OPEC monitoring reports\",\"content\":\"Iraq and Nigeria historically maintain 70-80% compliance with production quotas due to urgent fiscal needs and limited spare capacity\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"position-saudi-price-first\",\"confidence\":\"high\",\"rationale\":\"Saudi's strategic position as swing producer with fiscal discipline differs from other members\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2025-2026\",\"source\":\"Saudi energy policy\",\"content\":\"Saudi Arabia prioritizes oil price stability over market share, willing to cut production unilaterally to support $80+ oil prices\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"position-russia-market-share\",\"confidence\":\"high\",\"rationale\":\"Russia's economic structure makes it more tolerant of lower prices than Saudi Arabia\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2025-2026\",\"source\":\"Russian energy strategy\",\"content\":\"Russia balances OPEC+ cooperation with maintaining market share, preferring moderate cuts over deep production reductions\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"position-uae-production-growth\",\"confidence\":\"high\",\"rationale\":\"UAE's capacity expansion strategy creates tension with price-focused members\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2025-2026\",\"source\":\"UAE energy policy\",\"content\":\"UAE seeks higher production quotas to utilize expanding capacity investments, often advocating for quota increases in OPEC meetings\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"rule-opec-plus-structure\",\"confidence\":\"high\",\"rationale\":\"Consensus requirement gives any major producer veto power over quota changes\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2016-2026\",\"source\":\"OPEC+ Declaration of Cooperation\",\"content\":\"OPEC+ framework requires consensus among 23 members for production decisions, with monthly monitoring and quarterly review meetings\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"impact-us-shale-competition\",\"confidence\":\"high\",\"rationale\":\"Shale responsiveness constrains OPEC pricing power and influences quota strategies\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2025-2026\",\"source\":\"Market analysis\",\"content\":\"US shale production responds to oil prices above $70/barrel within 6-12 months, limiting OPEC's ability to sustain high prices through cuts\",\"category\":\"impact\"}},{\"id\":null,\"ref\":\"action-quarterly-review\",\"confidence\":\"high\",\"rationale\":\"Regular review cycles create repeated coordination challenges and opportunities for defection\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026 Q1\",\"source\":\"OPEC+ meeting schedule\",\"content\":\"OPEC+ conducts quarterly production quota reviews with flexibility to adjust based on market conditions and member compliance\",\"category\":\"action\"}},{\"id\":null,\"ref\":\"economic-demand-growth\",\"confidence\":\"medium\",\"rationale\":\"Demand growth projections influence members' willingness to cut production vs. compete for market share\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2025-2026\",\"source\":\"IEA demand forecasts\",\"content\":\"Global oil demand growth projected at 1-1.5 million bpd annually, primarily driven by Asia and petrochemicals demand\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"capability-spare-capacity\",\"confidence\":\"medium\",\"rationale\":\"Spare capacity distribution affects bargaining power and flexibility in quota negotiations\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2025-2026\",\"source\":\"OPEC capacity analysis\",\"content\":\"Total OPEC+ spare capacity estimated at 4-5 million bpd, concentrated primarily in Saudi Arabia and UAE\",\"category\":\"capability\"}}]"
   }
 }

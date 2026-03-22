@@ -55,7 +55,9 @@ export async function runEval(
           const result = await runPhase(phase, fixture.topic, {
             provider,
             model,
-            priorEntities: chain ? chainedPriorContext : undefined,
+            priorEntities: chain
+              ? chainedPriorContext
+              : fixture.priorContext?.[phase],
             runtime: { webSearch: false, effortLevel: effort },
           });
           const latencyMs = Date.now() - start;

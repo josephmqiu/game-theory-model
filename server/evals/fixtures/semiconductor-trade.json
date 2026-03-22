@@ -4,18 +4,58 @@
   "complexityTier": "complex",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [8, 20],
-      "requiredFactCategories": ["economic", "position", "rule", "action", "capability"],
+      "entityCountRange": [
+        8,
+        20
+      ],
+      "requiredFactCategories": [
+        "economic",
+        "position",
+        "rule",
+        "action",
+        "capability"
+      ],
       "minDistinctFactCategories": 4,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "requiredRelationshipTypes": ["precedes"],
-      "requiredPatterns": ["US|United States", "China", "EU|European Union", "export control|export controls", "supply chain"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "requiredRelationshipTypes": [
+        "precedes"
+      ],
+      "requiredPatterns": [
+        "US|United States",
+        "China",
+        "EU|European Union",
+        "export control|export controls",
+        "supply chain"
+      ],
       "rubrics": [
         "Facts should cover the three major blocs and keep their positions distinct.",
         "Facts should name specific export controls, supply-chain dependencies, and retaliatory measures.",
         "Facts should include dated developments when the sequence changes the strategic picture.",
         "Facts should avoid collapsing the topic into generic great-power rivalry or general tech policy."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        6,
+        20
+      ],
+      "forbiddenPatterns": [
+        "internal agent",
+        "cognitive",
+        "heuristic"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor with independent agency — name specific actors rather than generic blocs when possible.",
+        "Each player should have objectives that reflect their distinct position and incentives.",
+        "The player set should cover the key decision-makers without inflating the count with observers, commentators, or abstract forces."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"us-chips-act\",\"confidence\":\"high\",\"rationale\":\"This establishes the foundational US policy framework driving current tensions\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2022-08-09\",\"source\":\"US Congress\",\"content\":\"US CHIPS and Science Act allocated $52.7 billion in subsidies for domestic semiconductor manufacturing and research, with restrictions preventing recipients from expanding advanced chip production in China for 10 years\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"us-export-controls-oct2022\",\"confidence\":\"high\",\"rationale\":\"This marked the escalation to comprehensive technology export restrictions\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2022-10-07\",\"source\":\"US Bureau of Industry and Security\",\"content\":\"US imposed sweeping export controls on advanced semiconductors and chipmaking equipment to China, targeting chips with processing speeds above certain thresholds and AI applications\",\"category\":\"action\"}},{\"id\":null,\"ref\":\"netherlands-asml-controls\",\"confidence\":\"high\",\"rationale\":\"This represents key EU member alignment with US controls despite economic costs\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-03-08\",\"source\":\"Dutch government\",\"content\":\"Netherlands announced export licensing requirements for advanced lithography equipment including DUV systems, affecting ASML exports to China following US pressure\",\"category\":\"action\"}},{\"id\":null,\"ref\":\"china-retaliation-gallium\",\"confidence\":\"high\",\"rationale\":\"This demonstrates China's counter-escalation using its control over critical materials\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-07-03\",\"source\":\"China Ministry of Commerce\",\"content\":\"China imposed export controls on gallium and germanium, critical materials for semiconductor and defense industries, requiring licenses for exports citing national security\",\"category\":\"action\"}},{\"id\":null,\"ref\":\"us-position-tech-competition\",\"confidence\":\"high\",\"rationale\":\"This articulates the core US strategic rationale driving the export control regime\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2022-10-07\",\"source\":\"US National Security Strategy\",\"content\":\"US position frames semiconductor controls as necessary to prevent China from acquiring technologies that could enhance military capabilities and threaten US technological leadership\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"china-position-self-reliance\",\"confidence\":\"high\",\"rationale\":\"This represents China's strategic response and framing of the conflict\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-03-05\",\"source\":\"China National People's Congress\",\"content\":\"China announced accelerated pursuit of semiconductor self-reliance, with state-directed investment targets and characterization of US controls as economic coercion and technological bullying\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"eu-position-strategic-autonomy\",\"confidence\":\"high\",\"rationale\":\"This shows EU attempting to balance between US alliance and economic interests with China\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-02-01\",\"source\":\"European Commission\",\"content\":\"EU announced European Chips Act with €43 billion in public and private investment, emphasizing strategic autonomy while avoiding explicit alignment with US-China restrictions\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"global-supply-chain-impact\",\"confidence\":\"medium\",\"rationale\":\"This captures the broader economic disruption beyond the primary actors\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-06-01\",\"source\":\"Semiconductor Industry Association\",\"content\":\"Industry reports indicate supply chain disruptions affecting global electronics manufacturers, with some companies establishing parallel supply chains to comply with varying export restrictions\",\"category\":\"impact\"}},{\"id\":null,\"ref\":\"china-semiconductor-capability\",\"confidence\":\"high\",\"rationale\":\"This establishes China's leverage through material control versus technological gaps\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-01-01\",\"source\":\"Industry analysis\",\"content\":\"China controls approximately 75% of global gallium production and 68% of germanium production, while lagging 3-5 years behind in advanced chip manufacturing capabilities\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"us-semiconductor-capability\",\"confidence\":\"high\",\"rationale\":\"This shows US strength in high-value segments but supply chain vulnerability\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-01-01\",\"source\":\"Semiconductor Industry Association\",\"content\":\"US leads in chip design and advanced manufacturing equipment with companies like Intel, Nvidia, and Applied Materials, but produces only 12% of global semiconductors domestically\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"eu-semiconductor-capability\",\"confidence\":\"high\",\"rationale\":\"This establishes EU's critical chokepoint control in semiconductor manufacturing\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-01-01\",\"source\":\"European Commission\",\"content\":\"EU holds dominant position in lithography equipment through ASML (90% market share in EUV) and strong position in specialty semiconductors, but limited advanced manufacturing capacity\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"economic-impact-china\",\"confidence\":\"medium\",\"rationale\":\"This quantifies the immediate economic impact and investment response\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-12-31\",\"source\":\"Chinese semiconductor industry reports\",\"content\":\"Chinese semiconductor imports decreased by approximately 15% in 2023 compared to 2022, while domestic production investment increased by over 20%\",\"category\":\"economic\"}}]"
   }
 }

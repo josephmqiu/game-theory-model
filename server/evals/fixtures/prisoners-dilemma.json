@@ -4,16 +4,56 @@
   "complexityTier": "trivial",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [2, 5],
-      "requiredFactCategories": ["rule"],
+      "entityCountRange": [
+        2,
+        5
+      ],
+      "requiredFactCategories": [
+        "rule"
+      ],
       "minDistinctFactCategories": 1,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "forbiddenPatterns": ["evolutionary", "biological", "population dynamics", "iterated", "repeated"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "forbiddenPatterns": [
+        "evolutionary",
+        "biological",
+        "population dynamics",
+        "iterated",
+        "repeated"
+      ],
       "rubrics": [
         "Facts should describe the one-shot prisoner's dilemma structure and its known solution.",
         "Facts should not drift into evolutionary, repeated, or population-level variants.",
         "Facts should stay compact and not manufacture extra strategic context."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        2,
+        6
+      ],
+      "forbiddenPatterns": [
+        "referee",
+        "internal agent",
+        "cognitive",
+        "heuristic",
+        "rational.?optimizer",
+        "pattern.?exploiter",
+        "enforcer",
+        "audience",
+        "observer"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor who independently chooses actions in the game, not a cognitive mode, rule enforcer, or abstract concept.",
+        "Player count should match the actual number of independent decision-makers in the game.",
+        "Objectives should be specific to the game described, not generic game-theory goals like \"maximize utility\"."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"fact-1\",\"confidence\":\"high\",\"rationale\":\"This establishes the fundamental setup and constraints of the prisoner's dilemma game\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"classical game theory\",\"source\":\"game theory literature\",\"content\":\"Two players are arrested and held separately, unable to communicate, and each must independently choose to either cooperate (stay silent) or defect (confess/betray)\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-2\",\"confidence\":\"high\",\"rationale\":\"The payoff structure is what creates the strategic tension and defines the dilemma\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"classical game theory\",\"source\":\"game theory literature\",\"content\":\"The payoff structure follows: mutual cooperation yields moderate sentences for both, mutual defection yields harsh sentences for both, and unilateral defection yields freedom for the defector while the cooperator receives the worst sentence\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-3\",\"confidence\":\"high\",\"rationale\":\"This captures the strategic logic that drives players toward the suboptimal outcome\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"classical game theory\",\"source\":\"game theory literature\",\"content\":\"Defection strictly dominates cooperation for each player individually - regardless of what the other player does, each player is better off defecting\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-4\",\"confidence\":\"high\",\"rationale\":\"This identifies the solution concept and highlights the core dilemma of individual vs collective rationality\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"classical game theory\",\"source\":\"game theory literature\",\"content\":\"The unique Nash equilibrium is mutual defection, even though mutual cooperation would yield better outcomes for both players\",\"category\":\"rule\"}}]"
   }
 }

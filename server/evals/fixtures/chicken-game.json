@@ -4,16 +4,55 @@
   "complexityTier": "trivial",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [2, 5],
-      "requiredFactCategories": ["rule"],
+      "entityCountRange": [
+        2,
+        5
+      ],
+      "requiredFactCategories": [
+        "rule"
+      ],
       "minDistinctFactCategories": 1,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "forbiddenPatterns": ["Cuban missile", "nuclear", "historical application", "missile crisis"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "forbiddenPatterns": [
+        "Cuban missile",
+        "nuclear",
+        "historical application",
+        "missile crisis"
+      ],
       "rubrics": [
         "Facts should stay at the abstract brinkmanship level and describe the one-shot structure cleanly.",
         "Facts should reflect the two-player escalation logic without inventing historical parallels or extra actors.",
         "Facts should stay compact and proportional to a solved toy game."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        2,
+        6
+      ],
+      "forbiddenPatterns": [
+        "referee",
+        "internal agent",
+        "cognitive",
+        "heuristic",
+        "rational.?optimizer",
+        "pattern.?exploiter",
+        "enforcer",
+        "audience",
+        "observer"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor who independently chooses actions in the game, not a cognitive mode, rule enforcer, or abstract concept.",
+        "Player count should match the actual number of independent decision-makers in the game.",
+        "Objectives should be specific to the game described, not generic game-theory goals like \"maximize utility\"."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"fact-1\",\"confidence\":\"high\",\"rationale\":\"Defines the basic strategic structure of the chicken game\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"classical game theory\",\"source\":\"game theory literature\",\"content\":\"Two players simultaneously choose between two strategies: 'swerve' (cooperate/back down) or 'continue straight' (defect/maintain course)\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-2\",\"confidence\":\"high\",\"rationale\":\"Establishes the mutual cooperation outcome in the payoff matrix\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"classical game theory\",\"source\":\"game theory literature\",\"content\":\"When both players swerve, both receive a moderate payoff - mutual face-saving but neither gains advantage\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-3\",\"confidence\":\"high\",\"rationale\":\"Defines the asymmetric outcomes that create the strategic tension\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"classical game theory\",\"source\":\"game theory literature\",\"content\":\"When one player swerves and the other continues straight, the continuing player wins maximum payoff while the swerving player loses face\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-4\",\"confidence\":\"high\",\"rationale\":\"Establishes the mutual defection penalty that distinguishes chicken from prisoner's dilemma\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"classical game theory\",\"source\":\"game theory literature\",\"content\":\"When both players continue straight, both suffer the worst possible outcome - mutual destruction or catastrophic loss\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-5\",\"confidence\":\"high\",\"rationale\":\"Describes the solution concept and strategic stability of the game\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"classical game theory\",\"source\":\"game theory literature\",\"content\":\"The game has two pure strategy Nash equilibria (one player swerves, other continues) and one mixed strategy equilibrium where both players randomize\",\"category\":\"rule\"}}]"
   }
 }

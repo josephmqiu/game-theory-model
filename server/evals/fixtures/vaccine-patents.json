@@ -4,7 +4,10 @@
   "complexityTier": "complex",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [8, 20],
+      "entityCountRange": [
+        8,
+        20
+      ],
       "requiredFactCategories": [
         "economic",
         "position",
@@ -13,14 +16,40 @@
         "action"
       ],
       "minDistinctFactCategories": 4,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "requiredPatterns": ["patent", "pharma|pharmaceutical"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "requiredPatterns": [
+        "patent",
+        "pharma|pharmaceutical"
+      ],
       "rubrics": [
         "Facts should cover the multi-player dynamics rather than framing the issue as a single corporate choice.",
         "Facts should include public-health pressure, IP economics, and free-rider incentives with specifics.",
         "Facts should keep the grounding factual and avoid generic corporate-ethics language.",
         "Facts should distinguish policy pressure from the companies' own strategic positions."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        6,
+        20
+      ],
+      "forbiddenPatterns": [
+        "internal agent",
+        "cognitive",
+        "heuristic"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor with independent agency — name specific actors rather than generic blocs when possible.",
+        "Each player should have objectives that reflect their distinct position and incentives.",
+        "The player set should cover the key decision-makers without inflating the count with observers, commentators, or abstract forces."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"fact-1\",\"confidence\":\"high\",\"rationale\":\"Pfizer's position was consistently documented in public statements and WTO proceedings\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2021-2023\",\"source\":\"WTO TRIPS waiver negotiations\",\"content\":\"Pfizer-BioNTech opposed broad patent waivers for COVID-19 vaccines, arguing that patent protection incentivizes innovation and that manufacturing quality control requires expertise\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-2\",\"confidence\":\"high\",\"rationale\":\"Moderna's evolving position reflects the complexity of balancing public health and commercial interests\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2021-2023\",\"source\":\"WTO TRIPS waiver negotiations\",\"content\":\"Moderna initially supported some form of patent sharing but later shifted to opposing broad waivers while offering voluntary licensing agreements\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-3\",\"confidence\":\"medium\",\"rationale\":\"J&J took a middle position between full opposition and full support for patent waivers\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2021-2023\",\"source\":\"Johnson & Johnson public statements\",\"content\":\"Johnson & Johnson supported limited patent sharing for pandemic response while maintaining that existing voluntary licensing and technology transfer partnerships were sufficient\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-4\",\"confidence\":\"high\",\"rationale\":\"Revenue figures demonstrate the massive financial stakes in vaccine patent decisions\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2020-2021\",\"source\":\"Pharmaceutical industry financial reports\",\"content\":\"Pfizer-BioNTech generated over $36 billion in COVID-19 vaccine revenue in 2021, while Moderna generated $18.4 billion, creating strong economic incentives to protect patent exclusivity\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"fact-5\",\"confidence\":\"high\",\"rationale\":\"Manufacturing capacity directly affects bargaining power in patent sharing negotiations\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2020-present\",\"source\":\"Manufacturing capacity analysis\",\"content\":\"Pfizer has the largest global vaccine manufacturing network among the three companies, with established facilities across multiple continents, giving it significant leverage in production scale\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"fact-6\",\"confidence\":\"medium\",\"rationale\":\"Technology maturity affects how much companies rely on patent protection versus manufacturing expertise\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2020-present\",\"source\":\"Technology analysis\",\"content\":\"Moderna's mRNA platform technology is newer and less established than traditional vaccine technologies, making the company more dependent on patent protection for competitive advantage\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"fact-7\",\"confidence\":\"high\",\"rationale\":\"Patent decisions directly affect global vaccine access and public health outcomes\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2021-present\",\"source\":\"Global health organizations\",\"content\":\"Low and middle-income countries face vaccine access barriers, with some regions having vaccination rates below 20% due to supply constraints and high prices\",\"category\":\"impact\"}},{\"id\":null,\"ref\":\"fact-8\",\"confidence\":\"high\",\"rationale\":\"Legal framework constrains and enables different patent sharing strategies\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2020-2025\",\"source\":\"WTO TRIPS Agreement framework\",\"content\":\"WTO TRIPS Agreement requires member countries to provide patent protection for pharmaceutical products, but allows for compulsory licensing and temporary waivers during health emergencies\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-9\",\"confidence\":\"high\",\"rationale\":\"This proposal initiated the formal international process that companies had to respond to\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"October 2020\",\"source\":\"WTO proposal submission\",\"content\":\"India and South Africa first proposed the TRIPS waiver for COVID-19 medical tools, creating international pressure for pharmaceutical companies to share patents\",\"category\":\"action\"}},{\"id\":null,\"ref\":\"fact-10\",\"confidence\":\"medium\",\"rationale\":\"R&D costs and innovation incentives are central economic arguments in patent sharing decisions\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2020-2021\",\"source\":\"R&D investment reports\",\"content\":\"All three companies invested billions in vaccine R&D with government support, but argue that future pandemic preparedness requires maintaining patent incentives for innovation\",\"category\":\"economic\"}}]"
   }
 }

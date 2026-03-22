@@ -4,16 +4,53 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 10],
-      "requiredFactCategories": ["position", "rule", "action", "economic"],
+      "entityCountRange": [
+        4,
+        10
+      ],
+      "requiredFactCategories": [
+        "position",
+        "rule",
+        "action",
+        "economic"
+      ],
       "minDistinctFactCategories": 3,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "requiredPatterns": ["prosecutor|defense", "plea", "fallback|sentence"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "requiredPatterns": [
+        "prosecutor|defense",
+        "plea",
+        "fallback|sentence"
+      ],
       "rubrics": [
         "Facts should cover the negotiation structure and the information asymmetry between prosecutor and defense.",
         "Facts should include the relevant fallback positions or sentencing stakes.",
         "Facts should avoid drifting into criminal-justice reform or legal philosophy."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        4,
+        10
+      ],
+      "forbiddenPatterns": [
+        "internal agent",
+        "cognitive",
+        "heuristic",
+        "rational.?optimizer",
+        "pattern.?exploiter"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor with independent agency in the situation.",
+        "Each player should have at least one objective that is specific to their position in this scenario.",
+        "Do not invent players not implied by the prompt — if the prompt describes two parties, there should be two players unless a third party is clearly relevant."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"prosecutor-position\",\"confidence\":\"high\",\"rationale\":\"Core prosecutorial objective in plea negotiations is securing conviction while managing resource constraints\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"standard prosecutorial practice\",\"content\":\"Prosecutor offers reduced charges or sentencing recommendation in exchange for guilty plea, avoiding trial preparation costs and ensuring conviction\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"defense-position\",\"confidence\":\"high\",\"rationale\":\"Defense attorney's duty is to minimize client's legal exposure and potential punishment\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"standard defense practice\",\"content\":\"Defense seeks minimum possible sentence or charge reduction for client while avoiding trial risk and costs\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"legal-framework\",\"confidence\":\"high\",\"rationale\":\"Legal constraints fundamentally shape the negotiation space and enforceability of agreements\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"Federal Rules of Criminal Procedure Rule 11\",\"content\":\"Plea agreements must be voluntary, knowing, and intelligent with judicial oversight; prosecutor has discretion over charging decisions\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"trial-costs\",\"confidence\":\"medium\",\"rationale\":\"Economic pressure drives prosecutorial willingness to offer plea deals rather than proceed to trial\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"criminal justice system economics\",\"content\":\"Jury trials cost prosecutors $10,000-50,000+ in preparation and court time versus $1,000-3,000 for plea processing\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"prosecutor-leverage\",\"confidence\":\"high\",\"rationale\":\"Prosecutorial discretion and state resources create significant negotiating leverage\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"prosecutorial authority\",\"content\":\"Prosecutor controls charging decisions, can add or drop charges, and has evidence access advantages including police investigation resources\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"defense-constraints\",\"confidence\":\"high\",\"rationale\":\"Resource asymmetry affects defense's ability to investigate and prepare for trial\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"defense resource limitations\",\"content\":\"Defense often has limited investigation budget, public defenders carry high caseloads, and client faces detention pressure\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"defendant-impact\",\"confidence\":\"high\",\"rationale\":\"This risk-reward calculation is central to defendant's decision-making in plea negotiations\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"criminal justice outcomes\",\"content\":\"Defendant faces trade-off between certain reduced punishment via plea versus uncertain but potentially greater punishment at trial\",\"category\":\"impact\"}},{\"id\":null,\"ref\":\"court-efficiency\",\"confidence\":\"high\",\"rationale\":\"System dependence on plea bargains creates institutional pressure supporting negotiated resolutions\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"judicial system capacity\",\"content\":\"Courts process 95% of criminal cases through plea agreements due to limited trial capacity and judge availability\",\"category\":\"impact\"}}]"
   }
 }

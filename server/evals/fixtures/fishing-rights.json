@@ -4,16 +4,53 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 10],
-      "requiredFactCategories": ["position", "economic", "rule", "impact"],
+      "entityCountRange": [
+        4,
+        10
+      ],
+      "requiredFactCategories": [
+        "position",
+        "economic",
+        "rule",
+        "impact"
+      ],
       "minDistinctFactCategories": 3,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "requiredPatterns": ["treaty|quota", "enforcement", "sustainability"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "requiredPatterns": [
+        "treaty|quota",
+        "enforcement",
+        "sustainability"
+      ],
       "rubrics": [
         "Facts should cover the bilateral negotiation over the shared resource itself.",
         "Facts should include enforcement and sustainability concerns, not just a generic resource dispute.",
         "Facts should avoid drifting into broader ocean-governance commentary."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        4,
+        10
+      ],
+      "forbiddenPatterns": [
+        "internal agent",
+        "cognitive",
+        "heuristic",
+        "rational.?optimizer",
+        "pattern.?exploiter"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor with independent agency in the situation.",
+        "Each player should have at least one objective that is specific to their position in this scenario.",
+        "Do not invent players not implied by the prompt — if the prompt describes two parties, there should be two players unless a third party is clearly relevant."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"fact-1\",\"confidence\":\"high\",\"rationale\":\"The legal framework establishes the territorial basis for the negotiation\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026\",\"source\":\"International maritime law framework\",\"content\":\"Both countries' Exclusive Economic Zones (EEZ) overlap in a 50,000 square kilometer area containing shared fish stocks including tuna, mackerel, and cod populations that migrate seasonally between territorial waters\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-2\",\"confidence\":\"high\",\"rationale\":\"Quantifies Country A's economic dependence on the disputed fishing grounds\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2025\",\"source\":\"Country A fisheries department\",\"content\":\"Country A's fishing industry generates $2.3 billion annually and employs 45,000 workers, with 60% of catch volume coming from the disputed waters\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"fact-3\",\"confidence\":\"medium\",\"rationale\":\"Establishes the relative fishing capabilities and technological advantages of each side\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2025\",\"source\":\"Country B maritime authority\",\"content\":\"Country B operates a fleet of 280 fishing vessels compared to Country A's 420 vessels, but Country B's vessels are on average 40% larger with more advanced fish-finding technology\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"fact-4\",\"confidence\":\"high\",\"rationale\":\"Defines Country A's opening negotiation position and justification\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-01-15\",\"source\":\"Country A government position\",\"content\":\"Country A claims exclusive rights to 70% of the disputed area based on historical fishing patterns dating back to 1890 and argues for a quota system that allocates 65% of total allowable catch to their fleet\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-5\",\"confidence\":\"high\",\"rationale\":\"Establishes Country B's contrasting negotiation position\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-01-22\",\"source\":\"Country B foreign ministry\",\"content\":\"Country B proposes a 50-50 split of fishing quotas and rotating seasonal access rights, rejecting historical claims and emphasizing current EEZ boundaries under UNCLOS maritime law\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-6\",\"confidence\":\"medium\",\"rationale\":\"Environmental constraints affect the total resources available to negotiate over\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2025\",\"source\":\"Environmental assessment\",\"content\":\"Fish stock levels have declined 30% over the past decade due to overfishing, creating pressure for conservation quotas that would reduce total allowable catch by 25% from current levels\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-7\",\"confidence\":\"medium\",\"rationale\":\"Shows Country B's alternative options, affecting their negotiation leverage\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2025\",\"source\":\"Regional economic analysis\",\"content\":\"Country B has developed alternative protein aquaculture that could replace 40% of wild-caught fish demand, reducing their dependence on the disputed waters\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"fact-8\",\"confidence\":\"high\",\"rationale\":\"Domestic political pressures constrain negotiators' flexibility\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2025\",\"source\":\"Local fishing communities impact study\",\"content\":\"Fishing communities in both countries face economic hardship with average fisher incomes declining 20% over five years, creating domestic political pressure for favorable treaty terms\",\"category\":\"impact\"}}]"
   }
 }

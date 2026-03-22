@@ -4,7 +4,10 @@
   "complexityTier": "complex",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [8, 20],
+      "entityCountRange": [
+        8,
+        20
+      ],
       "requiredFactCategories": [
         "position",
         "economic",
@@ -13,15 +16,43 @@
         "impact"
       ],
       "minDistinctFactCategories": 4,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "requiredRelationshipTypes": ["precedes"],
-      "requiredPatterns": ["emission", "financing|finance"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "requiredRelationshipTypes": [
+        "precedes"
+      ],
+      "requiredPatterns": [
+        "emission",
+        "financing|finance"
+      ],
       "rubrics": [
         "Facts should identify the key blocs or camps and keep their positions separate.",
         "Facts should cover emission targets, financing mechanisms, and free-rider dynamics with specifics rather than generic statements.",
         "Facts should include a timeline of negotiation moves or commitments when it changes the analysis.",
         "Facts should avoid flattening the situation into generic climate-policy commentary."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        6,
+        20
+      ],
+      "forbiddenPatterns": [
+        "internal agent",
+        "cognitive",
+        "heuristic"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor with independent agency — name specific actors rather than generic blocs when possible.",
+        "Each player should have objectives that reflect their distinct position and incentives.",
+        "The player set should cover the key decision-makers without inflating the count with observers, commentators, or abstract forces."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"fact-us-position\",\"confidence\":\"high\",\"rationale\":\"US position consistently balances climate action with economic competitiveness concerns\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-12-13\",\"source\":\"COP28 UAE Consensus\",\"content\":\"United States supports transition away from fossil fuels in energy systems but opposes binding emissions reduction targets that would constrain economic growth\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-eu-leadership\",\"confidence\":\"high\",\"rationale\":\"EU consistently advocates for strongest climate commitments among developed nations\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-12-13\",\"source\":\"COP28 negotiations\",\"content\":\"European Union positions itself as climate leader, committing to 55% emissions reduction by 2030 and supporting ambitious global targets\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-china-developing\",\"confidence\":\"high\",\"rationale\":\"China's dual status as major emitter and developing nation creates unique strategic position\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-12-13\",\"source\":\"UNFCCC classification\",\"content\":\"China maintains developing nation status under UNFCCC despite being world's largest emitter at 30% of global greenhouse gas emissions\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-aosis-loss-damage\",\"confidence\":\"high\",\"rationale\":\"AOSIS faces existential threat from sea level rise, making loss and damage central to their position\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-11-30\",\"source\":\"COP28 Loss and Damage negotiations\",\"content\":\"Alliance of Small Island Developing States (AOSIS) demands immediate access to loss and damage funding for climate impacts already occurring\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-finance-gap\",\"confidence\":\"high\",\"rationale\":\"Finance shortfall undermines developing nation trust and negotiating positions\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2022-12-31\",\"source\":\"OECD climate finance report\",\"content\":\"Developed nations provided $89.6 billion in climate finance in 2022, falling short of the $100 billion annual commitment made in 2009\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"fact-loss-damage-fund\",\"confidence\":\"high\",\"rationale\":\"First concrete mechanism to address developing nation demands for loss and damage compensation\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-12-13\",\"source\":\"COP28 decision\",\"content\":\"Loss and damage fund established with initial pledges of $792 million, primarily from developed nations including UAE ($100M), Germany ($100M), and UK ($75M)\",\"category\":\"action\"}},{\"id\":null,\"ref\":\"fact-india-equity\",\"confidence\":\"high\",\"rationale\":\"India's position reflects broader developing nation emphasis on historical responsibility and development needs\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-12-13\",\"source\":\"COP28 India delegation\",\"content\":\"India emphasizes equity principle and per capita emissions, arguing developed nations must lead with deeper cuts while allowing developing nations policy space for growth\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-fossil-fuel-transition\",\"confidence\":\"high\",\"rationale\":\"Breakthrough moment representing compromise between developed nation ambition and developing nation concerns\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-12-13\",\"source\":\"COP28 UAE Consensus\",\"content\":\"Global agreement reached to transition away from fossil fuels in energy systems, marking first explicit fossil fuel language in COP decision text\",\"category\":\"action\"}},{\"id\":null,\"ref\":\"fact-cbdr-principle\",\"confidence\":\"high\",\"rationale\":\"Foundational principle that shapes all negotiations and developing nation legal positions\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"1992-06-04\",\"source\":\"UNFCCC Article 3.1\",\"content\":\"Common but differentiated responsibilities principle establishes that developed nations take the lead in addressing climate change based on historical emissions and capabilities\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-ndc-ambition-gap\",\"confidence\":\"high\",\"rationale\":\"Quantifies the scale of additional action needed and pressure on major emitters\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-12-08\",\"source\":\"UNEP Emissions Gap Report 2023\",\"content\":\"Current nationally determined contributions (NDCs) lead to 2.9°C warming, far exceeding Paris Agreement 1.5°C target, with largest absolute emission reductions needed from major economies\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"fact-technology-transfer\",\"confidence\":\"medium\",\"rationale\":\"Technology transfer remains contentious with different views on intellectual property and access\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-12-13\",\"source\":\"COP28 technology discussions\",\"content\":\"Developing nations demand enhanced technology transfer and intellectual property provisions for clean energy deployment, while developed nations emphasize private sector investment and patent protection\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"fact-adaptation-finance\",\"confidence\":\"high\",\"rationale\":\"Demonstrates resource allocation mismatch with developing nation priorities and needs\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2023-12-13\",\"source\":\"COP28 Global Stocktake\",\"content\":\"Adaptation finance receives only 28% of climate finance flows despite developing nation needs, with $387 billion annual adaptation costs projected by 2030\",\"category\":\"economic\"}}]"
   }
 }

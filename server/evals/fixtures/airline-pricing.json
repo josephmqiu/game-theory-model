@@ -4,16 +4,52 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 10],
-      "requiredFactCategories": ["economic", "position", "capability"],
+      "entityCountRange": [
+        4,
+        10
+      ],
+      "requiredFactCategories": [
+        "economic",
+        "position",
+        "capability"
+      ],
       "minDistinctFactCategories": 3,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "requiredPatterns": ["price|pricing", "cost", "demand"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "requiredPatterns": [
+        "price|pricing",
+        "cost",
+        "demand"
+      ],
       "rubrics": [
         "Facts should cover the duopoly pricing dynamic rather than a broad airline-industry survey.",
         "Facts should identify the relevant cost structure and demand characteristics that shape pricing moves.",
         "Facts should keep competitor positioning explicit without turning the fixture into a generic market summary."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        4,
+        10
+      ],
+      "forbiddenPatterns": [
+        "internal agent",
+        "cognitive",
+        "heuristic",
+        "rational.?optimizer",
+        "pattern.?exploiter"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor with independent agency in the situation.",
+        "Each player should have at least one objective that is specific to their position in this scenario.",
+        "Do not invent players not implied by the prompt — if the prompt describes two parties, there should be two players unless a third party is clearly relevant."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"cost-structure\",\"confidence\":\"high\",\"rationale\":\"Fixed cost structure is fundamental to airline pricing behavior and strategic decisions\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026\",\"source\":\"Aviation industry economics\",\"content\":\"Airlines face high fixed costs (aircraft, crew, fuel) that are largely invariant to load factor, creating strong incentives to maximize revenue per flight through dynamic pricing\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"regulatory-constraints\",\"confidence\":\"high\",\"rationale\":\"Regulatory framework sets binding constraints on competitive strategies\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026\",\"source\":\"Aviation regulations\",\"content\":\"Airlines must comply with government slot allocations, safety regulations, and consumer protection rules that limit predatory pricing and require fare transparency\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"airline-a-capacity\",\"confidence\":\"medium\",\"rationale\":\"Incumbent advantages through slot control and route establishment are key competitive assets\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026\",\"source\":\"Market analysis\",\"content\":\"First airline controls airport slots and has established route presence, giving it scheduling flexibility and potential first-mover advantages in capacity decisions\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"airline-b-position\",\"confidence\":\"medium\",\"rationale\":\"Challenger position creates specific strategic imperatives and constraints\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026\",\"source\":\"Market analysis\",\"content\":\"Second airline must compete for market share against established incumbent, likely using lower prices or differentiated service to attract passengers\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"demand-elasticity\",\"confidence\":\"high\",\"rationale\":\"Demand elasticity determines the payoff structure for pricing strategies\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026\",\"source\":\"Aviation economics research\",\"content\":\"Air travel demand shows moderate price elasticity, meaning passengers will switch between airlines based on price differences but demand doesn't collapse with small increases\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"consumer-impact\",\"confidence\":\"high\",\"rationale\":\"Consumer welfare impact is a key outcome measure of the competitive structure\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026\",\"source\":\"Economic theory\",\"content\":\"Duopoly competition typically results in lower prices than monopoly but higher prices than perfect competition, with consumers benefiting from choice but not full competitive pricing\",\"category\":\"impact\"}},{\"id\":null,\"ref\":\"capacity-constraints\",\"confidence\":\"high\",\"rationale\":\"Physical constraints fundamentally shape the competitive landscape and possible strategies\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026\",\"source\":\"Airport operations\",\"content\":\"Limited airport slots and gate capacity create artificial scarcity that constrains competitive entry and gives slot-holding airlines structural advantages\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"revenue-management\",\"confidence\":\"high\",\"rationale\":\"Technology capabilities determine how quickly and precisely airlines can respond to competitive moves\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026\",\"source\":\"Airline industry practice\",\"content\":\"Both airlines use sophisticated yield management systems to adjust prices in real-time based on demand forecasts, competitor actions, and booking patterns\",\"category\":\"capability\"}}]"
   }
 }
