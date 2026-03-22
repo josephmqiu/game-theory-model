@@ -3,10 +3,7 @@
   "name": "game-theory-analyzer",
   "version": "0.4.0",
   "description": "A desktop game-theory analysis workspace for evidence-backed modeling, workflow-guided review, and AI-assisted strategic analysis.",
-  "author": {
-    "name": "josephmqiu",
-    "email": "maintainers@game-theory-analyzer.invalid"
-  },
+  "author": "Game Theory Analyzer contributors",
   "license": "MIT",
   "repository": {
     "type": "git",

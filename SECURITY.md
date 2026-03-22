@@ -4,13 +4,13 @@
 
 If you discover a security vulnerability in Game Theory Analyzer, please report it responsibly.
 
-**Do not open a public issue.** Instead, email [maintainers@game-theory-analyzer.invalid](mailto:maintainers@game-theory-analyzer.invalid) with:
+**Do not open a public issue.** Use [GitHub Private Vulnerability Reporting](https://github.com/josephmqiu/game-theory-model/security/advisories/new) and include:
 
 - A description of the vulnerability
 - Steps to reproduce
 - Potential impact
 
-You should receive a response within 72 hours. We will work with you to understand the issue and coordinate a fix before any public disclosure.
+If you cannot use GitHub advisories, contact the maintainers privately through GitHub rather than posting details publicly. We will work with you to understand the issue and coordinate a fix before any public disclosure.
 
 ## Scope
 

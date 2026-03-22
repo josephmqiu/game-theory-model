@@ -23,7 +23,7 @@ All analysis is visualized as an entity graph on a canvas — the primary worksp
 - Multi-phase analytical methodology (situation framing through meta-analysis)
 - Web search integration for evidence-backed modeling
 - Desktop app (Electron) with web fallback
-- Local-first — your data stays on your machine
+- Local-first workspace state, with documented outbound network dependencies
 - `.gta` file format for saving and sharing analyses
 
 ## Quick Start
@@ -79,6 +79,17 @@ bun run electron:build:mac-arm64   # Full production build (client + server + MC
 ```
 
 > **Note:** `bun run build` only builds the frontend. Server-side changes (Nitro, codex-adapter, MCP server) require the full Electron build to take effect in the desktop app.
+
+## Network Access
+
+Game Theory Analyzer stores its workspace data locally, but some features make outbound network requests:
+
+- AI runtime calls send prompts and relevant context to the configured Claude/Codex-compatible runtime or provider path.
+- Evidence-backed analysis may use web search providers during research steps.
+- The UI fetches icon metadata from `https://api.iconify.design`.
+- The canvas font loader may fetch font CSS and font files from `https://fonts.googleapis.com`, `https://fonts.gstatic.com`, and `https://fonts.font.im`.
+
+If you need a stricter offline posture, review these integrations before running the app in a network-restricted environment.
 
 ### Project Structure
 

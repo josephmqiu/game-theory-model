@@ -6,4 +6,4 @@ By participating, you agree to uphold a welcoming, inclusive, and respectful env
 
 ## Enforcement
 
-Instances of unacceptable behavior may be reported to [maintainers@game-theory-analyzer.invalid](mailto:maintainers@game-theory-analyzer.invalid). All reports will be reviewed and addressed promptly and fairly.
+Instances of unacceptable behavior should be reported privately to the maintainers through GitHub rather than in a public issue. All reports will be reviewed and addressed promptly and fairly.
