@@ -141,6 +141,69 @@ describe("analysis-client", () => {
     ).toBe("complete");
   });
 
+  it("forwards phase activity progress events without affecting completion flow", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    fetchMock.mockResolvedValueOnce(
+      sseResponse([
+        { channel: "started", runId: "run-activity" },
+        {
+          channel: "progress",
+          type: "phase_started",
+          phase: "situational-grounding",
+          runId: "run-activity",
+        },
+        {
+          channel: "progress",
+          type: "phase_activity",
+          phase: "situational-grounding",
+          runId: "run-activity",
+          kind: "researching",
+          message: "Researching evidence.",
+        },
+        {
+          channel: "progress",
+          type: "phase_completed",
+          phase: "situational-grounding",
+          runId: "run-activity",
+          summary: {
+            entitiesCreated: 0,
+            relationshipsCreated: 0,
+            entitiesUpdated: 0,
+            durationMs: 10,
+          },
+        },
+        {
+          channel: "progress",
+          type: "analysis_completed",
+          runId: "run-activity",
+        },
+        { type: "done" },
+      ]),
+    );
+
+    const events: Array<{ type: string }> = [];
+    const client = await import("../analysis-client");
+    client._resetForTest();
+    const unsubscribe = client.onProgress((event) => {
+      events.push(event);
+    });
+
+    await client.startAnalysis("Topic");
+    unsubscribe();
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "phase_activity",
+          kind: "researching",
+          message: "Researching evidence.",
+        }),
+      ]),
+    );
+  });
+
   it("includes full runtime overrides in the analyze request body when provided", async () => {
     const fetchMock = vi.fn();
     globalThis.fetch = fetchMock as typeof fetch;

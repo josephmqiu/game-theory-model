@@ -23,6 +23,7 @@ import {
   handleAbortAnalysis,
 } from "@/mcp/server";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
+import type { AnalysisActivityCallback } from "./analysis-activity";
 
 // ── Types ──
 
@@ -39,6 +40,7 @@ export interface AnalysisRunOptions {
   maxTurns?: number;
   signal?: AbortSignal;
   webSearch?: boolean;
+  onActivity?: AnalysisActivityCallback;
 }
 
 type ClaudeAnalysisMode = "structured" | "json-fallback";
@@ -618,6 +620,11 @@ async function runClaudeAnalysisAttempt<T>(
           (ev.content_block as any)?.type === "tool_use"
         ) {
           const toolName = (ev.content_block as any)?.name ?? "unknown";
+          options?.onActivity?.({
+            kind: toolName === "WebSearch" ? "web-search" : "tool",
+            message: `Using ${toolName}`,
+            ...(toolName === "WebSearch" ? {} : { toolName }),
+          });
           serverLog(options?.runId, "claude-adapter", "analysis-tool-call", {
             mode,
             toolName,

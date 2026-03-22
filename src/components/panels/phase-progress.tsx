@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import {
   V3_PHASES,
@@ -23,6 +24,7 @@ export function PhaseProgress({
   className,
   phaseFailures = {},
 }: PhaseProgressProps) {
+  const { t } = useTranslation();
   const phases = useEntityGraphStore((s) => s.analysis.phases);
   const entities = useEntityGraphStore((s) => s.analysis.entities);
 
@@ -58,8 +60,8 @@ export function PhaseProgress({
 
   if (failedPhase) {
     const failureLabel = failure
-      ? getPhaseFailureLabel(failure.failureKind)
-      : "provider error";
+      ? getPhaseFailureLabel(failure.failureKind, t)
+      : t("analysis.failure.providerError");
 
     return (
       <div
@@ -77,7 +79,9 @@ export function PhaseProgress({
 
         <p className="truncate font-[Geist,sans-serif] text-[13px] font-medium text-zinc-200">
           <span className="text-red-400">
-            Phase {getRunnablePhaseNumber(failedPhase.phase)} failed
+            {t("analysis.progress.phaseFailed", {
+              number: getRunnablePhaseNumber(failedPhase.phase),
+            })}
           </span>
           <span className="mx-1.5 text-zinc-600">&mdash;</span>
           <span>{failureLabel}</span>
@@ -107,21 +111,30 @@ export function PhaseProgress({
         {currentPhaseName && (
           <>
             <span className="text-amber-500">
-              Phase{" "}
-              {runningPhase
-                ? getRunnablePhaseNumber(runningPhase.phase)
-                : ""}:{" "}
-              {currentPhaseName}
+              {t("analysis.progress.phaseLabel", {
+                number: runningPhase
+                  ? getRunnablePhaseNumber(runningPhase.phase)
+                  : "",
+                name: currentPhaseName,
+              })}
             </span>
             <span className="mx-1.5 text-zinc-600">&mdash;</span>
           </>
         )}
         <span>
-          {completedCount}/{totalCount} phases complete
+          {t("analysis.progress.phasesComplete", {
+            completed: completedCount,
+            total: totalCount,
+          })}
         </span>
         <span className="mx-1.5 text-zinc-600">&mdash;</span>
         <span>
-          {totalEntities} {totalEntities === 1 ? "entity" : "entities"}
+          {t(
+            totalEntities === 1
+              ? "analysis.progress.entityCount"
+              : "analysis.progress.entityCountPlural",
+            { count: totalEntities },
+          )}
         </span>
       </p>
     </div>

@@ -441,6 +441,97 @@ const vi: TranslationKeys = {
   "variablePicker.bindToVariable": "Gắn với biến",
   "variablePicker.unbind": "Huỷ gắn biến",
   "variablePicker.noVariables": "Chưa có biến {{type}} nào được định nghĩa",
+
+  // ── Analysis ──
+  "analysis.title": "Nhà phân tích Lý thuyết trò chơi",
+  "analysis.emptyState":
+    "Tôi là nhà phân tích lý thuyết trò chơi của bạn. Bạn muốn phân tích sự kiện nào?",
+  "analysis.emptyHint":
+    "Tôi sẽ tự động xác định người chơi, chiến lược và cấu trúc trò chơi.",
+  "analysis.inputPlaceholder": "Mô tả một sự kiện cần phân tích...",
+  "analysis.startingAnalysis":
+    'Đang bắt đầu phân tích lý thuyết trò chơi cho "{{topic}}"...',
+  "analysis.cannotChangeModel":
+    "Không thể đổi mô hình khi đang phân tích. Hãy dừng phân tích trước.",
+  "analysis.unsavedChanges":
+    "Bạn có thay đổi phân tích chưa lưu. Bỏ chúng và bắt đầu phân tích mới?",
+
+  // ── Analysis Activity ──
+  "analysis.activity.preparing": "Đang chuẩn bị phân tích giai đoạn.",
+  "analysis.activity.researching": "Đang nghiên cứu bằng chứng.",
+  "analysis.activity.synthesizing": "Đang tổng hợp kết quả giai đoạn.",
+  "analysis.activity.validating": "Đang xác thực kết quả có cấu trúc.",
+  "analysis.activity.retrying":
+    "Đang thử lại giai đoạn sau lỗi xác thực hoặc truyền tải.",
+  "analysis.activity.default": "Đang tiếp tục phân tích giai đoạn.",
+  "analysis.activity.usingTool": "Đang sử dụng {{toolName}}",
+  "analysis.activity.agentProgress": "Tiến trình agent",
+
+  // ── Analysis Progress ──
+  "analysis.progress.phaseFailed": "Giai đoạn {{number}} thất bại",
+  "analysis.progress.phaseLabel": "Giai đoạn {{number}}: {{name}}",
+  "analysis.progress.phasesComplete":
+    "{{completed}}/{{total}} giai đoạn hoàn tất",
+  "analysis.progress.entityCount": "{{count}} thực thể",
+  "analysis.progress.entityCountPlural": "{{count}} thực thể",
+
+  // ── Analysis Failures ──
+  "analysis.failure.timeout": "hết thời gian",
+  "analysis.failure.parseError": "lỗi phân tích cú pháp",
+  "analysis.failure.providerError": "lỗi nhà cung cấp",
+
+  // ── Analysis Phases ──
+  "analysis.phases.situationalGrounding": "Nền tảng tình huống",
+  "analysis.phases.playerIdentification": "Xác định người chơi",
+  "analysis.phases.baselineModel": "Mô hình cơ sở",
+  "analysis.phases.historicalGame": "Trò chơi lịch sử",
+  "analysis.phases.revalidation": "Xác thực lại",
+  "analysis.phases.formalModeling": "Mô hình hóa hình thức",
+  "analysis.phases.assumptions": "Giả định",
+  "analysis.phases.elimination": "Loại trừ",
+  "analysis.phases.scenarios": "Kịch bản",
+  "analysis.phases.metaCheck": "Kiểm tra tổng hợp",
+
+  // ── Analysis Sidebar ──
+  "analysis.sidebar.rerunPhase": "Chạy lại giai đoạn",
+  "analysis.sidebar.searchEntities": "Tìm thực thể...",
+
+  // ── Analysis Entities ──
+  "analysis.entities.fact": "Sự kiện",
+  "analysis.entities.player": "Người chơi",
+  "analysis.entities.objective": "Mục tiêu",
+  "analysis.entities.game": "Trò chơi",
+  "analysis.entities.strategy": "Chiến lược",
+  "analysis.entities.payoff": "Phần thưởng",
+  "analysis.entities.rule": "Quy tắc",
+  "analysis.entities.escalation": "Leo thang",
+  "analysis.entities.history": "Lịch sử",
+  "analysis.entities.pattern": "Mẫu hình",
+  "analysis.entities.trust": "Tin cậy",
+  "analysis.entities.commitment": "Cam kết",
+  "analysis.entities.signal": "Tín hiệu",
+  "analysis.entities.matrix": "Ma trận",
+  "analysis.entities.gameTree": "Cây trò chơi",
+  "analysis.entities.equilibrium": "Cân bằng",
+  "analysis.entities.constraints": "Ràng buộc",
+  "analysis.entities.crossGame": "Liên trò chơi",
+  "analysis.entities.signalClass": "Lớp tín hiệu",
+  "analysis.entities.bargaining": "Thương lượng",
+  "analysis.entities.optionValue": "Giá trị quyền chọn",
+  "analysis.entities.behavioral": "Hành vi",
+  "analysis.entities.assumption": "Giả định",
+  "analysis.entities.eliminated": "Đã loại",
+  "analysis.entities.scenario": "Kịch bản",
+  "analysis.entities.thesis": "Luận điểm",
+  "analysis.entities.metaCheck": "Kiểm tra tổng hợp",
+  "analysis.entities.noMatching": "Không có thực thể phù hợp",
+  "analysis.entities.searchHint": "Thử từ khóa khác hoặc xóa bộ lọc loại.",
+  "analysis.entities.confidence.high": "Cao",
+  "analysis.entities.confidence.medium": "Trung bình",
+  "analysis.entities.confidence.low": "Thấp",
+  "analysis.entities.source.ai": "AI",
+  "analysis.entities.source.human": "Con người",
+  "analysis.entities.source.computed": "Tính toán",
 } as const;
 
 export default vi;

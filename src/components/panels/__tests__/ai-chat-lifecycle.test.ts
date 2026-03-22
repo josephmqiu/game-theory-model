@@ -1,39 +1,55 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildAnalysisCompleteMessage,
+  appendPhaseActivityLine,
+  buildPhaseActivityMessage,
   buildPhaseStartMessage,
-  getAnalysisCompleteMessageId,
   getPhaseStartMessageId,
+  PHASE_ACTIVITY_LINE_LIMIT,
 } from "@/components/panels/ai-chat-lifecycle";
 
 describe("ai-chat lifecycle helpers", () => {
-  it("builds run-scoped phase start messages with 1-9 numbering", () => {
-    const message = buildPhaseStartMessage("run-123", "historical-game");
+  it("builds a phase status message with the expected first line", () => {
+    const message = buildPhaseStartMessage(
+      "run-1",
+      "situational-grounding",
+    );
 
-    expect(message).toMatchObject({
-      id: "phase-run-123-historical-game-start",
-      role: "assistant",
-      content: "Starting Phase 4: Historical Game...",
-    });
+    expect(message?.id).toBe(
+      getPhaseStartMessageId("run-1", "situational-grounding"),
+    );
+    expect(message?.content).toContain(
+      "Phase 1: Situational Grounding",
+    );
+    expect(message?.content).toContain("Preparing phase analysis.");
   });
 
-  it("builds run-scoped completion messages", () => {
-    const message = buildAnalysisCompleteMessage("run-456", 95);
+  it("dedupes consecutive activity lines and keeps the newest window", () => {
+    let lines: string[] = [];
+    lines = appendPhaseActivityLine(lines, "Researching evidence.");
+    lines = appendPhaseActivityLine(lines, "Researching evidence.");
+    lines = appendPhaseActivityLine(lines, "Using get_entity.");
 
-    expect(message).toMatchObject({
-      id: "analysis-complete-run-456",
-      role: "assistant",
-      content:
-        "Analysis complete. 95 entities identified across 9 phases. Click any entity on the canvas to inspect.",
-    });
+    expect(lines).toEqual(["Researching evidence.", "Using get_entity."]);
+
+    for (let i = 0; i < PHASE_ACTIVITY_LINE_LIMIT + 2; i++) {
+      lines = appendPhaseActivityLine(lines, `Note ${i}`);
+    }
+
+    expect(lines).toHaveLength(PHASE_ACTIVITY_LINE_LIMIT);
+    expect(lines[0]).toBe("Note 2");
   });
 
-  it("uses run ids to keep phase and completion ids unique across runs", () => {
-    expect(getPhaseStartMessageId("run-a", "situational-grounding")).not.toBe(
-      getPhaseStartMessageId("run-b", "situational-grounding"),
+  it("builds a phase transcript message from supplied activity lines", () => {
+    const message = buildPhaseActivityMessage(
+      "run-1",
+      "baseline-model",
+      ["Preparing phase analysis.", "Researching evidence."],
+      false,
     );
-    expect(getAnalysisCompleteMessageId("run-a")).not.toBe(
-      getAnalysisCompleteMessageId("run-b"),
-    );
+
+    expect(message?.id).toBe(getPhaseStartMessageId("run-1", "baseline-model"));
+    expect(message?.content).toContain("Phase 3: Baseline Model");
+    expect(message?.content).toContain("Researching evidence.");
+    expect(message?.isStreaming).toBe(false);
   });
 });

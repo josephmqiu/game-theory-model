@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Search } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { PHASE_NUMBERS } from "@/types/methodology";
 import type { AnalysisEntity, EntityType } from "@/types/entity";
@@ -227,6 +228,7 @@ export default function EntitySearch({
   typeFilter,
   onSelectEntity,
 }: EntitySearchProps) {
+  const { t } = useTranslation();
   const entities = useEntityGraphStore((s) => s.analysis.entities);
 
   const results = useMemo(() => {
@@ -248,10 +250,12 @@ export default function EntitySearch({
     return (
       <div className="flex flex-col items-center gap-2 py-8 text-center">
         <Search size={20} className="text-zinc-600" />
-        <p className="text-[13px] text-zinc-500">No matching entities</p>
+        <p className="text-[13px] text-zinc-500">
+          {t("analysis.entities.noMatching")}
+        </p>
         {query && (
           <p className="text-[11px] text-zinc-600">
-            Try a different search term or remove the type filter.
+            {t("analysis.entities.searchHint")}
           </p>
         )}
       </div>

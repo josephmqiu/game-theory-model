@@ -460,6 +460,97 @@ const ru: TranslationKeys = {
   "variablePicker.bindToVariable": "Привязать к переменной",
   "variablePicker.unbind": "Отвязать переменную",
   "variablePicker.noVariables": "Нет переменных типа {{type}}",
+
+  // ── Analysis ──
+  "analysis.title": "Аналитик теории игр",
+  "analysis.emptyState":
+    "Я ваш аналитик теории игр. Какое событие вы хотите проанализировать?",
+  "analysis.emptyHint":
+    "Я автоматически определю игроков, стратегии и структуру игры.",
+  "analysis.inputPlaceholder": "Опишите событие для анализа...",
+  "analysis.startingAnalysis":
+    "Запуск теоретико-игрового анализа «{{topic}}»...",
+  "analysis.cannotChangeModel":
+    "Невозможно сменить модель во время выполнения анализа. Сначала остановите анализ.",
+  "analysis.unsavedChanges":
+    "У вас есть несохранённые изменения анализа. Отменить их и начать новый анализ?",
+
+  // ── Analysis Activity ──
+  "analysis.activity.preparing": "Подготовка фазового анализа.",
+  "analysis.activity.researching": "Исследование доказательств.",
+  "analysis.activity.synthesizing": "Синтез результата фазы.",
+  "analysis.activity.validating": "Валидация структурированного вывода.",
+  "analysis.activity.retrying":
+    "Повторная попытка фазы после ошибки валидации или транспорта.",
+  "analysis.activity.default": "Продолжение фазового анализа.",
+  "analysis.activity.usingTool": "Использование {{toolName}}",
+  "analysis.activity.agentProgress": "Прогресс агента",
+
+  // ── Analysis Progress ──
+  "analysis.progress.phaseFailed": "Фаза {{number}} не выполнена",
+  "analysis.progress.phaseLabel": "Фаза {{number}}: {{name}}",
+  "analysis.progress.phasesComplete": "{{completed}}/{{total}} фаз завершено",
+  "analysis.progress.entityCount": "{{count}} сущность",
+  "analysis.progress.entityCountPlural": "{{count}} сущностей",
+
+  // ── Analysis Failures ──
+  "analysis.failure.timeout": "тайм-аут",
+  "analysis.failure.parseError": "ошибка разбора",
+  "analysis.failure.providerError": "ошибка провайдера",
+
+  // ── Analysis Phases ──
+  "analysis.phases.situationalGrounding": "Ситуационная привязка",
+  "analysis.phases.playerIdentification": "Идентификация игроков",
+  "analysis.phases.baselineModel": "Базовая модель",
+  "analysis.phases.historicalGame": "Историческая игра",
+  "analysis.phases.revalidation": "Ревалидация",
+  "analysis.phases.formalModeling": "Формальное моделирование",
+  "analysis.phases.assumptions": "Допущения",
+  "analysis.phases.elimination": "Элиминация",
+  "analysis.phases.scenarios": "Сценарии",
+  "analysis.phases.metaCheck": "Мета-проверка",
+
+  // ── Analysis Sidebar ──
+  "analysis.sidebar.rerunPhase": "Перезапустить фазу",
+  "analysis.sidebar.searchEntities": "Поиск сущностей...",
+
+  // ── Analysis Entities ──
+  "analysis.entities.fact": "Факт",
+  "analysis.entities.player": "Игрок",
+  "analysis.entities.objective": "Цель",
+  "analysis.entities.game": "Игра",
+  "analysis.entities.strategy": "Стратегия",
+  "analysis.entities.payoff": "Выигрыш",
+  "analysis.entities.rule": "Правило",
+  "analysis.entities.escalation": "Эскалация",
+  "analysis.entities.history": "История",
+  "analysis.entities.pattern": "Паттерн",
+  "analysis.entities.trust": "Доверие",
+  "analysis.entities.commitment": "Обязательство",
+  "analysis.entities.signal": "Сигнал",
+  "analysis.entities.matrix": "Матрица",
+  "analysis.entities.gameTree": "Дерево игры",
+  "analysis.entities.equilibrium": "Равновесие",
+  "analysis.entities.constraints": "Ограничения",
+  "analysis.entities.crossGame": "Перекрёстная игра",
+  "analysis.entities.signalClass": "Класс сигналов",
+  "analysis.entities.bargaining": "Торг",
+  "analysis.entities.optionValue": "Ценность опциона",
+  "analysis.entities.behavioral": "Поведенческий",
+  "analysis.entities.assumption": "Допущение",
+  "analysis.entities.eliminated": "Элиминирован",
+  "analysis.entities.scenario": "Сценарий",
+  "analysis.entities.thesis": "Тезис",
+  "analysis.entities.metaCheck": "Мета-проверка",
+  "analysis.entities.noMatching": "Нет совпадающих сущностей",
+  "analysis.entities.searchHint":
+    "Попробуйте другой поисковый запрос или уберите фильтр по типу.",
+  "analysis.entities.confidence.high": "Высокая",
+  "analysis.entities.confidence.medium": "Средняя",
+  "analysis.entities.confidence.low": "Низкая",
+  "analysis.entities.source.ai": "ИИ",
+  "analysis.entities.source.human": "Человек",
+  "analysis.entities.source.computed": "Вычислено",
 } as const;
 
 export default ru;

@@ -93,6 +93,21 @@ describe("AnalysisProgressEvent", () => {
     expect(event.summary).toBe(summary);
   });
 
+  it("represents phase_activity", () => {
+    const event: AnalysisProgressEvent = {
+      type: "phase_activity",
+      phase: "situational-grounding",
+      runId: "run-1",
+      kind: "tool",
+      message: "Using query_entities",
+      toolName: "query_entities",
+    };
+    expect(event.type).toBe("phase_activity");
+    expect(event.kind).toBe("tool");
+    expect(event.message).toBe("Using query_entities");
+    expect(event.toolName).toBe("query_entities");
+  });
+
   it("represents analysis_completed", () => {
     const event: AnalysisProgressEvent = {
       type: "analysis_completed",
@@ -200,6 +215,13 @@ describe("AnalysisEvent union", () => {
   const progressEvents: AnalysisEvent[] = [
     { type: "phase_started", phase: "situational-grounding", runId: "r" },
     {
+      type: "phase_activity",
+      phase: "situational-grounding",
+      runId: "r",
+      kind: "note",
+      message: "Preparing phase analysis",
+    },
+    {
       type: "phase_completed",
       phase: "situational-grounding",
       runId: "r",
@@ -228,6 +250,13 @@ describe("AnalysisEvent union", () => {
   it("accepts both progress and mutation event variants", () => {
     const events: AnalysisEvent[] = [
       { type: "phase_started", phase: "baseline-model", runId: "r" },
+      {
+        type: "phase_activity",
+        phase: "baseline-model",
+        runId: "r",
+        kind: "web-search",
+        message: "Using WebSearch",
+      },
       { type: "entity_created", entity },
       { type: "entity_deleted", entityId: "e-1" },
       { type: "relationship_updated", relationship },
@@ -236,8 +265,8 @@ describe("AnalysisEvent union", () => {
       { type: "state_changed" },
       { type: "analysis_completed", runId: "r" },
     ];
-    expect(events).toHaveLength(8);
-    expect(progressEvents).toHaveLength(4);
+    expect(events).toHaveLength(9);
+    expect(progressEvents).toHaveLength(5);
     expect(mutationEvents).toHaveLength(8);
   });
 });

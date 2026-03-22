@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { RefreshCw, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -9,11 +10,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import type { MethodologyPhase } from "@/types/methodology";
-import {
-  V3_PHASES,
-  PHASE_LABELS,
-  getRunnablePhaseNumber,
-} from "@/types/methodology";
+import { V3_PHASES, getRunnablePhaseNumber } from "@/types/methodology";
 import {
   getPhaseFailureLabel,
   type PhaseFailureState,
@@ -31,6 +28,19 @@ export interface PhaseSidebarProps {
 
 // ── Helpers ──
 
+const PHASE_I18N_KEYS: Record<MethodologyPhase, string> = {
+  "situational-grounding": "analysis.phases.situationalGrounding",
+  "player-identification": "analysis.phases.playerIdentification",
+  "baseline-model": "analysis.phases.baselineModel",
+  "historical-game": "analysis.phases.historicalGame",
+  revalidation: "analysis.phases.revalidation",
+  "formal-modeling": "analysis.phases.formalModeling",
+  assumptions: "analysis.phases.assumptions",
+  elimination: "analysis.phases.elimination",
+  scenarios: "analysis.phases.scenarios",
+  "meta-check": "analysis.phases.metaCheck",
+};
+
 // ── Component ──
 
 export function PhaseSidebar({
@@ -40,6 +50,7 @@ export function PhaseSidebar({
   activeFilter,
   phaseFailures = {},
 }: PhaseSidebarProps) {
+  const { t } = useTranslation();
   const phases = useEntityGraphStore((s) => s.analysis.phases);
   const entities = useEntityGraphStore((s) => s.analysis.entities);
   const [hoveredPhase, setHoveredPhase] = useState<MethodologyPhase | null>(
@@ -66,7 +77,7 @@ export function PhaseSidebar({
   }
 
   return (
-    <aside className="flex h-full w-[200px] flex-col border-r border-zinc-700 bg-zinc-900">
+    <aside className="flex h-full w-full flex-col">
       {/* Phase list */}
       <nav className="flex-1 overflow-y-auto px-2 py-3">
         <ul className="space-y-0.5">
@@ -80,7 +91,7 @@ export function PhaseSidebar({
             const failure =
               status === "failed" ? phaseFailures[phase] : undefined;
             const failureLabel = failure
-              ? getPhaseFailureLabel(failure.failureKind)
+              ? getPhaseFailureLabel(failure.failureKind, t)
               : null;
             const phaseNumber = getRunnablePhaseNumber(phase);
 
@@ -121,7 +132,7 @@ export function PhaseSidebar({
                   </span>
 
                   <span className="flex-1 truncate font-[Geist,sans-serif] text-[13px] font-medium text-zinc-200">
-                    {PHASE_LABELS[phase]}
+                    {t(PHASE_I18N_KEYS[phase])}
                   </span>
 
                   {failureLabel ? (
@@ -166,7 +177,7 @@ export function PhaseSidebar({
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent side="right">
-                        Rerun phase
+                        {t("analysis.sidebar.rerunPhase")}
                       </TooltipContent>
                     </Tooltip>
                   )}
@@ -185,7 +196,7 @@ export function PhaseSidebar({
             type="text"
             value={searchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
-            placeholder="Search entities..."
+            placeholder={t("analysis.sidebar.searchEntities")}
             className="h-8 w-full rounded-md border border-zinc-700 bg-zinc-800 pl-7 pr-2 font-[Geist,sans-serif] text-[13px] font-medium text-zinc-200 placeholder:text-zinc-500 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
           />
         </div>

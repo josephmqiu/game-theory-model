@@ -136,6 +136,10 @@ interface AIState {
   setModelGroups: (groups: ModelGroup[]) => void;
   setLoadingModels: (v: boolean) => void;
   addMessage: (msg: ChatMessage) => void;
+  updateMessageById: (
+    id: string,
+    updates: Partial<Pick<ChatMessage, "content" | "isStreaming" | "attachments" | "toolStatus">>,
+  ) => void;
   updateLastMessage: (content: string) => void;
   setStreaming: (v: boolean) => void;
   togglePanel: () => void;
@@ -203,6 +207,18 @@ export const useAIStore = create<AIState>((set, get) => ({
       }
 
       return { messages: [...s.messages, msg] };
+    }),
+
+  updateMessageById: (id, updates) =>
+    set((s) => {
+      let changed = false;
+      const messages = s.messages.map((message) => {
+        if (message.id !== id) return message;
+        changed = true;
+        return { ...message, ...updates };
+      });
+
+      return changed ? { messages } : s;
     }),
 
   updateLastMessage: (content) =>

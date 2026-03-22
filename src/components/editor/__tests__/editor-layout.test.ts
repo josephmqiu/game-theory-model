@@ -10,6 +10,10 @@ const topBarPath = join(process.cwd(), "src/components/editor/top-bar.tsx");
 const landingPath = join(process.cwd(), "src/routes/index.tsx");
 const editorRoutePath = join(process.cwd(), "src/routes/editor.tsx");
 const englishLocalePath = join(process.cwd(), "src/i18n/locales/en.ts");
+const analysisLauncherPath = join(
+  process.cwd(),
+  "src/components/editor/analysis-launcher.tsx",
+);
 
 describe("editor layout", () => {
   it("renders the analysis shell with the docked AI panel in source", () => {
@@ -19,8 +23,10 @@ describe("editor layout", () => {
     );
 
     expect(source).toContain("AIChatPanel");
+    expect(source).toContain("AnalysisLauncher");
     expect(source).toContain('mode="analysis"');
     expect(source).toContain('presentation="docked"');
+    expect(source).toContain('<AIChatPanel mode="analysis" presentation="docked" />');
     expect(source).not.toContain("useAnalysisStore");
   });
 
@@ -34,6 +40,9 @@ describe("editor layout", () => {
     expect(source).toContain("useAgentSettingsStore.getState()");
     expect(source).toContain(
       "analysisClient.startAnalysis(topic, provider, model, runtime)",
+    );
+    expect(source).toContain(
+      '<AnalysisLauncher onStartAnalysis={startOrchestrator} />',
     );
   });
 
@@ -76,6 +85,24 @@ describe("editor layout", () => {
     expect(source).toContain("onOpenAnalysis");
     expect(source).toContain("topbar.save");
     expect(source).not.toContain("useDocumentStore");
+  });
+
+  it("shows a centered launcher only for a truly blank analysis", () => {
+    const source = readFileSync(
+      join(process.cwd(), "src/components/editor/editor-layout.tsx"),
+      "utf8",
+    );
+    const launcherSource = readFileSync(analysisLauncherPath, "utf8");
+
+    expect(source).toContain("const showAnalysisLauncher =");
+    expect(source).toContain(
+      "analysisTopic.trim().length === 0 && entityCount === 0",
+    );
+    expect(launcherSource).toContain("EXAMPLE_TOPICS");
+    expect(launcherSource).toContain('t("ai.noModelsConnected")');
+    expect(launcherSource).toContain(
+      "onStartAnalysis(topic, currentProvider, model)",
+    );
   });
 
   it("aborts the active run, waits for completion, and flushes logs", async () => {

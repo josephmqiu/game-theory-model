@@ -10,6 +10,7 @@ import type { ChatEvent } from "../../../shared/types/events";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 import { CODEX_MCP_SERVER_NAME, installMcpServer } from "./codex-config";
 import { ANALYSIS_TOOL_NAMES, CHAT_TOOL_NAMES } from "./tool-surfaces";
+import type { AnalysisActivityCallback } from "./analysis-activity";
 
 // ── Types ──
 
@@ -26,6 +27,7 @@ export interface AnalysisRunOptions {
   maxTurns?: number;
   signal?: AbortSignal;
   webSearch?: boolean;
+  onActivity?: AnalysisActivityCallback;
 }
 
 interface JsonRpcRequest {
@@ -942,6 +944,10 @@ export async function runAnalysisPhase<T = unknown>(
       if (method === "item/started") {
         const item = asRecord(params.item);
         if (item?.type === "webSearch") {
+          options?.onActivity?.({
+            kind: "web-search",
+            message: "Using WebSearch",
+          });
           serverLog(runId, "codex-adapter", "analysis-web-search", {
             query: item.query,
           });
@@ -957,8 +963,15 @@ export async function runAnalysisPhase<T = unknown>(
       }
 
       if (method === "item/mcpToolCall/progress") {
+        const toolName =
+          typeof params.toolName === "string" ? params.toolName : "unknown";
+        options?.onActivity?.({
+          kind: "tool",
+          message: `Using ${toolName}`,
+          toolName,
+        });
         serverLog(runId, "codex-adapter", "analysis-mcp-tool-call", {
-          toolName: params.toolName,
+          toolName,
           input: params.input ?? {},
         });
         return;

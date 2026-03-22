@@ -682,6 +682,59 @@ describe("claude-adapter", () => {
       expect(mockQuery.mock.calls[0][0].options.maxTurns).toBe(7);
     });
 
+    it("emits normalized activity callbacks for analysis tool use", async () => {
+      const { runAnalysisPhase } = await import("../claude-adapter");
+      const onActivity = vi.fn();
+
+      mockQuery.mockImplementation(() => {
+        let index = 0;
+        const values = [
+          {
+            type: "stream_event",
+            event: {
+              type: "content_block_start",
+              content_block: {
+                type: "tool_use",
+                name: "query_entities",
+                input: { phase: "situational-grounding" },
+              },
+            },
+          },
+          {
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            result: '{"entities":[],"relationships":[]}',
+            structured_output: { entities: [], relationships: [] },
+          },
+        ];
+
+        return {
+          close: mockQueryClose,
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                if (index < values.length) {
+                  return { done: false, value: values[index++] };
+                }
+                return { done: true, value: undefined };
+              },
+            };
+          },
+        };
+      });
+
+      await runAnalysisPhase("analyze", "sys", "model", { type: "object" }, {
+        onActivity,
+      });
+
+      expect(onActivity).toHaveBeenCalledWith({
+        kind: "tool",
+        message: "Using query_entities",
+        toolName: "query_entities",
+      });
+    });
+
     it("removes WebSearch from analysis allowedTools when webSearch is false", async () => {
       const { runAnalysisPhase, ANALYSIS_TOOL_NAMES } =
         await import("../claude-adapter");

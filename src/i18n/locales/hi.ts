@@ -443,6 +443,97 @@ const hi: TranslationKeys = {
   "variablePicker.bindToVariable": "वेरिएबल से बाइंड करें",
   "variablePicker.unbind": "वेरिएबल अनबाइंड करें",
   "variablePicker.noVariables": "कोई {{type}} वेरिएबल परिभाषित नहीं है",
+
+  // ── Analysis ──
+  "analysis.title": "गेम थ्योरी विश्लेषक",
+  "analysis.emptyState":
+    "मैं आपका गेम थ्योरी विश्लेषक हूँ। आप किस घटना का विश्लेषण करना चाहते हैं?",
+  "analysis.emptyHint":
+    "मैं खिलाड़ियों, रणनीतियों और खेल संरचना की स्वचालित रूप से पहचान करूँगा।",
+  "analysis.inputPlaceholder": "विश्लेषण के लिए एक घटना का वर्णन करें...",
+  "analysis.startingAnalysis":
+    '"{{topic}}" का गेम-थ्योरेटिक विश्लेषण शुरू हो रहा है...',
+  "analysis.cannotChangeModel":
+    "विश्लेषण चलते समय मॉडल नहीं बदला जा सकता। पहले विश्लेषण रोकें।",
+  "analysis.unsavedChanges":
+    "आपके पास असहेजे विश्लेषण परिवर्तन हैं। उन्हें छोड़कर नया विश्लेषण शुरू करें?",
+
+  // ── Analysis Activity ──
+  "analysis.activity.preparing": "चरण विश्लेषण की तैयारी हो रही है।",
+  "analysis.activity.researching": "साक्ष्य पर शोध हो रहा है।",
+  "analysis.activity.synthesizing": "चरण आउटपुट का संश्लेषण हो रहा है।",
+  "analysis.activity.validating": "संरचित आउटपुट का सत्यापन हो रहा है।",
+  "analysis.activity.retrying":
+    "सत्यापन या ट्रांसपोर्ट त्रुटि के बाद चरण पुनः प्रयास हो रहा है।",
+  "analysis.activity.default": "चरण विश्लेषण जारी है।",
+  "analysis.activity.usingTool": "{{toolName}} का उपयोग हो रहा है",
+  "analysis.activity.agentProgress": "एजेंट प्रगति",
+
+  // ── Analysis Progress ──
+  "analysis.progress.phaseFailed": "चरण {{number}} विफल",
+  "analysis.progress.phaseLabel": "चरण {{number}}: {{name}}",
+  "analysis.progress.phasesComplete": "{{completed}}/{{total}} चरण पूर्ण",
+  "analysis.progress.entityCount": "{{count}} सत्ता",
+  "analysis.progress.entityCountPlural": "{{count}} सत्ताएँ",
+
+  // ── Analysis Failures ──
+  "analysis.failure.timeout": "समय समाप्त",
+  "analysis.failure.parseError": "पार्स त्रुटि",
+  "analysis.failure.providerError": "प्रदाता त्रुटि",
+
+  // ── Analysis Phases ──
+  "analysis.phases.situationalGrounding": "परिस्थितिजन्य आधार",
+  "analysis.phases.playerIdentification": "खिलाड़ी पहचान",
+  "analysis.phases.baselineModel": "आधार मॉडल",
+  "analysis.phases.historicalGame": "ऐतिहासिक खेल",
+  "analysis.phases.revalidation": "पुनर्मूल्यांकन",
+  "analysis.phases.formalModeling": "औपचारिक मॉडलिंग",
+  "analysis.phases.assumptions": "पूर्वधारणाएँ",
+  "analysis.phases.elimination": "उन्मूलन",
+  "analysis.phases.scenarios": "परिदृश्य",
+  "analysis.phases.metaCheck": "मेटा-जाँच",
+
+  // ── Analysis Sidebar ──
+  "analysis.sidebar.rerunPhase": "चरण पुनः चलाएँ",
+  "analysis.sidebar.searchEntities": "सत्ताएँ खोजें...",
+
+  // ── Analysis Entities ──
+  "analysis.entities.fact": "तथ्य",
+  "analysis.entities.player": "खिलाड़ी",
+  "analysis.entities.objective": "उद्देश्य",
+  "analysis.entities.game": "खेल",
+  "analysis.entities.strategy": "रणनीति",
+  "analysis.entities.payoff": "प्रतिफल",
+  "analysis.entities.rule": "नियम",
+  "analysis.entities.escalation": "उग्रता",
+  "analysis.entities.history": "इतिहास",
+  "analysis.entities.pattern": "पैटर्न",
+  "analysis.entities.trust": "विश्वास",
+  "analysis.entities.commitment": "प्रतिबद्धता",
+  "analysis.entities.signal": "संकेत",
+  "analysis.entities.matrix": "मैट्रिक्स",
+  "analysis.entities.gameTree": "गेम ट्री",
+  "analysis.entities.equilibrium": "संतुलन",
+  "analysis.entities.constraints": "बाधाएँ",
+  "analysis.entities.crossGame": "क्रॉस-गेम",
+  "analysis.entities.signalClass": "संकेत वर्ग",
+  "analysis.entities.bargaining": "सौदेबाज़ी",
+  "analysis.entities.optionValue": "विकल्प मूल्य",
+  "analysis.entities.behavioral": "व्यवहारात्मक",
+  "analysis.entities.assumption": "पूर्वधारणा",
+  "analysis.entities.eliminated": "उन्मूलित",
+  "analysis.entities.scenario": "परिदृश्य",
+  "analysis.entities.thesis": "थीसिस",
+  "analysis.entities.metaCheck": "मेटा-जाँच",
+  "analysis.entities.noMatching": "कोई मेल खाती सत्ता नहीं",
+  "analysis.entities.searchHint":
+    "कोई अलग खोज शब्द आज़माएँ या प्रकार फ़िल्टर हटाएँ।",
+  "analysis.entities.confidence.high": "उच्च",
+  "analysis.entities.confidence.medium": "मध्यम",
+  "analysis.entities.confidence.low": "निम्न",
+  "analysis.entities.source.ai": "AI",
+  "analysis.entities.source.human": "मानव",
+  "analysis.entities.source.computed": "गणना-आधारित",
 } as const;
 
 export default hi;

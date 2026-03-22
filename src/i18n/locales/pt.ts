@@ -447,6 +447,98 @@ const pt: TranslationKeys = {
   "variablePicker.bindToVariable": "Vincular a variável",
   "variablePicker.unbind": "Desvincular variável",
   "variablePicker.noVariables": "Nenhuma variável de {{type}} definida",
+
+  // ── Analysis ──
+  "analysis.title": "Analista de Teoria dos Jogos",
+  "analysis.emptyState":
+    "Sou seu analista de teoria dos jogos. Qual evento você deseja analisar?",
+  "analysis.emptyHint":
+    "Identificarei jogadores, estratégias e estrutura do jogo automaticamente.",
+  "analysis.inputPlaceholder": "Descreva um evento para analisar...",
+  "analysis.startingAnalysis":
+    'Iniciando análise teórico-estratégica de "{{topic}}"...',
+  "analysis.cannotChangeModel":
+    "Não é possível trocar o modelo enquanto a análise está em execução. Pare a análise primeiro.",
+  "analysis.unsavedChanges":
+    "Você tem alterações de análise não salvas. Descartá-las e iniciar uma nova análise?",
+
+  // ── Analysis Activity ──
+  "analysis.activity.preparing": "Preparando análise de fase.",
+  "analysis.activity.researching": "Pesquisando evidências.",
+  "analysis.activity.synthesizing": "Sintetizando resultado da fase.",
+  "analysis.activity.validating": "Validando saída estruturada.",
+  "analysis.activity.retrying":
+    "Repetindo fase após erro de validação ou transporte.",
+  "analysis.activity.default": "Continuando análise de fase.",
+  "analysis.activity.usingTool": "Usando {{toolName}}",
+  "analysis.activity.agentProgress": "Progresso do agente",
+
+  // ── Analysis Progress ──
+  "analysis.progress.phaseFailed": "Fase {{number}} falhou",
+  "analysis.progress.phaseLabel": "Fase {{number}}: {{name}}",
+  "analysis.progress.phasesComplete":
+    "{{completed}}/{{total}} fases concluídas",
+  "analysis.progress.entityCount": "{{count}} entidade",
+  "analysis.progress.entityCountPlural": "{{count}} entidades",
+
+  // ── Analysis Failures ──
+  "analysis.failure.timeout": "tempo esgotado",
+  "analysis.failure.parseError": "erro de análise sintática",
+  "analysis.failure.providerError": "erro do provedor",
+
+  // ── Analysis Phases ──
+  "analysis.phases.situationalGrounding": "Contextualização Situacional",
+  "analysis.phases.playerIdentification": "Identificação de Jogadores",
+  "analysis.phases.baselineModel": "Modelo Base",
+  "analysis.phases.historicalGame": "Jogo Histórico",
+  "analysis.phases.revalidation": "Revalidação",
+  "analysis.phases.formalModeling": "Modelagem Formal",
+  "analysis.phases.assumptions": "Premissas",
+  "analysis.phases.elimination": "Eliminação",
+  "analysis.phases.scenarios": "Cenários",
+  "analysis.phases.metaCheck": "Meta-Verificação",
+
+  // ── Analysis Sidebar ──
+  "analysis.sidebar.rerunPhase": "Reexecutar fase",
+  "analysis.sidebar.searchEntities": "Buscar entidades...",
+
+  // ── Analysis Entities ──
+  "analysis.entities.fact": "Fato",
+  "analysis.entities.player": "Jogador",
+  "analysis.entities.objective": "Objetivo",
+  "analysis.entities.game": "Jogo",
+  "analysis.entities.strategy": "Estratégia",
+  "analysis.entities.payoff": "Payoff",
+  "analysis.entities.rule": "Regra",
+  "analysis.entities.escalation": "Escalada",
+  "analysis.entities.history": "Histórico",
+  "analysis.entities.pattern": "Padrão",
+  "analysis.entities.trust": "Confiança",
+  "analysis.entities.commitment": "Compromisso",
+  "analysis.entities.signal": "Sinal",
+  "analysis.entities.matrix": "Matriz",
+  "analysis.entities.gameTree": "Árvore de Jogo",
+  "analysis.entities.equilibrium": "Equilíbrio",
+  "analysis.entities.constraints": "Restrições",
+  "analysis.entities.crossGame": "Jogo Cruzado",
+  "analysis.entities.signalClass": "Classe de Sinal",
+  "analysis.entities.bargaining": "Barganha",
+  "analysis.entities.optionValue": "Valor de Opção",
+  "analysis.entities.behavioral": "Comportamental",
+  "analysis.entities.assumption": "Premissa",
+  "analysis.entities.eliminated": "Eliminado",
+  "analysis.entities.scenario": "Cenário",
+  "analysis.entities.thesis": "Tese",
+  "analysis.entities.metaCheck": "Meta-Verificação",
+  "analysis.entities.noMatching": "Nenhuma entidade correspondente",
+  "analysis.entities.searchHint":
+    "Tente um termo de busca diferente ou remova o filtro de tipo.",
+  "analysis.entities.confidence.high": "Alta",
+  "analysis.entities.confidence.medium": "Média",
+  "analysis.entities.confidence.low": "Baixa",
+  "analysis.entities.source.ai": "IA",
+  "analysis.entities.source.human": "Humano",
+  "analysis.entities.source.computed": "Calculado",
 } as const;
 
 export default pt;

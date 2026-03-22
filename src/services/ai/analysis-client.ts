@@ -16,7 +16,20 @@ import type { Analysis } from "../../../shared/types/entity";
 import type { AnalysisRuntimeOverrides } from "../../../shared/types/analysis-runtime";
 import { V3_PHASES } from "@/types/methodology";
 
-type ProgressCallback = (event: AnalysisProgressEvent) => void;
+export interface AnalysisPhaseActivityEvent {
+  type: "phase_activity";
+  phase: string;
+  runId: string;
+  kind: string;
+  message: string;
+  toolName?: string;
+}
+
+export type AnalysisProgressStreamEvent =
+  | AnalysisProgressEvent
+  | AnalysisPhaseActivityEvent;
+
+type ProgressCallback = (event: AnalysisProgressStreamEvent) => void;
 
 const ANALYSIS_TIMEOUT_MS = 15 * 60 * 1000;
 const RECOVERY_POLL_INTERVAL_MS = 2_000;
@@ -112,11 +125,11 @@ async function applyMutationEvent(event: AnalysisMutationEvent): Promise<void> {
   }
 }
 
-function notifyProgress(event: AnalysisProgressEvent): void {
+function notifyProgress(event: AnalysisProgressStreamEvent): void {
   progressListeners.forEach((cb) => cb(event));
 }
 
-function updateRunStatusFromProgress(event: AnalysisProgressEvent): void {
+function updateRunStatusFromProgress(event: AnalysisProgressStreamEvent): void {
   if (event.type === "phase_started") {
     setRunStatus({
       status: "running",
@@ -187,8 +200,8 @@ export function abort(): void {
       if (!response.ok) return;
       await response.json().catch(() => null as AbortAnalysisResponse | null);
     })
-    .catch(() => {
-      // Best effort only — local abort still happens below.
+    .catch((e) => {
+      console.warn("[analysis-client] abort-endpoint-unreachable", e);
     });
 
   currentController?.abort();
@@ -203,21 +216,39 @@ export async function hydrateAnalysisState(options?: {
   }
 
   recoveryRequest = (async () => {
-    const state = await fetchAnalysisState();
-    applyAnalysisSnapshot(state.analysis);
-    setRunStatus(state.runStatus);
+    try {
+      const state = await fetchAnalysisState();
+      applyAnalysisSnapshot(state.analysis);
+      setRunStatus(state.runStatus);
+      console.log("[analysis-client] state-recovered", {
+        status: state.runStatus.status,
+        runId: state.runStatus.runId,
+        entities: state.analysis.entities.length,
+      });
 
-    if (options?.enableRecoveryPolling && state.runStatus.status === "running") {
-      scheduleRecoveryPolling();
-    } else {
-      stopRecoveryPolling();
+      if (
+        options?.enableRecoveryPolling &&
+        state.runStatus.status === "running"
+      ) {
+        scheduleRecoveryPolling();
+      } else {
+        stopRecoveryPolling();
+      }
+
+      return state;
+    } catch (e) {
+      console.warn(
+        "[analysis-client] state-recovery-failed",
+        e instanceof Error ? e.message : e,
+      );
+      if (options?.enableRecoveryPolling) {
+        scheduleRecoveryPolling();
+      }
+      throw e;
     }
-
-    return state;
-  })()
-    .finally(() => {
-      recoveryRequest = null;
-    });
+  })().finally(() => {
+    recoveryRequest = null;
+  });
 
   return recoveryRequest;
 }
@@ -257,6 +288,10 @@ export async function startAnalysis(
       const err = await response
         .json()
         .catch(() => ({ error: `HTTP ${response.status}` }));
+      console.error("[analysis-client] start-failed", {
+        status: response.status,
+        error: err.error,
+      });
       throw new Error(err.error || `Server error: ${response.status}`);
     }
 
@@ -297,6 +332,8 @@ export async function startAnalysis(
               store.setPhaseStatusLocal(event.phase, "running");
             } else if (event.type === "phase_completed") {
               store.setPhaseStatusLocal(event.phase, "complete");
+            } else if (event.type === "phase_activity") {
+              // Renderer-only activity stream; the entity graph remains unchanged.
             } else if (event.type === "analysis_failed") {
               for (const phaseState of store.analysis.phases) {
                 if (phaseState.status === "running") {
@@ -305,8 +342,8 @@ export async function startAnalysis(
               }
             }
 
-            updateRunStatusFromProgress(event as AnalysisProgressEvent);
-            notifyProgress(event as AnalysisProgressEvent);
+            updateRunStatusFromProgress(event as AnalysisProgressStreamEvent);
+            notifyProgress(event as AnalysisProgressStreamEvent);
           } else if (event.channel === "mutation") {
             await applyMutationEvent(event as AnalysisMutationEvent);
           } else if (event.channel === "snapshot") {
@@ -317,7 +354,13 @@ export async function startAnalysis(
             throw new Error(event.message);
           }
         } catch (e) {
-          if (e instanceof SyntaxError) continue;
+          if (e instanceof SyntaxError) {
+            console.warn(
+              "[analysis-client] malformed-sse-json",
+              raw.slice(0, 200),
+            );
+            continue;
+          }
           throw e;
         }
       }
@@ -326,12 +369,19 @@ export async function startAnalysis(
     return { runId };
   } catch (error) {
     if (controller.signal.aborted) return { runId: "" };
+    console.error(
+      "[analysis-client] stream-error",
+      error instanceof Error ? error.message : error,
+    );
     throw error;
   } finally {
     clearTimeout(timeout);
     currentController = null;
 
     if (currentRunStatus.status === "running" && !controller.signal.aborted) {
+      console.warn(
+        "[analysis-client] stream-ended-while-running, starting recovery polling",
+      );
       scheduleRecoveryPolling();
     } else {
       stopRecoveryPolling();
@@ -349,14 +399,26 @@ export async function updateEntity(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action: "update", id, updates }),
   });
-  if (!res.ok) return;
+  if (!res.ok) {
+    console.warn("[analysis-client] entity-update-http-error", {
+      id,
+      status: res.status,
+    });
+    return;
+  }
   const result = await res.json();
   if (result.queued) {
     const store = useEntityGraphStore.getState();
     store.updateEntity(id, updates);
     return;
   }
-  if (result.error) return;
+  if (result.error) {
+    console.warn("[analysis-client] entity-update-server-error", {
+      id,
+      error: result.error,
+    });
+    return;
+  }
   const state = await hydrateAnalysisState();
   if (state?.analysis) {
     applyAnalysisSnapshot(state.analysis);

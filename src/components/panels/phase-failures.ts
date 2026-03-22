@@ -12,12 +12,15 @@ export type PhaseFailureState = Partial<
   >
 >;
 
-export const PHASE_FAILURE_LABELS: Record<AnalysisFailureKind, string> = {
-  timeout: "timeout",
-  "parse-error": "parse error",
-  "provider-error": "provider error",
+const FAILURE_I18N_KEYS: Record<AnalysisFailureKind, string> = {
+  timeout: "analysis.failure.timeout",
+  "parse-error": "analysis.failure.parseError",
+  "provider-error": "analysis.failure.providerError",
 };
 
-export function getPhaseFailureLabel(kind: AnalysisFailureKind): string {
-  return PHASE_FAILURE_LABELS[kind];
+export function getPhaseFailureLabel(
+  kind: AnalysisFailureKind,
+  t: (key: string) => string,
+): string {
+  return t(FAILURE_I18N_KEYS[kind]);
 }

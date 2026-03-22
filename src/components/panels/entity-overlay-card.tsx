@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Pencil, ShieldQuestion, X, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { PHASE_LABELS, PHASE_NUMBERS } from "@/types/methodology";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
@@ -82,34 +83,34 @@ const ENTITY_TYPE_COLORS: Record<EntityType, string> = {
   "meta-check": "#F97316",
 };
 
-const ENTITY_TYPE_LABELS: Record<EntityType, string> = {
-  fact: "Fact",
-  player: "Player",
-  objective: "Objective",
-  game: "Game",
-  strategy: "Strategy",
-  payoff: "Payoff",
-  "institutional-rule": "Rule",
-  "escalation-rung": "Escalation",
-  "interaction-history": "History",
-  "repeated-game-pattern": "Pattern",
-  "trust-assessment": "Trust",
-  "dynamic-inconsistency": "Commitment",
-  "signaling-effect": "Signal",
-  "payoff-matrix": "Matrix",
-  "game-tree": "Game Tree",
-  "equilibrium-result": "Equilibrium",
-  "cross-game-constraint-table": "Constraints",
-  "cross-game-effect": "Cross-Game",
-  "signal-classification": "Signal Class",
-  "bargaining-dynamics": "Bargaining",
-  "option-value-assessment": "Option Value",
-  "behavioral-overlay": "Behavioral",
-  assumption: "Assumption",
-  "eliminated-outcome": "Eliminated",
-  scenario: "Scenario",
-  "central-thesis": "Thesis",
-  "meta-check": "Meta-Check",
+const ENTITY_TYPE_I18N_KEYS: Record<EntityType, string> = {
+  fact: "analysis.entities.fact",
+  player: "analysis.entities.player",
+  objective: "analysis.entities.objective",
+  game: "analysis.entities.game",
+  strategy: "analysis.entities.strategy",
+  payoff: "analysis.entities.payoff",
+  "institutional-rule": "analysis.entities.rule",
+  "escalation-rung": "analysis.entities.escalation",
+  "interaction-history": "analysis.entities.history",
+  "repeated-game-pattern": "analysis.entities.pattern",
+  "trust-assessment": "analysis.entities.trust",
+  "dynamic-inconsistency": "analysis.entities.commitment",
+  "signaling-effect": "analysis.entities.signal",
+  "payoff-matrix": "analysis.entities.matrix",
+  "game-tree": "analysis.entities.gameTree",
+  "equilibrium-result": "analysis.entities.equilibrium",
+  "cross-game-constraint-table": "analysis.entities.constraints",
+  "cross-game-effect": "analysis.entities.crossGame",
+  "signal-classification": "analysis.entities.signalClass",
+  "bargaining-dynamics": "analysis.entities.bargaining",
+  "option-value-assessment": "analysis.entities.optionValue",
+  "behavioral-overlay": "analysis.entities.behavioral",
+  assumption: "analysis.entities.assumption",
+  "eliminated-outcome": "analysis.entities.eliminated",
+  scenario: "analysis.entities.scenario",
+  "central-thesis": "analysis.entities.thesis",
+  "meta-check": "analysis.entities.metaCheck",
 };
 
 // ── Confidence dot colors ──
@@ -120,18 +121,18 @@ const CONFIDENCE_DOT: Record<EntityConfidence, string> = {
   low: "bg-red-400",
 };
 
-const CONFIDENCE_LABELS: Record<EntityConfidence, string> = {
-  high: "High",
-  medium: "Medium",
-  low: "Low",
+const CONFIDENCE_I18N_KEYS: Record<EntityConfidence, string> = {
+  high: "analysis.entities.confidence.high",
+  medium: "analysis.entities.confidence.medium",
+  low: "analysis.entities.confidence.low",
 };
 
 // ── Source labels ──
 
-const SOURCE_LABELS: Record<EntitySource, string> = {
-  ai: "AI",
-  human: "Human",
-  computed: "Computed",
+const SOURCE_I18N_KEYS: Record<EntitySource, string> = {
+  ai: "analysis.entities.source.ai",
+  human: "analysis.entities.source.human",
+  computed: "analysis.entities.source.computed",
 };
 
 // ── Entity name extraction ──
@@ -1096,42 +1097,61 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 // ── Badge components ──
 
 function TypeBadge({ type }: { type: EntityType }) {
+  const { t } = useTranslation();
   const color = ENTITY_TYPE_COLORS[type];
   return (
     <span
       className="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.06em]"
       style={{ color, backgroundColor: `${color}26` }}
     >
-      {ENTITY_TYPE_LABELS[type]}
+      {t(ENTITY_TYPE_I18N_KEYS[type])}
     </span>
   );
 }
 
 function ConfidenceBadge({ confidence }: { confidence: EntityConfidence }) {
+  const { t } = useTranslation();
   return (
     <span className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-400">
       <span
         className={cn("h-1.5 w-1.5 rounded-full", CONFIDENCE_DOT[confidence])}
       />
-      {CONFIDENCE_LABELS[confidence]}
+      {t(CONFIDENCE_I18N_KEYS[confidence])}
     </span>
   );
 }
 
 function SourceBadge({ source }: { source: EntitySource }) {
+  const { t } = useTranslation();
   return (
     <span className="inline-flex items-center rounded-sm bg-zinc-800 px-1.5 py-0.5 text-[11px] font-medium text-zinc-400">
-      {SOURCE_LABELS[source]}
+      {t(SOURCE_I18N_KEYS[source])}
     </span>
   );
 }
 
+const PHASE_I18N_KEYS: Record<string, string> = {
+  "situational-grounding": "analysis.phases.situationalGrounding",
+  "player-identification": "analysis.phases.playerIdentification",
+  "baseline-model": "analysis.phases.baselineModel",
+  "historical-game": "analysis.phases.historicalGame",
+  revalidation: "analysis.phases.revalidation",
+  "formal-modeling": "analysis.phases.formalModeling",
+  assumptions: "analysis.phases.assumptions",
+  elimination: "analysis.phases.elimination",
+  scenarios: "analysis.phases.scenarios",
+  "meta-check": "analysis.phases.metaCheck",
+};
+
 function PhaseBadge({ phase }: { phase: AnalysisEntity["phase"] }) {
+  const { t } = useTranslation();
   const num = PHASE_NUMBERS[phase];
-  const label = PHASE_LABELS[phase];
+  const label = PHASE_I18N_KEYS[phase]
+    ? t(PHASE_I18N_KEYS[phase])
+    : PHASE_LABELS[phase];
   return (
     <span className="inline-flex items-center rounded-sm bg-zinc-800 px-1.5 py-0.5 text-[11px] font-medium text-zinc-400">
-      Phase {num}: {label}
+      {t("analysis.progress.phaseLabel", { number: num, name: label })}
     </span>
   );
 }

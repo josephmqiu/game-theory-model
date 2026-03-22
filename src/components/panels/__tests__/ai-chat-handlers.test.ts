@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   dequeuePendingToolMessage,
@@ -6,6 +8,11 @@ import {
   type PendingToolMsgIds,
 } from "@/components/panels/ai-chat-handlers";
 import type { ChatMessage } from "@/services/ai/ai-types";
+
+const aiChatHandlersPath = join(
+  process.cwd(),
+  "src/components/panels/ai-chat-handlers.ts",
+);
 
 function createToolMessage(id: string): ChatMessage {
   return {
@@ -104,5 +111,18 @@ describe("ai-chat tool lifecycle helpers", () => {
       },
     ]);
     expect(pendingToolMsgIds.size).toBe(0);
+  });
+
+  it("adapts the system prompt for blank-canvas scoping before analysis starts", () => {
+    const source = readFileSync(aiChatHandlersPath, "utf8");
+
+    expect(source).toContain("BLANK_CANVAS_CHAT_SYSTEM_PROMPT");
+    expect(source).toContain(
+      "Help the user figure out what they want to analyze.",
+    );
+    expect(source).toContain(
+      "Do not start or rerun analysis unless the user explicitly asks you to do so or clearly confirms they are ready to run it.",
+    );
+    expect(source).toContain("buildChatSystemPrompt()");
   });
 });

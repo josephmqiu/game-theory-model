@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
+import i18n from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { useAIStore } from "@/stores/ai-store";
 import type { PanelCorner } from "@/stores/ai-store";
@@ -34,22 +35,16 @@ import ChatMessage from "./chat-message";
 import { useChatHandlers } from "./ai-chat-handlers";
 import { FixedChecklist } from "./ai-chat-checklist";
 import {
+  appendPhaseActivityLine,
   buildAnalysisCompleteMessage,
-  buildPhaseStartMessage,
+  buildPhaseActivityMessage,
   getAnalysisCompleteMessageId,
   getPhaseStartMessageId,
 } from "./ai-chat-lifecycle";
+import type { AnalysisPhaseActivityEvent } from "@/services/ai/analysis-client";
 
 export type AIChatMode = "analysis";
 export type AIChatPresentation = "floating" | "docked";
-
-// ── Example topics for entity-graph welcome state ──
-
-const EXAMPLE_TOPICS = [
-  "US-China semiconductor trade war",
-  "OPEC+ oil production negotiations",
-  "EU AI Act regulatory enforcement",
-];
 
 const PROVIDER_ICON: Record<AIProviderType, typeof ClaudeLogo> = {
   anthropic: ClaudeLogo,
@@ -136,6 +131,43 @@ function ToolStatusMessage({
   );
 }
 
+const PHASE_ACTIVITY_FLUSH_MS = 1_000;
+
+interface PhaseActivityTrack {
+  runId: string;
+  phase: string;
+  lines: string[];
+  flushTimer: ReturnType<typeof setTimeout> | null;
+  committedContent: string;
+  committedStreaming: boolean;
+  isStreaming: boolean;
+  hasMessage: boolean;
+}
+
+function formatPhaseActivityNote(event: AnalysisPhaseActivityEvent): string {
+  const message = event.message.trim();
+  if (message) return message;
+
+  if (event.toolName) {
+    return i18n.t("analysis.activity.usingTool", { toolName: event.toolName });
+  }
+
+  switch (event.kind) {
+    case "preparing":
+      return i18n.t("analysis.activity.preparing");
+    case "researching":
+      return i18n.t("analysis.activity.researching");
+    case "synthesizing":
+      return i18n.t("analysis.activity.synthesizing");
+    case "validating":
+      return i18n.t("analysis.activity.validating");
+    case "retrying":
+      return i18n.t("analysis.activity.retrying");
+    default:
+      return i18n.t("analysis.activity.default");
+  }
+}
+
 /**
  * Minimized AI bar — a compact clickable pill.
  * Parent is responsible for placing it in the layout.
@@ -168,11 +200,9 @@ export function AIChatMinimizedBar() {
 export default function AIChatPanel({
   mode = "analysis",
   presentation = "floating",
-  onStartAnalysis,
 }: {
   mode?: AIChatMode;
   presentation?: AIChatPresentation;
-  onStartAnalysis?: (topic: string, provider?: string, model?: string) => void;
 }) {
   const { t } = useTranslation();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -217,13 +247,113 @@ export default function AIChatPanel({
   const noAvailableModels = !isLoadingModels && availableModels.length === 0;
   const canUseModel = !isLoadingModels && availableModels.length > 0;
   const canSendMessage = canUseModel && !isStreaming && !!input.trim();
-  const quickActionsDisabled = !canUseModel || isStreaming;
   const isDocked = presentation === "docked";
   const isAnalysisMode = mode === "analysis";
-  const hasOnStartAnalysis = typeof onStartAnalysis === "function";
   const previousAnalysisIdRef = useRef<string | null>(null);
   const announcedPhaseStartsRef = useRef<Set<string>>(new Set());
   const completedRunIdsRef = useRef<Set<string>>(new Set());
+  const phaseActivityTracksRef = useRef<Map<string, PhaseActivityTrack>>(
+    new Map(),
+  );
+
+  const clearPhaseActivityTrackTimers = useCallback(() => {
+    for (const track of phaseActivityTracksRef.current.values()) {
+      if (track.flushTimer) {
+        clearTimeout(track.flushTimer);
+      }
+    }
+  }, []);
+
+  const resetPhaseActivityTracks = useCallback(() => {
+    clearPhaseActivityTrackTimers();
+    phaseActivityTracksRef.current.clear();
+  }, [clearPhaseActivityTrackTimers]);
+
+  const getPhaseActivityTrack = useCallback((runId: string, phase: string) => {
+    const key = getPhaseStartMessageId(runId, phase as MethodologyPhase);
+    let track = phaseActivityTracksRef.current.get(key);
+    if (!track) {
+      track = {
+        runId,
+        phase,
+        lines: [],
+        flushTimer: null,
+        committedContent: "",
+        committedStreaming: true,
+        isStreaming: true,
+        hasMessage: false,
+      };
+      phaseActivityTracksRef.current.set(key, track);
+    }
+    return { key, track };
+  }, []);
+
+  const commitPhaseActivityTrack = useCallback(
+    (runId: string, phase: string) => {
+      const { key, track } = getPhaseActivityTrack(runId, phase);
+      const message = buildPhaseActivityMessage(
+        runId,
+        phase as MethodologyPhase,
+        track.lines,
+        track.isStreaming,
+      );
+      if (!message) return;
+
+      const store = useAIStore.getState();
+      if (!track.hasMessage) {
+        store.addMessage(message);
+        track.hasMessage = true;
+        track.committedContent = message.content;
+        track.committedStreaming = message.isStreaming ?? false;
+        return;
+      }
+
+      if (
+        track.committedContent !== message.content ||
+        track.committedStreaming !== (message.isStreaming ?? false)
+      ) {
+        store.updateMessageById(key, {
+          content: message.content,
+          isStreaming: message.isStreaming,
+        });
+        track.committedContent = message.content;
+        track.committedStreaming = message.isStreaming ?? false;
+      }
+    },
+    [getPhaseActivityTrack],
+  );
+
+  const schedulePhaseActivityFlush = useCallback(
+    (runId: string, phase: string) => {
+      const { track } = getPhaseActivityTrack(runId, phase);
+      if (track.flushTimer) return;
+
+      track.flushTimer = setTimeout(() => {
+        track.flushTimer = null;
+        commitPhaseActivityTrack(runId, phase);
+      }, PHASE_ACTIVITY_FLUSH_MS);
+    },
+    [commitPhaseActivityTrack, getPhaseActivityTrack],
+  );
+
+  const finalizePhaseActivityTrack = useCallback(
+    (runId: string, phase: string) => {
+      const { track } = getPhaseActivityTrack(runId, phase);
+      if (track.flushTimer) {
+        clearTimeout(track.flushTimer);
+        track.flushTimer = null;
+      }
+      track.isStreaming = false;
+      commitPhaseActivityTrack(runId, phase);
+    },
+    [commitPhaseActivityTrack, getPhaseActivityTrack],
+  );
+
+  const finalizeAllPhaseActivityTracks = useCallback(() => {
+    for (const track of phaseActivityTracksRef.current.values()) {
+      finalizePhaseActivityTrack(track.runId, track.phase);
+    }
+  }, [finalizePhaseActivityTrack]);
 
   // Poll analysis orchestrator running state
   useEffect(() => {
@@ -233,6 +363,12 @@ export default function AIChatPanel({
     }, 500);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    return () => {
+      resetPhaseActivityTracks();
+    };
+  }, [resetPhaseActivityTracks]);
 
   // Enhanced stop handler: aborts analysis orchestrator if running,
   // otherwise falls through to regular chat stream abort
@@ -251,24 +387,71 @@ export default function AIChatPanel({
           event.runId,
           event.phase as MethodologyPhase,
         );
-        if (announcedPhaseStartsRef.current.has(messageId)) {
+        const isRetry = announcedPhaseStartsRef.current.has(messageId);
+        const { track } = getPhaseActivityTrack(event.runId, event.phase);
+
+        if (track.flushTimer) {
+          clearTimeout(track.flushTimer);
+          track.flushTimer = null;
+        }
+
+        track.isStreaming = true;
+        if (track.lines.length === 0) {
+          track.lines = appendPhaseActivityLine(
+            [],
+            i18n.t("analysis.activity.preparing"),
+          );
+        } else if (isRetry) {
+          track.lines = appendPhaseActivityLine(
+            track.lines,
+            i18n.t("analysis.activity.retrying"),
+          );
+        }
+
+        announcedPhaseStartsRef.current.add(messageId);
+        commitPhaseActivityTrack(event.runId, event.phase);
+        return;
+      }
+
+      if (event.type === "phase_activity") {
+        const activity = event as AnalysisPhaseActivityEvent;
+        const { track } = getPhaseActivityTrack(activity.runId, activity.phase);
+        if (!track.isStreaming && track.hasMessage) {
+          return;
+        }
+        if (track.flushTimer) {
+          clearTimeout(track.flushTimer);
+          track.flushTimer = null;
+        }
+
+        if (!track.hasMessage) {
+          track.lines = appendPhaseActivityLine(
+            [],
+            i18n.t("analysis.activity.preparing"),
+          );
+          track.lines = appendPhaseActivityLine(
+            track.lines,
+            formatPhaseActivityNote(activity),
+          );
+          commitPhaseActivityTrack(activity.runId, activity.phase);
           return;
         }
 
-        const message = buildPhaseStartMessage(
-          event.runId,
-          event.phase as MethodologyPhase,
+        track.lines = appendPhaseActivityLine(
+          track.lines,
+          formatPhaseActivityNote(activity),
         );
-        if (!message) {
-          return;
-        }
+        schedulePhaseActivityFlush(activity.runId, activity.phase);
+        return;
+      }
 
-        announcedPhaseStartsRef.current.add(message.id);
-        useAIStore.getState().addMessage(message);
+      if (event.type === "phase_completed") {
+        finalizePhaseActivityTrack(event.runId, event.phase);
         return;
       }
 
       if (event.type === "analysis_completed") {
+        finalizeAllPhaseActivityTracks();
         const messageId = getAnalysisCompleteMessageId(event.runId);
         if (completedRunIdsRef.current.has(messageId)) {
           return;
@@ -280,11 +463,22 @@ export default function AIChatPanel({
         useAIStore
           .getState()
           .addMessage(buildAnalysisCompleteMessage(event.runId, entityCount));
+        return;
+      }
+
+      if (event.type === "analysis_failed") {
+        finalizeAllPhaseActivityTracks();
       }
     });
 
     return unsubscribe;
-  }, []);
+  }, [
+    commitPhaseActivityTrack,
+    finalizeAllPhaseActivityTracks,
+    finalizePhaseActivityTrack,
+    getPhaseActivityTrack,
+    schedulePhaseActivityFlush,
+  ]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -369,16 +563,16 @@ export default function AIChatPanel({
     previousAnalysisIdRef.current = analysisId;
     announcedPhaseStartsRef.current.clear();
     completedRunIdsRef.current.clear();
+    resetPhaseActivityTracks();
     if (previousAnalysisId === null || previousAnalysisId === analysisId) {
       return;
     }
 
-    // Only stop streaming — don't clear messages here.
-    // Messages are cleared explicitly in handleSendWrapped before adding new
-    // analysis messages, avoiding a race where the useEffect fires after the
-    // new messages have already been added.
+    // Only stop streaming when the active analysis changes.
+    // Chat history is preserved so a scoping conversation can carry forward
+    // into the analysis the user chooses to run.
     stopStreaming();
-  }, [analysisId, isAnalysisMode, stopStreaming]);
+  }, [analysisId, isAnalysisMode, resetPhaseActivityTracks, stopStreaming]);
 
   /* --- Drag-to-snap handlers --- */
 
@@ -525,96 +719,29 @@ export default function AIChatPanel({
     e.currentTarget.releasePointerCapture(e.pointerId);
   }, []);
 
-  // Wrap send to intercept topic messages for the orchestrator
-  const handleSendWrapped = useCallback(
-    (text?: string) => {
-      const messageText = text ?? input.trim();
-      if (!messageText) return;
-
-      // If onStartAnalysis is provided and this is the first message (or starts with "analyze"),
-      // treat it as a topic submission for the orchestrator
-      if (
-        hasOnStartAnalysis &&
-        (messages.length === 0 ||
-          messageText.toLowerCase().startsWith("analyze"))
-      ) {
-        const topic = messageText.replace(/^analyze\s+/i, "").trim();
-        if (topic) {
-          // Clear input and start orchestrator first — this changes analysisId
-          // which would race with addMessage if we added messages before.
-          setInput("");
-          useAIStore
-            .getState()
-            .setChatTitle(
-              topic.length > 30 ? `${topic.slice(0, 30)}...` : topic,
-            );
-          // Pass currently selected model and its provider to the orchestrator
-          const currentModel = useAIStore.getState().model;
-          const currentModelGroups = useAIStore.getState().modelGroups ?? [];
-          const currentProvider = currentModelGroups.find((g) =>
-            g.models.some((m) => m.value === currentModel),
-          )?.provider;
-          onStartAnalysis!(topic, currentProvider, currentModel);
-
-          // Clear stale messages from previous analysis, then add new ones.
-          // This avoids the race where useEffect clears messages after we add them.
-          clearMessages();
-          useAIStore.getState().addMessage({
-            id: `user-${Date.now()}`,
-            role: "user",
-            content: messageText,
-            timestamp: Date.now(),
-          });
-          useAIStore.getState().addMessage({
-            id: `analyst-intro-${Date.now()}`,
-            role: "assistant",
-            content: `Starting game-theoretic analysis of "${topic}"...`,
-            timestamp: Date.now(),
-          });
-          return;
-        }
-      }
-
-      // Otherwise delegate to the standard chat handler
-      handleSend(text);
-    },
-    [
-      input,
-      messages.length,
-      hasOnStartAnalysis,
-      onStartAnalysis,
-      handleSend,
-      setInput,
-      clearMessages,
-    ],
-  );
-
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSendWrapped();
+      handleSend();
     }
   };
 
   // Don't render when minimized — the minimized bar is rendered by parent
   if (!isDocked && isMinimized) return null;
 
-  const emptyStateLabel =
-    "I'm your game theory analyst. What event do you want to analyze?";
-  const emptyStateHint =
-    "I'll identify players, strategies, and game structure automatically.";
+  const emptyStateLabel = t("analysis.chatEmptyState");
+  const emptyStateHint = t("analysis.chatEmptyHint");
   const inputPlaceholder = isStreaming
     ? t("ai.generating")
-    : "Describe an event to analyze...";
-  const displayTitle =
-    messages.length === 0 ? "Game Theory Analyst" : chatTitle;
+    : t("analysis.chatInputPlaceholder");
+  const displayTitle = messages.length === 0 ? t("analysis.title") : chatTitle;
 
   return (
     <div
       ref={panelRef}
       className={cn(
         isDocked
-          ? "flex h-[480px] min-h-0 flex-col xl:h-[calc(100vh-12rem)]"
+          ? "flex h-full min-h-0 flex-col"
           : "absolute z-50 flex w-[320px] flex-col overflow-hidden rounded-xl border border-border bg-card/95 shadow-2xl backdrop-blur-sm",
         !isDocked && !dragStyle && CORNER_CLASSES[panelCorner],
       )}
@@ -686,29 +813,11 @@ export default function AIChatPanel({
         )}
       >
         {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-4">
-            <p className="text-xs text-muted-foreground mb-4">
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <p className="max-w-[240px] text-xs text-muted-foreground">
               {emptyStateLabel}
             </p>
-            <div className="flex flex-col gap-2 w-full px-2">
-              {EXAMPLE_TOPICS.map((topic) => (
-                <button
-                  key={topic}
-                  type="button"
-                  onClick={() => handleSendWrapped(topic)}
-                  disabled={quickActionsDisabled}
-                  className={cn(
-                    "text-xs text-left px-3.5 py-1.5 rounded-full bg-secondary/50 border border-border text-muted-foreground transition-colors",
-                    quickActionsDisabled
-                      ? "cursor-default"
-                      : "hover:bg-secondary hover:text-foreground",
-                  )}
-                >
-                  {topic}
-                </button>
-              ))}
-            </div>
-            <p className="text-[10px] text-muted-foreground/50 mt-5">
+            <p className="mt-3 max-w-[220px] text-[10px] text-muted-foreground/60">
               {emptyStateHint}
             </p>
           </div>
@@ -765,8 +874,7 @@ export default function AIChatPanel({
                 useAIStore.getState().addMessage({
                   id: `provider-blocked-${Date.now()}`,
                   role: "assistant",
-                  content:
-                    "Cannot change model while analysis is running. Stop the analysis first.",
+                  content: i18n.t("analysis.cannotChangeModel"),
                   timestamp: Date.now(),
                 });
                 return;
@@ -813,7 +921,7 @@ export default function AIChatPanel({
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  onClick={() => handleSendWrapped()}
+                  onClick={() => handleSend()}
                   disabled={!canSendMessage}
                   title={t("ai.sendMessage")}
                   className={cn(

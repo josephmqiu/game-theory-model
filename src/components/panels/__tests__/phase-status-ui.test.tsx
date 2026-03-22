@@ -17,14 +17,14 @@ describe("phase status UI", () => {
 
     expect(source).toContain("V3_PHASES");
     expect(source).toContain("getRunnablePhaseNumber");
-    expect(source).toContain("Phase {getRunnablePhaseNumber(failedPhase.phase)} failed");
+    expect(source).toContain("analysis.progress.phaseFailed");
   });
 
   it("renders later runnable phases as live entries in the sidebar source", () => {
     const source = readFileSync(phaseSidebarPath, "utf8");
 
     expect(source).toContain("V3_PHASES.map");
-    expect(source).toContain("PHASE_LABELS[phase]");
+    expect(source).toContain("PHASE_I18N_KEYS[phase]");
     expect(source).toContain("getRunnablePhaseNumber(phase)");
     expect(source).not.toContain("Coming soon");
   });
@@ -34,6 +34,5 @@ describe("phase status UI", () => {
 
     expect(source).toContain("getPhaseFailureLabel");
     expect(source).toContain('TooltipContent side="right"');
-    expect(source).toContain("Phase ${phaseNumber} failed");
   });
 });

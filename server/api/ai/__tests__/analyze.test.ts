@@ -177,4 +177,36 @@ describe("/api/ai/analyze", () => {
     expect(body).toContain('"runId":"run-123"');
     expect(body).toContain('"channel":"snapshot"');
   });
+
+  it("forwards phase_activity events on the existing progress channel", async () => {
+    readBodyMock.mockResolvedValue({
+      topic: "Trade conflict",
+    });
+    runFullMock.mockImplementation(async () => {
+      queueMicrotask(() => {
+        emitProgress({
+          type: "phase_activity",
+          phase: "situational-grounding",
+          runId: "run-activity",
+          kind: "note",
+          message: "Preparing phase analysis",
+        });
+      });
+      queueMicrotask(() => {
+        emitProgress({
+          type: "analysis_completed",
+          runId: "run-activity",
+        });
+      });
+      return { runId: "run-activity" };
+    });
+
+    const route = (await import("../analyze")).default;
+    const response = (await route(createEvent() as never)) as Response;
+    const body = await response.text();
+
+    expect(body).toContain('"channel":"progress"');
+    expect(body).toContain('"type":"phase_activity"');
+    expect(body).toContain('"message":"Preparing phase analysis"');
+  });
 });

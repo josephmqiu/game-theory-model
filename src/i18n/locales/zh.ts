@@ -430,6 +430,90 @@ const zh: TranslationKeys = {
   "variablePicker.bindToVariable": "绑定到变量",
   "variablePicker.unbind": "解除绑定",
   "variablePicker.noVariables": "未定义 {{type}} 类型的变量",
+
+  // ── Analysis ──
+  "analysis.title": "博弈论分析师",
+  "analysis.emptyState": "我是您的博弈论分析师。您想分析哪个事件？",
+  "analysis.emptyHint": "我会自动识别参与者、策略和博弈结构。",
+  "analysis.inputPlaceholder": "描述一个待分析的事件...",
+  "analysis.startingAnalysis": '正在对"{{topic}}"进行博弈论分析...',
+  "analysis.cannotChangeModel": "分析运行期间无法切换模型。请先停止分析。",
+  "analysis.unsavedChanges": "您有未保存的分析更改。放弃并开始新的分析？",
+
+  // ── Analysis Activity ──
+  "analysis.activity.preparing": "正在准备阶段分析。",
+  "analysis.activity.researching": "正在研究证据。",
+  "analysis.activity.synthesizing": "正在综合阶段输出。",
+  "analysis.activity.validating": "正在验证结构化输出。",
+  "analysis.activity.retrying": "验证或传输问题后正在重试阶段。",
+  "analysis.activity.default": "正在继续阶段分析。",
+  "analysis.activity.usingTool": "正在使用 {{toolName}}",
+  "analysis.activity.agentProgress": "Agent 进度",
+
+  // ── Analysis Progress ──
+  "analysis.progress.phaseFailed": "阶段 {{number}} 失败",
+  "analysis.progress.phaseLabel": "阶段 {{number}}：{{name}}",
+  "analysis.progress.phasesComplete": "{{completed}}/{{total}} 个阶段已完成",
+  "analysis.progress.entityCount": "{{count}} 个实体",
+  "analysis.progress.entityCountPlural": "{{count}} 个实体",
+
+  // ── Analysis Failures ──
+  "analysis.failure.timeout": "超时",
+  "analysis.failure.parseError": "解析错误",
+  "analysis.failure.providerError": "提供商错误",
+
+  // ── Analysis Phases ──
+  "analysis.phases.situationalGrounding": "情境奠基",
+  "analysis.phases.playerIdentification": "参与者识别",
+  "analysis.phases.baselineModel": "基准模型",
+  "analysis.phases.historicalGame": "历史博弈",
+  "analysis.phases.revalidation": "重新验证",
+  "analysis.phases.formalModeling": "形式化建模",
+  "analysis.phases.assumptions": "假设",
+  "analysis.phases.elimination": "消元",
+  "analysis.phases.scenarios": "情景推演",
+  "analysis.phases.metaCheck": "元检查",
+
+  // ── Analysis Sidebar ──
+  "analysis.sidebar.rerunPhase": "重新运行阶段",
+  "analysis.sidebar.searchEntities": "搜索实体...",
+
+  // ── Analysis Entities ──
+  "analysis.entities.fact": "事实",
+  "analysis.entities.player": "参与者",
+  "analysis.entities.objective": "目标",
+  "analysis.entities.game": "博弈",
+  "analysis.entities.strategy": "策略",
+  "analysis.entities.payoff": "收益",
+  "analysis.entities.rule": "规则",
+  "analysis.entities.escalation": "升级",
+  "analysis.entities.history": "历史",
+  "analysis.entities.pattern": "模式",
+  "analysis.entities.trust": "信任",
+  "analysis.entities.commitment": "承诺",
+  "analysis.entities.signal": "信号",
+  "analysis.entities.matrix": "矩阵",
+  "analysis.entities.gameTree": "博弈树",
+  "analysis.entities.equilibrium": "均衡",
+  "analysis.entities.constraints": "约束",
+  "analysis.entities.crossGame": "跨博弈",
+  "analysis.entities.signalClass": "信号类别",
+  "analysis.entities.bargaining": "谈判",
+  "analysis.entities.optionValue": "期权价值",
+  "analysis.entities.behavioral": "行为",
+  "analysis.entities.assumption": "假设",
+  "analysis.entities.eliminated": "已消除",
+  "analysis.entities.scenario": "情景",
+  "analysis.entities.thesis": "论点",
+  "analysis.entities.metaCheck": "元检查",
+  "analysis.entities.noMatching": "没有匹配的实体",
+  "analysis.entities.searchHint": "尝试不同的搜索词或移除类型过滤器。",
+  "analysis.entities.confidence.high": "高",
+  "analysis.entities.confidence.medium": "中",
+  "analysis.entities.confidence.low": "低",
+  "analysis.entities.source.ai": "AI",
+  "analysis.entities.source.human": "人工",
+  "analysis.entities.source.computed": "计算",
 } as const;
 
 export default zh;

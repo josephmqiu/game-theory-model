@@ -444,6 +444,96 @@ const ja: TranslationKeys = {
   "variablePicker.bindToVariable": "変数にバインド",
   "variablePicker.unbind": "バインドを解除",
   "variablePicker.noVariables": "{{type}} 型の変数が定義されていません",
+
+  // ── Analysis ──
+  "analysis.title": "ゲーム理論アナリスト",
+  "analysis.emptyState":
+    "ゲーム理論アナリストです。どのイベントを分析しますか？",
+  "analysis.emptyHint": "プレイヤー、戦略、ゲーム構造を自動的に特定します。",
+  "analysis.inputPlaceholder": "分析するイベントを記述...",
+  "analysis.startingAnalysis":
+    "「{{topic}}」のゲーム理論分析を開始しています...",
+  "analysis.cannotChangeModel":
+    "分析の実行中はモデルを変更できません。先に分析を停止してください。",
+  "analysis.unsavedChanges":
+    "未保存の分析変更があります。破棄して新しい分析を開始しますか？",
+
+  // ── Analysis Activity ──
+  "analysis.activity.preparing": "フェーズ分析を準備中。",
+  "analysis.activity.researching": "エビデンスを調査中。",
+  "analysis.activity.synthesizing": "フェーズ出力を統合中。",
+  "analysis.activity.validating": "構造化出力を検証中。",
+  "analysis.activity.retrying":
+    "検証またはトランスポートの問題後にフェーズを再試行中。",
+  "analysis.activity.default": "フェーズ分析を継続中。",
+  "analysis.activity.usingTool": "{{toolName}} を使用中",
+  "analysis.activity.agentProgress": "エージェントの進捗",
+
+  // ── Analysis Progress ──
+  "analysis.progress.phaseFailed": "フェーズ {{number}} が失敗しました",
+  "analysis.progress.phaseLabel": "フェーズ {{number}}：{{name}}",
+  "analysis.progress.phasesComplete": "{{completed}}/{{total}} フェーズ完了",
+  "analysis.progress.entityCount": "{{count}} エンティティ",
+  "analysis.progress.entityCountPlural": "{{count}} エンティティ",
+
+  // ── Analysis Failures ──
+  "analysis.failure.timeout": "タイムアウト",
+  "analysis.failure.parseError": "パースエラー",
+  "analysis.failure.providerError": "プロバイダーエラー",
+
+  // ── Analysis Phases ──
+  "analysis.phases.situationalGrounding": "状況の基盤構築",
+  "analysis.phases.playerIdentification": "プレイヤーの特定",
+  "analysis.phases.baselineModel": "ベースラインモデル",
+  "analysis.phases.historicalGame": "歴史的ゲーム",
+  "analysis.phases.revalidation": "再検証",
+  "analysis.phases.formalModeling": "形式的モデリング",
+  "analysis.phases.assumptions": "仮定",
+  "analysis.phases.elimination": "消去",
+  "analysis.phases.scenarios": "シナリオ",
+  "analysis.phases.metaCheck": "メタチェック",
+
+  // ── Analysis Sidebar ──
+  "analysis.sidebar.rerunPhase": "フェーズを再実行",
+  "analysis.sidebar.searchEntities": "エンティティを検索...",
+
+  // ── Analysis Entities ──
+  "analysis.entities.fact": "事実",
+  "analysis.entities.player": "プレイヤー",
+  "analysis.entities.objective": "目的",
+  "analysis.entities.game": "ゲーム",
+  "analysis.entities.strategy": "戦略",
+  "analysis.entities.payoff": "利得",
+  "analysis.entities.rule": "ルール",
+  "analysis.entities.escalation": "エスカレーション",
+  "analysis.entities.history": "歴史",
+  "analysis.entities.pattern": "パターン",
+  "analysis.entities.trust": "信頼",
+  "analysis.entities.commitment": "コミットメント",
+  "analysis.entities.signal": "シグナル",
+  "analysis.entities.matrix": "行列",
+  "analysis.entities.gameTree": "ゲーム木",
+  "analysis.entities.equilibrium": "均衡",
+  "analysis.entities.constraints": "制約",
+  "analysis.entities.crossGame": "クロスゲーム",
+  "analysis.entities.signalClass": "シグナルクラス",
+  "analysis.entities.bargaining": "交渉",
+  "analysis.entities.optionValue": "オプション価値",
+  "analysis.entities.behavioral": "行動",
+  "analysis.entities.assumption": "仮定",
+  "analysis.entities.eliminated": "消去済み",
+  "analysis.entities.scenario": "シナリオ",
+  "analysis.entities.thesis": "テーゼ",
+  "analysis.entities.metaCheck": "メタチェック",
+  "analysis.entities.noMatching": "一致するエンティティがありません",
+  "analysis.entities.searchHint":
+    "別の検索語を試すか、タイプフィルターを解除してください。",
+  "analysis.entities.confidence.high": "高",
+  "analysis.entities.confidence.medium": "中",
+  "analysis.entities.confidence.low": "低",
+  "analysis.entities.source.ai": "AI",
+  "analysis.entities.source.human": "人間",
+  "analysis.entities.source.computed": "計算",
 } as const;
 
 export default ja;

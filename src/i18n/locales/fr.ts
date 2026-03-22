@@ -447,6 +447,98 @@ const fr: TranslationKeys = {
   "variablePicker.bindToVariable": "Lier à une variable",
   "variablePicker.unbind": "Délier la variable",
   "variablePicker.noVariables": "Aucune variable {{type}} définie",
+
+  // ── Analysis ──
+  "analysis.title": "Analyste en théorie des jeux",
+  "analysis.emptyState":
+    "Je suis votre analyste en théorie des jeux. Quel événement souhaitez-vous analyser ?",
+  "analysis.emptyHint":
+    "J'identifierai automatiquement les joueurs, les stratégies et la structure du jeu.",
+  "analysis.inputPlaceholder": "Décrivez un événement à analyser...",
+  "analysis.startingAnalysis":
+    "Lancement de l\u2019analyse en théorie des jeux de « {{topic}} »...",
+  "analysis.cannotChangeModel":
+    "Impossible de changer de modèle pendant une analyse. Arrêtez d\u2019abord l\u2019analyse.",
+  "analysis.unsavedChanges":
+    "Vous avez des modifications d\u2019analyse non enregistrées. Les abandonner et commencer une nouvelle analyse ?",
+
+  // ── Analysis Activity ──
+  "analysis.activity.preparing": "Préparation de l\u2019analyse de phase.",
+  "analysis.activity.researching": "Recherche de preuves.",
+  "analysis.activity.synthesizing": "Synthèse de la sortie de phase.",
+  "analysis.activity.validating": "Validation de la sortie structurée.",
+  "analysis.activity.retrying":
+    "Nouvelle tentative de phase après un problème de validation ou de transport.",
+  "analysis.activity.default": "Poursuite de l\u2019analyse de phase.",
+  "analysis.activity.usingTool": "Utilisation de {{toolName}}",
+  "analysis.activity.agentProgress": "Progression de l\u2019agent",
+
+  // ── Analysis Progress ──
+  "analysis.progress.phaseFailed": "Phase {{number}} échouée",
+  "analysis.progress.phaseLabel": "Phase {{number}} : {{name}}",
+  "analysis.progress.phasesComplete":
+    "{{completed}}/{{total}} phases terminées",
+  "analysis.progress.entityCount": "{{count}} entité",
+  "analysis.progress.entityCountPlural": "{{count}} entités",
+
+  // ── Analysis Failures ──
+  "analysis.failure.timeout": "délai dépassé",
+  "analysis.failure.parseError": "erreur d\u2019analyse",
+  "analysis.failure.providerError": "erreur du fournisseur",
+
+  // ── Analysis Phases ──
+  "analysis.phases.situationalGrounding": "Ancrage situationnel",
+  "analysis.phases.playerIdentification": "Identification des joueurs",
+  "analysis.phases.baselineModel": "Modèle de référence",
+  "analysis.phases.historicalGame": "Jeu historique",
+  "analysis.phases.revalidation": "Revalidation",
+  "analysis.phases.formalModeling": "Modélisation formelle",
+  "analysis.phases.assumptions": "Hypothèses",
+  "analysis.phases.elimination": "Élimination",
+  "analysis.phases.scenarios": "Scénarios",
+  "analysis.phases.metaCheck": "Méta-vérification",
+
+  // ── Analysis Sidebar ──
+  "analysis.sidebar.rerunPhase": "Relancer la phase",
+  "analysis.sidebar.searchEntities": "Rechercher des entités...",
+
+  // ── Analysis Entities ──
+  "analysis.entities.fact": "Fait",
+  "analysis.entities.player": "Joueur",
+  "analysis.entities.objective": "Objectif",
+  "analysis.entities.game": "Jeu",
+  "analysis.entities.strategy": "Stratégie",
+  "analysis.entities.payoff": "Gain",
+  "analysis.entities.rule": "Règle",
+  "analysis.entities.escalation": "Escalade",
+  "analysis.entities.history": "Historique",
+  "analysis.entities.pattern": "Motif",
+  "analysis.entities.trust": "Confiance",
+  "analysis.entities.commitment": "Engagement",
+  "analysis.entities.signal": "Signal",
+  "analysis.entities.matrix": "Matrice",
+  "analysis.entities.gameTree": "Arbre de jeu",
+  "analysis.entities.equilibrium": "Équilibre",
+  "analysis.entities.constraints": "Contraintes",
+  "analysis.entities.crossGame": "Inter-jeux",
+  "analysis.entities.signalClass": "Classe de signal",
+  "analysis.entities.bargaining": "Négociation",
+  "analysis.entities.optionValue": "Valeur d\u2019option",
+  "analysis.entities.behavioral": "Comportemental",
+  "analysis.entities.assumption": "Hypothèse",
+  "analysis.entities.eliminated": "Éliminé",
+  "analysis.entities.scenario": "Scénario",
+  "analysis.entities.thesis": "Thèse",
+  "analysis.entities.metaCheck": "Méta-vérification",
+  "analysis.entities.noMatching": "Aucune entité correspondante",
+  "analysis.entities.searchHint":
+    "Essayez un autre terme de recherche ou retirez le filtre de type.",
+  "analysis.entities.confidence.high": "Élevée",
+  "analysis.entities.confidence.medium": "Moyenne",
+  "analysis.entities.confidence.low": "Faible",
+  "analysis.entities.source.ai": "IA",
+  "analysis.entities.source.human": "Humain",
+  "analysis.entities.source.computed": "Calculé",
 } as const;
 
 export default fr;
