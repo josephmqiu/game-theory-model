@@ -377,14 +377,19 @@ export async function* streamChat(
   // Abort signal — when the client disconnects, close the SDK query
   let aborted = false;
   const signal = options?.signal;
+  const closeQueryOnAbort = () => {
+    // Defer the close slightly so async iterators can install their pending
+    // resolution hooks before we tear the query down.
+    queueMicrotask(() => q.close());
+  };
   const onAbort = () => {
     aborted = true;
-    q.close();
+    closeQueryOnAbort();
   };
   if (signal) {
     if (signal.aborted) {
       aborted = true;
-      q.close();
+      closeQueryOnAbort();
     } else {
       signal.addEventListener("abort", onAbort, { once: true });
     }
