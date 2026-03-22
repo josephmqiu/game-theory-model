@@ -15,6 +15,8 @@ import type {
 import type { Analysis } from "../../../shared/types/entity";
 import type { AnalysisRuntimeOverrides } from "../../../shared/types/analysis-runtime";
 import { V3_PHASES } from "@/types/methodology";
+import i18n from "@/i18n";
+import { formatPhaseActivityNote } from "./phase-activity-format";
 
 export interface AnalysisPhaseActivityEvent {
   type: "phase_activity";
@@ -185,6 +187,7 @@ export function isRunning(): boolean {
 
 export function abort(): void {
   stopRecoveryPolling();
+  useEntityGraphStore.getState().setPhaseActivityText(null);
   setRunStatus({
     status: "idle",
     runId: null,
@@ -330,16 +333,21 @@ export async function startAnalysis(
             const store = useEntityGraphStore.getState();
             if (event.type === "phase_started") {
               store.setPhaseStatusLocal(event.phase, "running");
+              store.setPhaseActivityText(i18n.t("analysis.activity.preparing"));
             } else if (event.type === "phase_completed") {
               store.setPhaseStatusLocal(event.phase, "complete");
+              store.setPhaseActivityText(null);
             } else if (event.type === "phase_activity") {
-              // Renderer-only activity stream; the entity graph remains unchanged.
+              store.setPhaseActivityText(
+                formatPhaseActivityNote(event as AnalysisPhaseActivityEvent),
+              );
             } else if (event.type === "analysis_failed") {
               for (const phaseState of store.analysis.phases) {
                 if (phaseState.status === "running") {
                   store.setPhaseStatusLocal(phaseState.phase, "failed");
                 }
               }
+              store.setPhaseActivityText(null);
             }
 
             updateRunStatusFromProgress(event as AnalysisProgressStreamEvent);

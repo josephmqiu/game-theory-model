@@ -13,11 +13,11 @@ import type {
   LayoutState,
 } from "../../shared/types/entity";
 import { RELATIONSHIP_CATEGORY } from "@/types/entity";
-import type { MethodologyPhase, PhaseStatus } from "../../shared/types/methodology";
-import {
-  normalizePhaseStates,
-  upsertPhaseStatus,
-} from "@/types/methodology";
+import type {
+  MethodologyPhase,
+  PhaseStatus,
+} from "../../shared/types/methodology";
+import { normalizePhaseStates, upsertPhaseStatus } from "@/types/methodology";
 
 // ── State shape ──
 
@@ -80,6 +80,10 @@ interface EntityGraphStoreState extends AnalysisFileReference {
   pinEntityPosition: (id: string, x: number, y: number) => void;
   syncAnalysis: (analysis: Analysis) => void;
   setPhaseStatusLocal: (phase: string, status: PhaseStatus) => void;
+
+  // Ephemeral UI state — not persisted, not part of analysis data model
+  phaseActivityText: string | null;
+  setPhaseActivityText: (text: string | null) => void;
 }
 
 // ── Helpers ──
@@ -193,6 +197,9 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
     filePath: null,
     fileHandle: null,
     pendingEdits: [],
+    phaseActivityText: null,
+
+    setPhaseActivityText: (text) => set({ phaseActivityText: text }),
 
     newAnalysis: (topic) => {
       set((state) => ({
@@ -203,6 +210,7 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
         fileName: null,
         filePath: null,
         fileHandle: null,
+        phaseActivityText: null,
         pendingEdits: [],
       }));
     },
@@ -309,7 +317,9 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
         },
         layout: reconcileLayoutState(
           Object.fromEntries(
-            Object.entries(state.layout).filter(([entityId]) => entityId !== id),
+            Object.entries(state.layout).filter(
+              ([entityId]) => entityId !== id,
+            ),
           ),
           state.analysis.entities.filter((entity) => entity.id !== id),
         ),
@@ -420,7 +430,9 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
 
     upsertEntityFromServer: (entity) =>
       set((state) => {
-        const exists = state.analysis.entities.some((existing) => existing.id === entity.id);
+        const exists = state.analysis.entities.some(
+          (existing) => existing.id === entity.id,
+        );
         const entities = exists
           ? state.analysis.entities.map((existing) =>
               existing.id === entity.id ? entity : existing,
@@ -439,7 +451,9 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
 
     removeEntityFromServer: (id) =>
       set((state) => {
-        const entities = state.analysis.entities.filter((entity) => entity.id !== id);
+        const entities = state.analysis.entities.filter(
+          (entity) => entity.id !== id,
+        );
         const relationships = state.analysis.relationships.filter(
           (relationship) =>
             relationship.fromEntityId !== id && relationship.toEntityId !== id,

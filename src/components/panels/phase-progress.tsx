@@ -27,6 +27,7 @@ export function PhaseProgress({
   const { t } = useTranslation();
   const phases = useEntityGraphStore((s) => s.analysis.phases);
   const entities = useEntityGraphStore((s) => s.analysis.entities);
+  const phaseActivityText = useEntityGraphStore((s) => s.phaseActivityText);
 
   const runnablePhases = phases.filter((ps) =>
     (V3_PHASES as readonly string[]).includes(ps.phase),
@@ -93,50 +94,60 @@ export function PhaseProgress({
   return (
     <div
       className={cn(
-        "flex items-center gap-3 rounded-md border border-zinc-700 bg-zinc-900/95 px-4 py-2 shadow-lg backdrop-blur",
+        "flex flex-col gap-1 rounded-md border border-zinc-700 bg-zinc-900/95 px-4 py-2 shadow-lg backdrop-blur",
         allDone && "animate-fade-out",
         className,
       )}
     >
-      {/* Amber progress bar */}
-      <div className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-zinc-700">
-        <div
-          className="h-full rounded-full bg-amber-500 transition-all duration-300 ease-in-out"
-          style={{ width: `${progressFraction * 100}%` }}
-        />
+      {/* Row 1: progress bar + status */}
+      <div className="flex items-center gap-3">
+        {/* Amber progress bar */}
+        <div className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-zinc-700">
+          <div
+            className="h-full rounded-full bg-amber-500 transition-all duration-300 ease-in-out"
+            style={{ width: `${progressFraction * 100}%` }}
+          />
+        </div>
+
+        {/* Status text */}
+        <p className="truncate font-[Geist,sans-serif] text-[13px] font-medium text-zinc-300">
+          {currentPhaseName && (
+            <>
+              <span className="text-amber-500">
+                {t("analysis.progress.phaseLabel", {
+                  number: runningPhase
+                    ? getRunnablePhaseNumber(runningPhase.phase)
+                    : "",
+                  name: currentPhaseName,
+                })}
+              </span>
+              <span className="mx-1.5 text-zinc-600">&mdash;</span>
+            </>
+          )}
+          <span>
+            {t("analysis.progress.phasesComplete", {
+              completed: completedCount,
+              total: totalCount,
+            })}
+          </span>
+          <span className="mx-1.5 text-zinc-600">&mdash;</span>
+          <span>
+            {t(
+              totalEntities === 1
+                ? "analysis.progress.entityCount"
+                : "analysis.progress.entityCountPlural",
+              { count: totalEntities },
+            )}
+          </span>
+        </p>
       </div>
 
-      {/* Status text */}
-      <p className="truncate font-[Geist,sans-serif] text-[13px] font-medium text-zinc-300">
-        {currentPhaseName && (
-          <>
-            <span className="text-amber-500">
-              {t("analysis.progress.phaseLabel", {
-                number: runningPhase
-                  ? getRunnablePhaseNumber(runningPhase.phase)
-                  : "",
-                name: currentPhaseName,
-              })}
-            </span>
-            <span className="mx-1.5 text-zinc-600">&mdash;</span>
-          </>
-        )}
-        <span>
-          {t("analysis.progress.phasesComplete", {
-            completed: completedCount,
-            total: totalCount,
-          })}
-        </span>
-        <span className="mx-1.5 text-zinc-600">&mdash;</span>
-        <span>
-          {t(
-            totalEntities === 1
-              ? "analysis.progress.entityCount"
-              : "analysis.progress.entityCountPlural",
-            { count: totalEntities },
-          )}
-        </span>
-      </p>
+      {/* Row 2: current activity (only while running) */}
+      {phaseActivityText && (
+        <p className="truncate pl-[calc(6rem+0.75rem)] font-[Geist,sans-serif] text-[12px] text-zinc-500">
+          {phaseActivityText}
+        </p>
+      )}
     </div>
   );
 }
