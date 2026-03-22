@@ -33,7 +33,6 @@ export type AnalysisProgressStreamEvent =
 
 type ProgressCallback = (event: AnalysisProgressStreamEvent) => void;
 
-const ANALYSIS_TIMEOUT_MS = 15 * 60 * 1000;
 const RECOVERY_POLL_INTERVAL_MS = 2_000;
 
 let currentController: AbortController | null = null;
@@ -277,7 +276,6 @@ export async function startAnalysis(
       total: V3_PHASES.length,
     },
   });
-  const timeout = setTimeout(() => controller.abort(), ANALYSIS_TIMEOUT_MS);
 
   try {
     const response = await fetch("/api/ai/analyze", {
@@ -383,10 +381,12 @@ export async function startAnalysis(
     );
     throw error;
   } finally {
-    clearTimeout(timeout);
     currentController = null;
 
-    if (currentRunStatus.status === "running" && !controller.signal.aborted) {
+    // If the stream ends before we receive a terminal progress event,
+    // recover from /api/ai/state until the orchestrator reports completion.
+    // Explicit user aborts set local run status to idle before aborting.
+    if (currentRunStatus.status === "running") {
       console.warn(
         "[analysis-client] stream-ended-while-running, starting recovery polling",
       );
