@@ -431,6 +431,90 @@ const zhTW: TranslationKeys = {
   "variablePicker.bindToVariable": "綁定到變數",
   "variablePicker.unbind": "解除綁定",
   "variablePicker.noVariables": "未定義 {{type}} 類型的變數",
+
+  // ── Analysis ──
+  "analysis.title": "賽局理論分析師",
+  "analysis.emptyState": "我是您的賽局理論分析師。您想分析哪個事件？",
+  "analysis.emptyHint": "我會自動識別參與者、策略和賽局結構。",
+  "analysis.inputPlaceholder": "描述一個待分析的事件...",
+  "analysis.startingAnalysis": "正在對「{{topic}}」進行賽局理論分析...",
+  "analysis.cannotChangeModel": "分析執行期間無法切換模型。請先停止分析。",
+  "analysis.unsavedChanges": "您有未儲存的分析變更。放棄並開始新的分析？",
+
+  // ── Analysis Activity ──
+  "analysis.activity.preparing": "正在準備階段分析。",
+  "analysis.activity.researching": "正在研究證據。",
+  "analysis.activity.synthesizing": "正在綜合階段輸出。",
+  "analysis.activity.validating": "正在驗證結構化輸出。",
+  "analysis.activity.retrying": "驗證或傳輸問題後正在重試階段。",
+  "analysis.activity.default": "正在繼續階段分析。",
+  "analysis.activity.usingTool": "正在使用 {{toolName}}",
+  "analysis.activity.agentProgress": "Agent 進度",
+
+  // ── Analysis Progress ──
+  "analysis.progress.phaseFailed": "階段 {{number}} 失敗",
+  "analysis.progress.phaseLabel": "階段 {{number}}：{{name}}",
+  "analysis.progress.phasesComplete": "{{completed}}/{{total}} 個階段已完成",
+  "analysis.progress.entityCount": "{{count}} 個實體",
+  "analysis.progress.entityCountPlural": "{{count}} 個實體",
+
+  // ── Analysis Failures ──
+  "analysis.failure.timeout": "逾時",
+  "analysis.failure.parseError": "解析錯誤",
+  "analysis.failure.providerError": "提供商錯誤",
+
+  // ── Analysis Phases ──
+  "analysis.phases.situationalGrounding": "情境奠基",
+  "analysis.phases.playerIdentification": "參與者識別",
+  "analysis.phases.baselineModel": "基準模型",
+  "analysis.phases.historicalGame": "歷史賽局",
+  "analysis.phases.revalidation": "重新驗證",
+  "analysis.phases.formalModeling": "形式化建模",
+  "analysis.phases.assumptions": "假設",
+  "analysis.phases.elimination": "消元",
+  "analysis.phases.scenarios": "情境推演",
+  "analysis.phases.metaCheck": "元檢查",
+
+  // ── Analysis Sidebar ──
+  "analysis.sidebar.rerunPhase": "重新執行階段",
+  "analysis.sidebar.searchEntities": "搜尋實體...",
+
+  // ── Analysis Entities ──
+  "analysis.entities.fact": "事實",
+  "analysis.entities.player": "參與者",
+  "analysis.entities.objective": "目標",
+  "analysis.entities.game": "賽局",
+  "analysis.entities.strategy": "策略",
+  "analysis.entities.payoff": "報酬",
+  "analysis.entities.rule": "規則",
+  "analysis.entities.escalation": "升級",
+  "analysis.entities.history": "歷史",
+  "analysis.entities.pattern": "模式",
+  "analysis.entities.trust": "信任",
+  "analysis.entities.commitment": "承諾",
+  "analysis.entities.signal": "信號",
+  "analysis.entities.matrix": "矩陣",
+  "analysis.entities.gameTree": "賽局樹",
+  "analysis.entities.equilibrium": "均衡",
+  "analysis.entities.constraints": "約束",
+  "analysis.entities.crossGame": "跨賽局",
+  "analysis.entities.signalClass": "信號類別",
+  "analysis.entities.bargaining": "議價",
+  "analysis.entities.optionValue": "選擇權價值",
+  "analysis.entities.behavioral": "行為",
+  "analysis.entities.assumption": "假設",
+  "analysis.entities.eliminated": "已消除",
+  "analysis.entities.scenario": "情境",
+  "analysis.entities.thesis": "論點",
+  "analysis.entities.metaCheck": "元檢查",
+  "analysis.entities.noMatching": "沒有符合的實體",
+  "analysis.entities.searchHint": "嘗試不同的搜尋詞或移除類型篩選器。",
+  "analysis.entities.confidence.high": "高",
+  "analysis.entities.confidence.medium": "中",
+  "analysis.entities.confidence.low": "低",
+  "analysis.entities.source.ai": "AI",
+  "analysis.entities.source.human": "人工",
+  "analysis.entities.source.computed": "計算",
 } as const;
 
 export default zhTW;

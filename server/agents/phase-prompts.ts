@@ -56,13 +56,18 @@ TEXTBOOK / ABSTRACT GAMES (e.g. prisoner's dilemma, matching pennies, chicken):
 REAL-WORLD BILATERAL situations (e.g. a negotiation, a pricing decision, a dispute):
 - Research the current state. Web search when current facts matter.
 - Produce 5-8 facts. Cover at least 3 distinct fact categories.
-- Include each side's position, the key economic drivers, and the rules/constraints in play.
+- Each side's position must be a separate fact (category: "position"), not merged into one.
+- Always include: economic drivers ("economic"), rules or constraints ("rule"), and each side's capabilities or leverage ("capability").
+- For scenarios with affected parties, include impact facts ("impact"). For scenarios with a sequence of events, include action facts ("action") with dates.
+- Ground every fact in the specific scenario described. Do not produce generic game-theory framing or textbook definitions — describe what is actually happening in this situation.
 - Use "precedes" relationships when the sequence of events matters.
 
 MULTI-PARTY / GEOPOLITICAL situations (e.g. trade tensions, cartel coordination, climate negotiations):
 - Research thoroughly. Web search for current data, dates, and specifics.
 - Produce 8-15 facts. Cover at least 4 distinct fact categories.
 - Name specific actors, not just blocs. Include dated actions when the timeline matters.
+- Each major actor's position must be a separate fact. Do not collapse multiple actors into one summary fact.
+- Include concrete data: dates, amounts, percentages, policy names. Avoid vague or generic commentary.
 - Use "precedes" relationships to establish the sequence of moves.
 
 Collect specific data points, not summaries. Numbers anchor the analysis and prevent

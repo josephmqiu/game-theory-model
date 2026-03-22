@@ -139,6 +139,25 @@ function emitProgress(event: AnalysisProgressEvent): void {
   }
 }
 
+function emitPhaseActivity(
+  runId: string,
+  phase: MethodologyPhase,
+  message: string,
+  options?: {
+    kind?: Extract<AnalysisProgressEvent, { type: "phase_activity" }>["kind"];
+    toolName?: string;
+  },
+): void {
+  emitProgress({
+    type: "phase_activity",
+    phase,
+    runId,
+    kind: options?.kind ?? "note",
+    message,
+    ...(options?.toolName ? { toolName: options.toolName } : {}),
+  });
+}
+
 // ── Retry classification ──
 
 export function classifyFailure(error: string): FailureClass {
@@ -358,6 +377,12 @@ async function executeSinglePhase(
           runId: run.runId,
           signal: phaseAbort.signal,
           logger: run.logger,
+          onActivity: (activity) => {
+            emitPhaseActivity(run.runId, phase, activity.message, {
+              kind: activity.kind,
+              toolName: activity.toolName,
+            });
+          },
         }),
         phaseTimeoutPromise,
       ]);
@@ -388,6 +413,13 @@ async function executeSinglePhase(
         error: lastError,
         classification,
       });
+      if (attempt < MAX_RETRIES) {
+        emitPhaseActivity(
+          run.runId,
+          phase,
+          "Retrying phase after validation/transport issue",
+        );
+      }
       continue;
     } finally {
       if (phaseTimer) clearTimeout(phaseTimer);
@@ -411,6 +443,11 @@ async function executeSinglePhase(
             originalAiEntityCount: commitResult.originalAiEntityCount,
             returnedAiEntityCount: commitResult.returnedAiEntityCount,
           });
+          emitPhaseActivity(
+            run.runId,
+            phase,
+            "Retrying phase after validation/transport issue",
+          );
 
           const retryResult = await Promise.race([
             runPhase(phase, topic, {
@@ -422,6 +459,12 @@ async function executeSinglePhase(
               runId: run.runId,
               signal: phaseAbort.signal,
               logger: run.logger,
+              onActivity: (activity) => {
+                emitPhaseActivity(run.runId, phase, activity.message, {
+                  kind: activity.kind,
+                  toolName: activity.toolName,
+                });
+              },
             }),
             phaseTimeoutPromise,
           ]);
@@ -484,6 +527,13 @@ async function executeSinglePhase(
           error: lastError,
           classification,
         });
+        if (attempt < MAX_RETRIES) {
+          emitPhaseActivity(
+            run.runId,
+            phase,
+            "Retrying phase after validation/transport issue",
+          );
+        }
         lastError = "";
         continue;
       }
@@ -537,6 +587,13 @@ async function executeSinglePhase(
       error: lastError,
       classification,
     });
+    if (attempt < MAX_RETRIES) {
+      emitPhaseActivity(
+        run.runId,
+        phase,
+        "Retrying phase after validation/transport issue",
+      );
+    }
     // Retryable — continue loop
   }
 

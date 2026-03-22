@@ -439,6 +439,95 @@ const ko: TranslationKeys = {
   "variablePicker.bindToVariable": "변수에 바인딩",
   "variablePicker.unbind": "변수 바인딩 해제",
   "variablePicker.noVariables": "{{type}} 변수가 정의되지 않았습니다",
+
+  // ── Analysis ──
+  "analysis.title": "게임이론 분석가",
+  "analysis.emptyState": "게임이론 분석가입니다. 어떤 사건을 분석하시겠습니까?",
+  "analysis.emptyHint": "플레이어, 전략, 게임 구조를 자동으로 식별합니다.",
+  "analysis.inputPlaceholder": "분석할 사건을 설명하세요...",
+  "analysis.startingAnalysis":
+    '"{{topic}}"에 대한 게임이론 분석을 시작합니다...',
+  "analysis.cannotChangeModel":
+    "분석 실행 중에는 모델을 변경할 수 없습니다. 먼저 분석을 중지하세요.",
+  "analysis.unsavedChanges":
+    "저장되지 않은 분석 변경 사항이 있습니다. 변경 사항을 버리고 새 분석을 시작하시겠습니까?",
+
+  // ── Analysis Activity ──
+  "analysis.activity.preparing": "단계 분석을 준비 중입니다.",
+  "analysis.activity.researching": "증거를 조사 중입니다.",
+  "analysis.activity.synthesizing": "단계 출력을 종합 중입니다.",
+  "analysis.activity.validating": "구조화된 출력을 검증 중입니다.",
+  "analysis.activity.retrying":
+    "검증 또는 전송 문제 후 단계를 재시도 중입니다.",
+  "analysis.activity.default": "단계 분석을 계속 진행 중입니다.",
+  "analysis.activity.usingTool": "{{toolName}} 사용 중",
+  "analysis.activity.agentProgress": "에이전트 진행 상황",
+
+  // ── Analysis Progress ──
+  "analysis.progress.phaseFailed": "단계 {{number}} 실패",
+  "analysis.progress.phaseLabel": "단계 {{number}}: {{name}}",
+  "analysis.progress.phasesComplete": "{{completed}}/{{total}} 단계 완료",
+  "analysis.progress.entityCount": "엔티티 {{count}}개",
+  "analysis.progress.entityCountPlural": "엔티티 {{count}}개",
+
+  // ── Analysis Failures ──
+  "analysis.failure.timeout": "시간 초과",
+  "analysis.failure.parseError": "파싱 오류",
+  "analysis.failure.providerError": "제공자 오류",
+
+  // ── Analysis Phases ──
+  "analysis.phases.situationalGrounding": "상황 기반 구축",
+  "analysis.phases.playerIdentification": "플레이어 식별",
+  "analysis.phases.baselineModel": "기준 모델",
+  "analysis.phases.historicalGame": "역사적 게임",
+  "analysis.phases.revalidation": "재검증",
+  "analysis.phases.formalModeling": "형식적 모델링",
+  "analysis.phases.assumptions": "가정",
+  "analysis.phases.elimination": "소거",
+  "analysis.phases.scenarios": "시나리오",
+  "analysis.phases.metaCheck": "메타 점검",
+
+  // ── Analysis Sidebar ──
+  "analysis.sidebar.rerunPhase": "단계 재실행",
+  "analysis.sidebar.searchEntities": "엔티티 검색...",
+
+  // ── Analysis Entities ──
+  "analysis.entities.fact": "사실",
+  "analysis.entities.player": "플레이어",
+  "analysis.entities.objective": "목표",
+  "analysis.entities.game": "게임",
+  "analysis.entities.strategy": "전략",
+  "analysis.entities.payoff": "보수",
+  "analysis.entities.rule": "규칙",
+  "analysis.entities.escalation": "확전",
+  "analysis.entities.history": "역사",
+  "analysis.entities.pattern": "패턴",
+  "analysis.entities.trust": "신뢰",
+  "analysis.entities.commitment": "공약",
+  "analysis.entities.signal": "신호",
+  "analysis.entities.matrix": "행렬",
+  "analysis.entities.gameTree": "게임 트리",
+  "analysis.entities.equilibrium": "균형",
+  "analysis.entities.constraints": "제약",
+  "analysis.entities.crossGame": "교차 게임",
+  "analysis.entities.signalClass": "신호 유형",
+  "analysis.entities.bargaining": "협상",
+  "analysis.entities.optionValue": "옵션 가치",
+  "analysis.entities.behavioral": "행동",
+  "analysis.entities.assumption": "가정",
+  "analysis.entities.eliminated": "소거됨",
+  "analysis.entities.scenario": "시나리오",
+  "analysis.entities.thesis": "논제",
+  "analysis.entities.metaCheck": "메타 점검",
+  "analysis.entities.noMatching": "일치하는 엔티티가 없습니다",
+  "analysis.entities.searchHint":
+    "다른 검색어를 시도하거나 유형 필터를 제거하세요.",
+  "analysis.entities.confidence.high": "높음",
+  "analysis.entities.confidence.medium": "보통",
+  "analysis.entities.confidence.low": "낮음",
+  "analysis.entities.source.ai": "AI",
+  "analysis.entities.source.human": "수동",
+  "analysis.entities.source.computed": "계산",
 } as const;
 
 export default ko;

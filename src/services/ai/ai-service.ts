@@ -336,17 +336,20 @@ export async function* streamChat(
 
     if (controller.signal.aborted) {
       if (abortReason === "no_text_timeout") {
+        console.warn("[ai-service] no-text-timeout");
         yield {
           type: "error",
           content:
             "AI has been thinking too long without output. Request stopped, please retry.",
         };
       } else if (abortReason === "hard_timeout") {
+        console.warn("[ai-service] hard-timeout");
         yield {
           type: "error",
           content: "AI request timed out. Please retry.",
         };
       } else if (abortReason === "first_text_timeout") {
+        console.warn("[ai-service] first-text-timeout");
         yield {
           type: "error",
           content:
@@ -366,6 +369,7 @@ export async function* streamChat(
 
     const message =
       error instanceof Error ? error.message : "Unknown error occurred";
+    console.error("[ai-service] fetch-error:", message);
     yield { type: "error", content: message };
   } finally {
     clearTimeout(hardTimeout);

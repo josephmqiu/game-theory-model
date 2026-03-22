@@ -605,11 +605,13 @@ describe("analysis-service", () => {
       const relItems = (schema as any).properties.relationships.items;
       expect(relItems.properties.type.enum).toContain("supports");
       expect(relItems.properties.type.enum).toContain("precedes");
-      expect(options).toEqual({
-        signal: undefined,
-        runId: undefined,
-        webSearch: undefined,
-      });
+      expect(options).toEqual(
+        expect.objectContaining({
+          signal: undefined,
+          runId: undefined,
+          webSearch: undefined,
+        }),
+      );
 
       expect(result.success).toBe(true);
     });
@@ -767,9 +769,60 @@ describe("analysis-service", () => {
       });
 
       const [, , , , options] = mockClaudeRunAnalysisPhase.mock.calls[0];
-      expect(options).toEqual({
-        signal: controller.signal,
-        runId: "run-42",
+      expect(options).toEqual(
+        expect.objectContaining({
+          signal: controller.signal,
+          runId: "run-42",
+        }),
+      );
+    });
+
+    it("forwards analysis activity callbacks to the adapter and emits synthetic milestones", async () => {
+      const onActivity = vi.fn();
+
+      mockClaudeRunAnalysisPhase.mockImplementation(
+        async (_prompt, _systemPrompt, _model, _schema, options) => {
+          options?.onActivity?.({
+            kind: "tool",
+            message: "Using query_entities",
+            toolName: "query_entities",
+          });
+          return VALID_PHASE_1_STRUCTURED;
+        },
+      );
+
+      const { runPhase } = await importService();
+      const result = await runPhase("situational-grounding", "US-China trade war", {
+        onActivity,
+      });
+
+      expect(result.success).toBe(true);
+      const [, , , , options] = mockClaudeRunAnalysisPhase.mock.calls[0];
+      expect(options).toEqual(
+        expect.objectContaining({
+          onActivity: expect.any(Function),
+        }),
+      );
+      expect(onActivity).toHaveBeenCalledWith({
+        kind: "note",
+        message: "Preparing phase analysis",
+      });
+      expect(onActivity).toHaveBeenCalledWith({
+        kind: "note",
+        message: "Researching evidence",
+      });
+      expect(onActivity).toHaveBeenCalledWith({
+        kind: "tool",
+        message: "Using query_entities",
+        toolName: "query_entities",
+      });
+      expect(onActivity).toHaveBeenCalledWith({
+        kind: "note",
+        message: "Synthesizing phase output",
+      });
+      expect(onActivity).toHaveBeenCalledWith({
+        kind: "note",
+        message: "Validating structured output",
       });
     });
 

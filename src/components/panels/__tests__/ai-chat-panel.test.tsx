@@ -21,17 +21,18 @@ describe("AIChatPanel analysis mode", () => {
     const source = readFileSync(aiChatPanelPath, "utf8");
 
     expect(source).toContain("previousAnalysisIdRef");
-    expect(source).toContain("clearMessages()");
     expect(source).toContain("stopStreaming()");
   });
 
-  it("supports entity graph orchestrator integration", () => {
+  it("keeps the docked chat submit path conversation-first", () => {
     const source = readFileSync(aiChatPanelPath, "utf8");
 
-    expect(source).toContain("onStartAnalysis");
-    expect(source).toContain("useEntityGraphStore");
-    expect(source).toContain("EXAMPLE_TOPICS");
-    expect(source).toContain("handleSendWrapped");
+    expect(source).toContain("handleSend()");
+    expect(source).toContain('t("analysis.chatEmptyState")');
+    expect(source).toContain('t("analysis.chatInputPlaceholder")');
+    expect(source).not.toContain("onStartAnalysis");
+    expect(source).not.toContain("EXAMPLE_TOPICS");
+    expect(source).not.toContain("handleSendWrapped");
   });
 
   it("keeps lifecycle announcements on one completion path", () => {
@@ -41,6 +42,9 @@ describe("AIChatPanel analysis mode", () => {
     expect(source).toContain("announcedPhaseStartsRef");
     expect(source).toContain("completedRunIdsRef");
     expect(source).toContain("buildAnalysisCompleteMessage");
+    expect(source).toContain("phase_activity");
+    expect(source).toContain("updateMessageById");
+    expect(source).toContain("PHASE_ACTIVITY_FLUSH_MS");
   });
 
   it("does not depend on the old analysis store", () => {

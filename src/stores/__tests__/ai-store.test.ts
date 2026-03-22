@@ -28,4 +28,30 @@ describe("ai-store", () => {
       id: "phase-situational-grounding-start",
     });
   });
+
+  it("updates a message by id without changing message order", () => {
+    const message = {
+      id: "phase-situational-grounding-start",
+      role: "assistant" as const,
+      content: "Phase 1: Situational Grounding\nPreparing phase analysis.",
+      timestamp: 1,
+      isStreaming: true,
+    };
+
+    useAIStore.getState().addMessage(message);
+    useAIStore.getState().updateMessageById(message.id, {
+      content:
+        "Phase 1: Situational Grounding\nPreparing phase analysis.\nResearching evidence.",
+      isStreaming: false,
+    });
+
+    expect(useAIStore.getState().messages).toEqual([
+      {
+        ...message,
+        content:
+          "Phase 1: Situational Grounding\nPreparing phase analysis.\nResearching evidence.",
+        isStreaming: false,
+      },
+    ]);
+  });
 });

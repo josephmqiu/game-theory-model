@@ -856,6 +856,131 @@ describe("codex-adapter", () => {
       expect(threadStartReq.params.config).toEqual({ web_search: "disabled" });
     });
 
+    it("emits normalized activity for analysis web search notifications", async () => {
+      const { runAnalysisPhase, _resetConnection } =
+        await import("../codex-adapter");
+      _resetConnection();
+      const onActivity = vi.fn();
+
+      setAutoResponder((method, id) => {
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "config/mcpServer/reload" && id !== undefined) {
+          emitResponse(id, { ok: true });
+        }
+        if (method === "mcpServerStatus/list" && id !== undefined) {
+          emitResponse(id, {
+            data: [
+              {
+                name: "game_theory_analyzer_mcp",
+                tools: {
+                  get_entity: {},
+                  query_entities: {},
+                  query_relationships: {},
+                  request_loopback: {},
+                },
+              },
+            ],
+          });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitThreadStartResponse(id);
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id);
+          queueMicrotask(() => {
+            emitNotification("item/started", {
+              item: {
+                type: "webSearch",
+                query: "latest developments",
+              },
+              threadId: "thread-1",
+              turnId: "turn-1",
+            });
+            emitItemCompleted({
+              id: "agent-msg-web-search",
+              type: "agentMessage",
+              text: '{"entities":[]}',
+              phase: "final_answer",
+            });
+            emitTurnCompleted();
+          });
+        }
+      });
+
+      await runAnalysisPhase("analyze this", "system", "gpt-4o", {}, {
+        onActivity,
+      });
+
+      expect(onActivity).toHaveBeenCalledWith({
+        kind: "web-search",
+        message: "Using WebSearch",
+      });
+    });
+
+    it("emits normalized activity for analysis MCP tool progress notifications", async () => {
+      const { runAnalysisPhase, _resetConnection } =
+        await import("../codex-adapter");
+      _resetConnection();
+      const onActivity = vi.fn();
+
+      setAutoResponder((method, id) => {
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "config/mcpServer/reload" && id !== undefined) {
+          emitResponse(id, { ok: true });
+        }
+        if (method === "mcpServerStatus/list" && id !== undefined) {
+          emitResponse(id, {
+            data: [
+              {
+                name: "game_theory_analyzer_mcp",
+                tools: {
+                  get_entity: {},
+                  query_entities: {},
+                  query_relationships: {},
+                  request_loopback: {},
+                },
+              },
+            ],
+          });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitThreadStartResponse(id);
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id);
+          queueMicrotask(() => {
+            emitNotification("item/mcpToolCall/progress", {
+              toolName: "query_entities",
+              input: { phase: "situational-grounding" },
+              threadId: "thread-1",
+              turnId: "turn-1",
+            });
+            emitItemCompleted({
+              id: "agent-msg-tool-progress",
+              type: "agentMessage",
+              text: '{"entities":[]}',
+              phase: "final_answer",
+            });
+            emitTurnCompleted();
+          });
+        }
+      });
+
+      await runAnalysisPhase("analyze this", "system", "gpt-4o", {}, {
+        onActivity,
+      });
+
+      expect(onActivity).toHaveBeenCalledWith({
+        kind: "tool",
+        message: "Using query_entities",
+        toolName: "query_entities",
+      });
+    });
+
     it("approves only read-only MCP tool calls during analysis", async () => {
       const { serverLog } = await import("../../../utils/ai-logger");
       const { runAnalysisPhase, _resetConnection } =

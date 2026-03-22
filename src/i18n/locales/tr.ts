@@ -442,6 +442,97 @@ const tr: TranslationKeys = {
   "variablePicker.bindToVariable": "Değişkene bağla",
   "variablePicker.unbind": "Değişken bağını kaldır",
   "variablePicker.noVariables": "Tanımlanmış {{type}} değişkeni yok",
+
+  // ── Analysis ──
+  "analysis.title": "Oyun Teorisi Analisti",
+  "analysis.emptyState":
+    "Oyun teorisi analistinizim. Hangi olayı analiz etmek istiyorsunuz?",
+  "analysis.emptyHint":
+    "Oyuncuları, stratejileri ve oyun yapısını otomatik olarak belirleyeceğim.",
+  "analysis.inputPlaceholder": "Analiz edilecek bir olay tanımlayın...",
+  "analysis.startingAnalysis":
+    '"{{topic}}" için oyun-teorik analiz başlatılıyor...',
+  "analysis.cannotChangeModel":
+    "Analiz çalışırken model değiştirilemez. Önce analizi durdurun.",
+  "analysis.unsavedChanges":
+    "Kaydedilmemiş analiz değişiklikleriniz var. Bunları silip yeni bir analiz başlatmak istiyor musunuz?",
+
+  // ── Analysis Activity ──
+  "analysis.activity.preparing": "Faz analizi hazırlanıyor.",
+  "analysis.activity.researching": "Kanıtlar araştırılıyor.",
+  "analysis.activity.synthesizing": "Faz çıktısı sentezleniyor.",
+  "analysis.activity.validating": "Yapılandırılmış çıktı doğrulanıyor.",
+  "analysis.activity.retrying":
+    "Doğrulama veya aktarım sorununun ardından faz yeniden deneniyor.",
+  "analysis.activity.default": "Faz analizi devam ediyor.",
+  "analysis.activity.usingTool": "{{toolName}} kullanılıyor",
+  "analysis.activity.agentProgress": "Ajan ilerlemesi",
+
+  // ── Analysis Progress ──
+  "analysis.progress.phaseFailed": "Faz {{number}} başarısız oldu",
+  "analysis.progress.phaseLabel": "Faz {{number}}: {{name}}",
+  "analysis.progress.phasesComplete": "{{completed}}/{{total}} faz tamamlandı",
+  "analysis.progress.entityCount": "{{count}} varlık",
+  "analysis.progress.entityCountPlural": "{{count}} varlık",
+
+  // ── Analysis Failures ──
+  "analysis.failure.timeout": "zaman aşımı",
+  "analysis.failure.parseError": "ayrıştırma hatası",
+  "analysis.failure.providerError": "sağlayıcı hatası",
+
+  // ── Analysis Phases ──
+  "analysis.phases.situationalGrounding": "Durumsal Temellendirme",
+  "analysis.phases.playerIdentification": "Oyuncu Belirleme",
+  "analysis.phases.baselineModel": "Temel Model",
+  "analysis.phases.historicalGame": "Tarihsel Oyun",
+  "analysis.phases.revalidation": "Yeniden Doğrulama",
+  "analysis.phases.formalModeling": "Formel Modelleme",
+  "analysis.phases.assumptions": "Varsayımlar",
+  "analysis.phases.elimination": "Eleme",
+  "analysis.phases.scenarios": "Senaryolar",
+  "analysis.phases.metaCheck": "Meta Kontrol",
+
+  // ── Analysis Sidebar ──
+  "analysis.sidebar.rerunPhase": "Fazı yeniden çalıştır",
+  "analysis.sidebar.searchEntities": "Varlıkları ara...",
+
+  // ── Analysis Entities ──
+  "analysis.entities.fact": "Olgu",
+  "analysis.entities.player": "Oyuncu",
+  "analysis.entities.objective": "Amaç",
+  "analysis.entities.game": "Oyun",
+  "analysis.entities.strategy": "Strateji",
+  "analysis.entities.payoff": "Getiri",
+  "analysis.entities.rule": "Kural",
+  "analysis.entities.escalation": "Tırmanma",
+  "analysis.entities.history": "Tarihçe",
+  "analysis.entities.pattern": "Örüntü",
+  "analysis.entities.trust": "Güven",
+  "analysis.entities.commitment": "Taahhüt",
+  "analysis.entities.signal": "Sinyal",
+  "analysis.entities.matrix": "Matris",
+  "analysis.entities.gameTree": "Oyun Ağacı",
+  "analysis.entities.equilibrium": "Denge",
+  "analysis.entities.constraints": "Kısıtlar",
+  "analysis.entities.crossGame": "Çapraz Oyun",
+  "analysis.entities.signalClass": "Sinyal Sınıfı",
+  "analysis.entities.bargaining": "Pazarlık",
+  "analysis.entities.optionValue": "Opsiyon Değeri",
+  "analysis.entities.behavioral": "Davranışsal",
+  "analysis.entities.assumption": "Varsayım",
+  "analysis.entities.eliminated": "Elenmiş",
+  "analysis.entities.scenario": "Senaryo",
+  "analysis.entities.thesis": "Tez",
+  "analysis.entities.metaCheck": "Meta Kontrol",
+  "analysis.entities.noMatching": "Eşleşen varlık yok",
+  "analysis.entities.searchHint":
+    "Farklı bir arama terimi deneyin veya tür filtresini kaldırın.",
+  "analysis.entities.confidence.high": "Yüksek",
+  "analysis.entities.confidence.medium": "Orta",
+  "analysis.entities.confidence.low": "Düşük",
+  "analysis.entities.source.ai": "Yapay Zeka",
+  "analysis.entities.source.human": "İnsan",
+  "analysis.entities.source.computed": "Hesaplanmış",
 } as const;
 
 export default tr;

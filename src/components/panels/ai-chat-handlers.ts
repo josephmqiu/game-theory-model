@@ -135,11 +135,29 @@ export function updateToolStatusMessage(
   );
 }
 
+const BLANK_CANVAS_CHAT_SYSTEM_PROMPT = `You are a game theory analyst assistant. The canvas is currently blank.
+
+Help the user figure out what they want to analyze. Clarify the situation, identify the likely actors, decisions, incentives, and strategic conflict, and suggest concise next questions when useful.
+
+Do not start or rerun analysis unless the user explicitly asks you to do so or clearly confirms they are ready to run it.
+
+Be concise, practical, and collaborative.`;
+
 const ENTITY_GRAPH_CHAT_SYSTEM_PROMPT = `You are a game theory analyst assistant. You help the user understand the entity graph analysis displayed on the canvas.
 
 You have access to the current analysis context including entities (facts, players, objectives, games, strategies, payoffs, institutional rules, escalation rungs), their relationships, and which methodology phases are complete.
 
-Answer questions about the analysis, explain game-theoretic concepts, and help the user interpret the results. Be concise and precise.`;
+Answer questions about the analysis, explain game-theoretic concepts, and help the user interpret the results. Do not start or rerun analysis unless the user explicitly asks you to do so or clearly confirms they are ready. Be concise and precise.`;
+
+function buildChatSystemPrompt(): string {
+  const analysis = useEntityGraphStore.getState().analysis;
+  const hasCanvasAnalysis =
+    analysis.topic.trim().length > 0 || analysis.entities.length > 0;
+
+  return hasCanvasAnalysis
+    ? ENTITY_GRAPH_CHAT_SYSTEM_PROMPT
+    : BLANK_CANVAS_CHAT_SYSTEM_PROMPT;
+}
 
 function buildEntityGraphContext(): string {
   const state = useEntityGraphStore.getState();
@@ -239,7 +257,7 @@ export function useChatHandlers() {
 
       try {
         const context = buildEntityGraphContext();
-        const systemPrompt = `${ENTITY_GRAPH_CHAT_SYSTEM_PROMPT}\n\n${context}`;
+        const systemPrompt = `${buildChatSystemPrompt()}\n\n${context}`;
 
         const chatHistory = messages.map((message) => ({
           role: message.role,
@@ -351,6 +369,7 @@ export function useChatHandlers() {
         if (!abortController.signal.aborted) {
           const errMsg =
             error instanceof Error ? error.message : "Unknown error";
+          console.error("[chat] stream-error:", errMsg);
           accumulated = `**Error:** ${errMsg}`;
           updateLastMessage(accumulated);
         }

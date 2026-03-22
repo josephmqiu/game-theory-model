@@ -11,8 +11,18 @@ export interface PhaseSummary {
   durationMs: number;
 }
 
+export type AnalysisPhaseActivityKind = "note" | "tool" | "web-search";
+
 export type AnalysisProgressEvent =
   | { type: "phase_started"; phase: string; runId: string }
+  | {
+      type: "phase_activity";
+      phase: string;
+      runId: string;
+      kind: AnalysisPhaseActivityKind;
+      message: string;
+      toolName?: string;
+    }
   | {
       type: "phase_completed";
       phase: string;

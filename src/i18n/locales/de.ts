@@ -444,6 +444,98 @@ const de: TranslationKeys = {
   "variablePicker.bindToVariable": "An Variable binden",
   "variablePicker.unbind": "Variable lösen",
   "variablePicker.noVariables": "Keine {{type}}-Variablen definiert",
+
+  // ── Analysis ──
+  "analysis.title": "Spieltheorie-Analyst",
+  "analysis.emptyState":
+    "Ich bin Ihr Spieltheorie-Analyst. Welches Ereignis möchten Sie analysieren?",
+  "analysis.emptyHint":
+    "Ich identifiziere Spieler, Strategien und Spielstruktur automatisch.",
+  "analysis.inputPlaceholder": "Beschreiben Sie ein Ereignis zur Analyse...",
+  "analysis.startingAnalysis":
+    'Starte spieltheoretische Analyse von "{{topic}}"...',
+  "analysis.cannotChangeModel":
+    "Das Modell kann nicht gewechselt werden, während die Analyse läuft. Stoppen Sie zuerst die Analyse.",
+  "analysis.unsavedChanges":
+    "Sie haben ungespeicherte Analyseänderungen. Verwerfen und eine neue Analyse starten?",
+
+  // ── Analysis Activity ──
+  "analysis.activity.preparing": "Phasenanalyse wird vorbereitet.",
+  "analysis.activity.researching": "Evidenz wird recherchiert.",
+  "analysis.activity.synthesizing": "Phasenergebnis wird synthetisiert.",
+  "analysis.activity.validating": "Strukturierte Ausgabe wird validiert.",
+  "analysis.activity.retrying":
+    "Phase wird nach Validierungs- oder Transportfehler wiederholt.",
+  "analysis.activity.default": "Phasenanalyse wird fortgesetzt.",
+  "analysis.activity.usingTool": "Verwende {{toolName}}",
+  "analysis.activity.agentProgress": "Agentenfortschritt",
+
+  // ── Analysis Progress ──
+  "analysis.progress.phaseFailed": "Phase {{number}} fehlgeschlagen",
+  "analysis.progress.phaseLabel": "Phase {{number}}: {{name}}",
+  "analysis.progress.phasesComplete":
+    "{{completed}}/{{total}} Phasen abgeschlossen",
+  "analysis.progress.entityCount": "{{count}} Entität",
+  "analysis.progress.entityCountPlural": "{{count}} Entitäten",
+
+  // ── Analysis Failures ──
+  "analysis.failure.timeout": "Zeitüberschreitung",
+  "analysis.failure.parseError": "Analysefehler",
+  "analysis.failure.providerError": "Anbieterfehler",
+
+  // ── Analysis Phases ──
+  "analysis.phases.situationalGrounding": "Situative Einordnung",
+  "analysis.phases.playerIdentification": "Spieleridentifikation",
+  "analysis.phases.baselineModel": "Basismodell",
+  "analysis.phases.historicalGame": "Historisches Spiel",
+  "analysis.phases.revalidation": "Revalidierung",
+  "analysis.phases.formalModeling": "Formale Modellierung",
+  "analysis.phases.assumptions": "Annahmen",
+  "analysis.phases.elimination": "Elimination",
+  "analysis.phases.scenarios": "Szenarien",
+  "analysis.phases.metaCheck": "Meta-Prüfung",
+
+  // ── Analysis Sidebar ──
+  "analysis.sidebar.rerunPhase": "Phase erneut ausführen",
+  "analysis.sidebar.searchEntities": "Entitäten suchen...",
+
+  // ── Analysis Entities ──
+  "analysis.entities.fact": "Fakt",
+  "analysis.entities.player": "Spieler",
+  "analysis.entities.objective": "Ziel",
+  "analysis.entities.game": "Spiel",
+  "analysis.entities.strategy": "Strategie",
+  "analysis.entities.payoff": "Auszahlung",
+  "analysis.entities.rule": "Regel",
+  "analysis.entities.escalation": "Eskalation",
+  "analysis.entities.history": "Verlauf",
+  "analysis.entities.pattern": "Muster",
+  "analysis.entities.trust": "Vertrauen",
+  "analysis.entities.commitment": "Verpflichtung",
+  "analysis.entities.signal": "Signal",
+  "analysis.entities.matrix": "Matrix",
+  "analysis.entities.gameTree": "Spielbaum",
+  "analysis.entities.equilibrium": "Gleichgewicht",
+  "analysis.entities.constraints": "Beschränkungen",
+  "analysis.entities.crossGame": "Spielübergreifend",
+  "analysis.entities.signalClass": "Signalklasse",
+  "analysis.entities.bargaining": "Verhandlung",
+  "analysis.entities.optionValue": "Optionswert",
+  "analysis.entities.behavioral": "Verhaltensbasiert",
+  "analysis.entities.assumption": "Annahme",
+  "analysis.entities.eliminated": "Eliminiert",
+  "analysis.entities.scenario": "Szenario",
+  "analysis.entities.thesis": "These",
+  "analysis.entities.metaCheck": "Meta-Prüfung",
+  "analysis.entities.noMatching": "Keine passenden Entitäten",
+  "analysis.entities.searchHint":
+    "Versuchen Sie einen anderen Suchbegriff oder entfernen Sie den Typfilter.",
+  "analysis.entities.confidence.high": "Hoch",
+  "analysis.entities.confidence.medium": "Mittel",
+  "analysis.entities.confidence.low": "Niedrig",
+  "analysis.entities.source.ai": "KI",
+  "analysis.entities.source.human": "Mensch",
+  "analysis.entities.source.computed": "Berechnet",
 } as const;
 
 export default de;

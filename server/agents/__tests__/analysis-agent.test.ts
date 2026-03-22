@@ -54,6 +54,12 @@ const mockRunPhase = vi.fn<
       runtime?: ResolvedAnalysisRuntime;
       runId?: string;
       signal?: AbortSignal;
+      logger?: unknown;
+      onActivity?: (activity: {
+        kind: "note" | "tool" | "web-search";
+        message: string;
+        toolName?: string;
+      }) => void;
     },
   ) => Promise<PhaseResult>
 >();
@@ -908,6 +914,71 @@ describe("analysis-orchestrator", () => {
       type: "phase_started",
       phase: "meta-check",
     });
+  });
+
+  it("emits phase_activity events from the phase runtime during execution", async () => {
+    mockRunPhase.mockImplementation(async (_phase, _topic, context) => {
+      context?.onActivity?.({
+        kind: "tool",
+        message: "Using query_entities",
+        toolName: "query_entities",
+      });
+      return makePhaseResult("situational-grounding");
+    });
+
+    const events: AnalysisProgressEvent[] = [];
+    const unsubscribe = orchestrator.onProgress((event) => events.push(event));
+
+    await orchestrator.runFull("Test topic");
+    await flushAsync();
+    unsubscribe();
+
+    expect(events).toContainEqual({
+      type: "phase_activity",
+      phase: "situational-grounding",
+      runId: expect.any(String),
+      kind: "tool",
+      message: "Using query_entities",
+      toolName: "query_entities",
+    });
+  });
+
+  it("emits a retry activity note before retrying a phase", async () => {
+    mockRunPhase
+      .mockResolvedValueOnce(makeFailedResult("Network error"))
+      .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
+      .mockResolvedValueOnce(makePhaseResult("player-identification"))
+      .mockResolvedValueOnce(makePhaseResult("baseline-model"))
+      .mockResolvedValueOnce(makePhaseResult("historical-game"))
+      .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
+      .mockResolvedValueOnce(makePhaseResult("assumptions"))
+      .mockResolvedValueOnce(makePhaseResult("elimination"))
+      .mockResolvedValueOnce(makePhaseResult("scenarios"))
+      .mockResolvedValueOnce(makePhaseResult("meta-check"));
+
+    const events: AnalysisProgressEvent[] = [];
+    const unsubscribe = orchestrator.onProgress((event) => events.push(event));
+
+    await orchestrator.runFull("Test topic");
+    await flushAsync();
+    unsubscribe();
+
+    const retryEventIndex = events.findIndex(
+      (event) =>
+        event.type === "phase_activity" &&
+        event.phase === "situational-grounding" &&
+        event.message === "Retrying phase after validation/transport issue",
+    );
+    const secondStartIndex = events.findIndex(
+      (event, index) =>
+        index > retryEventIndex &&
+        event.type === "phase_started" &&
+        event.phase === "situational-grounding",
+    );
+
+    expect(retryEventIndex).toBeGreaterThan(-1);
+    expect(secondStartIndex).toBe(-1);
+    expect(mockRunPhase).toHaveBeenCalledTimes(10);
   });
 
   it("emits analysis_failed on failure", async () => {

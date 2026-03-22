@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PanelRight, PanelRightClose } from "lucide-react";
+import {
+  PanelLeft,
+  PanelLeftClose,
+  PanelRight,
+  PanelRightClose,
+} from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import TopBar from "./top-bar";
 import AgentSettingsDialog from "@/components/shared/agent-settings-dialog";
 import UpdateReadyBanner from "./update-ready-banner";
 import AnalysisCanvas from "./analysis-canvas";
+import AnalysisLauncher from "./analysis-launcher";
 import AIChatPanel from "@/components/panels/ai-chat-panel";
 import { PhaseSidebar } from "@/components/panels/phase-sidebar";
 import { PhaseProgress } from "@/components/panels/phase-progress";
@@ -29,7 +36,36 @@ import { getEntityCardMetrics } from "@/services/entity/entity-card-metrics";
 import type { AnalysisEntity } from "@/types/entity";
 import type { MethodologyPhase } from "@/types/methodology";
 
+// ── Vertical resize handle ──
+
+function ResizeHandle({ onDrag }: { onDrag: (deltaX: number) => void }) {
+  const lastX = useRef<number | null>(null);
+
+  return (
+    <div
+      className="group relative w-1 shrink-0 cursor-col-resize select-none"
+      onPointerDown={(e) => {
+        lastX.current = e.clientX;
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }}
+      onPointerMove={(e) => {
+        if (lastX.current === null) return;
+        const delta = e.clientX - lastX.current;
+        lastX.current = e.clientX;
+        onDrag(delta);
+      }}
+      onPointerUp={(e) => {
+        lastX.current = null;
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }}
+    >
+      <div className="absolute inset-y-0 -left-px w-[3px] transition-colors group-hover:bg-primary/30 group-active:bg-primary/50" />
+    </div>
+  );
+}
+
 export default function EditorLayout() {
+  const { t } = useTranslation();
   const isDirty = useEntityGraphStore((state) => state.isDirty);
 
   const [phaseFilter, setPhaseFilter] = useState<MethodologyPhase | null>(null);
@@ -42,7 +78,14 @@ export default function EditorLayout() {
   );
   const layout = useEntityGraphStore((state) => state.layout);
   const viewport = useCanvasStore((state) => state.viewport);
+  const analysisTopic = useEntityGraphStore((state) => state.analysis.topic);
+  const entityCount = useEntityGraphStore(
+    (state) => state.analysis.entities.length,
+  );
   const [chatCollapsed, setChatCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(200);
+  const [chatWidth, setChatWidth] = useState(320);
   const canvasSurfaceRef = useRef<HTMLDivElement>(null);
 
   const clearEditorChrome = useCallback(() => {
@@ -70,9 +113,7 @@ export default function EditorLayout() {
   const handleNewAnalysis = useCallback(() => {
     const state = useEntityGraphStore.getState();
     if (state.isDirty) {
-      const confirmed = window.confirm(
-        "You have unsaved analysis changes. Discard them and start a new analysis?",
-      );
+      const confirmed = window.confirm(t("analysis.unsavedChanges"));
       if (!confirmed) {
         return;
       }
@@ -81,7 +122,7 @@ export default function EditorLayout() {
     analysisClient.abort();
     clearEditorChrome();
     useEntityGraphStore.getState().newAnalysis("");
-  }, [clearEditorChrome]);
+  }, [clearEditorChrome, t]);
 
   const startOrchestrator = useCallback(
     (topic: string, provider?: string, model?: string) => {
@@ -219,6 +260,9 @@ export default function EditorLayout() {
     [startOrchestrator],
   );
 
+  const showAnalysisLauncher =
+    analysisTopic.trim().length === 0 && entityCount === 0;
+
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex h-screen flex-col bg-background">
@@ -229,12 +273,51 @@ export default function EditorLayout() {
         />
 
         <div className="flex min-h-0 flex-1">
-          <PhaseSidebar
-            onPhaseFilter={setPhaseFilter}
-            onRerunPhase={handleRerunPhase}
-            onSearch={handleSearch}
-            activeFilter={phaseFilter}
-          />
+          {sidebarCollapsed ? (
+            <div className="flex w-10 flex-col items-center border-r border-zinc-700 bg-zinc-900 pt-2">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setSidebarCollapsed(false)}
+                className="text-muted-foreground"
+              >
+                <PanelLeft size={16} />
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div
+                className="flex shrink-0 flex-col border-r border-zinc-700 bg-zinc-900"
+                style={{ width: sidebarWidth }}
+              >
+                <div className="flex items-center justify-end border-b border-zinc-700 px-1 py-0.5">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => setSidebarCollapsed(true)}
+                    className="text-muted-foreground"
+                  >
+                    <PanelLeftClose size={16} />
+                  </Button>
+                </div>
+                <div className="min-h-0 flex-1">
+                  <PhaseSidebar
+                    onPhaseFilter={setPhaseFilter}
+                    onRerunPhase={handleRerunPhase}
+                    onSearch={handleSearch}
+                    activeFilter={phaseFilter}
+                  />
+                </div>
+              </div>
+              <ResizeHandle
+                onDrag={(delta) =>
+                  setSidebarWidth((w) =>
+                    Math.min(400, Math.max(140, w + delta)),
+                  )
+                }
+              />
+            </>
+          )}
 
           <div
             ref={canvasSurfaceRef}
@@ -245,6 +328,10 @@ export default function EditorLayout() {
               phaseFilter={phaseFilter}
               searchHighlight={searchHighlight}
             />
+
+            {showAnalysisLauncher && (
+              <AnalysisLauncher onStartAnalysis={startOrchestrator} />
+            )}
 
             <PhaseProgress className="absolute bottom-4 left-1/2 -translate-x-1/2" />
 
@@ -271,25 +358,31 @@ export default function EditorLayout() {
               </Button>
             </div>
           ) : (
-            <div className="flex w-[320px] shrink-0 flex-col border-l border-border bg-card">
-              <div className="flex items-center justify-end border-b border-border px-1 py-0.5">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => setChatCollapsed(true)}
-                  className="text-muted-foreground"
-                >
-                  <PanelRightClose size={16} />
-                </Button>
+            <>
+              <ResizeHandle
+                onDrag={(delta) =>
+                  setChatWidth((w) => Math.min(500, Math.max(240, w - delta)))
+                }
+              />
+              <div
+                className="flex shrink-0 flex-col border-l border-border bg-card"
+                style={{ width: chatWidth }}
+              >
+                <div className="flex items-center justify-end border-b border-border px-1 py-0.5">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => setChatCollapsed(true)}
+                    className="text-muted-foreground"
+                  >
+                    <PanelRightClose size={16} />
+                  </Button>
+                </div>
+                <div className="min-h-0 flex-1">
+                  <AIChatPanel mode="analysis" presentation="docked" />
+                </div>
               </div>
-              <div className="min-h-0 flex-1">
-                <AIChatPanel
-                  mode="analysis"
-                  presentation="docked"
-                  onStartAnalysis={startOrchestrator}
-                />
-              </div>
-            </div>
+            </>
           )}
         </div>
 

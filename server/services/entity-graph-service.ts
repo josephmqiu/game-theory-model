@@ -16,6 +16,7 @@ import type {
   PhaseStatus,
 } from "../../shared/types/methodology";
 import type { AnalysisMutationEvent } from "../../shared/types/events";
+import { serverLog } from "../utils/ai-logger";
 import { RELATIONSHIP_CATEGORY } from "../../src/types/entity";
 import {
   normalizePhaseStates,
@@ -176,6 +177,11 @@ export function createEntity(
     };
     mutate();
     emit({ type: "entity_created", entity });
+    serverLog(provenance.runId, "entity-graph", "entity-created", {
+      id: entity.id,
+      type: entity.type,
+      phase: provenance.phase,
+    });
   }
 
   return entity;
@@ -224,6 +230,12 @@ export function createRelationship(
   };
   mutate();
   emit({ type: "relationship_created", relationship });
+  serverLog(provenance?.runId, "entity-graph", "relationship-created", {
+    id: relationship.id,
+    from: relationship.fromEntityId,
+    to: relationship.toEntityId,
+    type: relationship.type,
+  });
 
   return relationship;
 }
@@ -262,6 +274,11 @@ export function updateEntity(
   };
   mutate();
   emit({ type: "entity_updated", entity: updated, previousProvenance });
+  serverLog(provenance.runId, "entity-graph", "entity-updated", {
+    id,
+    type: updated.type,
+    fields: Object.keys(updates).length,
+  });
 
   // Propagate staleness to downstream dependents so revalidation picks them up
   const downstream = bfsDownstream(id, analysis.relationships);
@@ -434,7 +451,12 @@ export function setPhaseStatus(
 ): void {
   analysis = {
     ...analysis,
-    phases: upsertPhaseStatus(analysis.phases, analysis.entities, phase, status),
+    phases: upsertPhaseStatus(
+      analysis.phases,
+      analysis.entities,
+      phase,
+      status,
+    ),
   };
   mutate();
   emit({ type: "state_changed" });

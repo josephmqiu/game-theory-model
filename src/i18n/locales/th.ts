@@ -438,6 +438,95 @@ const th: TranslationKeys = {
   "variablePicker.bindToVariable": "ผูกกับตัวแปร",
   "variablePicker.unbind": "ยกเลิกการผูกตัวแปร",
   "variablePicker.noVariables": "ยังไม่มีตัวแปร {{type}} ที่กำหนดไว้",
+
+  // ── Analysis ──
+  "analysis.title": "นักวิเคราะห์ทฤษฎีเกม",
+  "analysis.emptyState":
+    "ฉันเป็นนักวิเคราะห์ทฤษฎีเกมของคุณ คุณต้องการวิเคราะห์เหตุการณ์ใด?",
+  "analysis.emptyHint": "ฉันจะระบุผู้เล่น กลยุทธ์ และโครงสร้างเกมโดยอัตโนมัติ",
+  "analysis.inputPlaceholder": "อธิบายเหตุการณ์ที่ต้องการวิเคราะห์...",
+  "analysis.startingAnalysis":
+    'กำลังเริ่มการวิเคราะห์เชิงทฤษฎีเกมของ "{{topic}}"...',
+  "analysis.cannotChangeModel":
+    "ไม่สามารถเปลี่ยนโมเดลขณะกำลังวิเคราะห์ หยุดการวิเคราะห์ก่อน",
+  "analysis.unsavedChanges":
+    "คุณมีการเปลี่ยนแปลงการวิเคราะห์ที่ยังไม่ได้บันทึก ต้องการยกเลิกและเริ่มการวิเคราะห์ใหม่หรือไม่?",
+
+  // ── Analysis Activity ──
+  "analysis.activity.preparing": "กำลังเตรียมการวิเคราะห์เฟส",
+  "analysis.activity.researching": "กำลังค้นคว้าหลักฐาน",
+  "analysis.activity.synthesizing": "กำลังสังเคราะห์ผลลัพธ์เฟส",
+  "analysis.activity.validating": "กำลังตรวจสอบผลลัพธ์ที่มีโครงสร้าง",
+  "analysis.activity.retrying":
+    "กำลังลองเฟสอีกครั้งหลังจากปัญหาการตรวจสอบหรือการส่งข้อมูล",
+  "analysis.activity.default": "กำลังดำเนินการวิเคราะห์เฟส",
+  "analysis.activity.usingTool": "กำลังใช้ {{toolName}}",
+  "analysis.activity.agentProgress": "ความคืบหน้าของเอเจนต์",
+
+  // ── Analysis Progress ──
+  "analysis.progress.phaseFailed": "เฟส {{number}} ล้มเหลว",
+  "analysis.progress.phaseLabel": "เฟส {{number}}: {{name}}",
+  "analysis.progress.phasesComplete": "{{completed}}/{{total}} เฟสเสร็จสมบูรณ์",
+  "analysis.progress.entityCount": "{{count}} เอนทิตี",
+  "analysis.progress.entityCountPlural": "{{count}} เอนทิตี",
+
+  // ── Analysis Failures ──
+  "analysis.failure.timeout": "หมดเวลา",
+  "analysis.failure.parseError": "ข้อผิดพลาดในการแยกวิเคราะห์",
+  "analysis.failure.providerError": "ข้อผิดพลาดของผู้ให้บริการ",
+
+  // ── Analysis Phases ──
+  "analysis.phases.situationalGrounding": "การวางรากฐานสถานการณ์",
+  "analysis.phases.playerIdentification": "การระบุผู้เล่น",
+  "analysis.phases.baselineModel": "โมเดลพื้นฐาน",
+  "analysis.phases.historicalGame": "เกมเชิงประวัติศาสตร์",
+  "analysis.phases.revalidation": "การตรวจสอบซ้ำ",
+  "analysis.phases.formalModeling": "การสร้างแบบจำลองอย่างเป็นทางการ",
+  "analysis.phases.assumptions": "สมมติฐาน",
+  "analysis.phases.elimination": "การกำจัด",
+  "analysis.phases.scenarios": "สถานการณ์จำลอง",
+  "analysis.phases.metaCheck": "การตรวจสอบเชิงอภิมาน",
+
+  // ── Analysis Sidebar ──
+  "analysis.sidebar.rerunPhase": "รันเฟสอีกครั้ง",
+  "analysis.sidebar.searchEntities": "ค้นหาเอนทิตี...",
+
+  // ── Analysis Entities ──
+  "analysis.entities.fact": "ข้อเท็จจริง",
+  "analysis.entities.player": "ผู้เล่น",
+  "analysis.entities.objective": "วัตถุประสงค์",
+  "analysis.entities.game": "เกม",
+  "analysis.entities.strategy": "กลยุทธ์",
+  "analysis.entities.payoff": "ผลตอบแทน",
+  "analysis.entities.rule": "กฎ",
+  "analysis.entities.escalation": "การยกระดับ",
+  "analysis.entities.history": "ประวัติ",
+  "analysis.entities.pattern": "รูปแบบ",
+  "analysis.entities.trust": "ความไว้วางใจ",
+  "analysis.entities.commitment": "พันธสัญญา",
+  "analysis.entities.signal": "สัญญาณ",
+  "analysis.entities.matrix": "เมทริกซ์",
+  "analysis.entities.gameTree": "ต้นไม้เกม",
+  "analysis.entities.equilibrium": "ดุลยภาพ",
+  "analysis.entities.constraints": "ข้อจำกัด",
+  "analysis.entities.crossGame": "ข้ามเกม",
+  "analysis.entities.signalClass": "ประเภทสัญญาณ",
+  "analysis.entities.bargaining": "การต่อรอง",
+  "analysis.entities.optionValue": "มูลค่าทางเลือก",
+  "analysis.entities.behavioral": "เชิงพฤติกรรม",
+  "analysis.entities.assumption": "สมมติฐาน",
+  "analysis.entities.eliminated": "ถูกกำจัด",
+  "analysis.entities.scenario": "สถานการณ์จำลอง",
+  "analysis.entities.thesis": "วิทยานิพนธ์",
+  "analysis.entities.metaCheck": "การตรวจสอบเชิงอภิมาน",
+  "analysis.entities.noMatching": "ไม่มีเอนทิตีที่ตรงกัน",
+  "analysis.entities.searchHint": "ลองใช้คำค้นหาอื่นหรือลบตัวกรองประเภท",
+  "analysis.entities.confidence.high": "สูง",
+  "analysis.entities.confidence.medium": "ปานกลาง",
+  "analysis.entities.confidence.low": "ต่ำ",
+  "analysis.entities.source.ai": "AI",
+  "analysis.entities.source.human": "มนุษย์",
+  "analysis.entities.source.computed": "คำนวณ",
 } as const;
 
 export default th;

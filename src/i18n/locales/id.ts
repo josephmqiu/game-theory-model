@@ -443,6 +443,97 @@ const id: TranslationKeys = {
   "variablePicker.unbind": "Lepaskan variabel",
   "variablePicker.noVariables":
     "Belum ada variabel {{type}} yang didefinisikan",
+
+  // ── Analysis ──
+  "analysis.title": "Analis Teori Permainan",
+  "analysis.emptyState":
+    "Saya analis teori permainan Anda. Peristiwa apa yang ingin Anda analisis?",
+  "analysis.emptyHint":
+    "Saya akan mengidentifikasi pemain, strategi, dan struktur permainan secara otomatis.",
+  "analysis.inputPlaceholder": "Deskripsikan peristiwa untuk dianalisis...",
+  "analysis.startingAnalysis":
+    'Memulai analisis teori permainan untuk "{{topic}}"...',
+  "analysis.cannotChangeModel":
+    "Tidak dapat mengubah model saat analisis berjalan. Hentikan analisis terlebih dahulu.",
+  "analysis.unsavedChanges":
+    "Anda memiliki perubahan analisis yang belum disimpan. Buang dan mulai analisis baru?",
+
+  // ── Analysis Activity ──
+  "analysis.activity.preparing": "Mempersiapkan analisis fase.",
+  "analysis.activity.researching": "Meneliti bukti.",
+  "analysis.activity.synthesizing": "Menyintesis keluaran fase.",
+  "analysis.activity.validating": "Memvalidasi keluaran terstruktur.",
+  "analysis.activity.retrying":
+    "Mencoba ulang fase setelah masalah validasi atau transport.",
+  "analysis.activity.default": "Melanjutkan analisis fase.",
+  "analysis.activity.usingTool": "Menggunakan {{toolName}}",
+  "analysis.activity.agentProgress": "Progres agent",
+
+  // ── Analysis Progress ──
+  "analysis.progress.phaseFailed": "Fase {{number}} gagal",
+  "analysis.progress.phaseLabel": "Fase {{number}}: {{name}}",
+  "analysis.progress.phasesComplete": "{{completed}}/{{total}} fase selesai",
+  "analysis.progress.entityCount": "{{count}} entitas",
+  "analysis.progress.entityCountPlural": "{{count}} entitas",
+
+  // ── Analysis Failures ──
+  "analysis.failure.timeout": "waktu habis",
+  "analysis.failure.parseError": "kesalahan parsing",
+  "analysis.failure.providerError": "kesalahan penyedia",
+
+  // ── Analysis Phases ──
+  "analysis.phases.situationalGrounding": "Landasan Situasional",
+  "analysis.phases.playerIdentification": "Identifikasi Pemain",
+  "analysis.phases.baselineModel": "Model Dasar",
+  "analysis.phases.historicalGame": "Permainan Historis",
+  "analysis.phases.revalidation": "Validasi Ulang",
+  "analysis.phases.formalModeling": "Pemodelan Formal",
+  "analysis.phases.assumptions": "Asumsi",
+  "analysis.phases.elimination": "Eliminasi",
+  "analysis.phases.scenarios": "Skenario",
+  "analysis.phases.metaCheck": "Pemeriksaan Meta",
+
+  // ── Analysis Sidebar ──
+  "analysis.sidebar.rerunPhase": "Jalankan ulang fase",
+  "analysis.sidebar.searchEntities": "Cari entitas...",
+
+  // ── Analysis Entities ──
+  "analysis.entities.fact": "Fakta",
+  "analysis.entities.player": "Pemain",
+  "analysis.entities.objective": "Tujuan",
+  "analysis.entities.game": "Permainan",
+  "analysis.entities.strategy": "Strategi",
+  "analysis.entities.payoff": "Imbalan",
+  "analysis.entities.rule": "Aturan",
+  "analysis.entities.escalation": "Eskalasi",
+  "analysis.entities.history": "Riwayat",
+  "analysis.entities.pattern": "Pola",
+  "analysis.entities.trust": "Kepercayaan",
+  "analysis.entities.commitment": "Komitmen",
+  "analysis.entities.signal": "Sinyal",
+  "analysis.entities.matrix": "Matriks",
+  "analysis.entities.gameTree": "Pohon Permainan",
+  "analysis.entities.equilibrium": "Keseimbangan",
+  "analysis.entities.constraints": "Kendala",
+  "analysis.entities.crossGame": "Lintas Permainan",
+  "analysis.entities.signalClass": "Kelas Sinyal",
+  "analysis.entities.bargaining": "Tawar-menawar",
+  "analysis.entities.optionValue": "Nilai Opsi",
+  "analysis.entities.behavioral": "Perilaku",
+  "analysis.entities.assumption": "Asumsi",
+  "analysis.entities.eliminated": "Tereliminasi",
+  "analysis.entities.scenario": "Skenario",
+  "analysis.entities.thesis": "Tesis",
+  "analysis.entities.metaCheck": "Pemeriksaan Meta",
+  "analysis.entities.noMatching": "Tidak ada entitas yang cocok",
+  "analysis.entities.searchHint":
+    "Coba kata kunci lain atau hapus filter tipe.",
+  "analysis.entities.confidence.high": "Tinggi",
+  "analysis.entities.confidence.medium": "Sedang",
+  "analysis.entities.confidence.low": "Rendah",
+  "analysis.entities.source.ai": "AI",
+  "analysis.entities.source.human": "Manusia",
+  "analysis.entities.source.computed": "Komputasi",
 } as const;
 
 export default id;

@@ -39,6 +39,7 @@ import {
 import { PHASE_PROMPTS } from "../agents/phase-prompts";
 import { createRunLogger } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
+import type { AnalysisActivityCallback } from "./ai/analysis-activity";
 
 interface AnalysisAdapter {
   runAnalysisPhase<T = unknown>(
@@ -51,6 +52,7 @@ interface AnalysisAdapter {
       runId?: string;
       maxTurns?: number;
       webSearch?: boolean;
+      onActivity?: AnalysisActivityCallback;
     },
   ): Promise<T>;
 }
@@ -93,6 +95,7 @@ export interface PhaseContext {
   runId?: string;
   signal?: AbortSignal;
   logger?: RunLogger;
+  onActivity?: AnalysisActivityCallback;
 }
 
 // ── Supported phase types ──
@@ -1891,8 +1894,17 @@ export async function runPhase(
   const model = context?.model ?? "claude-sonnet-4-20250514";
   const provider = context?.provider ?? "anthropic";
   const schema = buildOutputSchema(phase);
+  const emitActivity = (message: string, toolName?: string) => {
+    context?.onActivity?.({
+      kind: toolName === "WebSearch" ? "web-search" : toolName ? "tool" : "note",
+      message,
+      ...(toolName ? { toolName } : {}),
+    });
+  };
+  let emittedResearchMilestone = false;
 
   logger.log("analysis-service", "phase-start", { phase, provider, model });
+  emitActivity("Preparing phase analysis");
 
   // Check abort signal before adapter call
   if (context?.signal?.aborted) {
@@ -1918,6 +1930,16 @@ export async function runPhase(
         signal: context?.signal,
         runId: context?.runId,
         webSearch: context?.runtime?.webSearch,
+        onActivity: (activity) => {
+          if (
+            !emittedResearchMilestone &&
+            (activity.kind === "tool" || activity.kind === "web-search")
+          ) {
+            emittedResearchMilestone = true;
+            emitActivity("Researching evidence");
+          }
+          context?.onActivity?.(activity);
+        },
       },
     );
   } catch (err) {
@@ -1931,10 +1953,12 @@ export async function runPhase(
 
   // If the adapter returned a string (raw text), fall back to text parsing
   if (typeof adapterResult === "string") {
+    emitActivity("Synthesizing phase output");
     logger.warn("analysis-service", "text-fallback", {
       phase,
       responseLength: adapterResult.length,
     });
+    emitActivity("Validating structured output");
     const textResult = parseTextResponse(adapterResult, phase);
     if (textResult.success) {
       logger.log("analysis-service", "validation-success", {
@@ -1956,6 +1980,7 @@ export async function runPhase(
   }
 
   // Structured output — validate with Zod
+  emitActivity("Synthesizing phase output");
   logger.log("analysis-service", "structured-output", {
     phase,
     entitiesCount:
@@ -1974,6 +1999,7 @@ export async function runPhase(
         : 0,
   });
 
+  emitActivity("Validating structured output");
   const validated = validatePhaseOutput(adapterResult, phase);
   if (validated.success) {
     logger.log("analysis-service", "validation-success", {
