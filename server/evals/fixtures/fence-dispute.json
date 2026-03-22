@@ -4,17 +4,56 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 8],
-      "requiredFactCategories": ["position", "rule"],
+      "entityCountRange": [
+        4,
+        8
+      ],
+      "requiredFactCategories": [
+        "position",
+        "rule"
+      ],
       "minDistinctFactCategories": 2,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "requiredPatterns": ["fence|boundary|property line"],
-      "forbiddenPatterns": ["geopolitical", "international", "military", "war", "sanctions"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "requiredPatterns": [
+        "fence|boundary|property line"
+      ],
+      "forbiddenPatterns": [
+        "geopolitical",
+        "international",
+        "military",
+        "war",
+        "sanctions"
+      ],
       "rubrics": [
         "Facts should stay proportional to a low-stakes neighbor dispute.",
         "Facts should capture each side's position and the fence or boundary facts that matter.",
         "Facts should avoid importing frameworks from high-stakes conflicts."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        4,
+        10
+      ],
+      "forbiddenPatterns": [
+        "internal agent",
+        "cognitive",
+        "heuristic",
+        "rational.?optimizer",
+        "pattern.?exploiter"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor with independent agency in the situation.",
+        "Each player should have at least one objective that is specific to their position in this scenario.",
+        "Do not invent players not implied by the prompt — if the prompt describes two parties, there should be two players unless a third party is clearly relevant."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"neighbor-a-position\",\"confidence\":\"high\",\"rationale\":\"Establishes one party's ownership claim and maintenance position\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"typical fence dispute analysis\",\"content\":\"Neighbor A claims the shared fence is their sole responsibility and property, arguing they installed and maintained it for years while the other neighbor contributed nothing\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"neighbor-b-position\",\"confidence\":\"high\",\"rationale\":\"Establishes the opposing party's shared ownership position\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"typical fence dispute analysis\",\"content\":\"Neighbor B asserts the fence is on the property line making it a shared boundary structure, and demands equal say in any modifications or replacement decisions\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"replacement-cost\",\"confidence\":\"medium\",\"rationale\":\"Quantifies the economic stakes that drive strategic behavior\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"fence industry estimates\",\"content\":\"Replacing the 100-foot fence section with equivalent materials costs approximately $3,000-4,500, representing significant expense for either household\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"property-survey-rule\",\"confidence\":\"high\",\"rationale\":\"Identifies the formal mechanism for resolving ownership disputes\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"property law standards\",\"content\":\"Most jurisdictions require a professional property survey to definitively establish boundary lines and determine fence ownership rights\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"neighbor-a-leverage\",\"confidence\":\"medium\",\"rationale\":\"Shows one party's ability to take unilateral action and evidence advantage\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"dispute analysis\",\"content\":\"Neighbor A has financial capability to replace the fence unilaterally and historical documentation of past maintenance expenses\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"neighbor-b-leverage\",\"confidence\":\"medium\",\"rationale\":\"Shows the other party's ability to prevent action and force negotiation\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"dispute analysis\",\"content\":\"Neighbor B can block any fence modifications through legal injunction if the fence touches their property line, creating veto power over unilateral action\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"mediation-option\",\"confidence\":\"high\",\"rationale\":\"Establishes the cooperative resolution mechanism and its cost advantage\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"dispute resolution standards\",\"content\":\"Local mediation services offer cost-effective alternative to litigation for boundary disputes, typically costing $200-500 versus $2,000-10,000 in legal fees\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"relationship-impact\",\"confidence\":\"high\",\"rationale\":\"Identifies the broader social and economic consequences of aggressive strategies\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"neighbor relations analysis\",\"content\":\"Escalation to litigation typically destroys long-term neighbor relationships and reduces both properties' market appeal to future buyers\",\"category\":\"impact\"}}]"
   }
 }

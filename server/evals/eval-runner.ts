@@ -55,7 +55,9 @@ export async function runEval(
           const result = await runPhase(phase, fixture.topic, {
             provider,
             model,
-            priorEntities: chain ? chainedPriorContext : undefined,
+            priorEntities: chain
+              ? chainedPriorContext
+              : fixture.priorContext?.[phase],
             runtime: { webSearch: false, effortLevel: effort },
           });
           const latencyMs = Date.now() - start;
@@ -78,11 +80,15 @@ export async function runEval(
             continue;
           }
 
+          const priorCtx = chain
+            ? chainedPriorContext
+            : fixture.priorContext?.[phase];
           const codeResults = runCodeGraders(
             result.entities as any,
             result.relationships as any,
             phase,
             expectations,
+            priorCtx,
           );
 
           const modelResults = fast

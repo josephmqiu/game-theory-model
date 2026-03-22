@@ -15,6 +15,8 @@ import type {
 import type { Analysis } from "../../../shared/types/entity";
 import type { AnalysisRuntimeOverrides } from "../../../shared/types/analysis-runtime";
 import { V3_PHASES } from "@/types/methodology";
+import i18n from "@/i18n";
+import { formatPhaseActivityNote } from "./phase-activity-format";
 
 export interface AnalysisPhaseActivityEvent {
   type: "phase_activity";
@@ -31,7 +33,6 @@ export type AnalysisProgressStreamEvent =
 
 type ProgressCallback = (event: AnalysisProgressStreamEvent) => void;
 
-const ANALYSIS_TIMEOUT_MS = 15 * 60 * 1000;
 const RECOVERY_POLL_INTERVAL_MS = 2_000;
 
 let currentController: AbortController | null = null;
@@ -185,6 +186,7 @@ export function isRunning(): boolean {
 
 export function abort(): void {
   stopRecoveryPolling();
+  useEntityGraphStore.getState().setPhaseActivityText(null);
   setRunStatus({
     status: "idle",
     runId: null,
@@ -274,7 +276,6 @@ export async function startAnalysis(
       total: V3_PHASES.length,
     },
   });
-  const timeout = setTimeout(() => controller.abort(), ANALYSIS_TIMEOUT_MS);
 
   try {
     const response = await fetch("/api/ai/analyze", {
@@ -330,16 +331,21 @@ export async function startAnalysis(
             const store = useEntityGraphStore.getState();
             if (event.type === "phase_started") {
               store.setPhaseStatusLocal(event.phase, "running");
+              store.setPhaseActivityText(i18n.t("analysis.activity.preparing"));
             } else if (event.type === "phase_completed") {
               store.setPhaseStatusLocal(event.phase, "complete");
+              store.setPhaseActivityText(null);
             } else if (event.type === "phase_activity") {
-              // Renderer-only activity stream; the entity graph remains unchanged.
+              store.setPhaseActivityText(
+                formatPhaseActivityNote(event as AnalysisPhaseActivityEvent),
+              );
             } else if (event.type === "analysis_failed") {
               for (const phaseState of store.analysis.phases) {
                 if (phaseState.status === "running") {
                   store.setPhaseStatusLocal(phaseState.phase, "failed");
                 }
               }
+              store.setPhaseActivityText(null);
             }
 
             updateRunStatusFromProgress(event as AnalysisProgressStreamEvent);
@@ -375,10 +381,12 @@ export async function startAnalysis(
     );
     throw error;
   } finally {
-    clearTimeout(timeout);
     currentController = null;
 
-    if (currentRunStatus.status === "running" && !controller.signal.aborted) {
+    // If the stream ends before we receive a terminal progress event,
+    // recover from /api/ai/state until the orchestrator reports completion.
+    // Explicit user aborts set local run status to idle before aborting.
+    if (currentRunStatus.status === "running") {
       console.warn(
         "[analysis-client] stream-ended-while-running, starting recovery polling",
       );

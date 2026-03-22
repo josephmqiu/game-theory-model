@@ -1,4 +1,7 @@
 const ENV_PREFIX = "GAME_THEORY_ANALYSIS_RUNTIME_";
+const DEFAULT_ORCHESTRATOR_PHASE_TIMEOUT_MS = 9 * 60 * 1000;
+const DEFAULT_ORCHESTRATOR_RUN_TIMEOUT_MS = 30 * 60 * 1000;
+const DEFAULT_ANALYZE_SSE_STREAM_TIMEOUT_BUFFER_MS = 60 * 1000;
 
 export interface AnalysisRuntimeConfig {
   orchestrator: {
@@ -61,18 +64,23 @@ function parseBooleanEnv(name: string, fallback: boolean): boolean {
   return fallback;
 }
 
+const orchestratorRunTimeoutMs = parseIntegerEnv(
+  "ORCHESTRATOR_RUN_TIMEOUT_MS",
+  DEFAULT_ORCHESTRATOR_RUN_TIMEOUT_MS,
+);
+
+const defaultAnalyzeSseStreamTimeoutMs =
+  orchestratorRunTimeoutMs + DEFAULT_ANALYZE_SSE_STREAM_TIMEOUT_BUFFER_MS;
+
 export const analysisRuntimeConfig: AnalysisRuntimeConfig = Object.freeze({
   orchestrator: Object.freeze({
     maxRetries: parseIntegerEnv("ORCHESTRATOR_MAX_RETRIES", 2),
     maxLoopbackPasses: parseIntegerEnv("ORCHESTRATOR_MAX_LOOPBACK_PASSES", 4),
     phaseTimeoutMs: parseIntegerEnv(
       "ORCHESTRATOR_PHASE_TIMEOUT_MS",
-      9 * 60 * 1000,
+      DEFAULT_ORCHESTRATOR_PHASE_TIMEOUT_MS,
     ),
-    runTimeoutMs: parseIntegerEnv(
-      "ORCHESTRATOR_RUN_TIMEOUT_MS",
-      30 * 60 * 1000,
-    ),
+    runTimeoutMs: orchestratorRunTimeoutMs,
     maxResultSnapshots: parseIntegerEnv(
       "ORCHESTRATOR_MAX_RESULT_SNAPSHOTS",
       10,
@@ -85,7 +93,7 @@ export const analysisRuntimeConfig: AnalysisRuntimeConfig = Object.freeze({
     ),
     streamTimeoutMs: parseIntegerEnv(
       "ANALYZE_SSE_STREAM_TIMEOUT_MS",
-      16 * 60 * 1000,
+      defaultAnalyzeSseStreamTimeoutMs,
     ),
     snapshotSettleDelayMs: parseIntegerEnv(
       "ANALYZE_SSE_SNAPSHOT_SETTLE_DELAY_MS",

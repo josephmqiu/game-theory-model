@@ -25,7 +25,11 @@ interface AnalyzeBody {
 const KEEPALIVE_INTERVAL_MS =
   analysisRuntimeConfig.analyzeSse.keepaliveIntervalMs;
 
-/** Safety timeout (ms) — close stream even if orchestrator never emits terminal event */
+/**
+ * Safety timeout (ms) for the SSE transport.
+ * This may end the live stream before the orchestrator finishes, so clients
+ * must recover final state from /api/ai/state if the run is still active.
+ */
 const STREAM_TIMEOUT_MS = analysisRuntimeConfig.analyzeSse.streamTimeoutMs;
 const SNAPSHOT_SETTLE_DELAY_MS =
   analysisRuntimeConfig.analyzeSse.snapshotSettleDelayMs;
@@ -112,7 +116,8 @@ export default defineEventHandler(async (event) => {
           }
         });
 
-        // Safety timeout — prevent stream from hanging indefinitely
+        // Safety timeout — prevent this transport from hanging indefinitely.
+        // The orchestrator may still finish after the stream closes.
         setTimeout(() => {
           if (!runComplete) {
             runComplete = true;

@@ -23,7 +23,7 @@ vi.mock("../../../config/analysis-runtime", () => ({
   analysisRuntimeConfig: {
     analyzeSse: {
       keepaliveIntervalMs: 60_000,
-      streamTimeoutMs: 1000,
+      streamTimeoutMs: 10,
       snapshotSettleDelayMs: 0,
     },
   },
@@ -208,5 +208,20 @@ describe("/api/ai/analyze", () => {
     expect(body).toContain('"channel":"progress"');
     expect(body).toContain('"type":"phase_activity"');
     expect(body).toContain('"message":"Preparing phase analysis"');
+  });
+
+  it("emits a final snapshot even if the SSE transport times out before terminal progress", async () => {
+    readBodyMock.mockResolvedValue({
+      topic: "Trade conflict",
+    });
+    runFullMock.mockResolvedValue({ runId: "run-timeout" });
+
+    const route = (await import("../analyze")).default;
+    const response = (await route(createEvent() as never)) as Response;
+    const body = await response.text();
+
+    expect(body).toContain('"channel":"started"');
+    expect(body).toContain('"runId":"run-timeout"');
+    expect(body).toContain('"channel":"snapshot"');
   });
 });

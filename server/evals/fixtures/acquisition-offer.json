@@ -4,16 +4,52 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 10],
-      "requiredFactCategories": ["position", "economic", "rule"],
+      "entityCountRange": [
+        4,
+        10
+      ],
+      "requiredFactCategories": [
+        "position",
+        "economic",
+        "rule"
+      ],
       "minDistinctFactCategories": 3,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "requiredPatterns": ["valuation|price", "fallback|alternative", "acquisition|offer"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "requiredPatterns": [
+        "valuation|price",
+        "fallback|alternative",
+        "acquisition|offer"
+      ],
       "rubrics": [
         "Facts should separate each side's position from the valuation facts that shape the deal.",
         "Facts should cover the offer, the outside option, and the bargaining leverage without inventing company-specific numbers.",
         "Facts should stay on the acquisition decision and not drift into generic startup advice."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        4,
+        10
+      ],
+      "forbiddenPatterns": [
+        "internal agent",
+        "cognitive",
+        "heuristic",
+        "rational.?optimizer",
+        "pattern.?exploiter"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor with independent agency in the situation.",
+        "Each player should have at least one objective that is specific to their position in this scenario.",
+        "Do not invent players not implied by the prompt — if the prompt describes two parties, there should be two players unless a third party is clearly relevant."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"startup-position-1\",\"confidence\":\"high\",\"rationale\":\"This captures the core strategic choice facing the startup - accept certain value now vs. pursue potentially higher but riskier independent growth\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"typical startup acquisition scenario\",\"content\":\"Startup founders and board must evaluate acquisition offer against future growth potential, considering current runway, market position, and ability to reach next funding milestone independently\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"acquirer-position-1\",\"confidence\":\"high\",\"rationale\":\"Defines the acquirer's strategic calculus - they're buying specific value while managing downside risks\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"typical acquisition dynamics\",\"content\":\"Acquiring company seeks strategic asset (talent, technology, market access, or competitive threat elimination) while managing integration costs and cultural fit risks\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"economic-valuation-1\",\"confidence\":\"high\",\"rationale\":\"Establishes the economic framework both parties use to evaluate fairness of the offer\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"acquisition valuation principles\",\"content\":\"Acquisition price typically reflects multiple of revenue, strategic premium over market valuation, and comparison to recent comparable transactions in the sector\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"startup-capability-1\",\"confidence\":\"high\",\"rationale\":\"Defines the startup's negotiating position and ability to walk away from the deal\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"startup leverage factors\",\"content\":\"Startup's leverage depends on current financial runway, revenue growth trajectory, competitive positioning, and availability of alternative funding or acquisition options\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"acquirer-capability-1\",\"confidence\":\"high\",\"rationale\":\"Establishes the acquirer's sources of leverage and alternatives in the negotiation\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"acquirer advantages\",\"content\":\"Acquiring company has financial resources, market access, operational scale, and ability to pursue alternative targets or internal development if negotiations fail\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"timing-constraint-1\",\"confidence\":\"high\",\"rationale\":\"Time constraints affect both parties' strategic options and create urgency in the decision process\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"acquisition process constraints\",\"content\":\"Acquisition decision involves time pressure from offer expiration, due diligence requirements, regulatory approvals, and potential market timing considerations\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"stakeholder-impact-1\",\"confidence\":\"high\",\"rationale\":\"Multiple stakeholder interests create complexity beyond simple financial optimization\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"acquisition stakeholder effects\",\"content\":\"Acquisition outcome affects employee retention, investor returns, customer relationships, and founder autonomy, creating multiple constituencies with different preferences\",\"category\":\"impact\"}}]"
   }
 }

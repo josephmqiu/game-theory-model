@@ -38,7 +38,7 @@ describe("analysis-runtime config", () => {
       },
       analyzeSse: {
         keepaliveIntervalMs: 15_000,
-        streamTimeoutMs: 16 * 60 * 1000,
+        streamTimeoutMs: 31 * 60 * 1000,
         snapshotSettleDelayMs: 100,
       },
       claude: {
@@ -142,6 +142,19 @@ describe("analysis-runtime config", () => {
     });
   });
 
+  it("derives the default stream timeout from the configured run timeout", async () => {
+    resetAnalysisRuntimeEnv();
+    process.env.GAME_THEORY_ANALYSIS_RUNTIME_ORCHESTRATOR_RUN_TIMEOUT_MS =
+      "5678";
+
+    const { analysisRuntimeConfig } = await importAnalysisRuntime();
+
+    expect(analysisRuntimeConfig.orchestrator.runTimeoutMs).toBe(5678);
+    expect(analysisRuntimeConfig.analyzeSse.streamTimeoutMs).toBe(
+      5678 + 60 * 1000,
+    );
+  });
+
   it("falls back to defaults for invalid numeric and boolean env vars", async () => {
     resetAnalysisRuntimeEnv();
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_ORCHESTRATOR_MAX_RETRIES = "NaN";
@@ -192,7 +205,7 @@ describe("analysis-runtime config", () => {
       },
       analyzeSse: {
         keepaliveIntervalMs: 15_000,
-        streamTimeoutMs: 16 * 60 * 1000,
+        streamTimeoutMs: 31 * 60 * 1000,
         snapshotSettleDelayMs: 100,
       },
       claude: {

@@ -4,16 +4,54 @@
   "complexityTier": "trivial",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [2, 5],
-      "requiredFactCategories": ["rule"],
+      "entityCountRange": [
+        2,
+        5
+      ],
+      "requiredFactCategories": [
+        "rule"
+      ],
       "minDistinctFactCategories": 1,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "forbiddenPatterns": ["real-world analogy", "behavioral experiment", "psychology"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "forbiddenPatterns": [
+        "real-world analogy",
+        "behavioral experiment",
+        "psychology"
+      ],
       "rubrics": [
         "Facts should describe the head-to-head game rules and the mixed-strategy equilibrium directly.",
         "Facts should avoid turning the toy game into a real-world analogy or research vignette.",
         "Facts should stay small and bounded rather than adding decorative context."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        2,
+        6
+      ],
+      "forbiddenPatterns": [
+        "referee",
+        "internal agent",
+        "cognitive",
+        "heuristic",
+        "rational.?optimizer",
+        "pattern.?exploiter",
+        "enforcer",
+        "audience",
+        "observer"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor who independently chooses actions in the game, not a cognitive mode, rule enforcer, or abstract concept.",
+        "Player count should match the actual number of independent decision-makers in the game.",
+        "Objectives should be specific to the game described, not generic game-theory goals like \"maximize utility\"."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"fact-1\",\"confidence\":\"high\",\"rationale\":\"Defines the basic setup and number of players in the game\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"standard game theory\",\"source\":\"game theory literature\",\"content\":\"Matching pennies is a two-player simultaneous-move game where each player independently chooses to display either heads or tails on a penny\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-2\",\"confidence\":\"high\",\"rationale\":\"Establishes the win conditions and payoff structure\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"standard game theory\",\"source\":\"game theory literature\",\"content\":\"Player 1 wins if both pennies show the same side (both heads or both tails), while Player 2 wins if the pennies show different sides\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-3\",\"confidence\":\"high\",\"rationale\":\"Defines the fundamental competitive structure of the game\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"standard game theory\",\"source\":\"game theory literature\",\"content\":\"The game is zero-sum, meaning one player's gain exactly equals the other player's loss\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-4\",\"confidence\":\"high\",\"rationale\":\"Explains why pure strategies fail in this game structure\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"standard game theory\",\"source\":\"game theory literature\",\"content\":\"There is no pure strategy Nash equilibrium because any predictable strategy can be exploited by the opponent\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-5\",\"confidence\":\"high\",\"rationale\":\"Identifies the optimal solution strategy for both players\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"standard game theory\",\"source\":\"game theory literature\",\"content\":\"The unique mixed strategy Nash equilibrium has both players randomizing between heads and tails with equal probability (50-50)\",\"category\":\"rule\"}}]"
   }
 }

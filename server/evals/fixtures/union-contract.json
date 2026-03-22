@@ -4,16 +4,53 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 10],
-      "requiredFactCategories": ["position", "economic", "rule", "action"],
+      "entityCountRange": [
+        4,
+        10
+      ],
+      "requiredFactCategories": [
+        "position",
+        "economic",
+        "rule",
+        "action"
+      ],
       "minDistinctFactCategories": 3,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "requiredPatterns": ["union|management", "contract", "fallback|strike"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "requiredPatterns": [
+        "union|management",
+        "contract",
+        "fallback|strike"
+      ],
       "rubrics": [
         "Facts should cover the bargaining structure and the information asymmetry between the parties.",
         "Facts should include fallback positions or strike leverage without assuming a specific industry.",
         "Facts should avoid inventing facts that are not grounded in the prompt."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        4,
+        10
+      ],
+      "forbiddenPatterns": [
+        "internal agent",
+        "cognitive",
+        "heuristic",
+        "rational.?optimizer",
+        "pattern.?exploiter"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor with independent agency in the situation.",
+        "Each player should have at least one objective that is specific to their position in this scenario.",
+        "Do not invent players not implied by the prompt — if the prompt describes two parties, there should be two players unless a third party is clearly relevant."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"fact-union-position\",\"confidence\":\"high\",\"rationale\":\"These are standard union priorities that drive most contract negotiations and define their strategic objectives\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"typical union negotiation patterns\",\"content\":\"Union seeks wage increases of 3-5% annually, improved healthcare benefits with reduced employee contributions, enhanced job security protections, and better work-life balance provisions including overtime protections\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-management-position\",\"confidence\":\"high\",\"rationale\":\"Cost control and operational flexibility are fundamental management objectives that shape their negotiation strategy\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"typical management negotiation patterns\",\"content\":\"Management aims to control labor costs through modest wage increases (1-2%), maintain operational flexibility for scheduling and work assignments, shift more healthcare costs to employees, and avoid restrictive work rules that limit productivity\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-economic-pressure\",\"confidence\":\"high\",\"rationale\":\"Economic conditions create the fundamental tension driving both sides' positions and negotiation urgency\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"economic environment analysis\",\"content\":\"Rising inflation pressures workers to demand higher wages to maintain purchasing power, while companies face margin pressure from supply chain costs and competitive market conditions requiring cost discipline\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"fact-legal-framework\",\"confidence\":\"high\",\"rationale\":\"Legal framework establishes the rules of engagement and available tactics for both parties\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"National Labor Relations Act framework\",\"content\":\"Federal law requires good faith bargaining, prohibits unfair labor practices, provides strike rights after contract expiration, and mandates specific notification procedures for contract modifications\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-union-leverage\",\"confidence\":\"high\",\"rationale\":\"Union's negotiating power derives from collective action capabilities that can disrupt operations\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"union strategic capabilities\",\"content\":\"Union can leverage strike authorization vote, work slowdowns, public pressure campaigns, and member solidarity to pressure management, with effectiveness depending on membership unity and financial strike fund resources\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"fact-management-leverage\",\"confidence\":\"high\",\"rationale\":\"Management's negotiating power comes from operational flexibility and ability to continue operations during conflicts\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"management strategic capabilities\",\"content\":\"Management can use hiring replacement workers, transferring operations, lockouts, and financial resources to withstand work stoppages, with effectiveness depending on operational alternatives and financial reserves\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"fact-worker-impact\",\"confidence\":\"high\",\"rationale\":\"Worker welfare creates urgency pressure that influences both union strategy and negotiation timeline\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026-03-21\",\"source\":\"workforce impact analysis\",\"content\":\"Current workers face income uncertainty during negotiations and potential loss of wages during any work stoppage, creating pressure for timely resolution while maintaining support for union position\",\"category\":\"impact\"}},{\"id\":null,\"ref\":\"fact-contract-deadline\",\"confidence\":\"high\",\"rationale\":\"Deadline constraint creates time pressure that fundamentally shapes negotiation dynamics and tactical decisions\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"contract expiration date\",\"source\":\"typical contract negotiation timeline\",\"content\":\"Contract expiration creates deadline pressure where failure to reach agreement typically triggers automatic work stoppage or extension under previous terms, concentrating negotiating pressure as deadline approaches\",\"category\":\"action\"}}]"
   }
 }

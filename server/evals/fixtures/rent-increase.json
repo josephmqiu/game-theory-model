@@ -4,16 +4,52 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 8],
-      "requiredFactCategories": ["economic", "position", "rule"],
+      "entityCountRange": [
+        4,
+        8
+      ],
+      "requiredFactCategories": [
+        "economic",
+        "position",
+        "rule"
+      ],
       "minDistinctFactCategories": 2,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "requiredPatterns": ["rent", "landlord", "tenant"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "requiredPatterns": [
+        "rent",
+        "landlord",
+        "tenant"
+      ],
       "rubrics": [
         "Facts should focus on the landlord-tenant dynamic and the costs that motivate the rent decision.",
         "Facts should capture market conditions without expanding into housing policy or macroeconomics.",
         "Facts should stay grounded in the specific rent-increase choice rather than generic housing commentary."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        4,
+        10
+      ],
+      "forbiddenPatterns": [
+        "internal agent",
+        "cognitive",
+        "heuristic",
+        "rational.?optimizer",
+        "pattern.?exploiter"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor with independent agency in the situation.",
+        "Each player should have at least one objective that is specific to their position in this scenario.",
+        "Do not invent players not implied by the prompt — if the prompt describes two parties, there should be two players unless a third party is clearly relevant."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"fact-1\",\"confidence\":\"high\",\"rationale\":\"Operating cost pressures are the primary economic driver for rent increase decisions\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2026\",\"source\":\"general market conditions\",\"content\":\"Landlord faces rising property taxes, maintenance costs, and mortgage interest rates that have increased operating expenses by 15-25% over the past two years\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"fact-2\",\"confidence\":\"high\",\"rationale\":\"Tenant longevity creates mutual dependency that affects the strategic balance\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"current\",\"source\":\"tenancy status\",\"content\":\"Long-term tenant has established tenancy rights, predictable payment history, and knowledge of property conditions that increases their bargaining position\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"fact-3\",\"confidence\":\"high\",\"rationale\":\"Captures the landlord's dual objectives of cost recovery and tenant retention\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"ongoing\",\"source\":\"landlord perspective\",\"content\":\"Landlord seeks to balance rent increases to cover rising costs while retaining a reliable tenant and avoiding vacancy periods\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-4\",\"confidence\":\"high\",\"rationale\":\"Represents the tenant's competing priorities between stability and affordability\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"ongoing\",\"source\":\"tenant perspective\",\"content\":\"Tenant values housing stability and established community ties but has limited ability to absorb significant rent increases due to income constraints\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"fact-5\",\"confidence\":\"medium\",\"rationale\":\"Quantifies the landlord's switching costs that constrain aggressive rent increases\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"current\",\"source\":\"market alternatives\",\"content\":\"Landlord faces 2-3 month vacancy periods and screening costs of $1,500-3,000 to replace long-term tenant, plus uncertainty about new tenant reliability\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"fact-6\",\"confidence\":\"medium\",\"rationale\":\"Legal constraints fundamentally shape the available strategies for both parties\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"varies by jurisdiction\",\"source\":\"legal framework\",\"content\":\"Rent control laws or tenant protection statutes limit the timing, amount, and justification required for rent increases, with some areas capping annual increases at 3-10%\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"fact-7\",\"confidence\":\"medium\",\"rationale\":\"Tenant's switching costs affect their ability to credibly threaten to move\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"current\",\"source\":\"tenant alternatives\",\"content\":\"Moving costs of $3,000-8,000 plus security deposits create significant switching costs for tenant, while comparable rental units may cost 20-40% more at current market rates\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"fact-8\",\"confidence\":\"high\",\"rationale\":\"Relationship-specific investments create bilateral dependency that affects negotiation dynamics\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"current\",\"source\":\"relationship dynamics\",\"content\":\"Both parties have invested in the rental relationship through property improvements, familiarity, and reduced transaction costs that create mutual switching barriers\",\"category\":\"impact\"}}]"
   }
 }

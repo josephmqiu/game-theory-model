@@ -418,6 +418,78 @@ describe("analysis-client", () => {
     ]);
   });
 
+  it("recovers from /api/ai/state when the SSE stream ends before terminal progress", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const recoveredEntity = makeEntity("entity-after-stream-end");
+
+    fetchMock
+      .mockResolvedValueOnce(
+        sseResponse([
+          { channel: "started", runId: "run-stream-end" },
+          {
+            channel: "progress",
+            type: "phase_started",
+            phase: "situational-grounding",
+            runId: "run-stream-end",
+          },
+          { type: "done" },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            analysis: makeAnalysis(),
+            runStatus: {
+              status: "running",
+              runId: "run-stream-end",
+              activePhase: "situational-grounding",
+              progress: { completed: 0, total: 9 },
+            },
+          } satisfies AnalysisStateResponse),
+          {
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            analysis: makeAnalysis([recoveredEntity]),
+            runStatus: {
+              status: "idle",
+              runId: null,
+              activePhase: null,
+              progress: { completed: 1, total: 9 },
+            },
+          } satisfies AnalysisStateResponse),
+          {
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      );
+
+    const { useEntityGraphStore } = await import("@/stores/entity-graph-store");
+    const client = await import("../analysis-client");
+    client._resetForTest();
+
+    useEntityGraphStore.getState().newAnalysis("Topic");
+    await client.startAnalysis("Topic");
+
+    expect(client.isRunning()).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(4_000);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/ai/state");
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/ai/state");
+    expect(client.isRunning()).toBe(false);
+    expect(useEntityGraphStore.getState().analysis.entities).toEqual([
+      recoveredEntity,
+    ]);
+  });
+
   it("sends a best-effort abort request and clears local running state", async () => {
     const fetchMock = vi.fn();
     globalThis.fetch = fetchMock as typeof fetch;
@@ -455,6 +527,53 @@ describe("analysis-client", () => {
     await flushMicrotasks();
 
     expect(fetchMock).toHaveBeenLastCalledWith("/api/ai/abort", {
+      method: "POST",
+    });
+    expect(client.isRunning()).toBe(false);
+  });
+
+  it("does not start recovery polling after an explicit abort", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(
+      (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        if (input === "/api/ai/analyze") {
+          return new Promise((_, reject) => {
+            const signal = init?.signal;
+            if (!(signal instanceof AbortSignal)) {
+              reject(new Error("missing signal"));
+              return;
+            }
+            signal.addEventListener("abort", () => reject(new Error("aborted")));
+          });
+        }
+
+        if (input === "/api/ai/abort") {
+          return Promise.resolve(
+            new Response(JSON.stringify({ aborted: true }), {
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
+
+        return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
+      },
+    );
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const client = await import("../analysis-client");
+    client._resetForTest();
+
+    const analysisPromise = client.startAnalysis("Topic");
+    await flushMicrotasks();
+    expect(client.isRunning()).toBe(true);
+
+    client.abort();
+
+    await expect(analysisPromise).resolves.toEqual({ runId: "" });
+    await vi.advanceTimersByTimeAsync(4_000);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/ai/abort", {
       method: "POST",
     });
     expect(client.isRunning()).toBe(false);

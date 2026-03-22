@@ -4,11 +4,24 @@
   "complexityTier": "trivial",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [2, 5],
-      "requiredFactCategories": ["rule"],
+      "entityCountRange": [
+        2,
+        5
+      ],
+      "requiredFactCategories": [
+        "rule"
+      ],
       "minDistinctFactCategories": 1,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "requiredPatterns": ["rock", "paper", "scissors"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "requiredPatterns": [
+        "rock",
+        "paper",
+        "scissors"
+      ],
       "forbiddenPatterns": [
         "lizard",
         "spock",
@@ -25,7 +38,10 @@
       ]
     },
     "player-identification": {
-      "entityCountRange": [2, 6],
+      "entityCountRange": [
+        2,
+        6
+      ],
       "forbiddenPatterns": [
         "referee",
         "internal agent",
@@ -33,22 +49,34 @@
         "heuristic",
         "rational.?optimizer",
         "pattern.?exploiter",
-        "enforcer"
+        "enforcer",
+        "audience",
+        "observer"
       ],
       "rubrics": [
-        "All player entities should be genuine actors who independently choose actions in the game, not cognitive modes, internal mental processes, or rule enforcers",
-        "A standard 2-player game should have exactly 2 player entities"
+        "Every player entity should be a genuine actor who independently chooses actions in the game, not a cognitive mode, rule enforcer, or abstract concept.",
+        "Player count should match the actual number of independent decision-makers in the game.",
+        "Objectives should be specific to the game described, not generic game-theory goals like \"maximize utility\"."
       ]
     },
     "baseline-model": {
-      "entityCountRange": [2, 8],
-      "forbiddenPatterns": ["iterated.*game", "pattern.?exploitation.*game"],
+      "entityCountRange": [
+        2,
+        8
+      ],
+      "forbiddenPatterns": [
+        "iterated.*game",
+        "pattern.?exploitation.*game"
+      ],
       "rubrics": [
         "Should identify one game (RPS), not invent additional game variants unless the prompt explicitly asks about iterated play"
       ]
     },
     "assumptions": {
-      "entityCountRange": [2, 8],
+      "entityCountRange": [
+        2,
+        8
+      ],
       "forbiddenPatterns": [
         "action space is exactly three",
         "game is (strictly )?zero.?sum",
@@ -60,11 +88,21 @@
       ]
     },
     "scenarios": {
-      "entityCountRange": [1, 4],
-      "forbiddenPatterns": ["cheating", "break simultaneity", "collu"],
+      "entityCountRange": [
+        1,
+        4
+      ],
+      "forbiddenPatterns": [
+        "cheating",
+        "break simultaneity",
+        "collu"
+      ],
       "rubrics": [
         "Scenarios for a solved game with one Nash equilibrium should focus on the equilibrium outcome, not speculative behavioral forecasts or rule violations"
       ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"rule-1\",\"confidence\":\"high\",\"rationale\":\"Defines the core dominance relationships that determine winners and losers\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"game theory standard\",\"source\":\"canonical game rules\",\"content\":\"Rock beats scissors, scissors beats paper, paper beats rock, with identical choices resulting in a tie\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"rule-2\",\"confidence\":\"high\",\"rationale\":\"Establishes the information structure that prevents pure strategy solutions\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"game theory standard\",\"source\":\"game structure definition\",\"content\":\"Both players choose simultaneously without knowledge of opponent's choice\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"rule-3\",\"confidence\":\"high\",\"rationale\":\"Defines the payoff structure showing this is a pure conflict game with no mutual gains\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"game theory standard\",\"source\":\"payoff structure\",\"content\":\"Winner receives +1, loser receives -1, ties result in 0 for both players (zero-sum game)\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"rule-4\",\"confidence\":\"high\",\"rationale\":\"Establishes the optimal strategic solution under game-theoretic assumptions\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"game theory standard\",\"source\":\"Nash equilibrium analysis\",\"content\":\"Unique mixed strategy Nash equilibrium exists where each player chooses rock, paper, scissors with equal probability 1/3\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"rule-5\",\"confidence\":\"high\",\"rationale\":\"Symmetry property explains why the equilibrium involves equal probabilities and why pure strategies fail\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"game theory standard\",\"source\":\"strategic structure\",\"content\":\"Game exhibits perfect symmetry with each player having identical strategy sets and payoff functions\",\"category\":\"rule\"}}]"
   }
 }

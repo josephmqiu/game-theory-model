@@ -4,16 +4,52 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 10],
-      "requiredFactCategories": ["economic", "position", "impact"],
+      "entityCountRange": [
+        4,
+        10
+      ],
+      "requiredFactCategories": [
+        "economic",
+        "position",
+        "impact"
+      ],
       "minDistinctFactCategories": 3,
-      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "requiredPatterns": ["subscriber|viewership|ratings", "renewal", "competitor|competition"],
+      "allowedRelationshipTypes": [
+        "supports",
+        "contradicts",
+        "precedes"
+      ],
+      "requiredPatterns": [
+        "subscriber|viewership|ratings",
+        "renewal",
+        "competitor|competition"
+      ],
       "rubrics": [
         "Facts should cover the cost-benefit dynamics that drive the renewal choice.",
         "Facts should include subscriber or audience impact and the competitive position of the service.",
         "Facts should avoid broad media-industry commentary that does not change the decision."
       ]
+    },
+    "player-identification": {
+      "entityCountRange": [
+        4,
+        10
+      ],
+      "forbiddenPatterns": [
+        "internal agent",
+        "cognitive",
+        "heuristic",
+        "rational.?optimizer",
+        "pattern.?exploiter"
+      ],
+      "rubrics": [
+        "Every player entity should be a genuine actor with independent agency in the situation.",
+        "Each player should have at least one objective that is specific to their position in this scenario.",
+        "Do not invent players not implied by the prompt — if the prompt describes two parties, there should be two players unless a third party is clearly relevant."
+      ]
     }
+  },
+  "priorContext": {
+    "player-identification": "[{\"id\":null,\"ref\":\"economic-cost-pressure\",\"confidence\":\"high\",\"rationale\":\"Core economic constraint driving all renewal decisions in current market\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2025-2026\",\"source\":\"industry analysis\",\"content\":\"Streaming services face mounting pressure to control content costs amid slowing subscriber growth, with expensive scripted dramas costing $15-20 million per episode for premium productions\",\"category\":\"economic\"}},{\"id\":null,\"ref\":\"service-renewal-position\",\"confidence\":\"high\",\"rationale\":\"Represents the streaming service's systematic approach to renewal decisions\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"current\",\"source\":\"business strategy\",\"content\":\"Streaming service evaluates renewal based on viewership metrics, completion rates, subscriber acquisition/retention impact, and cost-per-engaged-hour compared to alternative content investments\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"producer-renewal-position\",\"confidence\":\"high\",\"rationale\":\"Captures the production side's strategic interests beyond immediate viewership\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"current\",\"source\":\"production economics\",\"content\":\"Production companies and creators advocate for renewal based on critical acclaim, awards potential, talent retention, and back-end revenue opportunities from international distribution\",\"category\":\"position\"}},{\"id\":null,\"ref\":\"algorithmic-capability\",\"confidence\":\"high\",\"rationale\":\"Information asymmetry gives streaming service significant advantage in renewal negotiations\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"current\",\"source\":\"platform analytics\",\"content\":\"Streaming services have sophisticated data analytics to measure viewer engagement, completion rates, and correlation with subscription behavior that production companies cannot directly access\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"talent-leverage-capability\",\"confidence\":\"medium\",\"rationale\":\"Counter-leverage that production side can exercise, though limited by contractual restrictions\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"current\",\"source\":\"industry contracts\",\"content\":\"Production companies may hold leverage through exclusive talent deals, creator relationships, and potential to shop successful properties to competing platforms\",\"category\":\"capability\"}},{\"id\":null,\"ref\":\"subscriber-impact\",\"confidence\":\"medium\",\"rationale\":\"Key affected party whose behavior influences both sides' strategic calculations\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"current\",\"source\":\"viewer behavior\",\"content\":\"Subscribers of expensive shows experience disappointment and potential churn when series end abruptly without resolution, but may not cancel specifically over single show cancellations\",\"category\":\"impact\"}},{\"id\":null,\"ref\":\"contract-rules\",\"confidence\":\"high\",\"rationale\":\"Structural constraints that define the timing and terms of the renewal decision\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"pre-production\",\"source\":\"industry contracts\",\"content\":\"Most streaming contracts include renewal options at predetermined costs with specific notification deadlines, typically 60-90 days before next season production would begin\",\"category\":\"rule\"}},{\"id\":null,\"ref\":\"competitive-economic-pressure\",\"confidence\":\"high\",\"rationale\":\"Market-level economic pressure that shapes individual renewal decisions across all platforms\",\"type\":\"fact\",\"phase\":\"situational-grounding\",\"data\":{\"type\":\"fact\",\"date\":\"2025-2026\",\"source\":\"market dynamics\",\"content\":\"Intense competition between Netflix, Amazon, Apple, Disney+ and HBO Max has driven up talent costs while subscriber growth plateaus, forcing more selective content investments\",\"category\":\"economic\"}}]"
   }
 }
