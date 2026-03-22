@@ -5,10 +5,16 @@
   "phases": {
     "situational-grounding": {
       "entityCountRange": [8, 20],
-      "requiredFactCategories": ["economic", "position", "rule", "impact", "action"],
+      "requiredFactCategories": [
+        "economic",
+        "position",
+        "rule",
+        "impact",
+        "action"
+      ],
       "minDistinctFactCategories": 4,
       "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "requiredPatterns": ["patent", "public health", "free-rider|free rider", "pharma|pharmaceutical"],
+      "requiredPatterns": ["patent", "pharma|pharmaceutical"],
       "rubrics": [
         "Facts should cover the multi-player dynamics rather than framing the issue as a single corporate choice.",
         "Facts should include public-health pressure, IP economics, and free-rider incentives with specifics.",

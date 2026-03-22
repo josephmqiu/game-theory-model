@@ -35,6 +35,8 @@ export interface TrialResult {
   success: boolean;
   entityCount: number;
   entityTypes: Record<string, number>;
+  entities: unknown[];
+  relationships: unknown[];
   graderResults: GraderResult[];
   latencyMs: number;
   error?: string;

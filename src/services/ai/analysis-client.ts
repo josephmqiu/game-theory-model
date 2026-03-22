@@ -79,7 +79,7 @@ function applyAnalysisSnapshot(analysis: Analysis): void {
   }
 }
 
-function applyMutationEvent(event: AnalysisMutationEvent): void {
+async function applyMutationEvent(event: AnalysisMutationEvent): Promise<void> {
   const store = useEntityGraphStore.getState();
 
   switch (event.type) {
@@ -105,7 +105,7 @@ function applyMutationEvent(event: AnalysisMutationEvent): void {
       store.markStaleFromServer(event.entityIds);
       return;
     case "state_changed":
-      void hydrateAnalysisState({
+      await hydrateAnalysisState({
         enableRecoveryPolling: !currentController,
       });
       return;
@@ -308,7 +308,7 @@ export async function startAnalysis(
             updateRunStatusFromProgress(event as AnalysisProgressEvent);
             notifyProgress(event as AnalysisProgressEvent);
           } else if (event.channel === "mutation") {
-            applyMutationEvent(event as AnalysisMutationEvent);
+            await applyMutationEvent(event as AnalysisMutationEvent);
           } else if (event.channel === "snapshot") {
             if (event.analysis) {
               applyAnalysisSnapshot(event.analysis);

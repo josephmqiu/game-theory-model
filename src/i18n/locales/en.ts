@@ -44,8 +44,6 @@ const en = {
   "topbar.save": "Save",
   "topbar.importFigma": "Import Figma",
   "topbar.codePanel": "Code",
-  "topbar.lightMode": "Light mode",
-  "topbar.darkMode": "Dark mode",
   "topbar.fullscreen": "Fullscreen",
   "topbar.exitFullscreen": "Exit fullscreen",
   "topbar.newAnalysis": "New Analysis",

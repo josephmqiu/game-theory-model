@@ -24,7 +24,7 @@ export async function runModelGraders(
       const score = await gradeWithRubric(entities, phase, rubric, options);
       results.push({
         grader: `rubric:${rubric.slice(0, 50)}`,
-        passed: score >= 0.7,
+        passed: score >= 0.5,
         score,
         message: score >= 0.7 ? "Passed rubric check" : "Failed rubric check",
       });

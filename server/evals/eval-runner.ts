@@ -69,6 +69,8 @@ export async function runEval(
               success: false,
               entityCount: 0,
               entityTypes: {},
+              entities: [],
+              relationships: [],
               graderResults: [],
               latencyMs,
               error: result.error,
@@ -107,6 +109,8 @@ export async function runEval(
             success: true,
             entityCount: result.entities.length,
             entityTypes,
+            entities: result.entities,
+            relationships: result.relationships,
             graderResults: allGraders,
             latencyMs,
           });

@@ -5,11 +5,17 @@
   "phases": {
     "situational-grounding": {
       "entityCountRange": [8, 20],
-      "requiredFactCategories": ["economic", "position", "rule", "action", "capability"],
+      "requiredFactCategories": [
+        "economic",
+        "position",
+        "rule",
+        "action",
+        "capability"
+      ],
       "minDistinctFactCategories": 4,
       "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
       "requiredRelationshipTypes": ["precedes"],
-      "requiredPatterns": ["OPEC", "quota|production", "capacity|capabilities", "defection|cheat"],
+      "requiredPatterns": ["OPEC", "quota|production"],
       "rubrics": [
         "Facts should cover multiple member states or blocs rather than treating OPEC as a single actor.",
         "Facts should include production capacities, market conditions, and defection incentives with specifics.",

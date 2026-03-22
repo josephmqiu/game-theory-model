@@ -574,25 +574,6 @@ function setupIPC(): void {
     }
   });
 
-  // Theme sync for Windows/Linux title bar overlay
-  ipcMain.handle(
-    "theme:set",
-    (_event, theme: "dark" | "light", colors?: { bg: string; fg: string }) => {
-      if (!mainWindow || mainWindow.isDestroyed()) return;
-      const isWinOrLinux =
-        process.platform === "win32" || process.platform === "linux";
-      if (!isWinOrLinux) return;
-      const isLinux = process.platform === "linux";
-      const fallbackBg = theme === "dark" ? "#111" : "#fff";
-      const fallbackFg = theme === "dark" ? "#d4d4d8" : "#3f3f46";
-      mainWindow.setTitleBarOverlay({
-        // Windows supports transparent overlay; Linux uses actual CSS card color
-        color: isLinux ? colors?.bg || fallbackBg : "rgba(0,0,0,0)",
-        symbolColor: colors?.fg || fallbackFg,
-      });
-    },
-  );
-
   // Generic renderer preferences (replaces localStorage which is origin-scoped
   // and lost when Nitro server restarts on a different random port)
   ipcMain.handle("prefs:getAll", () => ({ ...prefsCache }));

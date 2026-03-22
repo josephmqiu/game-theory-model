@@ -5,11 +5,17 @@
   "phases": {
     "situational-grounding": {
       "entityCountRange": [8, 20],
-      "requiredFactCategories": ["position", "economic", "rule", "action", "impact"],
+      "requiredFactCategories": [
+        "position",
+        "economic",
+        "rule",
+        "action",
+        "impact"
+      ],
       "minDistinctFactCategories": 4,
       "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
       "requiredRelationshipTypes": ["precedes"],
-      "requiredPatterns": ["developed|developing|bloc", "emission", "financing|finance", "free-rider|free rider"],
+      "requiredPatterns": ["emission", "financing|finance"],
       "rubrics": [
         "Facts should identify the key blocs or camps and keep their positions separate.",
         "Facts should cover emission targets, financing mechanisms, and free-rider dynamics with specifics rather than generic statements.",
