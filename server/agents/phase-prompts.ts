@@ -1,10 +1,15 @@
 import type { MethodologyPhase } from "../../shared/types/methodology";
 
 /**
- * System prompts for methodology Phases 1-3.
+ * System prompts for methodology Phases 1-4 and 6-10.
  *
  * Each prompt instructs the AI to analyse a topic following that phase's
  * methodology and produce structured JSON matching the entity Zod schemas.
+ *
+ * Phase 5 (Revalidation) is excluded — it is an orthogonal loopback
+ * mechanism, not a runnable phase with its own prompt.
+ *
+ * Phases 4, 6-10 also have revision prompts used when upstream phases change.
  */
 
 const SHARED_OUTPUT_RULES = `
