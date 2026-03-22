@@ -80,11 +80,15 @@ export async function runEval(
             continue;
           }
 
+          const priorCtx = chain
+            ? chainedPriorContext
+            : fixture.priorContext?.[phase];
           const codeResults = runCodeGraders(
             result.entities as any,
             result.relationships as any,
             phase,
             expectations,
+            priorCtx,
           );
 
           const modelResults = fast

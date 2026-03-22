@@ -21,6 +21,7 @@ export function runCodeGraders(
   relationships: GradeableRelationship[],
   phase: string,
   expectations: PhaseExpectations,
+  priorContext?: string,
 ): GraderResult[] {
   const results: GraderResult[] = [];
 
@@ -190,9 +191,10 @@ export function runCodeGraders(
         .map((r) => r.type)
         .filter((type): type is string => Boolean(type)),
     );
-    const missingRelationshipTypes = expectations.requiredRelationshipTypes.filter(
-      (type) => !relationshipTypes.has(type),
-    );
+    const missingRelationshipTypes =
+      expectations.requiredRelationshipTypes.filter(
+        (type) => !relationshipTypes.has(type),
+      );
     const requiredRelationshipTypesPassed =
       missingRelationshipTypes.length === 0;
     results.push({
@@ -206,7 +208,22 @@ export function runCodeGraders(
   }
 
   // 9. relationship-refs: every relationship fromEntityId/toEntityId resolves to an entity ref
+  // Include refs from prior phase context (prior entities may be referenced via ID or ref)
   const entityRefs = new Set(entities.map((e) => e.ref).filter(Boolean));
+  if (priorContext) {
+    try {
+      const priorEntities = JSON.parse(priorContext) as Array<{
+        ref?: string;
+        id?: string;
+      }>;
+      for (const pe of priorEntities) {
+        if (pe.ref) entityRefs.add(pe.ref);
+        if (pe.id) entityRefs.add(pe.id);
+      }
+    } catch {
+      /* ignore parse errors */
+    }
+  }
   const danglingRefs = relationships.flatMap((r) => {
     const dangling: string[] = [];
     if (!entityRefs.has(r.fromEntityId))

@@ -117,19 +117,31 @@ export const PHASE_2_SYSTEM_PROMPT = `
 You are a game-theory research analyst performing Phase 2: Player Identification.
 
 PURPOSE: Know who is playing and what they are optimizing for before naming any game.
-This is where most analyses go wrong — they identify two players and one game. Real events
-involve multiple players with complex, internally conflicting objectives.
 
-STEP 2a — Identify all players with agency. Produce "player" entities:
+BEFORE IDENTIFYING PLAYERS, think through the topic:
+1. How many independent decision-makers does this situation actually have?
+2. Is this a textbook game with a known player count, or a real-world situation with emergent actors?
+3. Are there genuinely distinct parties, or am I about to split one actor into sub-agents?
+
+Scale your output to the complexity:
+
+TEXTBOOK / ABSTRACT GAMES: Produce exactly the number of players the game defines (usually 2).
+Give each player 1-2 objectives. Do not invent internal agents, referees, audiences, or observers.
+Do not decompose a player's psychology into sub-players.
+
+REAL-WORLD BILATERAL situations: Identify the 2-3 primary decision-makers. Only add a third
+party (regulator, gatekeeper) if they have genuine veto power or independent agency in this
+specific scenario. Give each player 1-3 objectives.
+
+MULTI-PARTY situations: Identify the key decision-makers (typically 3-6). Name specific actors
+rather than abstract categories. Give each player 2-4 objectives.
+
+STEP 2a — Identify players with agency. Produce "player" entities:
 - Primary players: actors making the most consequential moves directly.
 - Involuntary players: actors who did not choose the game but are affected and have
-  constrained agency.
-- Background players: actors whose structural interests are served by the situation
-  continuing or resolving in specific ways.
-- Internal players (intra-player agents): when a nominally single actor is actually
-  multiple agents with divergent incentives.
-- Gatekeepers: actors who cannot determine the outcome alone but can block, delay, or
-  veto critical moves.
+  constrained agency. Only include if they have real decision-making power.
+- Gatekeepers: actors who can block or veto critical moves. Only include if clearly
+  relevant to this specific scenario.
 
 PLAYER ENTITY SCHEMA:
 {
