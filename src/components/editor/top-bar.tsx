@@ -5,8 +5,6 @@ import {
   FolderOpen,
   Save,
   Download,
-  Sun,
-  Moon,
   Maximize,
   Minimize,
   Blocks,
@@ -24,33 +22,12 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/tooltip";
-import { appStorage, initAppStorage } from "@/utils/app-storage";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
-import {
-  saveAnalysis,
-} from "@/services/analysis/analysis-persistence";
+import { saveAnalysis } from "@/services/analysis/analysis-persistence";
 import { exportToMarkdown } from "@/services/entity/entity-export";
 import type { AIProviderType } from "@/types/agent-settings";
-import {
-  countCompletedRunnablePhases,
-} from "@/types/methodology";
-
-/** Convert a computed CSS color value (oklch/rgb/etc.) to #rrggbb via an offscreen canvas. */
-function cssToHex(raw: string): string | null {
-  const value = raw.trim();
-  if (!value) return null;
-
-  try {
-    const ctx = document.createElement("canvas").getContext("2d");
-    if (!ctx) return null;
-    ctx.fillStyle = value;
-    const hex = ctx.fillStyle;
-    return hex.startsWith("#") ? hex : null;
-  } catch {
-    return null;
-  }
-}
+import { countCompletedRunnablePhases } from "@/types/methodology";
 
 const PROVIDER_ICONS: Record<
   AIProviderType,
@@ -149,68 +126,19 @@ interface TopBarProps {
   onOpenAnalysis: () => void | Promise<void>;
 }
 
-export default function TopBar({
-  onNewAnalysis,
-  onOpenAnalysis,
-}: TopBarProps) {
+export default function TopBar({ onNewAnalysis, onOpenAnalysis }: TopBarProps) {
   const { t } = useTranslation();
   const analysis = useEntityGraphStore((state) => state.analysis);
   const fileName = useEntityGraphStore((state) => state.fileName);
   const isDirty = useEntityGraphStore((state) => state.isDirty);
 
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [isFullscreen, setIsFullscreen] = useState(false);
-
-  const syncOverlayColors = useCallback((nextTheme: "dark" | "light") => {
-    if (!window.electronAPI?.setTheme) return;
-
-    requestAnimationFrame(() => {
-      const styles = getComputedStyle(document.documentElement);
-      const bg = cssToHex(styles.getPropertyValue("--card"));
-      const fg = cssToHex(styles.getPropertyValue("--card-foreground"));
-      window.electronAPI!.setTheme(
-        nextTheme,
-        bg && fg ? { bg, fg } : undefined,
-      );
-    });
-  }, []);
-
-  useEffect(() => {
-    const restore = async () => {
-      await initAppStorage();
-      const savedTheme = appStorage.getItem("gta-theme");
-      if (savedTheme === "light") {
-        document.documentElement.classList.add("light");
-        setTheme("light");
-        syncOverlayColors("light");
-        return;
-      }
-
-      syncOverlayColors("dark");
-    };
-
-    restore();
-  }, [syncOverlayColors]);
 
   useEffect(() => {
     const handler = () => setIsFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener("fullscreenchange", handler);
     return () => document.removeEventListener("fullscreenchange", handler);
   }, []);
-
-  const toggleTheme = useCallback(() => {
-    const nextTheme = theme === "dark" ? "light" : "dark";
-
-    if (nextTheme === "light") {
-      document.documentElement.classList.add("light");
-    } else {
-      document.documentElement.classList.remove("light");
-    }
-
-    setTheme(nextTheme);
-    syncOverlayColors(nextTheme);
-    appStorage.setItem("gta-theme", nextTheme);
-  }, [theme, syncOverlayColors]);
 
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) {
@@ -338,8 +266,8 @@ export default function TopBar({
           className={cn(
             "rounded-full px-2 py-0.5 text-[11px] font-medium",
             entityCount > 0
-              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"
-              : "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
+              ? "bg-emerald-500/15 text-emerald-300"
+              : "bg-zinc-500/15 text-zinc-300",
           )}
         >
           {statusLabel}
@@ -352,27 +280,6 @@ export default function TopBar({
         <div className="mx-1 h-3.5 w-px bg-border/60" />
 
         <LanguageSelector />
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={theme === "dark" ? "Light mode" : "Dark mode"}
-              className="text-muted-foreground"
-              onClick={toggleTheme}
-            >
-              {theme === "dark" ? (
-                <Sun size={15} strokeWidth={1.5} />
-              ) : (
-                <Moon size={15} strokeWidth={1.5} />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            {theme === "dark" ? t("topbar.lightMode") : t("topbar.darkMode")}
-          </TooltipContent>
-        </Tooltip>
 
         <Tooltip>
           <TooltipTrigger asChild>
