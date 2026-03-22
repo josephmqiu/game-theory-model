@@ -32,7 +32,7 @@ All analysis is visualized as an entity graph on a canvas — the primary worksp
 
 - [Bun](https://bun.sh) (v1.1+)
 - [Node.js](https://nodejs.org) (v20+)
-- A Claude API key or local Claude agent setup
+- A Claude or ChatGPT Subscription and Claude Code / Codex CLI installed
 
 ### Install & Run
 
