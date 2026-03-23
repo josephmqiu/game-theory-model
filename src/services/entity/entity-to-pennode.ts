@@ -10,7 +10,7 @@ import {
 // ── Display helpers ──
 
 /** Human-readable label for entity. Uses data.name where available, falls back to type. */
-function entityDisplayName(entity: AnalysisEntity): string {
+export function entityDisplayName(entity: AnalysisEntity): string {
   const d = entity.data;
   if ("name" in d && typeof d.name === "string" && d.name) return d.name;
   if ("gameName" in d && typeof d.gameName === "string" && d.gameName)

@@ -305,16 +305,39 @@ export default function AnalysisCanvas({
       // ── Hover detection (only when not dragging/panning) ──
       const hitEntity = getHitEntity(e.clientX, e.clientY);
       const engine = engineRef.current;
-      if (engine) {
+      const canvas = canvasRef.current;
+      if (engine && canvas) {
         const newHoveredId = hitEntity?.id ?? null;
         if (engine.hoveredEntityId !== newHoveredId) {
           engine.hoveredEntityId = newHoveredId;
           engine.markDirty();
         }
-        // Cursor management
-        const canvas = canvasRef.current;
-        if (canvas) {
-          canvas.style.cursor = newHoveredId ? "pointer" : "default";
+
+        // Always track mouse position in scene coords (for tooltip positioning)
+        const rect = canvas.getBoundingClientRect();
+        const scene = screenToScene(e.clientX, e.clientY, rect, {
+          zoom: engine.zoom,
+          panX: engine.panX,
+          panY: engine.panY,
+        });
+        engine.lastMouseSceneX = scene.x;
+        engine.lastMouseSceneY = scene.y;
+
+        if (!newHoveredId) {
+          // No entity hit — check for edge hit
+          const edgeIdx = engine.hitTestEdge(scene.x, scene.y);
+          if (engine.hoveredEdgeIndex !== edgeIdx) {
+            engine.hoveredEdgeIndex = edgeIdx;
+            engine.markDirty();
+          }
+          canvas.style.cursor = edgeIdx >= 0 ? "pointer" : "default";
+        } else {
+          // Entity was hit — clear edge hover
+          if (engine.hoveredEdgeIndex !== -1) {
+            engine.hoveredEdgeIndex = -1;
+            engine.markDirty();
+          }
+          canvas.style.cursor = "pointer";
         }
       }
     },
@@ -399,6 +422,7 @@ export default function AnalysisCanvas({
       useCanvasStore.getState().setFocusedEntityId(null);
       if (engineRef.current) {
         engineRef.current.hoveredEntityId = null;
+        engineRef.current.hoveredEdgeIndex = -1;
         engineRef.current.markDirty();
       }
     }

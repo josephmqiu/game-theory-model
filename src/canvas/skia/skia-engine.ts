@@ -9,6 +9,7 @@ import type {
 import { RELATIONSHIP_CATEGORY } from "@/types/entity";
 import type { RoutedEdge } from "@/services/entity/edge-routing";
 import type { BundledEdge } from "@/services/entity/edge-bundling";
+import { entityDisplayName } from "@/services/entity/entity-to-pennode";
 import { useCanvasStore } from "@/stores/canvas-store";
 import {
   useDocumentStore,
@@ -34,6 +35,7 @@ import { SpatialIndex } from "./skia-hit-test";
 import { parseColor, wrapLine, cssFontFamily } from "./skia-paint-utils";
 import { viewportMatrix, zoomToPoint as vpZoomToPoint } from "./skia-viewport";
 import { shouldDrawFrameLabel } from "./frame-label-utils";
+import { measureText, drawText2D } from "./skia-overlays";
 import {
   getActiveAgentIndicators,
   getActiveAgentFrames,
@@ -472,6 +474,27 @@ function collectInstanceIds(nodes: PenNode[], result: Set<string>) {
 }
 
 // ---------------------------------------------------------------------------
+// Point-to-line-segment distance (for edge hit testing)
+// ---------------------------------------------------------------------------
+
+function pointToSegmentDist(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+  let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+// ---------------------------------------------------------------------------
 // SkiaEngine — ties rendering, viewport, hit testing together
 // ---------------------------------------------------------------------------
 
@@ -512,6 +535,8 @@ export class SkiaEngine {
   hoveredNodeId: string | null = null;
   hoveredEntityId: string | null = null;
   hoveredEdgeIndex: number = -1;
+  lastMouseSceneX: number = 0;
+  lastMouseSceneY: number = 0;
   marquee: { x1: number; y1: number; x2: number; y2: number } | null = null;
   previewShape: {
     type: "rectangle" | "ellipse" | "frame" | "line" | "polygon";
@@ -976,6 +1001,12 @@ export class SkiaEngine {
     }
 
     canvas.restore();
+
+    // ── Edge tooltip (drawn in screen coordinates for consistent size) ──
+    if (this.hoveredEdgeIndex >= 0 && this.canvasEl) {
+      this.drawEdgeTooltip(canvas, dpr);
+    }
+
     this.surface.flush();
 
     // Keep animating while agent overlays are active (spinning dot + node flashes)
@@ -1430,14 +1461,24 @@ export class SkiaEngine {
     edge: RoutedEdge,
     opacityOverride: number | null = null,
   ) {
-    // Skip non-trunk bundled edges (hidden until trunk hover — Task 7)
+    // Trunk fan-out: when any edge in a bundle is hovered, show children and hide trunk
     const bundled = edge as BundledEdge;
-    if (bundled.bundleId && !bundled.isTrunk) return;
+    const hoveredBundleId = this.getHoveredBundleId();
+
+    if (bundled.bundleId && !bundled.isTrunk) {
+      // Show this child edge only if its bundle is in fan-out state
+      if (bundled.bundleId !== hoveredBundleId) return; // bundle not hovered — stay hidden
+      // Bundle IS hovered — draw individual edge at its normal style (fall through)
+    }
 
     const ck = this.ck;
 
     // Trunk edges: 3px width, category color at 60% opacity
     if (bundled.isTrunk) {
+      // Hide trunk when its bundle is in fan-out state
+      if (bundled.bundleId === hoveredBundleId) {
+        return; // Bundle is hovered — hide trunk, children are drawn instead
+      }
       const trunkColor =
         SkiaEngine.TRUNK_CATEGORY_COLOR[edge.category] ?? "#52525B";
       const trunkOpacity = opacityOverride !== null ? opacityOverride : 0.6;
@@ -1590,6 +1631,236 @@ export class SkiaEngine {
     canvas.drawPath(path, paint);
     path.delete();
     paint.delete();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Edge hit testing
+  // ---------------------------------------------------------------------------
+
+  /** Get the bundleId of the currently hovered edge (if any). */
+  private getHoveredBundleId(): string | undefined {
+    if (
+      this.hoveredEdgeIndex < 0 ||
+      this.hoveredEdgeIndex >= this.routedEdges.length
+    ) {
+      return undefined;
+    }
+    return (this.routedEdges[this.hoveredEdgeIndex] as BundledEdge).bundleId;
+  }
+
+  /**
+   * Test whether a scene-space point is within 4px of any visible edge path.
+   * Returns the edge index in `routedEdges`, or -1 if no hit.
+   */
+  hitTestEdge(sceneX: number, sceneY: number): number {
+    const HIT_TOLERANCE = 4;
+    if (this.routedEdges.length === 0) return -1;
+
+    const hoveredBundleId = this.getHoveredBundleId();
+
+    for (let i = 0; i < this.routedEdges.length; i++) {
+      const edge = this.routedEdges[i];
+      const bundled = edge as BundledEdge;
+
+      // Skip hidden bundled edges (non-trunk with a bundleId)
+      // UNLESS their bundle is in fan-out state
+      if (bundled.bundleId && !bundled.isTrunk) {
+        if (bundled.bundleId !== hoveredBundleId) continue;
+      }
+
+      // Skip trunk edges whose bundle is in fan-out state (trunk is hidden)
+      if (bundled.isTrunk && bundled.bundleId === hoveredBundleId) continue;
+
+      const pts = [edge.from, ...edge.waypoints, edge.to];
+      for (let j = 0; j < pts.length - 1; j++) {
+        const dist = pointToSegmentDist(
+          sceneX,
+          sceneY,
+          pts[j].x,
+          pts[j].y,
+          pts[j + 1].x,
+          pts[j + 1].y,
+        );
+        if (dist <= HIT_TOLERANCE) return i;
+      }
+    }
+
+    return -1;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Edge tooltip rendering
+  // ---------------------------------------------------------------------------
+
+  private drawEdgeTooltip(canvas: Canvas, dpr: number) {
+    const ck = this.ck;
+    const edge = this.routedEdges[this.hoveredEdgeIndex];
+    if (!edge) return;
+
+    const bundled = edge as BundledEdge;
+
+    // For trunk edges, show a summary tooltip
+    let sourceName: string;
+    let relType: string;
+    let targetName: string;
+    let edgeColor: string;
+
+    if (bundled.isTrunk && bundled.trunkChildCount) {
+      // Trunk tooltip: "N relationships (category)"
+      sourceName = `${bundled.trunkChildCount} relationships`;
+      relType = edge.category;
+      targetName = "(hover to expand)";
+      edgeColor = SkiaEngine.TRUNK_CATEGORY_COLOR[edge.category] ?? "#52525B";
+    } else {
+      // Normal edge: find the relationship and entities
+      const rel = this.entityRelationships.find(
+        (r) => r.id === edge.relationshipId,
+      );
+      if (!rel) return;
+
+      const fromEntity = this.entityMap.get(rel.fromEntityId);
+      const toEntity = this.entityMap.get(rel.toEntityId);
+      if (!fromEntity || !toEntity) return;
+
+      const rawSource = entityDisplayName(fromEntity);
+      const rawTarget = entityDisplayName(toEntity);
+      sourceName =
+        rawSource.length > 30 ? rawSource.slice(0, 30) + "\u2026" : rawSource;
+      targetName =
+        rawTarget.length > 30 ? rawTarget.slice(0, 30) + "\u2026" : rawTarget;
+      relType = rel.type;
+
+      const style = SkiaEngine.EDGE_STYLE[rel.type];
+      edgeColor = style?.color ?? "#52525B";
+    }
+
+    // Measure text segments
+    const FONT_SIZE = 12;
+    const FONT_WEIGHT = "500";
+    const PAD_X = 8;
+    const PAD_Y = 6;
+    const ARROW = " \u2192 ";
+
+    const sourceW = measureText(sourceName, FONT_SIZE, FONT_WEIGHT);
+    const arrow1W = measureText(ARROW, FONT_SIZE, FONT_WEIGHT);
+    const relTypeW = measureText(relType, FONT_SIZE, FONT_WEIGHT);
+    const arrow2W = measureText(ARROW, FONT_SIZE, FONT_WEIGHT);
+    const targetW = measureText(targetName, FONT_SIZE, FONT_WEIGHT);
+
+    const textW = sourceW + arrow1W + relTypeW + arrow2W + targetW;
+    const tooltipW = textW + PAD_X * 2;
+    const tooltipH = FONT_SIZE + PAD_Y * 2 + 4; // +4 for text rendering overhead
+
+    // Convert scene mouse position to screen coordinates
+    const screenX = (this.lastMouseSceneX * this.zoom + this.panX) * dpr;
+    const screenY = (this.lastMouseSceneY * this.zoom + this.panY) * dpr;
+
+    // Position tooltip 12px below the cursor in screen space
+    let tooltipX = screenX;
+    let tooltipY = screenY + 12 * dpr;
+
+    // Clamp to viewport bounds
+    const canvasW = this.canvasEl!.width;
+    const canvasH = this.canvasEl!.height;
+    const scaledW = tooltipW * dpr;
+    const scaledH = tooltipH * dpr;
+
+    if (tooltipX + scaledW > canvasW) {
+      tooltipX = canvasW - scaledW;
+    }
+    if (tooltipX < 0) tooltipX = 0;
+    if (tooltipY + scaledH > canvasH) {
+      tooltipY = screenY - scaledH - 4 * dpr; // flip above cursor
+    }
+    if (tooltipY < 0) tooltipY = 0;
+
+    // Draw in screen-pixel coordinates
+    canvas.save();
+    canvas.scale(dpr, dpr);
+
+    // Convert back to CSS-pixel space for drawing
+    const tx = tooltipX / dpr;
+    const ty = tooltipY / dpr;
+
+    // Background
+    const bgPaint = new ck.Paint();
+    bgPaint.setStyle(ck.PaintStyle.Fill);
+    bgPaint.setAntiAlias(true);
+    bgPaint.setColor(parseColor(ck, "#1E1E22"));
+    const rrect = ck.RRectXY(
+      ck.LTRBRect(tx, ty, tx + tooltipW, ty + tooltipH),
+      6,
+      6,
+    );
+    canvas.drawRRect(rrect, bgPaint);
+    bgPaint.delete();
+
+    // Border
+    const borderPaint = new ck.Paint();
+    borderPaint.setStyle(ck.PaintStyle.Stroke);
+    borderPaint.setAntiAlias(true);
+    borderPaint.setStrokeWidth(1);
+    borderPaint.setColor(parseColor(ck, "#27272A"));
+    canvas.drawRRect(rrect, borderPaint);
+    borderPaint.delete();
+
+    // Text segments — draw each part with appropriate color
+    const textY = ty + PAD_Y;
+    let curX = tx + PAD_X;
+    const TEXT_COLOR = "#A1A1AA";
+
+    curX += drawText2D(
+      ck,
+      canvas,
+      sourceName,
+      curX,
+      textY,
+      TEXT_COLOR,
+      FONT_SIZE,
+      FONT_WEIGHT,
+    );
+    curX += drawText2D(
+      ck,
+      canvas,
+      ARROW,
+      curX,
+      textY,
+      TEXT_COLOR,
+      FONT_SIZE,
+      FONT_WEIGHT,
+    );
+    curX += drawText2D(
+      ck,
+      canvas,
+      relType,
+      curX,
+      textY,
+      edgeColor,
+      FONT_SIZE,
+      FONT_WEIGHT,
+    );
+    curX += drawText2D(
+      ck,
+      canvas,
+      ARROW,
+      curX,
+      textY,
+      TEXT_COLOR,
+      FONT_SIZE,
+      FONT_WEIGHT,
+    );
+    drawText2D(
+      ck,
+      canvas,
+      targetName,
+      curX,
+      textY,
+      TEXT_COLOR,
+      FONT_SIZE,
+      FONT_WEIGHT,
+    );
+
+    canvas.restore();
   }
 
   // ---------------------------------------------------------------------------
