@@ -19,6 +19,7 @@ import { useAIStore } from "@/stores/ai-store";
 import type { PanelCorner } from "@/stores/ai-store";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
+import { useRunStatusStore } from "@/stores/run-status-store";
 
 import type { ChatMessage as ChatMessageType } from "@/services/ai/ai-types";
 import type { AIProviderType } from "@/types/agent-settings";
@@ -229,26 +230,30 @@ export default function AIChatPanel({
     stopStreaming();
   }, [stopStreaming]);
 
-  // Track orchestrator progress — only analysis_completed/failed are relevant to chat now.
-  // Phase activity is shown in the PhaseProgress bar via the entity-graph store.
+  // Completion notices now follow canonical run status instead of terminal progress events.
   useEffect(() => {
-    const unsubscribe = analysisClient.onProgress((event) => {
-      if (event.type === "analysis_completed") {
-        const messageId = getAnalysisCompleteMessageId(event.runId);
-        if (completedRunIdsRef.current.has(messageId)) {
-          return;
+    let previousStatus = useRunStatusStore.getState().runStatus;
+    return useRunStatusStore.subscribe((state) => {
+      const nextStatus = state.runStatus;
+      const completedAnalysisRun =
+        previousStatus.status === "running" &&
+        previousStatus.kind === "analysis" &&
+        nextStatus.status === "idle";
+
+      if (completedAnalysisRun && previousStatus.runId) {
+        const messageId = getAnalysisCompleteMessageId(previousStatus.runId);
+        if (!completedRunIdsRef.current.has(messageId)) {
+          completedRunIdsRef.current.add(messageId);
+          const entityCount =
+            useEntityGraphStore.getState().analysis.entities.length;
+          useAIStore.getState().addMessage(
+            buildAnalysisCompleteMessage(previousStatus.runId, entityCount),
+          );
         }
-
-        completedRunIdsRef.current.add(messageId);
-        const entityCount =
-          useEntityGraphStore.getState().analysis.entities.length;
-        useAIStore
-          .getState()
-          .addMessage(buildAnalysisCompleteMessage(event.runId, entityCount));
       }
-    });
 
-    return unsubscribe;
+      previousStatus = nextStatus;
+    });
   }, []);
 
   useEffect(() => {

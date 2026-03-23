@@ -2,32 +2,29 @@ import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import {
+  getRunFailureLabel,
+  useRunStatusStore,
+} from "@/stores/run-status-store";
+import {
   V3_PHASES,
   PHASE_LABELS,
   getRunnablePhaseNumber,
 } from "@/types/methodology";
-import {
-  getPhaseFailureLabel,
-  type PhaseFailureState,
-} from "@/components/panels/phase-failures";
 
 // ── Props ──
 
 export interface PhaseProgressProps {
   className?: string;
-  phaseFailures?: PhaseFailureState;
 }
 
 // ── Component ──
 
-export function PhaseProgress({
-  className,
-  phaseFailures = {},
-}: PhaseProgressProps) {
+export function PhaseProgress({ className }: PhaseProgressProps) {
   const { t } = useTranslation();
   const phases = useEntityGraphStore((s) => s.analysis.phases);
   const entities = useEntityGraphStore((s) => s.analysis.entities);
-  const phaseActivityText = useEntityGraphStore((s) => s.phaseActivityText);
+  const phaseActivityText = useRunStatusStore((s) => s.phaseActivityText);
+  const runStatus = useRunStatusStore((s) => s.runStatus);
 
   const runnablePhases = phases.filter((ps) =>
     (V3_PHASES as readonly string[]).includes(ps.phase),
@@ -37,20 +34,26 @@ export function PhaseProgress({
   ).length;
   const totalCount = runnablePhases.length;
   const totalEntities = entities.length;
-  const failedPhase = runnablePhases.find((ps) => ps.status === "failed");
-  const failure =
-    failedPhase !== undefined ? phaseFailures[failedPhase.phase] : undefined;
+  const failedPhase =
+    (runStatus.failedPhase &&
+      runnablePhases.find((ps) => ps.phase === runStatus.failedPhase)) ||
+    runnablePhases.find((ps) => ps.status === "failed");
 
   // Find the currently running phase (first running, or first non-complete)
   const runningPhase = runnablePhases.find((ps) => ps.status === "running");
-  const anyRunning = runnablePhases.some((ps) => ps.status === "running");
+  const anyRunning = runStatus.status === "running";
   const allDone =
     runnablePhases.length > 0 &&
     runnablePhases.every((ps) => ps.status === "complete");
   const allPending = runnablePhases.every((ps) => ps.status === "pending");
 
   // Hidden when all phases are complete/pending (no active work)
-  if (!failedPhase && !anyRunning && (allDone || allPending)) {
+  if (
+    runStatus.status !== "failed" &&
+    runStatus.status !== "cancelled" &&
+    !anyRunning &&
+    (allDone || allPending)
+  ) {
     return null;
   }
 
@@ -59,10 +62,12 @@ export function PhaseProgress({
     ? PHASE_LABELS[runningPhase.phase]
     : null;
 
-  if (failedPhase) {
-    const failureLabel = failure
-      ? getPhaseFailureLabel(failure.failureKind, t)
-      : t("analysis.failure.providerError");
+  if (runStatus.status === "failed" && failedPhase) {
+    const failureLabel = runStatus.failureKind
+      ? getRunFailureLabel(runStatus.failureKind, t)
+      : t("analysis.failure.providerError", {
+          defaultValue: "provider error",
+        });
 
     return (
       <div
@@ -86,6 +91,30 @@ export function PhaseProgress({
           </span>
           <span className="mx-1.5 text-zinc-600">&mdash;</span>
           <span>{failureLabel}</span>
+        </p>
+      </div>
+    );
+  }
+
+  if (runStatus.status === "cancelled") {
+    return (
+      <div
+        className={cn(
+          "flex items-center gap-3 rounded-md border border-zinc-600 bg-zinc-900/95 px-4 py-2 shadow-lg backdrop-blur",
+          className,
+        )}
+      >
+        <div className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-zinc-700">
+          <div
+            className="h-full rounded-full bg-zinc-400 transition-all duration-300 ease-in-out"
+            style={{ width: `${progressFraction * 100}%` }}
+          />
+        </div>
+
+        <p className="truncate font-[Geist,sans-serif] text-[13px] font-medium text-zinc-300">
+          {t("analysis.progress.cancelled", {
+            defaultValue: "Analysis cancelled",
+          })}
         </p>
       </div>
     );

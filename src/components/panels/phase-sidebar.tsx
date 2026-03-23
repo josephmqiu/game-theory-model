@@ -9,12 +9,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
+import {
+  getRunFailureLabel,
+  useRunStatusStore,
+} from "@/stores/run-status-store";
 import type { MethodologyPhase } from "@/types/methodology";
 import { V3_PHASES, getRunnablePhaseNumber } from "@/types/methodology";
-import {
-  getPhaseFailureLabel,
-  type PhaseFailureState,
-} from "@/components/panels/phase-failures";
 
 // ── Props ──
 
@@ -23,7 +23,6 @@ export interface PhaseSidebarProps {
   onRerunPhase: (phase: MethodologyPhase) => void;
   onSearch: (query: string) => void;
   activeFilter: MethodologyPhase | null;
-  phaseFailures?: PhaseFailureState;
 }
 
 // ── Helpers ──
@@ -48,11 +47,11 @@ export function PhaseSidebar({
   onRerunPhase,
   onSearch,
   activeFilter,
-  phaseFailures = {},
 }: PhaseSidebarProps) {
   const { t } = useTranslation();
   const phases = useEntityGraphStore((s) => s.analysis.phases);
   const entities = useEntityGraphStore((s) => s.analysis.entities);
+  const runStatus = useRunStatusStore((s) => s.runStatus);
   const [hoveredPhase, setHoveredPhase] = useState<MethodologyPhase | null>(
     null,
   );
@@ -88,11 +87,13 @@ export function PhaseSidebar({
             const isActive = activeFilter === phase;
             const isHovered = hoveredPhase === phase;
             const isRunning = status === "running";
-            const failure =
-              status === "failed" ? phaseFailures[phase] : undefined;
-            const failureLabel = failure
-              ? getPhaseFailureLabel(failure.failureKind, t)
-              : null;
+            const failureLabel =
+              status === "failed" &&
+              runStatus.status === "failed" &&
+              runStatus.failedPhase === phase &&
+              runStatus.failureKind
+                ? getRunFailureLabel(runStatus.failureKind, t)
+                : null;
             const phaseNumber = getRunnablePhaseNumber(phase);
 
             return (

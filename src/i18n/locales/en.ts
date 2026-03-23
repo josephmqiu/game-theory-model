@@ -480,9 +480,16 @@ const en = {
   "analysis.progress.phasesComplete": "{{completed}}/{{total}} phases complete",
   "analysis.progress.entityCount": "{{count}} entity",
   "analysis.progress.entityCountPlural": "{{count}} entities",
+  "analysis.progress.cancelled": "Analysis cancelled",
 
   // ── Analysis Failures ──
+  "analysis.failure.rateLimit": "rate limited",
+  "analysis.failure.providerApiError": "provider API error",
+  "analysis.failure.connectorError": "connector error",
+  "analysis.failure.mcpTransportError": "MCP transport error",
+  "analysis.failure.validation": "validation error",
   "analysis.failure.timeout": "timeout",
+  "analysis.failure.unknown": "unknown error",
   "analysis.failure.parseError": "parse error",
   "analysis.failure.providerError": "provider error",
 

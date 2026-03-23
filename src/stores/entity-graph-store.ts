@@ -79,11 +79,6 @@ interface EntityGraphStoreState extends AnalysisFileReference {
   reconcileLayout: () => void;
   pinEntityPosition: (id: string, x: number, y: number) => void;
   syncAnalysis: (analysis: Analysis) => void;
-  setPhaseStatusLocal: (phase: string, status: PhaseStatus) => void;
-
-  // Ephemeral UI state — not persisted, not part of analysis data model
-  phaseActivityText: string | null;
-  setPhaseActivityText: (text: string | null) => void;
 }
 
 // ── Helpers ──
@@ -183,7 +178,7 @@ function reconcileLayoutState(
 
 // ── Store ──
 // This store is a LOCAL state container for the renderer.
-// In browser mode, state arrives via analysis-client SSE (syncAnalysis / setPhaseStatusLocal).
+// In browser mode, state arrives via analysis-client SSE (syncAnalysis).
 // Local mutations (addEntities, updateEntity, etc.) still work for Electron mode
 // and for offline/backward-compat scenarios.
 
@@ -197,9 +192,6 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
     filePath: null,
     fileHandle: null,
     pendingEdits: [],
-    phaseActivityText: null,
-
-    setPhaseActivityText: (text) => set({ phaseActivityText: text }),
 
     newAnalysis: (topic) => {
       set((state) => ({
@@ -210,7 +202,6 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
         fileName: null,
         filePath: null,
         fileHandle: null,
-        phaseActivityText: null,
         pendingEdits: [],
       }));
     },
@@ -547,20 +538,5 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
     syncAnalysis: (analysis) => {
       get().syncAnalysisFromServer(analysis);
     },
-
-    // setPhaseStatusLocal: local phase status update from SSE progress events
-    setPhaseStatusLocal: (phase, status) =>
-      set((state) => ({
-        analysis: {
-          ...state.analysis,
-          phases: upsertPhaseStatus(
-            state.analysis.phases,
-            state.analysis.entities,
-            phase as MethodologyPhase,
-            status,
-          ),
-        },
-        revision: state.revision + 1,
-      })),
   }),
 );

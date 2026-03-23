@@ -38,11 +38,10 @@ describe("AIChatPanel analysis mode", () => {
   it("keeps lifecycle announcements on one completion path", () => {
     const source = readFileSync(aiChatPanelPath, "utf8");
 
-    // Chat panel only handles analysis_completed — phase activity moved to PhaseProgress bar
-    expect(source).toContain("analysisClient.onProgress((event)");
+    expect(source).toContain("useRunStatusStore.subscribe");
     expect(source).toContain("completedRunIdsRef");
     expect(source).toContain("buildAnalysisCompleteMessage");
-    expect(source).toContain("analysis_completed");
+    expect(source).toContain('nextStatus.status === "idle"');
   });
 
   it("does not depend on the old analysis store", () => {
