@@ -247,9 +247,9 @@ describe("revalidation-service", () => {
     expect(deferred.has("e2")).toBe(true);
   });
 
-  // ── 4. onRunComplete triggers deferred revalidation ──
+  // ── 4. onRunComplete preserves deferred revalidation for explicit user action ──
 
-  it("onRunComplete triggers deferred revalidation", async () => {
+  it("onRunComplete does not auto-start deferred revalidation", async () => {
     mockIsRunning.mockReturnValue(true);
 
     // Schedule while running — gets deferred
@@ -260,36 +260,21 @@ describe("revalidation-service", () => {
 
     // Run completes
     mockIsRunning.mockReturnValue(false);
-    mockEntityGraph.getAnalysis.mockReturnValue({
-      id: "test",
-      name: "test",
-      topic: "test topic",
-      entities: [makeEntity("e1", "situational-grounding", true)],
-      relationships: [],
-      phases: [],
-    });
-    mockRunPhase.mockResolvedValue(makePhaseResult("situational-grounding"));
-
     revalidation.onRunComplete();
-
-    // Should trigger revalidation with deferred IDs
-    // Allow the async revalidate to execute
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(mockRunPhase).toHaveBeenCalled();
-
-    // Deferred IDs should be cleared
-    expect(revalidation._getDeferredStaleIds().size).toBe(0);
+    expect(mockRunPhase).not.toHaveBeenCalled();
+    expect(revalidation._getDeferredStaleIds()).toEqual(new Set(["e1"]));
   });
 
-  it("suppresses deferred auto-revalidation for subset runs", async () => {
+  it("preserves deferred stale ids for subset runs instead of auto-clearing them", async () => {
     mockIsRunning.mockReturnValue(true);
 
     revalidation.scheduleRevalidation(["e1", "e2"]);
     await vi.advanceTimersByTimeAsync(5000);
 
     expect(revalidation._getDeferredStaleIds().size).toBe(2);
-    expect(revalidation._getPendingStaleIds().size).toBe(2);
+    expect(revalidation._getPendingStaleIds().size).toBe(0);
 
     mockIsRunning.mockReturnValue(false);
     revalidation.onRunComplete(
@@ -302,7 +287,7 @@ describe("revalidation-service", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(mockRunPhase).not.toHaveBeenCalled();
-    expect(revalidation._getDeferredStaleIds().size).toBe(0);
+    expect(revalidation._getDeferredStaleIds().size).toBe(2);
     expect(revalidation._getPendingStaleIds().size).toBe(0);
   });
 

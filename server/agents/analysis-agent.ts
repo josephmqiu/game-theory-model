@@ -33,6 +33,7 @@ import {
 import type { LoopbackTriggerType } from "../services/analysis-tools";
 import { analysisRuntimeConfig } from "../config/analysis-runtime";
 import { resolveAnalysisRuntime } from "../config/analysis-runtime-resolver";
+import * as runtimeStatus from "../services/runtime-status";
 import { createRunLogger, timer } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
 
@@ -317,6 +318,7 @@ async function executeSinglePhase(
   }
 
   run.activePhase = phase;
+  runtimeStatus.setActivePhase(run.runId, phase);
   entityGraphService.setPhaseStatus(phase, "running");
   emitProgress({ type: "phase_started", phase, runId: run.runId });
   run.logger.log("orchestrator", "phase-start", { phase });
@@ -561,6 +563,7 @@ async function executeSinglePhase(
         runId: run.runId,
         summary,
       });
+      runtimeStatus.completePhase(run.runId);
 
       // Drain edit queue after each successful phase
       drainEditQueue();
@@ -634,6 +637,14 @@ export async function runFull(
     runtimeOverrides?.activePhases,
   );
   const autoRevalidationEnabled = activePhases.length === SUPPORTED_PHASES.length;
+
+  if (
+    !runtimeStatus.acquireRun("analysis", runId, {
+      totalPhases: activePhases.length,
+    })
+  ) {
+    throw new Error("A run is already active");
+  }
 
   // Use an explicit timeout controller so runtime behavior is testable with fake timers.
   const runTimeoutController = new AbortController();
@@ -709,6 +720,10 @@ export async function runFull(
             if (runTimeoutSignal.aborted && !signal?.aborted) {
               run.status = "failed";
               run.error = "Run-level timeout exceeded";
+              runtimeStatus.releaseRun(run.runId, "failed", {
+                failedPhase: phase,
+                failureMessage: run.error,
+              });
               run.logger.error("orchestrator", "run-timeout", {
                 elapsedMs: analysisTimer.elapsed(),
                 phase,
@@ -721,6 +736,7 @@ export async function runFull(
             } else {
               run.status = "interrupted";
               run.error = "Run was aborted";
+              runtimeStatus.releaseRun(run.runId, "cancelled");
               run.logger.warn("orchestrator", "analysis-aborted", {
                 phasesCompleted: run.phasesCompleted.length,
               });
@@ -728,6 +744,10 @@ export async function runFull(
           } else {
             run.status = "failed";
             run.error = result.error;
+            runtimeStatus.releaseRun(run.runId, "failed", {
+              failedPhase: phase,
+              failureMessage: run.error,
+            });
             emitProgress({
               type: "analysis_failed",
               runId: run.runId,
@@ -763,6 +783,10 @@ export async function runFull(
               });
               run.status = "failed";
               run.error = `Loopback convergence failed after ${passCount} passes`;
+              runtimeStatus.releaseRun(run.runId, "failed", {
+                failedPhase: phase,
+                failureMessage: run.error,
+              });
               emitProgress({
                 type: "analysis_failed",
                 runId: run.runId,
@@ -814,6 +838,7 @@ export async function runFull(
         });
 
         emitProgress({ type: "analysis_completed", runId: run.runId });
+        runtimeStatus.releaseRun(run.runId, "completed");
       } else {
         // Run ended with failure or interruption — log the terminal event
         run.logger.log("orchestrator", "analysis-finished", {
@@ -945,6 +970,9 @@ export function markOrphanedRunsFailed(): void {
     activeRun.status = "failed";
     activeRun.error = "Run interrupted (app restart)";
     activeRun.activePhase = null;
+    runtimeStatus.releaseRun(activeRun.runId, "failed", {
+      failureMessage: activeRun.error,
+    });
   }
 }
 
@@ -956,6 +984,7 @@ export function _resetForTest(): void {
   runPromise = null;
   progressListeners.clear();
   resultSnapshots.clear();
+  runtimeStatus._resetForTest();
 }
 
 /** Expose activeRun for test assertions. */

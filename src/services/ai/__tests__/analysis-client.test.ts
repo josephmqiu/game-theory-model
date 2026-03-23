@@ -338,9 +338,11 @@ describe("analysis-client", () => {
           analysis: makeAnalysis([entity]),
           runStatus: {
             status: "idle",
+            kind: null,
             runId: null,
             activePhase: null,
             progress: { completed: 1, total: 9 },
+            deferredRevalidationPending: false,
           },
         } satisfies AnalysisStateResponse),
         {
@@ -375,9 +377,11 @@ describe("analysis-client", () => {
             analysis: makeAnalysis(),
             runStatus: {
               status: "running",
+              kind: null,
               runId: "run-3",
               activePhase: "situational-grounding",
               progress: { completed: 0, total: 9 },
+              deferredRevalidationPending: false,
             },
           } satisfies AnalysisStateResponse),
           {
@@ -391,9 +395,11 @@ describe("analysis-client", () => {
             analysis: makeAnalysis([recoveredEntity]),
             runStatus: {
               status: "idle",
+              kind: null,
               runId: null,
               activePhase: null,
               progress: { completed: 1, total: 9 },
+              deferredRevalidationPending: false,
             },
           } satisfies AnalysisStateResponse),
           {
@@ -444,9 +450,11 @@ describe("analysis-client", () => {
             analysis: makeAnalysis(),
             runStatus: {
               status: "running",
+              kind: null,
               runId: "run-stream-end",
               activePhase: "situational-grounding",
               progress: { completed: 0, total: 9 },
+              deferredRevalidationPending: false,
             },
           } satisfies AnalysisStateResponse),
           {
@@ -460,9 +468,11 @@ describe("analysis-client", () => {
             analysis: makeAnalysis([recoveredEntity]),
             runStatus: {
               status: "idle",
+              kind: null,
               runId: null,
               activePhase: null,
               progress: { completed: 1, total: 9 },
+              deferredRevalidationPending: false,
             },
           } satisfies AnalysisStateResponse),
           {
@@ -501,9 +511,11 @@ describe("analysis-client", () => {
             analysis: makeAnalysis(),
             runStatus: {
               status: "running",
+              kind: null,
               runId: "run-4",
               activePhase: "situational-grounding",
               progress: { completed: 0, total: 9 },
+              deferredRevalidationPending: false,
             },
           } satisfies AnalysisStateResponse),
           {

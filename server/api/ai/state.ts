@@ -16,12 +16,14 @@ function buildIdleRunStatus(): RunStatus {
 
   return {
     status: "idle",
+    kind: null,
     runId: null,
     activePhase: null,
     progress: {
       completed,
       total: V3_PHASES.length,
     },
+    deferredRevalidationPending: false,
   };
 }
 
@@ -33,12 +35,14 @@ export default defineEventHandler((): AnalysisStateResponse => {
     runStatus: activeStatus
       ? {
           status: "running",
+          kind: null,
           runId: activeStatus.runId,
           activePhase: activeStatus.activePhase,
           progress: {
             completed: activeStatus.phasesCompleted,
             total: activeStatus.totalPhases,
           },
+          deferredRevalidationPending: false,
         }
       : buildIdleRunStatus(),
   };

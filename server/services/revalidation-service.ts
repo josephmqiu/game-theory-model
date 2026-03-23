@@ -1,7 +1,7 @@
 // revalidation-service.ts — cascade invalidation with debounced auto-trigger.
 // Listens for stale_marked events from entity-graph-service,
 // debounces for 2s, then re-runs phases from the earliest stale one.
-// Suppressed during active analysis runs; deferred staleIds revalidate on run complete.
+// Suppressed during active analysis runs; deferred staleIds await explicit revalidation.
 
 import type { MethodologyPhase } from "../../shared/types/methodology";
 import type { AnalysisProgressEvent } from "../../shared/types/events";
@@ -10,6 +10,7 @@ import { V2_PHASES, PHASE_NUMBERS } from "../../src/types/methodology";
 import { analysisRuntimeConfig } from "../config/analysis-runtime";
 import * as entityGraphService from "./entity-graph-service";
 import * as orchestrator from "../agents/analysis-agent";
+import * as runtimeStatus from "./runtime-status";
 import { runPhase } from "./analysis-service";
 import { commitPhaseSnapshot } from "./revision-diff";
 import { createRunLogger, serverWarn, timer } from "../utils/ai-logger";
@@ -37,7 +38,6 @@ export interface RevalRunStatus {
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingStaleIds = new Set<string>();
-let deferredStaleIds = new Set<string>();
 const progressListeners = new Set<(event: AnalysisProgressEvent) => void>();
 let unsubscribeMutation: (() => void) | null = null;
 const revalRunStatuses = new Map<string, RevalRunStatus>();
@@ -103,7 +103,7 @@ function phasesFrom(startPhase: MethodologyPhase): MethodologyPhase[] {
 /**
  * Schedule a debounced revalidation. If called again within 2s, resets the timer
  * and merges the new staleIds. If an analysis run is active, stores ids for
- * deferred revalidation after the run completes.
+ * deferred revalidation that the user can explicitly approve later.
  */
 export function scheduleRevalidation(staleIds: string[]): void {
   const scheduleLogger = createRunLogger(`reval-sched-${Date.now()}`);
@@ -111,20 +111,20 @@ export function scheduleRevalidation(staleIds: string[]): void {
     staleIds,
   });
 
+  // If an analysis run is active, defer — don't start the timer
+  if (orchestrator.isRunning()) {
+    runtimeStatus.deferRevalidation(staleIds, {
+      reason: "analysis-active",
+    });
+    scheduleLogger.log("revalidation", "suppressed", {
+      deferredCount: runtimeStatus.getDeferredRevalidationIds().length,
+    });
+    return;
+  }
+
   // Merge into pending set
   for (const id of staleIds) {
     pendingStaleIds.add(id);
-  }
-
-  // If an analysis run is active, defer — don't start the timer
-  if (orchestrator.isRunning()) {
-    for (const id of staleIds) {
-      deferredStaleIds.add(id);
-    }
-    scheduleLogger.log("revalidation", "suppressed", {
-      deferredCount: deferredStaleIds.size,
-    });
-    return;
   }
 
   // Reset debounce timer
@@ -159,9 +159,9 @@ export function revalidate(
   // Concurrency guard: if an analysis run is active, defer for later
   if (orchestrator.isRunning()) {
     const ids = staleEntityIds ?? [];
-    for (const id of ids) {
-      deferredStaleIds.add(id);
-    }
+    runtimeStatus.deferRevalidation(ids, {
+      reason: "analysis-active",
+    });
     revalRunStatuses.set(runId, {
       runId,
       status: "deferred",
@@ -184,6 +184,7 @@ export function revalidate(
   }
 
   if (!startPhase) {
+    runtimeStatus.consumeDeferredRevalidationIds();
     revalRunStatuses.set(runId, {
       runId,
       status: "completed",
@@ -191,6 +192,28 @@ export function revalidate(
     });
     return { runId };
   }
+
+  const phases = phasesFrom(startPhase);
+
+  if (
+    !runtimeStatus.acquireRun("revalidation", runId, {
+      totalPhases: phases.length,
+    })
+  ) {
+    revalRunStatuses.set(runId, {
+      runId,
+      status: "failed",
+      phasesCompleted: 0,
+      error: "Revalidation already active",
+    });
+    serverWarn(runId, "revalidation", "run-skipped", {
+      reason: "runtime-status-busy",
+      activeStatus: runtimeStatus.getSnapshot(),
+    });
+    return { runId };
+  }
+
+  runtimeStatus.consumeDeferredRevalidationIds();
 
   // Register as running before async work begins
   revalRunStatuses.set(runId, { runId, status: "running", phasesCompleted: 0 });
@@ -227,6 +250,7 @@ async function executeRevalidation(
   });
 
   for (const p of phases) {
+    runtimeStatus.setActivePhase(runId, p);
     emitProgress({ type: "phase_started", phase: p, runId });
     logger.log("revalidation", "phase-rerun", { phase: p, runId });
 
@@ -295,6 +319,10 @@ async function executeRevalidation(
               phasesCompleted,
               error,
             });
+            runtimeStatus.releaseRun(runId, "failed", {
+              failedPhase: p,
+              failureMessage: error,
+            });
             emitProgress({
               type: "analysis_failed",
               runId,
@@ -328,6 +356,7 @@ async function executeRevalidation(
           status: "running",
           phasesCompleted,
         });
+        runtimeStatus.completePhase(runId);
 
         emitProgress({
           type: "phase_completed",
@@ -351,6 +380,10 @@ async function executeRevalidation(
           phasesCompleted,
           error,
         });
+        runtimeStatus.releaseRun(runId, "failed", {
+          failedPhase: p,
+          failureMessage: error,
+        });
         emitProgress({
           type: "analysis_failed",
           runId,
@@ -366,6 +399,10 @@ async function executeRevalidation(
         phasesCompleted,
         error,
       });
+      runtimeStatus.releaseRun(runId, "failed", {
+        failedPhase: p,
+        failureMessage: error,
+      });
       emitProgress({
         type: "analysis_failed",
         runId,
@@ -376,6 +413,7 @@ async function executeRevalidation(
   }
 
   revalRunStatuses.set(runId, { runId, status: "completed", phasesCompleted });
+  runtimeStatus.releaseRun(runId, "completed");
 
   const totalEntities = entityGraphService.getAnalysis().entities.length;
   logger.log("revalidation", "complete", {
@@ -409,8 +447,8 @@ export function getActiveRevalStatus(): RevalRunStatus | null {
 
 /**
  * Called by the orchestrator when a run finishes. Captures provider/model
- * for revalidation continuity. If there are pending staleIds from suppressed
- * revalidation, triggers revalidation now.
+ * for revalidation continuity. Deferred staleIds remain queued until the user
+ * explicitly requests revalidation.
  */
 export function onRunComplete(
   provider?: string,
@@ -425,19 +463,9 @@ export function onRunComplete(
   if (!autoRevalidationEnabled) {
     serverWarn(undefined, "revalidation", "auto-revalidation-disabled", {
       pendingStaleCount: pendingStaleIds.size,
-      deferredStaleCount: deferredStaleIds.size,
+      deferredStaleCount: runtimeStatus.getDeferredRevalidationIds().length,
       reason: "subset-run",
     });
-    deferredStaleIds.clear();
-    pendingStaleIds.clear();
-    return;
-  }
-
-  if (deferredStaleIds.size > 0) {
-    const ids = Array.from(deferredStaleIds);
-    deferredStaleIds.clear();
-    pendingStaleIds.clear();
-    revalidate(ids);
   }
 }
 
@@ -463,6 +491,14 @@ export function wire(): void {
       scheduleRevalidation(event.entityIds);
     }
   });
+
+  const existingStaleIds = entityGraphService.getStaleEntityIds();
+  if (existingStaleIds.length > 0) {
+    runtimeStatus.deferRevalidation(existingStaleIds, {
+      revealWhenIdle: true,
+      reason: "startup-stale-scan",
+    });
+  }
 }
 
 export function unwire(): void {
@@ -485,12 +521,12 @@ export function _resetForTest(): void {
     debounceTimer = null;
   }
   pendingStaleIds.clear();
-  deferredStaleIds.clear();
   progressListeners.clear();
   revalRunStatuses.clear();
   lastRunProvider = undefined;
   lastRunModel = undefined;
   lastRunRuntime = undefined;
+  runtimeStatus._resetForTest();
   unwire();
 }
 
@@ -501,5 +537,5 @@ export function _getPendingStaleIds(): Set<string> {
 
 /** Expose deferred stale IDs for test assertions. */
 export function _getDeferredStaleIds(): Set<string> {
-  return deferredStaleIds;
+  return new Set(runtimeStatus.getDeferredRevalidationIds());
 }

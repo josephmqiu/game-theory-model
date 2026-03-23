@@ -68,12 +68,14 @@ describe("/api/ai/state and /api/ai/abort", () => {
     expect(result.analysis.topic).toBe("Trade conflict");
     expect(result.runStatus).toEqual({
       status: "idle",
+      kind: null,
       runId: null,
       activePhase: null,
       progress: {
         completed: 1,
         total: 9,
       },
+      deferredRevalidationPending: false,
     });
   });
 
@@ -91,12 +93,14 @@ describe("/api/ai/state and /api/ai/abort", () => {
 
     expect(result.runStatus).toEqual({
       status: "running",
+      kind: null,
       runId: "run-123",
       activePhase: "player-identification",
       progress: {
         completed: 1,
         total: 9,
       },
+      deferredRevalidationPending: false,
     });
   });
 

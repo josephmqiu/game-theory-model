@@ -39,12 +39,14 @@ let currentController: AbortController | null = null;
 let progressListeners: ProgressCallback[] = [];
 let currentRunStatus: RunStatus = {
   status: "idle",
+  kind: null,
   runId: null,
   activePhase: null,
   progress: {
     completed: 0,
     total: V3_PHASES.length,
   },
+  deferredRevalidationPending: false,
 };
 let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
 let recoveryRequest: Promise<AnalysisStateResponse> | null = null;
@@ -134,12 +136,14 @@ function updateRunStatusFromProgress(event: AnalysisProgressStreamEvent): void {
   if (event.type === "phase_started") {
     setRunStatus({
       status: "running",
+      kind: null,
       runId: event.runId,
       activePhase: event.phase as RunStatus["activePhase"],
       progress: {
         completed: currentRunStatus.progress.completed,
         total: currentRunStatus.progress.total,
       },
+      deferredRevalidationPending: false,
     });
     return;
   }
@@ -147,6 +151,7 @@ function updateRunStatusFromProgress(event: AnalysisProgressStreamEvent): void {
   if (event.type === "phase_completed") {
     setRunStatus({
       status: "running",
+      kind: null,
       runId: event.runId,
       activePhase: null,
       progress: {
@@ -156,6 +161,7 @@ function updateRunStatusFromProgress(event: AnalysisProgressStreamEvent): void {
         ),
         total: currentRunStatus.progress.total,
       },
+      deferredRevalidationPending: false,
     });
     return;
   }
@@ -163,12 +169,14 @@ function updateRunStatusFromProgress(event: AnalysisProgressStreamEvent): void {
   if (event.type === "analysis_completed" || event.type === "analysis_failed") {
     setRunStatus({
       status: "idle",
+      kind: null,
       runId: null,
       activePhase: null,
       progress: {
         completed: currentRunStatus.progress.completed,
         total: currentRunStatus.progress.total,
       },
+      deferredRevalidationPending: false,
     });
   }
 }
@@ -189,12 +197,14 @@ export function abort(): void {
   useEntityGraphStore.getState().setPhaseActivityText(null);
   setRunStatus({
     status: "idle",
+    kind: null,
     runId: null,
     activePhase: null,
     progress: {
       completed: 0,
       total: currentRunStatus.progress.total,
     },
+    deferredRevalidationPending: false,
   });
 
   void fetch("/api/ai/abort", { method: "POST" })
@@ -269,12 +279,14 @@ export async function startAnalysis(
   currentController = controller;
   setRunStatus({
     status: "running",
+    kind: null,
     runId: null,
     activePhase: null,
     progress: {
       completed: 0,
       total: V3_PHASES.length,
     },
+    deferredRevalidationPending: false,
   });
 
   try {
@@ -439,12 +451,14 @@ export function _resetForTest(): void {
   progressListeners = [];
   currentRunStatus = {
     status: "idle",
+    kind: null,
     runId: null,
     activePhase: null,
     progress: {
       completed: 0,
       total: V3_PHASES.length,
     },
+    deferredRevalidationPending: false,
   };
   recoveryRequest = null;
 }
