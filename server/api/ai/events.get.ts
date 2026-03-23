@@ -10,8 +10,10 @@ import * as analysisOrchestrator from "../../agents/analysis-agent";
 import * as revalidationService from "../../services/revalidation-service";
 import * as entityGraphService from "../../services/entity-graph-service";
 import * as runtimeStatus from "../../services/runtime-status";
+import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 
-const HEARTBEAT_INTERVAL_MS = 15_000;
+const HEARTBEAT_INTERVAL_MS =
+  analysisRuntimeConfig.analyzeSse.keepaliveIntervalMs;
 
 function writeEvent(
   res: ServerResponse,

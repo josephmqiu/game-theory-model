@@ -7,7 +7,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PhaseResult } from "../../services/analysis-service";
 import type { MethodologyPhase } from "../../../shared/types/methodology";
 import { resetAllServices, makeFactOutput } from "../../__test-utils__/fixtures";
 
@@ -217,7 +216,7 @@ describe("revalidation integration", () => {
     const entities = entityGraph.getEntitiesByPhase("situational-grounding");
 
     // Import orchestrator to make isRunning() return true
-    const orchestrator = await import("../../agents/analysis-agent");
+    await import("../../agents/analysis-agent");
 
     // Simulate an active analysis run via runtimeStatus
     runtimeStatus.acquireRun("analysis", "run-1", { totalPhases: 3 });

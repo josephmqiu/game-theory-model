@@ -4,7 +4,7 @@
  */
 
 import type { MethodologyPhase } from "../../shared/types/methodology";
-import { getPhaseFixture, PHASE_FIXTURES } from "./fixtures";
+import { PHASE_FIXTURES } from "./fixtures";
 
 type PhaseResponses = Partial<
   Record<MethodologyPhase, { entities: unknown[]; relationships: unknown[] }>

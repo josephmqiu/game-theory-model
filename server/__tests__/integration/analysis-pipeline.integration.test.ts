@@ -13,7 +13,6 @@ import {
   resetAllServices,
   makeFactOutput,
   getPhaseFixture,
-  PHASE_FIXTURES,
 } from "../../__test-utils__/fixtures";
 import { createMockRunAnalysisPhase } from "../../__test-utils__/mock-adapter";
 
@@ -166,7 +165,7 @@ describe("analysis pipeline integration", () => {
     entityGraph.updateEntity(
       targetEntity.id,
       { rationale: "User's custom rationale" },
-      { source: "user-edited", runId: "user", phase: "situational-grounding" },
+      { source: "user-edited", runId: "user" },
     );
 
     // Re-run the same phase (different run)

@@ -69,7 +69,7 @@ const FALLBACK_CLAUDE_MODELS: GroupedModel[] = [
 ]
 
 /** Connect to Claude Code via Agent SDK and fetch real supported models */
-async function connectClaudeCode(): Promise<ConnectResult> {
+export async function connectClaudeCode(): Promise<ConnectResult> {
   const claudePath = resolveClaudeCli()
   if (!claudePath) {
     return { connected: false, models: [], notInstalled: true, error: 'Claude Code CLI not found' }

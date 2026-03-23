@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resetAllServices, makeFactData } from "../../__test-utils__/fixtures";
+import { resetAllServices } from "../../__test-utils__/fixtures";
 
 // Mock AI adapter (for start_analysis tool)
 vi.mock("../../services/ai/claude-adapter", () => ({
@@ -160,7 +160,6 @@ describe("MCP product tools integration", () => {
     const result = await productTools.handleToolCall(
       "nonexistent_tool",
       {},
-      "chat",
     );
     expect(result.isError).toBe(true);
     expect(result.text).toContain("Unknown tool");

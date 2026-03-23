@@ -315,9 +315,17 @@ function installToolSurface(
   toolNames: readonly string[],
   runId?: string,
 ): void {
+  const env: Record<string, string> = {};
+  if (runId) {
+    env.ANALYSIS_RUN_ID = runId;
+  }
+  if (process.env.MCP_PORT?.trim()) {
+    env.MCP_PORT = process.env.MCP_PORT.trim();
+  }
+
   installMcpServer(resolveMcpServerCommand(), [resolveMcpProxyScript()], {
     enabledTools: [...toolNames],
-    env: runId ? { ANALYSIS_RUN_ID: runId } : undefined,
+    env: Object.keys(env).length > 0 ? env : undefined,
   });
   serverLog(runId, "codex-adapter", "mcp-config-written", {
     toolNames,

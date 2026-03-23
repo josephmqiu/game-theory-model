@@ -60,6 +60,9 @@ interface AnalysisAdapter {
 async function loadAnalysisAdapter(
   provider?: string,
 ): Promise<AnalysisAdapter> {
+  if (process.env.GAME_THEORY_ANALYSIS_TEST_MODE === "1") {
+    return import("./ai/test-adapter");
+  }
   if (provider === "openai") {
     return import("./ai/codex-adapter");
   }

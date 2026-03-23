@@ -7,8 +7,8 @@ on:
     branches: [main, v0.0.1]
 
 jobs:
-  lint-and-test:
-    name: Lint & Test
+  branch-confidence:
+    name: Branch Confidence
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -22,17 +22,14 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Type check
-        run: bun run typecheck
-
-      - name: Run tests
-        run: bun run test
+      - name: Run branch-confidence gate
+        run: bun run check:pr
 
   build-web:
     name: Build Web
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: lint-and-test
+    needs: branch-confidence
 
     steps:
       - uses: actions/checkout@v4

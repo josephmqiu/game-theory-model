@@ -41,7 +41,9 @@ export interface RunContext {
 
 const LOG_DIR = getServerLogDir({ env: process.env })
 const IS_TEST_MODE =
-  process.env.NODE_ENV === 'test' || import.meta.env?.MODE === 'test'
+  process.env.NODE_ENV === 'test' ||
+  process.env.VITEST === 'true' ||
+  process.env.VITEST === '1'
 
 export function serverLog(
   runId: string | undefined,
