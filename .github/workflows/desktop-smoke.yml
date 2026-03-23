@@ -1,0 +1,31 @@
+name: Desktop Smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 9 * * *"
+
+jobs:
+  desktop-smoke:
+    name: Desktop Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Ensure Xvfb is available
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Prepare smoke artifacts
+        run: bun run test:smoke:prepare
+
+      - name: Run desktop smoke test
+        run: xvfb-run -a bun run smoke-tests/desktop.ts

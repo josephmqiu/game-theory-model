@@ -25,10 +25,10 @@ jobs:
       - name: Run branch-confidence gate
         run: bun run check:pr
 
-  build-web:
-    name: Build Web
+  smoke-server:
+    name: Smoke Server
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     needs: branch-confidence
 
     steps:
@@ -41,12 +41,11 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build
-        run: bun run build
+      - name: Prepare smoke artifacts
+        run: bun run test:smoke:prepare
 
-      - name: Upload web build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-build
-          path: .output/
-          retention-days: 7
+      - name: Run SSE smoke test
+        run: bun run smoke-tests/sse.ts
+
+      - name: Run MCP smoke test
+        run: bun run smoke-tests/mcp.ts
