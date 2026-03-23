@@ -20,6 +20,8 @@
     "build": "bun --bun vite build",
     "preview": "bun --bun vite preview",
     "test": "vitest run --passWithNoTests",
+    "test:integration": "vitest run server/__tests__/integration/ --passWithNoTests",
+    "test:unit": "vitest run --passWithNoTests --exclude 'server/__tests__/integration/**'",
     "typecheck": "tsc --noEmit",
     "mcp:compile": "esbuild server/mcp/mcp-stdio-proxy.ts --bundle --platform=node --target=node20 --outfile=dist/mcp-stdio-proxy.cjs --format=cjs --sourcemap --alias:@=src --define:import.meta.env={}",
     "mcp:dev": "bun run server/mcp/mcp-stdio-proxy.ts",
