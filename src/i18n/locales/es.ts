@@ -471,6 +471,8 @@ const es: TranslationKeys = {
     "Reintentando fase tras error de validación o transporte.",
   "analysis.activity.default": "Continuando análisis de fase.",
   "analysis.activity.usingTool": "Usando {{toolName}}",
+  "analysis.activity.usingWebSearchQuery":
+    "Usando WebSearch: {{query}}",
   "analysis.activity.agentProgress": "Progreso del agente",
 
   // ── Analysis Progress ──

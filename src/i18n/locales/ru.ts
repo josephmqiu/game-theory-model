@@ -484,6 +484,8 @@ const ru: TranslationKeys = {
     "Повторная попытка фазы после ошибки валидации или транспорта.",
   "analysis.activity.default": "Продолжение фазового анализа.",
   "analysis.activity.usingTool": "Использование {{toolName}}",
+  "analysis.activity.usingWebSearchQuery":
+    "Использование WebSearch: {{query}}",
   "analysis.activity.agentProgress": "Прогресс агента",
 
   // ── Analysis Progress ──

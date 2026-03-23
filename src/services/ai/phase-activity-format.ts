@@ -8,6 +8,11 @@ import type { AnalysisPhaseActivityEvent } from "./analysis-client";
 export function formatPhaseActivityNote(
   event: AnalysisPhaseActivityEvent,
 ): string {
+  const query = event.query?.trim();
+  if (event.kind === "web-search" && query) {
+    return i18n.t("analysis.activity.usingWebSearchQuery", { query });
+  }
+
   const message = event.message.trim();
   if (message) return message;
 

@@ -394,6 +394,39 @@ describe("analysis-client", () => {
     ]);
   });
 
+  it("formats WebSearch phase activity using the streamed query", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      if (input === "/api/ai/state") {
+        return Promise.resolve(
+          stateResponse(makeAnalysis(), makeRunStatus(), 1),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const { client, useRunStatusStore } = await loadModules();
+
+    await client.hydrateAnalysisState();
+
+    const source = MockEventSource.latest();
+    source.emitOpen();
+    source.emitMessage({
+      channel: "progress",
+      revision: 2,
+      type: "phase_activity",
+      phase: "situational-grounding",
+      runId: "run-progress",
+      kind: "web-search",
+      message: "Using WebSearch",
+      query: "US China tariff history 2025",
+    });
+
+    expect(useRunStatusStore.getState().phaseActivityText).toBe(
+      "Using WebSearch: US China tariff history 2025",
+    );
+  });
+
   it("re-syncs from /api/ai/state when a state_changed mutation arrives", async () => {
     const entity = makeEntity("entity-state-sync");
     const fetchMock = vi.fn((input: RequestInfo | URL) => {

@@ -466,6 +466,8 @@ const tr: TranslationKeys = {
     "Doğrulama veya aktarım sorununun ardından faz yeniden deneniyor.",
   "analysis.activity.default": "Faz analizi devam ediyor.",
   "analysis.activity.usingTool": "{{toolName}} kullanılıyor",
+  "analysis.activity.usingWebSearchQuery":
+    "WebSearch kullanılıyor: {{query}}",
   "analysis.activity.agentProgress": "Ajan ilerlemesi",
 
   // ── Analysis Progress ──

@@ -461,6 +461,8 @@ const th: TranslationKeys = {
     "กำลังลองเฟสอีกครั้งหลังจากปัญหาการตรวจสอบหรือการส่งข้อมูล",
   "analysis.activity.default": "กำลังดำเนินการวิเคราะห์เฟส",
   "analysis.activity.usingTool": "กำลังใช้ {{toolName}}",
+  "analysis.activity.usingWebSearchQuery":
+    "กำลังใช้ WebSearch: {{query}}",
   "analysis.activity.agentProgress": "ความคืบหน้าของเอเจนต์",
 
   // ── Analysis Progress ──

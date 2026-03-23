@@ -59,6 +59,7 @@ const mockRunPhase = vi.fn<
         kind: "note" | "tool" | "web-search";
         message: string;
         toolName?: string;
+        query?: string;
       }) => void;
     },
   ) => Promise<PhaseResult>
@@ -922,9 +923,9 @@ describe("analysis-orchestrator", () => {
   it("emits phase_activity events from the phase runtime during execution", async () => {
     mockRunPhase.mockImplementation(async (_phase, _topic, context) => {
       context?.onActivity?.({
-        kind: "tool",
-        message: "Using query_entities",
-        toolName: "query_entities",
+        kind: "web-search",
+        message: "Using WebSearch",
+        query: "US China tariff history 2025",
       });
       return makePhaseResult("situational-grounding");
     });
@@ -940,9 +941,9 @@ describe("analysis-orchestrator", () => {
       type: "phase_activity",
       phase: "situational-grounding",
       runId: expect.any(String),
-      kind: "tool",
-      message: "Using query_entities",
-      toolName: "query_entities",
+      kind: "web-search",
+      message: "Using WebSearch",
+      query: "US China tariff history 2025",
     });
   });
 

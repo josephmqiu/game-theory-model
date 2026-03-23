@@ -83,6 +83,12 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+function getWebSearchQuery(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const query = value.trim();
+  return query.length > 0 ? query : undefined;
+}
+
 function extractThreadId(result: unknown): string {
   const thread = asRecord(asRecord(result)?.thread);
   const threadId = thread?.id;
@@ -995,9 +1001,11 @@ export async function runAnalysisPhase<T = unknown>(
       if (method === "item/started") {
         const item = asRecord(params.item);
         if (item?.type === "webSearch") {
+          const query = getWebSearchQuery(item.query);
           options?.onActivity?.({
             kind: "web-search",
             message: "Using WebSearch",
+            ...(query ? { query } : {}),
           });
           serverLog(runId, "codex-adapter", "analysis-web-search", {
             query: item.query,

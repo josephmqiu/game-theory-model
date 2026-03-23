@@ -467,6 +467,8 @@ const hi: TranslationKeys = {
     "सत्यापन या ट्रांसपोर्ट त्रुटि के बाद चरण पुनः प्रयास हो रहा है।",
   "analysis.activity.default": "चरण विश्लेषण जारी है।",
   "analysis.activity.usingTool": "{{toolName}} का उपयोग हो रहा है",
+  "analysis.activity.usingWebSearchQuery":
+    "WebSearch का उपयोग हो रहा है: {{query}}",
   "analysis.activity.agentProgress": "एजेंट प्रगति",
 
   // ── Analysis Progress ──

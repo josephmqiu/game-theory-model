@@ -147,6 +147,7 @@ function emitPhaseActivity(
   options?: {
     kind?: Extract<AnalysisProgressEvent, { type: "phase_activity" }>["kind"];
     toolName?: string;
+    query?: string;
   },
 ): void {
   emitProgress({
@@ -156,6 +157,7 @@ function emitPhaseActivity(
     kind: options?.kind ?? "note",
     message,
     ...(options?.toolName ? { toolName: options.toolName } : {}),
+    ...(options?.query ? { query: options.query } : {}),
   });
 }
 
@@ -383,6 +385,7 @@ async function executeSinglePhase(
             emitPhaseActivity(run.runId, phase, activity.message, {
               kind: activity.kind,
               toolName: activity.toolName,
+              query: activity.query,
             });
           },
         }),
@@ -465,6 +468,7 @@ async function executeSinglePhase(
                 emitPhaseActivity(run.runId, phase, activity.message, {
                   kind: activity.kind,
                   toolName: activity.toolName,
+                  query: activity.query,
                 });
               },
             }),

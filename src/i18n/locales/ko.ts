@@ -461,6 +461,8 @@ const ko: TranslationKeys = {
     "검증 또는 전송 문제 후 단계를 재시도 중입니다.",
   "analysis.activity.default": "단계 분석을 계속 진행 중입니다.",
   "analysis.activity.usingTool": "{{toolName}} 사용 중",
+  "analysis.activity.usingWebSearchQuery":
+    "WebSearch 사용 중: {{query}}",
   "analysis.activity.agentProgress": "에이전트 진행 상황",
 
   // ── Analysis Progress ──

@@ -22,6 +22,7 @@ export type AnalysisProgressEvent =
       kind: AnalysisPhaseActivityKind;
       message: string;
       toolName?: string;
+      query?: string;
     }
   | {
       type: "phase_completed";

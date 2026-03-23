@@ -28,6 +28,7 @@ export interface AnalysisPhaseActivityEvent {
   kind: string;
   message: string;
   toolName?: string;
+  query?: string;
 }
 
 export type AnalysisProgressStreamEvent =
