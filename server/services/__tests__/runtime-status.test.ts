@@ -142,4 +142,18 @@ describe("runtime-status", () => {
     expect(runtimeStatus.getSnapshot().deferredRevalidationPending).toBe(false);
     expect(runtimeStatus.getDeferredRevalidationIds()).toEqual(["entity-1"]);
   });
+
+  it("classifies provider, connector, and MCP transport failures", () => {
+    expect(
+      runtimeStatus.inferFailureKind(
+        'Failed to start app-server: MCP server "game_theory_analyzer_mcp" is missing tool "get_entity"',
+      ),
+    ).toBe("mcp_transport_error");
+    expect(
+      runtimeStatus.inferFailureKind("Not logged in · Please run /login"),
+    ).toBe("connector_error");
+    expect(
+      runtimeStatus.inferFailureKind("Provider API returned 401 unauthorized"),
+    ).toBe("provider_api_error");
+  });
 });

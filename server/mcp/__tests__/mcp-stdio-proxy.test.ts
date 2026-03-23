@@ -31,6 +31,30 @@ describe("mcp-stdio-proxy", () => {
     expect(stderrText).toContain("Nitro MCP endpoint is unreachable");
   });
 
+  it("sends the MCP accept header when forwarding JSON-RPC", async () => {
+    const { forwardJsonRpcMessage } = await import("../mcp-stdio-proxy");
+    const fetchImpl = vi.fn(async () => {
+      return {
+        text: async () => '{"jsonrpc":"2.0","id":1,"result":{}}',
+      } as Response;
+    });
+
+    await forwardJsonRpcMessage('{"jsonrpc":"2.0","id":1,"method":"tools/list"}', {
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://127.0.0.1:3100/mcp",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          Accept: "application/json, text/event-stream",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+  });
+
   it("forwards concurrent requests without interleaving stdout lines", async () => {
     const { runProxy } = await import("../mcp-stdio-proxy");
     const stdin = new PassThrough();
@@ -89,5 +113,107 @@ describe("mcp-stdio-proxy", () => {
     expect(lines.map((line) => line.id).sort()).toEqual([1, 2]);
     expect(lines.every((line) => line.result.echoedFrom === "http://127.0.0.1:3100/mcp")).toBe(true);
     expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it("supports Content-Length framed MCP stdio messages", async () => {
+    const { runProxy } = await import("../mcp-stdio-proxy");
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    let stdoutText = "";
+
+    stdout.on("data", (chunk) => {
+      stdoutText += chunk.toString("utf-8");
+    });
+
+    const fetchImpl = vi.fn(
+      async (_input: string | URL, init?: RequestInit): Promise<Response> => {
+        if (init?.method === "GET") {
+          return {
+            text: async () => "",
+          } as Response;
+        }
+
+        return {
+          text: async () =>
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              result: { ok: true },
+            }),
+        } as Response;
+      },
+    );
+
+    const runPromise = runProxy({
+      stdin,
+      stdout,
+      stderr,
+      port: 3100,
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+
+    const message = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
+    });
+    stdin.write(`Content-Length: ${Buffer.byteLength(message, "utf-8")}\r\n\r\n${message}`);
+    stdin.end();
+
+    await runPromise;
+
+    expect(stdoutText).toContain("Content-Length:");
+    const [, body] = stdoutText.split("\r\n\r\n");
+    expect(JSON.parse(body)).toEqual({
+      jsonrpc: "2.0",
+      id: 1,
+      result: { ok: true },
+    });
+  });
+
+  it("does not emit a zero-length response for notifications", async () => {
+    const { runProxy } = await import("../mcp-stdio-proxy");
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    let stdoutText = "";
+
+    stdout.on("data", (chunk) => {
+      stdoutText += chunk.toString("utf-8");
+    });
+
+    const fetchImpl = vi.fn(
+      async (_input: string | URL, init?: RequestInit): Promise<Response> => {
+        if (init?.method === "GET") {
+          return {
+            text: async () => "",
+          } as Response;
+        }
+
+        return {
+          text: async () => "",
+        } as Response;
+      },
+    );
+
+    const runPromise = runProxy({
+      stdin,
+      stdout,
+      stderr,
+      port: 3100,
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+
+    const message = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "notifications/initialized",
+    });
+    stdin.write(`Content-Length: ${Buffer.byteLength(message, "utf-8")}\r\n\r\n${message}`);
+    stdin.end();
+
+    await runPromise;
+
+    expect(stdoutText).toBe("");
   });
 });

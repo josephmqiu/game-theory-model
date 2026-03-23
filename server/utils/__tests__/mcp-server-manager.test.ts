@@ -20,6 +20,9 @@ vi.mock("../../mcp/mcp-server", () => ({
 describe("mcp-server-manager", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    existsSyncMock.mockImplementation((filePath: string) =>
+      filePath.endsWith("mcp-stdio-proxy.cjs"),
+    );
   });
 
   it("reports the in-process MCP status", async () => {
@@ -38,5 +41,15 @@ describe("mcp-server-manager", () => {
     const { resolveMcpProxyScript } = await import("../mcp-server-manager");
 
     expect(resolveMcpProxyScript()).toContain("dist/mcp-stdio-proxy.cjs");
+  });
+
+  it("fails fast with a desktop-runtime hint when the proxy is missing", async () => {
+    existsSyncMock.mockReturnValue(false);
+    const { resolveMcpProxyScript } = await import("../mcp-server-manager");
+
+    expect(() => resolveMcpProxyScript()).toThrowError(
+      /Missing MCP stdio proxy build artifact/,
+    );
+    expect(() => resolveMcpProxyScript()).toThrowError(/bun run dev/);
   });
 });

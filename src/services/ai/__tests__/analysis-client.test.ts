@@ -42,9 +42,25 @@ class MockEventSource {
     this.listeners.set(type, listeners);
   }
 
+  removeEventListener(type: string, listener: (event: unknown) => void): void {
+    const listeners = this.listeners.get(type);
+    if (!listeners) {
+      return;
+    }
+
+    listeners.delete(listener);
+    if (listeners.size === 0) {
+      this.listeners.delete(type);
+    }
+  }
+
   close(): void {
     this.closed = true;
     this.readyState = 2;
+  }
+
+  listenerCount(type: string): number {
+    return this.listeners.get(type)?.size ?? 0;
   }
 
   emitOpen(): void {
@@ -481,6 +497,9 @@ describe("analysis-client", () => {
     });
 
     expect(firstSource.closed).toBe(true);
+    expect(firstSource.listenerCount("open")).toBe(0);
+    expect(firstSource.listenerCount("message")).toBe(0);
+    expect(firstSource.listenerCount("error")).toBe(0);
     expect(MockEventSource.instances).toHaveLength(2);
     expect(fetchMock).toHaveBeenCalledWith("/api/ai/state");
     expect(useRunStatusStore.getState().connectionState).toBe("CONNECTED");
@@ -530,7 +549,7 @@ describe("analysis-client", () => {
     );
   });
 
-  it("treats non-JSON analyze responses as accepted with an empty runId", async () => {
+  it("rejects non-JSON analyze responses", async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       if (input === "/api/ai/analyze") {
         return Promise.resolve(
@@ -549,10 +568,12 @@ describe("analysis-client", () => {
 
     const { client } = await loadModules();
 
-    await expect(client.startAnalysis("Topic")).resolves.toEqual({ runId: "" });
+    await expect(client.startAnalysis("Topic")).rejects.toThrow(
+      /non-JSON|runId/i,
+    );
   });
 
-  it("sends a best-effort abort request and clears local running state", async () => {
+  it("sends a best-effort abort request and marks local running state as cancelled", async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       if (input === "/api/ai/state") {
         return Promise.resolve(
@@ -592,6 +613,12 @@ describe("analysis-client", () => {
       method: "POST",
     });
     expect(client.isRunning()).toBe(false);
+    expect(useRunStatusStore.getState().runStatus).toMatchObject({
+      status: "cancelled",
+      kind: "analysis",
+      runId: "run-4",
+      activePhase: null,
+    });
     expect(useRunStatusStore.getState().phaseActivityText).toBeNull();
   });
 });

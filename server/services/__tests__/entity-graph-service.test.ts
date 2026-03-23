@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import type { AnalysisMutationEvent } from "../../../shared/types/events";
 import { V3_PHASES } from "../../../src/types/methodology";
+import * as runtimeStatus from "../runtime-status";
 import {
   newAnalysis,
   loadAnalysis,
@@ -91,6 +92,15 @@ describe("newAnalysis", () => {
     expect(a.phases).toHaveLength(V3_PHASES.length);
     expect(a.phases.map((p) => p.phase)).toEqual(V3_PHASES);
     expect(a.phases.every((p) => p.status === "pending")).toBe(true);
+  });
+
+  it("advances the runtime revision without marking the analysis dirty", () => {
+    const revisionBefore = runtimeStatus.getRevision();
+
+    newAnalysis("US-China trade war");
+
+    expect(runtimeStatus.getRevision()).toBe(revisionBefore + 1);
+    expect(getIsDirty()).toBe(false);
   });
 });
 
@@ -357,6 +367,17 @@ describe("markStale + getStaleEntityIds", () => {
     clearStale([e1.id]);
     expect(getStaleEntityIds()).toHaveLength(0);
   });
+
+  it("clearStale advances the runtime revision", () => {
+    newAnalysis("test");
+    const e1 = createEntity(makeFactData(), defaultProvenance);
+    markStale([e1.id]);
+    const revisionBefore = runtimeStatus.getRevision();
+
+    clearStale([e1.id]);
+
+    expect(runtimeStatus.getRevision()).toBe(revisionBefore + 1);
+  });
 });
 
 describe("removePhaseEntities", () => {
@@ -537,6 +558,22 @@ describe("loadAnalysis", () => {
     expect(a.topic).toBe("loaded topic");
     expect(getFileName()).toBe("loaded.json");
     expect(getFilePath()).toBe("/tmp/loaded.json");
+    expect(getIsDirty()).toBe(false);
+  });
+
+  it("advances the runtime revision when loading an analysis", () => {
+    const revisionBefore = runtimeStatus.getRevision();
+
+    loadAnalysis({
+      id: "loaded-id",
+      name: "Loaded",
+      topic: "loaded topic",
+      entities: [],
+      relationships: [],
+      phases: [],
+    });
+
+    expect(runtimeStatus.getRevision()).toBe(revisionBefore + 1);
     expect(getIsDirty()).toBe(false);
   });
 
