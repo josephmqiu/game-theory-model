@@ -1,4 +1,4 @@
-import type { CanvasKit, Canvas, Surface } from "canvaskit-wasm";
+import type { CanvasKit, Canvas, Surface, Paint } from "canvaskit-wasm";
 import type { PenNode, ContainerProps, EllipseNode } from "@/types/pen";
 import type {
   AnalysisEntity,
@@ -8,6 +8,7 @@ import type {
 } from "@/types/entity";
 import { RELATIONSHIP_CATEGORY } from "@/types/entity";
 import type { RoutedEdge } from "@/services/entity/edge-routing";
+import type { BundledEdge } from "@/services/entity/edge-bundling";
 import { useCanvasStore } from "@/stores/canvas-store";
 import {
   useDocumentStore,
@@ -1414,6 +1415,14 @@ export class SkiaEngine {
     paint.delete();
   }
 
+  // ── Category colors for trunk lines (representative color per category) ──
+
+  private static TRUNK_CATEGORY_COLOR: Record<string, string> = {
+    downstream: "#60A5FA",
+    evidence: "#34D399",
+    structural: "#52525B",
+  };
+
   // ── Draw a routed edge as a smooth cubic Bézier through waypoints ──
 
   private drawRoutedEdge(
@@ -1421,7 +1430,36 @@ export class SkiaEngine {
     edge: RoutedEdge,
     opacityOverride: number | null = null,
   ) {
+    // Skip non-trunk bundled edges (hidden until trunk hover — Task 7)
+    const bundled = edge as BundledEdge;
+    if (bundled.bundleId && !bundled.isTrunk) return;
+
     const ck = this.ck;
+
+    // Trunk edges: 3px width, category color at 60% opacity
+    if (bundled.isTrunk) {
+      const trunkColor =
+        SkiaEngine.TRUNK_CATEGORY_COLOR[edge.category] ?? "#52525B";
+      const trunkOpacity = opacityOverride !== null ? opacityOverride : 0.6;
+
+      const paint = new ck.Paint();
+      paint.setStyle(ck.PaintStyle.Stroke);
+      paint.setAntiAlias(true);
+      paint.setStrokeWidth(3);
+      paint.setColor(parseColor(ck, trunkColor));
+      paint.setAlphaf(trunkOpacity);
+      paint.setStrokeCap(ck.StrokeCap.Round);
+
+      this.drawEdgePath(canvas, edge, paint);
+      paint.delete();
+
+      // Arrowhead for downstream trunks
+      if (edge.category === "downstream") {
+        this.drawArrowhead(canvas, edge, trunkColor, trunkOpacity);
+      }
+      return;
+    }
+
     const style = SkiaEngine.EDGE_STYLE[edge.relType] ?? {
       color: "#52525B",
       width: 1.5,
@@ -1441,6 +1479,20 @@ export class SkiaEngine {
       const effect = ck.PathEffect.MakeDash(style.dash, 0);
       if (effect) paint.setPathEffect(effect);
     }
+
+    this.drawEdgePath(canvas, edge, paint);
+    paint.delete();
+
+    // Arrowhead for downstream edges
+    if (edge.category === "downstream") {
+      this.drawArrowhead(canvas, edge, style.color, effectiveOpacity);
+    }
+  }
+
+  // ── Draw the Bézier path for a routed edge (shared by normal + trunk rendering) ──
+
+  private drawEdgePath(canvas: Canvas, edge: RoutedEdge, paint: Paint) {
+    const ck = this.ck;
 
     // Build the full point sequence: from → waypoints → to
     const pts = [edge.from, ...edge.waypoints, edge.to];
@@ -1489,12 +1541,6 @@ export class SkiaEngine {
 
     canvas.drawPath(path, paint);
     path.delete();
-    paint.delete();
-
-    // Arrowhead for downstream edges
-    if (edge.category === "downstream") {
-      this.drawArrowhead(canvas, edge, style.color, effectiveOpacity);
-    }
   }
 
   // ── Draw an arrowhead triangle at the target port of a downstream edge ──

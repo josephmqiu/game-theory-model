@@ -5,6 +5,7 @@ import { useCanvasStore } from "@/stores/canvas-store";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { entityToRenderNode } from "@/services/entity/entity-to-pennode";
 import { routeEdges } from "@/services/entity/edge-routing";
+import { bundleEdges } from "@/services/entity/edge-bundling";
 import type { EntityRect } from "@/services/entity/edge-routing";
 import { getEntityCardMetrics } from "@/services/entity/entity-card-metrics";
 import type { AnalysisEntity } from "@/types/entity";
@@ -151,8 +152,9 @@ export default function AnalysisCanvas({
       });
     }
 
-    // Route edges through inter-column channels
+    // Route edges through inter-column channels, then bundle parallel edges
     const routed = routeEdges(entityRects, visibleRelationships);
+    const bundled = bundleEdges(routed);
 
     // Store render data on the engine — the render loop handles drawing
     engine.renderNodes = renderNodes;
@@ -160,7 +162,7 @@ export default function AnalysisCanvas({
     engine.entityMap.clear();
     for (const e of visibleEntities) engine.entityMap.set(e.id, e);
     engine.entityRelationships = visibleRelationships;
-    engine.routedEdges = routed;
+    engine.routedEdges = bundled;
     engine.searchHighlightIds = new Set(searchHighlight);
 
     engine.markDirty();
