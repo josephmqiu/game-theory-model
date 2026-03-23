@@ -509,6 +509,8 @@ export class SkiaEngine {
 
   // Interaction state
   hoveredNodeId: string | null = null;
+  hoveredEntityId: string | null = null;
+  hoveredEdgeIndex: number = -1;
   marquee: { x1: number; y1: number; x2: number; y2: number } | null = null;
   previewShape: {
     type: "rectangle" | "ellipse" | "frame" | "line" | "polygon";
@@ -675,6 +677,26 @@ export class SkiaEngine {
     // Pass current zoom to renderer for zoom-aware text rasterization
     this.renderer.zoom = this.zoom;
 
+    // ── Compute focus/hover state for interactive dimming ──
+    const activeEntityId =
+      useCanvasStore.getState().focusedEntityId ?? this.hoveredEntityId;
+    let connectedEntityIds: Set<string> | null = null;
+    let connectedRelIds: Set<string> | null = null;
+    if (activeEntityId && this.entityMap.size > 0) {
+      connectedEntityIds = new Set<string>([activeEntityId]);
+      connectedRelIds = new Set<string>();
+      for (const rel of this.entityRelationships) {
+        if (
+          rel.fromEntityId === activeEntityId ||
+          rel.toEntityId === activeEntityId
+        ) {
+          connectedEntityIds.add(rel.fromEntityId);
+          connectedEntityIds.add(rel.toEntityId);
+          connectedRelIds.add(rel.id);
+        }
+      }
+    }
+
     // Draw relationship edges (behind entity nodes)
     if (this.entityMap.size > 0) {
       if (this.routedEdges.length > 0) {
@@ -693,7 +715,13 @@ export class SkiaEngine {
           "downstream",
         ] as const) {
           for (const edge of routedByCategory[category]) {
-            this.drawRoutedEdge(canvas, edge);
+            let edgeOpacity: number | null = null;
+            if (connectedRelIds) {
+              edgeOpacity = connectedRelIds.has(edge.relationshipId)
+                ? 1.0
+                : 0.08;
+            }
+            this.drawRoutedEdge(canvas, edge, edgeOpacity);
           }
         }
       } else {
@@ -742,7 +770,18 @@ export class SkiaEngine {
         rn.node.role.startsWith("entity-")
       ) {
         const entity = this.entityMap.get(rn.node.id);
-        this.drawEntityNode(canvas, rn, entity);
+        const entityId = rn.node.id;
+        let opacityMul = 1.0;
+        let focusOutline = false;
+        if (connectedEntityIds) {
+          if (connectedEntityIds.has(entityId)) {
+            opacityMul = 1.0;
+            focusOutline = entityId === activeEntityId;
+          } else {
+            opacityMul = 0.4;
+          }
+        }
+        this.drawEntityNode(canvas, rn, entity, opacityMul, focusOutline);
       } else {
         this.renderer.drawNode(canvas, rn, selectedIds);
       }
@@ -967,6 +1006,26 @@ export class SkiaEngine {
     const entityMap = new Map<string, AnalysisEntity>();
     for (const e of entities) entityMap.set(e.id, e);
 
+    // ── Compute focus/hover state for interactive dimming ──
+    const activeEntityId =
+      useCanvasStore.getState().focusedEntityId ?? this.hoveredEntityId;
+    let connectedEntityIds: Set<string> | null = null;
+    let connectedRelIds: Set<string> | null = null;
+    if (activeEntityId && entityMap.size > 0) {
+      connectedEntityIds = new Set<string>([activeEntityId]);
+      connectedRelIds = new Set<string>();
+      for (const rel of relationships) {
+        if (
+          rel.fromEntityId === activeEntityId ||
+          rel.toEntityId === activeEntityId
+        ) {
+          connectedEntityIds.add(rel.fromEntityId);
+          connectedEntityIds.add(rel.toEntityId);
+          connectedRelIds.add(rel.id);
+        }
+      }
+    }
+
     // ── Draw relationship edges in 3 passes: structural (back) → evidence → downstream (front) ──
     if (this.routedEdges.length > 0) {
       const routedByCategory: Record<string, RoutedEdge[]> = {
@@ -983,7 +1042,11 @@ export class SkiaEngine {
         "downstream",
       ] as const) {
         for (const edge of routedByCategory[category]) {
-          this.drawRoutedEdge(canvas, edge);
+          let edgeOpacity: number | null = null;
+          if (connectedRelIds) {
+            edgeOpacity = connectedRelIds.has(edge.relationshipId) ? 1.0 : 0.08;
+          }
+          this.drawRoutedEdge(canvas, edge, edgeOpacity);
         }
       }
     } else {
@@ -1020,7 +1083,18 @@ export class SkiaEngine {
     // ── Draw entity nodes ──
     for (const rn of entityRenderNodes) {
       const entity = entityMap.get(rn.node.id);
-      this.drawEntityNode(canvas, rn, entity);
+      const entityId = rn.node.id;
+      let opacityMul = 1.0;
+      let focusOutline = false;
+      if (connectedEntityIds) {
+        if (connectedEntityIds.has(entityId)) {
+          opacityMul = 1.0;
+          focusOutline = entityId === activeEntityId;
+        } else {
+          opacityMul = 0.4;
+        }
+      }
+      this.drawEntityNode(canvas, rn, entity, opacityMul, focusOutline);
     }
   }
 
@@ -1067,6 +1141,8 @@ export class SkiaEngine {
     canvas: Canvas,
     rn: RenderNode,
     entity: AnalysisEntity | undefined,
+    opacityMultiplier: number = 1.0,
+    showFocusOutline: boolean = false,
   ) {
     const ck = this.ck;
     const { absX, absY, absW, absH } = rn;
@@ -1076,7 +1152,7 @@ export class SkiaEngine {
     const isStale = entity?.stale ?? false;
     const isHumanEdited = entity?.source === "human";
 
-    const nodeOpacity = isStale ? 0.4 : 1.0;
+    const nodeOpacity = (isStale ? 0.4 : 1.0) * opacityMultiplier;
 
     // ── Human-edited glow (subtle shadow in entity color, behind everything) ──
     if (isHumanEdited && !isStale) {
@@ -1221,13 +1297,32 @@ export class SkiaEngine {
             fill: [{ type: "solid", color: color + alpha }],
           } as PenNode;
         }
-        // Adjust text opacity for stale nodes
-        if (isStale) {
-          childRN.node = { ...childRN.node, opacity: 0.4 } as PenNode;
+        // Adjust text opacity for stale/dimmed nodes
+        if (isStale || opacityMultiplier < 1.0) {
+          childRN.node = {
+            ...childRN.node,
+            opacity: Math.min(isStale ? 0.4 : 1.0, opacityMultiplier),
+          } as PenNode;
         }
         this.renderer.drawNode(canvas, childRN, emptySet);
       }
       canvas.restore();
+    }
+
+    // ── Focus outline (selected state on active entity) ──
+    if (showFocusOutline) {
+      const focusPaint = new ck.Paint();
+      focusPaint.setStyle(ck.PaintStyle.Stroke);
+      focusPaint.setAntiAlias(true);
+      focusPaint.setStrokeWidth(2);
+      focusPaint.setColor(parseColor(ck, color));
+      const focusRRect = ck.RRectXY(
+        ck.LTRBRect(absX - 1, absY - 1, absX + absW + 1, absY + absH + 1),
+        7,
+        7,
+      );
+      canvas.drawRRect(focusRRect, focusPaint);
+      focusPaint.delete();
     }
   }
 
@@ -1321,20 +1416,26 @@ export class SkiaEngine {
 
   // ── Draw a routed edge as a smooth cubic Bézier through waypoints ──
 
-  private drawRoutedEdge(canvas: Canvas, edge: RoutedEdge) {
+  private drawRoutedEdge(
+    canvas: Canvas,
+    edge: RoutedEdge,
+    opacityOverride: number | null = null,
+  ) {
     const ck = this.ck;
     const style = SkiaEngine.EDGE_STYLE[edge.relType] ?? {
       color: "#52525B",
       width: 1.5,
       opacity: 0.15,
     };
+    const effectiveOpacity =
+      opacityOverride !== null ? opacityOverride : style.opacity;
 
     const paint = new ck.Paint();
     paint.setStyle(ck.PaintStyle.Stroke);
     paint.setAntiAlias(true);
     paint.setStrokeWidth(style.width);
     paint.setColor(parseColor(ck, style.color));
-    paint.setAlphaf(style.opacity);
+    paint.setAlphaf(effectiveOpacity);
 
     if (style.dash) {
       const effect = ck.PathEffect.MakeDash(style.dash, 0);
@@ -1392,7 +1493,7 @@ export class SkiaEngine {
 
     // Arrowhead for downstream edges
     if (edge.category === "downstream") {
-      this.drawArrowhead(canvas, edge, style.color, style.opacity);
+      this.drawArrowhead(canvas, edge, style.color, effectiveOpacity);
     }
   }
 

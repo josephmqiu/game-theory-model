@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { loadCanvasKit } from "@/canvas/skia/skia-init";
 import { SkiaEngine, screenToScene } from "@/canvas/skia/skia-engine";
+import { useCanvasStore } from "@/stores/canvas-store";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { entityToRenderNode } from "@/services/entity/entity-to-pennode";
 import { routeEdges } from "@/services/entity/edge-routing";
@@ -246,52 +247,83 @@ export default function AnalysisCanvas({
     [getHitEntity, layout],
   );
 
-  const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    if (dragRef.current.active && dragRef.current.entityId) {
-      const engine = engineRef.current;
-      const canvas = canvasRef.current;
-      if (!engine || !canvas) return;
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (dragRef.current.active && dragRef.current.entityId) {
+        const engine = engineRef.current;
+        const canvas = canvasRef.current;
+        if (!engine || !canvas) return;
 
-      const rect = canvas.getBoundingClientRect();
-      const scene = screenToScene(e.clientX, e.clientY, rect, {
-        zoom: engine.zoom,
-        panX: engine.panX,
-        panY: engine.panY,
-      });
-      const dx = scene.x - dragRef.current.startSceneX;
-      const dy = scene.y - dragRef.current.startSceneY;
-      const movedEnough =
-        Math.abs(e.clientX - dragRef.current.startClientX) > 3 ||
-        Math.abs(e.clientY - dragRef.current.startClientY) > 3;
+        // Set grabbing cursor during drag
+        canvas.style.cursor = "grabbing";
 
-      if (movedEnough) {
-        dragRef.current.moved = true;
+        const rect = canvas.getBoundingClientRect();
+        const scene = screenToScene(e.clientX, e.clientY, rect, {
+          zoom: engine.zoom,
+          panX: engine.panX,
+          panY: engine.panY,
+        });
+        const dx = scene.x - dragRef.current.startSceneX;
+        const dy = scene.y - dragRef.current.startSceneY;
+        const movedEnough =
+          Math.abs(e.clientX - dragRef.current.startClientX) > 3 ||
+          Math.abs(e.clientY - dragRef.current.startClientY) > 3;
+
+        if (movedEnough) {
+          dragRef.current.moved = true;
+        }
+
+        useEntityGraphStore
+          .getState()
+          .pinEntityPosition(
+            dragRef.current.entityId,
+            dragRef.current.startEntityX + dx,
+            dragRef.current.startEntityY + dy,
+          );
+        return;
       }
 
-      useEntityGraphStore
-        .getState()
-        .pinEntityPosition(
-          dragRef.current.entityId,
-          dragRef.current.startEntityX + dx,
-          dragRef.current.startEntityY + dy,
-        );
-      return;
-    }
+      if (panRef.current.active) {
+        const engine = engineRef.current;
+        const canvas = canvasRef.current;
+        if (!engine) return;
 
-    if (!panRef.current.active) return;
-    const engine = engineRef.current;
-    if (!engine) return;
+        // Set grabbing cursor during pan
+        if (canvas) canvas.style.cursor = "grabbing";
 
-    const dx = e.clientX - panRef.current.lastX;
-    const dy = e.clientY - panRef.current.lastY;
-    panRef.current.lastX = e.clientX;
-    panRef.current.lastY = e.clientY;
+        const dx = e.clientX - panRef.current.lastX;
+        const dy = e.clientY - panRef.current.lastY;
+        panRef.current.lastX = e.clientX;
+        panRef.current.lastY = e.clientY;
 
-    engine.pan(dx, dy);
-  }, []);
+        engine.pan(dx, dy);
+        return;
+      }
+
+      // ── Hover detection (only when not dragging/panning) ──
+      const hitEntity = getHitEntity(e.clientX, e.clientY);
+      const engine = engineRef.current;
+      if (engine) {
+        const newHoveredId = hitEntity?.id ?? null;
+        if (engine.hoveredEntityId !== newHoveredId) {
+          engine.hoveredEntityId = newHoveredId;
+          engine.markDirty();
+        }
+        // Cursor management
+        const canvas = canvasRef.current;
+        if (canvas) {
+          canvas.style.cursor = newHoveredId ? "pointer" : "default";
+        }
+      }
+    },
+    [getHitEntity],
+  );
 
   const handlePointerUp = useCallback(
     (e: React.PointerEvent) => {
+      // Restore cursor from grabbing state
+      const canvas = canvasRef.current;
+
       if (dragRef.current.active) {
         const hitEntityId = dragRef.current.entityId;
         const dragged = dragRef.current.moved;
@@ -307,10 +339,16 @@ export default function AnalysisCanvas({
           moved: false,
         };
 
+        // Restore cursor: pointer if still over entity, default otherwise
+        if (canvas) {
+          canvas.style.cursor = hitEntityId ? "pointer" : "default";
+        }
+
         if (!dragged && hitEntityId) {
           const hit =
             entities.find((entity) => entity.id === hitEntityId) ?? null;
           onEntitySelect(hit);
+          useCanvasStore.getState().setFocusedEntityId(hitEntityId);
         }
 
         return;
@@ -327,9 +365,14 @@ export default function AnalysisCanvas({
         lastY: 0,
       };
 
+      // Restore cursor from pan
+      if (canvas) canvas.style.cursor = "default";
+
       // If it was a click (not a drag), perform hit test
       if (!wasDrag) {
-        onEntitySelect(getHitEntity(e.clientX, e.clientY));
+        const hitEntity = getHitEntity(e.clientX, e.clientY);
+        onEntitySelect(hitEntity);
+        useCanvasStore.getState().setFocusedEntityId(hitEntity?.id ?? null);
       }
     },
     [entities, getHitEntity, onEntitySelect],
@@ -347,8 +390,25 @@ export default function AnalysisCanvas({
     engine.zoomToPoint(e.clientX, e.clientY, newZoom);
   }, []);
 
+  // ── Escape to clear focus ──
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      useCanvasStore.getState().setFocusedEntityId(null);
+      if (engineRef.current) {
+        engineRef.current.hoveredEntityId = null;
+        engineRef.current.markDirty();
+      }
+    }
+  }, []);
+
   return (
-    <div ref={containerRef} className="relative h-full w-full overflow-hidden">
+    <div
+      ref={containerRef}
+      className="relative h-full w-full overflow-hidden outline-none"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+    >
       <canvas
         ref={canvasRef}
         className="h-full w-full"

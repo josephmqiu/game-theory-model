@@ -33,6 +33,7 @@ interface CanvasStoreState {
   figmaImportDialogOpen: boolean;
   pendingFigmaFile: File | null;
   activePageId: string | null;
+  focusedEntityId: string | null;
 
   setActiveTool: (tool: ToolType) => void;
   setZoom: (zoom: number) => void;
@@ -53,6 +54,7 @@ interface CanvasStoreState {
   setFigmaImportDialogOpen: (open: boolean) => void;
   setPendingFigmaFile: (file: File | null) => void;
   setActivePageId: (pageId: string | null) => void;
+  setFocusedEntityId: (id: string | null) => void;
   hydrate: () => void;
 }
 
@@ -88,6 +90,7 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
   figmaImportDialogOpen: false,
   pendingFigmaFile: null,
   activePageId: DEFAULT_PAGE_ID,
+  focusedEntityId: null,
 
   setActiveTool: (tool) => set({ activeTool: tool }),
 
@@ -191,6 +194,7 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
     }),
   setPendingFigmaFile: (file) => set({ pendingFigmaFile: file }),
   setActivePageId: (activePageId) => set({ activePageId }),
+  setFocusedEntityId: (focusedEntityId) => set({ focusedEntityId }),
 
   hydrate: () => {
     try {
