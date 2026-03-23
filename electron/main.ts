@@ -51,6 +51,10 @@ import {
   getLegacyPortFilePath,
   getPortFilePath,
 } from "../src/lib/runtime-state-paths";
+import {
+  createAppSettingsStore,
+  createPreferenceStore,
+} from "./persistence";
 
 let mainWindow: BrowserWindow | null = null;
 let nitroProcess: ChildProcess | null = null;
@@ -99,37 +103,14 @@ function getPrefsPath(): string {
 // Renderer preferences (replaces localStorage which is origin-scoped)
 // ---------------------------------------------------------------------------
 
-let prefsCache: Record<string, string> = {};
-let prefsDirty = false;
-let prefsWriteTimer: ReturnType<typeof setTimeout> | null = null;
+const prefsStore = createPreferenceStore({
+  getPrefsPath,
+  getUserDataPath,
+  logError: (message) => log.error(message),
+});
 
 async function loadPrefs(): Promise<void> {
-  try {
-    const raw = await readFile(getPrefsPath(), "utf-8");
-    prefsCache = JSON.parse(raw);
-  } catch {
-    prefsCache = {};
-  }
-}
-
-function schedulePrefsWrite(): void {
-  if (prefsWriteTimer) return;
-  prefsDirty = true;
-  prefsWriteTimer = setTimeout(async () => {
-    prefsWriteTimer = null;
-    if (!prefsDirty) return;
-    prefsDirty = false;
-    try {
-      await mkdir(getUserDataPath(), { recursive: true });
-      await writeFile(
-        getPrefsPath(),
-        JSON.stringify(prefsCache, null, 2),
-        "utf-8",
-      );
-    } catch (err) {
-      log.error(`[prefs] Failed to write preferences: ${err}`);
-    }
-  }, 500);
+  await prefsStore.load();
 }
 
 // ---------------------------------------------------------------------------
@@ -148,20 +129,17 @@ interface AppSettings {
   autoUpdate?: boolean;
 }
 
+const appSettingsStore = createAppSettingsStore<AppSettings>({
+  getSettingsPath,
+  getUserDataPath,
+});
+
 async function readAppSettings(): Promise<AppSettings> {
-  try {
-    const raw = await readFile(getSettingsPath(), "utf-8");
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
+  return appSettingsStore.read();
 }
 
 async function writeAppSettings(patch: Partial<AppSettings>): Promise<void> {
-  const current = await readAppSettings();
-  const merged = { ...current, ...patch };
-  await mkdir(getUserDataPath(), { recursive: true });
-  await writeFile(getSettingsPath(), JSON.stringify(merged, null, 2), "utf-8");
+  await appSettingsStore.write(patch);
 }
 
 // ---------------------------------------------------------------------------
@@ -675,16 +653,14 @@ function setupIPC(): void {
 
   // Generic renderer preferences (replaces localStorage which is origin-scoped
   // and lost when Nitro server restarts on a different random port)
-  ipcMain.handle("prefs:getAll", () => ({ ...prefsCache }));
+  ipcMain.handle("prefs:getAll", () => prefsStore.getAll());
 
   ipcMain.handle("prefs:set", (_event, key: string, value: string) => {
-    prefsCache[key] = value;
-    schedulePrefsWrite();
+    prefsStore.set(key, value);
   });
 
   ipcMain.handle("prefs:remove", (_event, key: string) => {
-    delete prefsCache[key];
-    schedulePrefsWrite();
+    prefsStore.remove(key);
   });
 
   ipcMain.handle("log:getDir", () => getLogDir());

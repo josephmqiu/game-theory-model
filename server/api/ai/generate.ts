@@ -1,4 +1,11 @@
-import { defineEventHandler, getRequestHeader, readBody, setResponseHeaders } from 'h3'
+import {
+  defineEventHandler,
+  getRequestHeader,
+  readBody,
+  setResponseHeaders,
+  setResponseStatus,
+} from 'h3'
+import { z } from 'zod'
 import { resolveClaudeCli } from '../../utils/resolve-claude-cli'
 import { runCodexExec } from '../../utils/codex-client'
 import {
@@ -18,6 +25,16 @@ interface GenerateBody {
   effort?: 'low' | 'medium' | 'high' | 'max'
 }
 
+const generateBodySchema = z.object({
+  system: z.string().trim().min(1),
+  message: z.string().trim().min(1),
+  model: z.string().trim().min(1),
+  provider: z.enum(['anthropic', 'openai', 'opencode']),
+  thinkingMode: z.enum(['adaptive', 'disabled', 'enabled']).optional(),
+  thinkingBudgetTokens: z.number().positive().optional(),
+  effort: z.enum(['low', 'medium', 'high', 'max']).optional(),
+})
+
 /**
  * Non-streaming AI generation endpoint.
  * Routes to the appropriate provider SDK based on the `provider` field.
@@ -28,9 +45,16 @@ export default defineEventHandler(async (event) => {
   const startedAt = Date.now()
   let body: GenerateBody | null = null
   let bodyError: string | undefined
+  let bodyStatus = 400
 
   try {
-    body = (await readBody<GenerateBody>(event)) ?? null
+    const rawBody = (await readBody<unknown>(event)) ?? null
+    const parsedBody = generateBodySchema.safeParse(rawBody)
+    if (parsedBody.success) {
+      body = parsedBody.data
+    } else {
+      bodyError = 'Missing or invalid required fields: system, message, provider, model'
+    }
   } catch (error) {
     bodyError = error instanceof Error ? error.message : 'Failed to read request body.'
   }
@@ -45,24 +69,26 @@ export default defineEventHandler(async (event) => {
   let result: { text?: string; error?: string }
 
   if (bodyError) {
+    setResponseStatus(event, bodyStatus)
+    setResponseHeaders(event, { 'Content-Type': 'application/json' })
     result = { error: bodyError }
-  } else if (!body?.message || !body?.system) {
-    setResponseHeaders(event, { 'Content-Type': 'application/json' })
-    result = { error: 'Missing required fields: system, message' }
-  } else if (!body.provider) {
-    setResponseHeaders(event, { 'Content-Type': 'application/json' })
-    result = { error: 'Missing provider. Provider fallback is disabled.' }
-  } else if (!body.model?.trim()) {
-    setResponseHeaders(event, { 'Content-Type': 'application/json' })
-    result = { error: 'Missing model. Model fallback is disabled.' }
-  } else if (body.provider === 'anthropic') {
-    result = await generateViaAgentSDK(body, body.model, runId)
-  } else if (body.provider === 'opencode') {
-    result = await generateViaOpenCode(body, body.model, runId)
-  } else if (body.provider === 'openai') {
-    result = await generateViaCodex(body, body.model, runId)
   } else {
-    result = { error: 'Missing or unsupported provider. Provider fallback is disabled.' }
+    const validatedBody = body
+    if (!validatedBody) {
+      setResponseStatus(event, 400)
+      setResponseHeaders(event, { 'Content-Type': 'application/json' })
+      result = {
+        error: 'Missing or invalid required fields: system, message, provider, model',
+      }
+    } else if (validatedBody.provider === 'anthropic') {
+      result = await generateViaAgentSDK(validatedBody, validatedBody.model, runId)
+    } else if (validatedBody.provider === 'opencode') {
+      result = await generateViaOpenCode(validatedBody, validatedBody.model, runId)
+    } else if (validatedBody.provider === 'openai') {
+      result = await generateViaCodex(validatedBody, validatedBody.model, runId)
+    } else {
+      result = { error: 'Missing or unsupported provider. Provider fallback is disabled.' }
+    }
   }
 
   serverLog(runId, 'generate', 'response-sent', {

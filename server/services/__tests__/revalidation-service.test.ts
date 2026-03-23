@@ -7,6 +7,7 @@ import type {
   AnalysisRelationship,
 } from "../../../shared/types/entity";
 import type { PhaseOutputEntity, PhaseResult } from "../analysis-service";
+import * as runtimeStatus from "../runtime-status";
 
 // ── Mock analysis-service ──
 
@@ -245,6 +246,37 @@ describe("revalidation-service", () => {
     const deferred = revalidation._getDeferredStaleIds();
     expect(deferred.has("e1")).toBe(true);
     expect(deferred.has("e2")).toBe(true);
+  });
+
+  it("re-queues stale ids when revalidation is already active", async () => {
+    mockEntityGraph.getAnalysis.mockReturnValue({
+      id: "test",
+      name: "test",
+      topic: "test topic",
+      entities: [makeEntity("e1", "situational-grounding", true)],
+      relationships: [],
+      phases: [],
+    });
+    mockRunPhase.mockResolvedValue(makePhaseResult("situational-grounding"));
+
+    expect(
+      runtimeStatus.acquireRun("revalidation", "existing-reval", {
+        totalPhases: 1,
+      }),
+    ).toBe(true);
+
+    revalidation.scheduleRevalidation(["e1"]);
+
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(mockRunPhase).not.toHaveBeenCalled();
+    expect(revalidation._getPendingStaleIds()).toEqual(new Set(["e1"]));
+
+    runtimeStatus.releaseRun("existing-reval", "completed");
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(mockRunPhase).toHaveBeenCalled();
+    expect(revalidation._getPendingStaleIds().size).toBe(0);
   });
 
   // ── 4. onRunComplete preserves deferred revalidation for explicit user action ──

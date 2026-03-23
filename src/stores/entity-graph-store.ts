@@ -26,7 +26,6 @@ interface EntityGraphStoreState extends AnalysisFileReference {
   layout: LayoutState;
   isDirty: boolean;
   revision: number;
-  pendingEdits: Array<{ id: string; updates: Partial<AnalysisEntity> }>;
 
   newAnalysis: (topic: string) => void;
   loadAnalysis: (
@@ -191,7 +190,6 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
     fileName: null,
     filePath: null,
     fileHandle: null,
-    pendingEdits: [],
 
     newAnalysis: (topic) => {
       set((state) => ({
@@ -202,7 +200,6 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
         fileName: null,
         filePath: null,
         fileHandle: null,
-        pendingEdits: [],
       }));
     },
 
@@ -216,7 +213,6 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
         fileName: source?.fileName ?? null,
         filePath: source?.filePath ?? null,
         fileHandle: source?.fileHandle ?? null,
-        pendingEdits: [],
       }));
     },
 

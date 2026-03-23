@@ -47,6 +47,27 @@ let lastRunProvider: string | undefined;
 let lastRunModel: string | undefined;
 let lastRunRuntime: ResolvedAnalysisRuntime | undefined;
 
+function queuePendingRevalidation(staleIds: string[]): void {
+  if (staleIds.length === 0) return;
+
+  for (const id of staleIds) {
+    pendingStaleIds.add(id);
+  }
+
+  if (debounceTimer !== null) {
+    clearTimeout(debounceTimer);
+  }
+
+  debounceTimer = setTimeout(() => {
+    debounceTimer = null;
+    const ids = Array.from(pendingStaleIds);
+    pendingStaleIds.clear();
+    if (ids.length > 0) {
+      revalidate(ids);
+    }
+  }, DEBOUNCE_MS);
+}
+
 // ── Progress event helpers ──
 
 function emitProgress(event: AnalysisProgressEvent): void {
@@ -122,27 +143,13 @@ export function scheduleRevalidation(staleIds: string[]): void {
     return;
   }
 
-  // Merge into pending set
-  for (const id of staleIds) {
-    pendingStaleIds.add(id);
-  }
-
-  // Reset debounce timer
   if (debounceTimer !== null) {
-    clearTimeout(debounceTimer);
     scheduleLogger.log("revalidation", "debounce-reset", {
-      pendingCount: pendingStaleIds.size,
+      pendingCount: pendingStaleIds.size + staleIds.length,
     });
   }
 
-  debounceTimer = setTimeout(() => {
-    debounceTimer = null;
-    const ids = Array.from(pendingStaleIds);
-    pendingStaleIds.clear();
-    if (ids.length > 0) {
-      revalidate(ids);
-    }
-  }, DEBOUNCE_MS);
+  queuePendingRevalidation(staleIds);
 }
 
 /**
@@ -200,14 +207,16 @@ export function revalidate(
       totalPhases: phases.length,
     })
   ) {
+    queuePendingRevalidation(staleEntityIds ?? []);
     revalRunStatuses.set(runId, {
       runId,
-      status: "failed",
+      status: "deferred",
       phasesCompleted: 0,
-      error: "Revalidation already active",
+      error: "Revalidation already active; stale ids re-queued",
     });
     serverWarn(runId, "revalidation", "run-skipped", {
       reason: "runtime-status-busy",
+      staleEntityIds,
       activeStatus: runtimeStatus.getSnapshot(),
     });
     return { runId };

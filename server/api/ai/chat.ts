@@ -9,6 +9,7 @@ import {
 import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { z } from "zod";
 import { resolveClaudeCli } from "../../utils/resolve-claude-cli";
 import { runCodexExec } from "../../utils/codex-client";
 import {
@@ -63,6 +64,34 @@ interface ChatBody {
   thinkingMode?: "adaptive" | "disabled" | "enabled";
   thinkingBudgetTokens?: number;
   effort?: "low" | "medium" | "high" | "max";
+}
+
+const chatAttachmentSchema = z.object({
+  name: z.string(),
+  mediaType: z.string(),
+  data: z.string(),
+});
+
+const chatBodySchema = z.object({
+  system: z.string().trim().min(1),
+  messages: z.array(
+    z.object({
+      role: z.enum(["user", "assistant"]),
+      content: z.string(),
+      attachments: z.array(chatAttachmentSchema).optional(),
+    }),
+  ),
+  model: z.string().trim().min(1),
+  provider: z.string().trim().min(1),
+  thinkingMode: z.enum(["adaptive", "disabled", "enabled"]).optional(),
+  thinkingBudgetTokens: z.number().positive().optional(),
+  effort: z.enum(["low", "medium", "high", "max"]).optional(),
+});
+
+function badRequest(event: H3Event, error: string) {
+  setResponseStatus(event, 400);
+  setResponseHeaders(event, { "Content-Type": "application/json" });
+  return { error };
 }
 
 async function readDebugTail(
@@ -125,31 +154,32 @@ function buildClaudeExitHint(
  * Requires explicit provider and model; no fallback routing.
  */
 export default defineEventHandler(async (event) => {
-  const body = await readBody<ChatBody>(event);
+  let rawBody: unknown;
+  try {
+    rawBody = await readBody<unknown>(event);
+  } catch {
+    return badRequest(event, "Invalid request body");
+  }
   const runId = getRequestHeader(event, "x-run-id")?.trim() || undefined;
+  const parsedBody = chatBodySchema.safeParse(rawBody);
 
-  if (!body?.messages || !body?.system) {
-    setResponseStatus(event, 400);
-    setResponseHeaders(event, { "Content-Type": "application/json" });
-    return { error: "Missing required fields: system, messages" };
+  if (!parsedBody.success) {
+    return badRequest(
+      event,
+      "Missing or invalid required fields: system, messages, provider, model",
+    );
   }
-  if (!body.provider) {
-    setResponseStatus(event, 400);
-    setResponseHeaders(event, { "Content-Type": "application/json" });
-    return { error: "Missing provider. Provider fallback is disabled." };
+  const parsed = parsedBody.data;
+  if (!isAllowedProvider(parsed.provider)) {
+    return badRequest(
+      event,
+      "Missing or unsupported provider. Provider fallback is disabled.",
+    );
   }
-  if (!body.model?.trim()) {
-    setResponseStatus(event, 400);
-    setResponseHeaders(event, { "Content-Type": "application/json" });
-    return { error: "Missing model. Model fallback is disabled." };
-  }
-  if (!isAllowedProvider(body.provider)) {
-    setResponseStatus(event, 400);
-    setResponseHeaders(event, { "Content-Type": "application/json" });
-    return {
-      error: "Missing or unsupported provider. Provider fallback is disabled.",
-    };
-  }
+  const body: ChatBody = {
+    ...parsed,
+    provider: parsed.provider,
+  };
 
   const provider = body.provider;
   const model = body.model;
