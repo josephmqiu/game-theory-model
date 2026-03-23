@@ -1,7 +1,7 @@
 {
   "private": false,
   "name": "game-theory-analyzer",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "A desktop game-theory analysis workspace for evidence-backed modeling, workflow-guided review, and AI-assisted strategic analysis.",
   "author": "Game Theory Analyzer contributors",
   "license": "MIT",
