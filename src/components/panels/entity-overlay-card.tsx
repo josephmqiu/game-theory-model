@@ -81,6 +81,7 @@ const ENTITY_TYPE_COLORS: Record<EntityType, string> = {
   scenario: "#22D3EE",
   "central-thesis": "#A78BFA",
   "meta-check": "#F97316",
+  "analysis-report": "#A78BFA",
 };
 
 const ENTITY_TYPE_I18N_KEYS: Record<EntityType, string> = {
@@ -111,6 +112,7 @@ const ENTITY_TYPE_I18N_KEYS: Record<EntityType, string> = {
   scenario: "analysis.entities.scenario",
   "central-thesis": "analysis.entities.thesis",
   "meta-check": "analysis.entities.metaCheck",
+  "analysis-report": "analysis.entities.analysisReport",
 };
 
 // ── Confidence dot colors ──
@@ -214,6 +216,10 @@ function getEntityName(entity: AnalysisEntity): string {
       return d.thesis.length > 60 ? d.thesis.slice(0, 60) + "\u2026" : d.thesis;
     case "meta-check":
       return `Meta-Check (${d.questions.filter((q) => q.disruption_trigger_identified).length} triggers)`;
+    case "analysis-report":
+      return d.executive_summary.length > 60
+        ? d.executive_summary.slice(0, 60) + "\u2026"
+        : d.executive_summary;
   }
 }
 
@@ -1021,6 +1027,8 @@ function EditableEntityData({
       );
     case "meta-check":
       return null;
+    case "analysis-report":
+      return null; // not implemented — Task 4
   }
 }
 
@@ -1080,6 +1088,8 @@ function EntityDataSection({ entity }: { entity: AnalysisEntity }) {
       return <CentralThesisDetails data={entity.data} />;
     case "meta-check":
       return <MetaCheckDetails data={entity.data} />;
+    case "analysis-report":
+      return null; // not implemented — Task 4
   }
 }
 

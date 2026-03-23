@@ -56,6 +56,7 @@ export const ENTITY_CARD_METRICS: Record<EntityType, EntityCardMetrics> = {
   "escalation-rung": SMALL_CARD,
   "signaling-effect": SMALL_CARD,
   assumption: SMALL_CARD,
+  "analysis-report": LARGE_CARD,
 };
 
 export const ENTITY_CARD_LAYOUT = {
@@ -71,14 +72,13 @@ export const ENTITY_CARD_LAYOUT = {
   verticalGap: 24,
 } as const;
 
-export function getEntityCardMetrics(entityType: EntityType): EntityCardMetrics {
+export function getEntityCardMetrics(
+  entityType: EntityType,
+): EntityCardMetrics {
   return ENTITY_CARD_METRICS[entityType] ?? SMALL_CARD;
 }
 
-export function truncateEntityCardText(
-  text: string,
-  maxChars: number,
-): string {
+export function truncateEntityCardText(text: string, maxChars: number): string {
   const normalized = text.replace(/\s+/g, " ").trim();
   if (!normalized) return normalized;
   if (normalized.length <= maxChars) return normalized;

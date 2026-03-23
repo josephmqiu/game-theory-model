@@ -89,6 +89,8 @@ function entityMetaLine(entity: AnalysisEntity): string {
       return `thesis`;
     case "meta-check":
       return `meta-check / ${d.questions.filter((q) => q.disruption_trigger_identified).length} triggers`;
+    case "analysis-report":
+      return `report`;
   }
 }
 
