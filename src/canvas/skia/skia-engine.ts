@@ -6,6 +6,7 @@ import type {
   EntityType,
   RelationshipType,
 } from "@/types/entity";
+import { RELATIONSHIP_CATEGORY } from "@/types/entity";
 import { useCanvasStore } from "@/stores/canvas-store";
 import {
   useDocumentStore,
@@ -686,10 +687,26 @@ export class SkiaEngine {
           });
         }
       }
+      // ── Draw relationship edges in 3 passes: structural (back) → evidence → downstream (front) ──
+      const edgesByCategory: Record<string, typeof this.entityRelationships> = {
+        structural: [],
+        evidence: [],
+        downstream: [],
+      };
       for (const rel of this.entityRelationships) {
-        const from = posMap.get(rel.fromEntityId);
-        const to = posMap.get(rel.toEntityId);
-        if (from && to) this.drawRelationshipEdge(canvas, from, to, rel.type);
+        const cat = RELATIONSHIP_CATEGORY[rel.type] ?? "structural";
+        edgesByCategory[cat].push(rel);
+      }
+      for (const category of [
+        "structural",
+        "evidence",
+        "downstream",
+      ] as const) {
+        for (const rel of edgesByCategory[category]) {
+          const from = posMap.get(rel.fromEntityId);
+          const to = posMap.get(rel.toEntityId);
+          if (from && to) this.drawRelationshipEdge(canvas, from, to, rel.type);
+        }
       }
     }
 
@@ -737,12 +754,7 @@ export class SkiaEngine {
       const label = rn.node.name;
       if (
         !label ||
-        !shouldDrawFrameLabel(
-          rn.node,
-          rn.clipRect,
-          isReusable,
-          isInstance,
-        )
+        !shouldDrawFrameLabel(rn.node, rn.clipRect, isReusable, isInstance)
       ) {
         continue;
       }
@@ -939,12 +951,22 @@ export class SkiaEngine {
       });
     }
 
-    // ── Draw relationship edges (behind nodes) ──
+    // ── Draw relationship edges in 3 passes: structural (back) → evidence → downstream (front) ──
+    const edgesByCategory: Record<string, typeof relationships> = {
+      structural: [],
+      evidence: [],
+      downstream: [],
+    };
     for (const rel of relationships) {
-      const from = posMap.get(rel.fromEntityId);
-      const to = posMap.get(rel.toEntityId);
-      if (!from || !to) continue;
-      this.drawRelationshipEdge(canvas, from, to, rel.type);
+      const cat = RELATIONSHIP_CATEGORY[rel.type] ?? "structural";
+      edgesByCategory[cat].push(rel);
+    }
+    for (const category of ["structural", "evidence", "downstream"] as const) {
+      for (const rel of edgesByCategory[category]) {
+        const from = posMap.get(rel.fromEntityId);
+        const to = posMap.get(rel.toEntityId);
+        if (from && to) this.drawRelationshipEdge(canvas, from, to, rel.type);
+      }
     }
 
     // ── Draw entity nodes ──
@@ -1165,12 +1187,41 @@ export class SkiaEngine {
 
   private static EDGE_STYLE: Record<
     string,
-    { color: string; dash?: number[]; width: number }
+    { color: string; dash?: number[]; width: number; opacity: number }
   > = {
-    "plays-in": { color: "#52525B", width: 1.5 },
-    supports: { color: "#34D399", dash: [6, 4], width: 1.5 },
-    contradicts: { color: "#F87171", dash: [6, 4], width: 1.5 },
-    constrains: { color: "#52525B", dash: [2, 3], width: 1.5 },
+    // Downstream (front, 2px, solid, 40% unfocused)
+    "plays-in": { color: "#60A5FA", width: 2, opacity: 0.4 },
+    "has-objective": { color: "#818CF8", width: 2, opacity: 0.4 },
+    "has-strategy": { color: "#F59E0B", width: 2, opacity: 0.4 },
+    produces: { color: "#FBBF24", width: 2, opacity: 0.4 },
+    "depends-on": { color: "#60A5FA", width: 2, opacity: 0.4 },
+    "derived-from": { color: "#A78BFA", width: 2, opacity: 0.4 },
+    // Evidence (middle, 1.5px, dashed, 25% unfocused)
+    supports: { color: "#34D399", dash: [6, 4], width: 1.5, opacity: 0.25 },
+    contradicts: { color: "#F87171", dash: [6, 4], width: 1.5, opacity: 0.25 },
+    "informed-by": {
+      color: "#94A3B8",
+      dash: [6, 4],
+      width: 1.5,
+      opacity: 0.25,
+    },
+    "invalidated-by": {
+      color: "#EF4444",
+      dash: [6, 4],
+      width: 1.5,
+      opacity: 0.25,
+    },
+    // Structural (back, 1px, dotted, 15% unfocused)
+    constrains: { color: "#52525B", dash: [2, 3], width: 1, opacity: 0.15 },
+    "escalates-to": { color: "#52525B", dash: [2, 3], width: 1, opacity: 0.15 },
+    links: { color: "#52525B", dash: [2, 3], width: 1, opacity: 0.15 },
+    precedes: { color: "#52525B", dash: [2, 3], width: 1, opacity: 0.15 },
+    "conflicts-with": {
+      color: "#71717A",
+      dash: [2, 3],
+      width: 1,
+      opacity: 0.15,
+    },
   };
 
   private drawRelationshipEdge(
@@ -1183,6 +1234,7 @@ export class SkiaEngine {
     const style = SkiaEngine.EDGE_STYLE[relType] ?? {
       color: "#52525B",
       width: 1.5,
+      opacity: 0.15,
     };
 
     const paint = new ck.Paint();
@@ -1190,6 +1242,7 @@ export class SkiaEngine {
     paint.setAntiAlias(true);
     paint.setStrokeWidth(style.width);
     paint.setColor(parseColor(ck, style.color));
+    paint.setAlphaf(style.opacity);
 
     if (style.dash) {
       const effect = ck.PathEffect.MakeDash(style.dash, 0);
