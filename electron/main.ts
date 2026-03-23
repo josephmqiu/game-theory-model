@@ -44,6 +44,7 @@ import {
 import { initLogger, log, getLogDir } from "./logger";
 import { applyGuiPathFix } from "./path-bootstrap";
 import { buildNitroChildEnv } from "./nitro-env";
+import { isRunningFromMountedDiskImage } from "./install-location";
 import {
   getLegacyPortFilePath,
   getPortFilePath,
@@ -63,12 +64,22 @@ const ANALYSIS_FILE_FILTER: OpenDialogOptions["filters"] = [
 ];
 
 const isDev = !app.isPackaged;
+
+function getUserDataPath(): string {
+  return app.getPath("userData");
+}
+
 // Settings stored in platform-standard app data dir (Electron-managed):
 // macOS: ~/Library/Application Support/Game Theory Analyzer/
 // Windows: %APPDATA%\Game Theory Analyzer\
 // Linux: ~/.config/Game Theory Analyzer/
-const SETTINGS_PATH = join(app.getPath("userData"), "settings.json");
-const PREFS_PATH = join(app.getPath("userData"), "preferences.json");
+function getSettingsPath(): string {
+  return join(getUserDataPath(), "settings.json");
+}
+
+function getPrefsPath(): string {
+  return join(getUserDataPath(), "preferences.json");
+}
 
 // ---------------------------------------------------------------------------
 // Renderer preferences (replaces localStorage which is origin-scoped)
@@ -80,7 +91,7 @@ let prefsWriteTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function loadPrefs(): Promise<void> {
   try {
-    const raw = await readFile(PREFS_PATH, "utf-8");
+    const raw = await readFile(getPrefsPath(), "utf-8");
     prefsCache = JSON.parse(raw);
   } catch {
     prefsCache = {};
@@ -95,8 +106,12 @@ function schedulePrefsWrite(): void {
     if (!prefsDirty) return;
     prefsDirty = false;
     try {
-      await mkdir(app.getPath("userData"), { recursive: true });
-      await writeFile(PREFS_PATH, JSON.stringify(prefsCache, null, 2), "utf-8");
+      await mkdir(getUserDataPath(), { recursive: true });
+      await writeFile(
+        getPrefsPath(),
+        JSON.stringify(prefsCache, null, 2),
+        "utf-8",
+      );
     } catch (err) {
       log.error(`[prefs] Failed to write preferences: ${err}`);
     }
@@ -121,7 +136,7 @@ interface AppSettings {
 
 async function readAppSettings(): Promise<AppSettings> {
   try {
-    const raw = await readFile(SETTINGS_PATH, "utf-8");
+    const raw = await readFile(getSettingsPath(), "utf-8");
     return JSON.parse(raw);
   } catch {
     return {};
@@ -131,8 +146,8 @@ async function readAppSettings(): Promise<AppSettings> {
 async function writeAppSettings(patch: Partial<AppSettings>): Promise<void> {
   const current = await readAppSettings();
   const merged = { ...current, ...patch };
-  await mkdir(app.getPath("userData"), { recursive: true });
-  await writeFile(SETTINGS_PATH, JSON.stringify(merged, null, 2), "utf-8");
+  await mkdir(getUserDataPath(), { recursive: true });
+  await writeFile(getSettingsPath(), JSON.stringify(merged, null, 2), "utf-8");
 }
 
 // ---------------------------------------------------------------------------
@@ -142,7 +157,7 @@ async function writeAppSettings(patch: Partial<AppSettings>): Promise<void> {
 function getCanonicalPortFilePath(): string {
   return isDev
     ? getLegacyPortFilePath()
-    : getPortFilePath({ userDataDir: app.getPath("userData") });
+    : getPortFilePath({ userDataDir: getUserDataPath() });
 }
 
 async function unlinkIfPresent(filePath: string): Promise<void> {
@@ -230,7 +245,7 @@ async function startNitroServer(): Promise<number> {
         host: NITRO_HOST,
         port,
         resourcesPath: process.resourcesPath,
-        userDataDir: app.getPath("userData"),
+        userDataDir: getUserDataPath(),
       }),
       stdio: "pipe",
     });
@@ -637,11 +652,54 @@ if (!gotTheLock) {
 // App lifecycle
 // ---------------------------------------------------------------------------
 
+async function blockMountedDiskImageLaunch(): Promise<boolean> {
+  if (!isRunningFromMountedDiskImage(process.platform, app.isPackaged, process.execPath)) {
+    return false;
+  }
+
+  const { response } = await dialog.showMessageBox({
+    type: "info",
+    buttons: ["Move to Applications", "Quit"],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+    title: APP_NAME,
+    message: `Install ${APP_NAME} before opening it.`,
+    detail:
+      "This copy is running directly from the mounted disk image. Move it to Applications first to avoid unnecessary macOS privacy prompts and to enable normal updates.",
+  });
+
+  if (response !== 0) {
+    app.quit();
+    return true;
+  }
+
+  try {
+    const moved = app.moveToApplicationsFolder();
+    if (!moved) {
+      app.quit();
+    }
+    return true;
+  } catch (err) {
+    dialog.showErrorBox(
+      APP_NAME,
+      `Could not move the app to Applications.\n\n${err instanceof Error ? err.message : String(err)}`,
+    );
+    app.quit();
+    return true;
+  }
+}
+
 app.on("ready", async () => {
-  await initLogger(app.getPath("userData"));
+  app.setName(APP_NAME);
+
+  if (await blockMountedDiskImageLaunch()) {
+    return;
+  }
+
+  await initLogger(getUserDataPath());
   fixPath();
   await loadPrefs();
-  app.setName(APP_NAME);
   setupIPC();
   buildAppMenu();
 

@@ -1,11 +1,25 @@
-import { mkdirSync, readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import {
+  getClaudeCacheDir,
+  getClaudeConfigDir,
+  getClaudeDataDir,
+  getClaudeHomeDir,
+  getClaudeStateDir,
+} from '../../src/lib/runtime-state-paths'
 
 type EnvLike = Record<string, string | undefined>
 
 interface ClaudeSettings {
   env?: Record<string, unknown>
+}
+
+interface ClaudePersistentState {
+  anonymousId?: unknown
+  customApiKeyResponses?: unknown
+  oauthAccount?: unknown
+  userID?: unknown
 }
 
 const STRIPPED_PROCESS_ENV_KEYS = new Set([
@@ -54,6 +68,14 @@ function readSingleSettingsFile(filePath: string): EnvLike {
   }
 }
 
+function readJsonFile<T>(filePath: string): T | null {
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf-8')) as T
+  } catch {
+    return null
+  }
+}
+
 /**
  * Read env from ~/.claude/settings.json and ~/.claude/settings.local.json.
  * Local settings take priority (same as Claude Code's own precedence).
@@ -63,6 +85,73 @@ function readClaudeSettingsEnv(): EnvLike {
   const base = readSingleSettingsFile(join(claudeDir, 'settings.json'))
   const local = readSingleSettingsFile(join(claudeDir, 'settings.local.json'))
   return { ...base, ...local }
+}
+
+function sanitizeClaudePersistentState(
+  state: ClaudePersistentState | null,
+): Record<string, unknown> {
+  if (!state || typeof state !== 'object') return {}
+
+  const sanitized: Record<string, unknown> = {}
+  if (state.oauthAccount && typeof state.oauthAccount === 'object') {
+    sanitized.oauthAccount = state.oauthAccount
+  }
+  if (typeof state.userID === 'string' && state.userID.trim().length > 0) {
+    sanitized.userID = state.userID
+  }
+  if (
+    state.customApiKeyResponses &&
+    typeof state.customApiKeyResponses === 'object'
+  ) {
+    sanitized.customApiKeyResponses = state.customApiKeyResponses
+  }
+  if (
+    typeof state.anonymousId === 'string' &&
+    state.anonymousId.trim().length > 0
+  ) {
+    sanitized.anonymousId = state.anonymousId
+  }
+
+  return sanitized
+}
+
+function writeJsonFile(filePath: string, data: Record<string, unknown>): void {
+  writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, 'utf-8')
+}
+
+function seedIsolatedClaudeState(homeDir: string, configDir: string): void {
+  const persistentState = sanitizeClaudePersistentState(
+    readJsonFile<ClaudePersistentState>(join(homedir(), '.claude.json')),
+  )
+
+  if (Object.keys(persistentState).length === 0) {
+    return
+  }
+
+  writeJsonFile(join(configDir, '.claude.json'), persistentState)
+  writeJsonFile(join(homeDir, '.claude.json'), persistentState)
+}
+
+function ensureIsolatedClaudeRuntime(): {
+  cacheDir: string
+  configDir: string
+  dataDir: string
+  homeDir: string
+  stateDir: string
+} {
+  const homeDir = getClaudeHomeDir()
+  const configDir = getClaudeConfigDir()
+  const cacheDir = getClaudeCacheDir()
+  const dataDir = getClaudeDataDir()
+  const stateDir = getClaudeStateDir()
+
+  for (const dir of [homeDir, configDir, cacheDir, dataDir, stateDir]) {
+    mkdirSync(dir, { recursive: true })
+  }
+
+  seedIsolatedClaudeState(homeDir, configDir)
+
+  return { cacheDir, configDir, dataDir, homeDir, stateDir }
 }
 
 /**
@@ -85,6 +174,7 @@ function isValidJson(str: string): boolean {
  */
 export function buildClaudeAgentEnv(): EnvLike {
   const fromSettings = readClaudeSettingsEnv()
+  const isolatedRuntime = ensureIsolatedClaudeRuntime()
   const fromProcess: EnvLike = {}
 
   for (const [key, value] of Object.entries(process.env as EnvLike)) {
@@ -96,6 +186,12 @@ export function buildClaudeAgentEnv(): EnvLike {
   const merged: EnvLike = {
     ...fromProcess,
     ...fromSettings,
+    CLAUDE_CONFIG_DIR: isolatedRuntime.configDir,
+    HOME: isolatedRuntime.homeDir,
+    XDG_CACHE_HOME: isolatedRuntime.cacheDir,
+    XDG_CONFIG_HOME: isolatedRuntime.configDir,
+    XDG_DATA_HOME: isolatedRuntime.dataDir,
+    XDG_STATE_HOME: isolatedRuntime.stateDir,
   }
 
   // Validate ANTHROPIC_CUSTOM_HEADERS if it exists - must be valid JSON

@@ -6,6 +6,7 @@ export const GAME_THEORY_ANALYZER_USER_DATA_DIR_ENV =
   'GAME_THEORY_ANALYZER_USER_DATA_DIR'
 export const LEGACY_RUNTIME_DIR_NAME = '.game-theory-analyzer'
 export const PORT_FILE_NAME = '.port'
+export const CLAUDE_RUNTIME_DIR_NAME = 'claude-runtime'
 
 type EnvLike = Record<string, string | undefined>
 
@@ -103,4 +104,40 @@ export function getPortFileReadCandidates(
 
 export function getServerLogDir(options?: RuntimeStatePathOptions): string {
   return join(getWritableRuntimeStateDir(options), 'logs')
+}
+
+export function getClaudeRuntimeDir(
+  options?: RuntimeStatePathOptions,
+): string {
+  return join(getWritableRuntimeStateDir(options), CLAUDE_RUNTIME_DIR_NAME)
+}
+
+export function getClaudeConfigDir(
+  options?: RuntimeStatePathOptions,
+): string {
+  return join(getClaudeRuntimeDir(options), 'config')
+}
+
+export function getClaudeHomeDir(
+  options?: RuntimeStatePathOptions,
+): string {
+  return join(getClaudeRuntimeDir(options), 'home')
+}
+
+export function getClaudeCacheDir(
+  options?: RuntimeStatePathOptions,
+): string {
+  return join(getClaudeRuntimeDir(options), 'cache')
+}
+
+export function getClaudeDataDir(
+  options?: RuntimeStatePathOptions,
+): string {
+  return join(getClaudeRuntimeDir(options), 'data')
+}
+
+export function getClaudeStateDir(
+  options?: RuntimeStatePathOptions,
+): string {
+  return join(getClaudeRuntimeDir(options), 'state')
 }
