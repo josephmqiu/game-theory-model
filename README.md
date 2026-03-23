@@ -7,12 +7,11 @@ A desktop application for AI-assisted game-theoretic analysis of real-world even
 
 ## What It Does
 
-Game Theory Analyzer helps you model real-world strategic interactions — negotiations, competitions, policy decisions — using formal game-theory frameworks. You chat with AI about a situation, and the system runs structured multi-phase analysis that produces:
+Game Theory Analyzer helps you model real-world strategic interactions — negotiations, competitions, policy decisions — using formal game-theory frameworks. You chat with AI about a situation, and the system runs structured multi-phase analysis that produces structured findings such as:
 
-- **Players** with defined strategies, goals, and constraints
-- **Payoff structures** showing outcomes for each strategy combination
-- **Equilibrium analysis** identifying stable outcomes (Nash, dominant strategies, etc.)
-- **Strategic recommendations** grounded in the analytical methodology
+- **Players, objectives, and strategies** captured as first-class analysis entities
+- **Game structures, payoff estimates, and equilibrium results** when the methodology reaches formal modeling
+- **Scenario branches, central theses, and meta-check findings** that can be inspected and challenged on the canvas
 
 All analysis is visualized as an entity graph on a canvas — the primary workspace, not just a chat window.
 
@@ -22,7 +21,7 @@ All analysis is visualized as an entity graph on a canvas — the primary worksp
 - Interactive canvas with entity graph visualization (Skia/CanvasKit)
 - Multi-phase analytical methodology (situation framing through meta-analysis)
 - Web search integration for evidence-backed modeling
-- Desktop app (Electron) with web fallback
+- Desktop app (Electron) as the live product, with a browser dev surface for renderer work
 - Local-first workspace state, with documented outbound network dependencies
 - `.gta` file format for saving and sharing analyses
 
@@ -32,7 +31,11 @@ All analysis is visualized as an entity graph on a canvas — the primary worksp
 
 - [Bun](https://bun.sh) (v1.1+)
 - [Node.js](https://nodejs.org) (v20+)
-- A Claude or ChatGPT Subscription and Claude Code / Codex CLI installed
+
+For live AI runtime features, also install and authenticate one or both of:
+
+- Claude Code
+- Codex CLI
 
 ### Install & Run
 
@@ -44,13 +47,15 @@ cd game-theory-model
 # Install dependencies
 bun install
 
-# Start the dev server (web)
+# Preferred: run the desktop app
+bun run electron:dev
+
+# Renderer-only development surface
 bun run dev
 # Opens at http://localhost:3000
-
-# Or run as a desktop app
-bun run electron:dev
 ```
+
+> **Note:** The live product is the desktop app. `bun run dev` is useful for renderer development, but Electron is the canonical runtime path for product behavior.
 
 ## Tech Stack
 

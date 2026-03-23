@@ -26,7 +26,8 @@
 
 ## Checklist
 
-- [ ] `npx tsc --noEmit` passes
-- [ ] `bun --bun run test` passes
+- [ ] `bun run typecheck` passes
+- [ ] `bun run test` passes
+- [ ] Verified desktop behavior in `bun run electron:dev` if this change affects the Electron app path
 - [ ] No unrelated changes included
 - [ ] Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)

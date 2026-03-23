@@ -16,8 +16,10 @@ Thanks for your interest in contributing! This document covers the process and s
 git clone https://github.com/josephmqiu/game-theory-model.git
 cd game-theory-model
 bun install
-bun run dev
+bun run electron:dev
 ```
+
+Use `bun run dev` when you only need the renderer/browser development surface. Use `bun run electron:dev` for the actual desktop product path.
 
 ### Verify your setup
 
@@ -32,8 +34,8 @@ bun run test        # Should pass all tests
 
 Use the [bug report template](https://github.com/josephmqiu/game-theory-model/issues/new?template=bug_report.yml). Include:
 
-- App version (from `package.json` or Help > About)
-- Platform (Web, macOS, Windows, Linux)
+- App version (from `package.json`, the packaged app version, or the macOS native About panel if applicable)
+- Platform (macOS, Windows, Linux, or renderer dev server if the bug is development-only)
 - Steps to reproduce
 - Expected vs actual behavior
 
@@ -78,6 +80,7 @@ This is the most important architectural rule:
 - Tests protect real behavior, not implementation details
 - Run `bun run typecheck && bun run test` before submitting
 - Build/typecheck/test passing is necessary but not sufficient — verify runtime behavior too
+- If your change affects desktop-only behavior, verify it in `bun run electron:dev`
 
 ## Code of Conduct
 
