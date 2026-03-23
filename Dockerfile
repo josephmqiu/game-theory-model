@@ -1,4 +1,4 @@
-# ── Stage 1: Build web app ──
+# ── Stage 1: Build secondary Nitro runtime ──
 FROM oven/bun:1 AS builder
 
 WORKDIR /app
@@ -7,7 +7,7 @@ RUN bun install --frozen-lockfile
 COPY . .
 RUN bun --bun run build
 
-# ── Stage 2: Base (web only, no CLI) ──
+# ── Stage 2: Base runtime image ──
 FROM oven/bun:1-slim AS base
 
 WORKDIR /app
@@ -20,7 +20,7 @@ ENV NITRO_PORT=3000
 EXPOSE 3000
 CMD ["bun", "run", "./.output/server/index.mjs"]
 
-# ── CLI variants ──
+# ── AI-enabled runtime variants ──
 
 FROM oven/bun:1 AS with-claude
 WORKDIR /app
@@ -36,34 +36,6 @@ WORKDIR /app
 COPY --from=builder /app/.output ./.output
 COPY --from=builder /app/package.json ./
 RUN bun install -g @openai/codex
-ENV NODE_ENV=production NITRO_HOST=0.0.0.0 NITRO_PORT=3000
-EXPOSE 3000
-CMD ["bun", "run", "./.output/server/index.mjs"]
-
-FROM oven/bun:1 AS with-opencode
-WORKDIR /app
-COPY --from=builder /app/.output ./.output
-COPY --from=builder /app/package.json ./
-RUN bun install -g opencode-ai
-ENV NODE_ENV=production NITRO_HOST=0.0.0.0 NITRO_PORT=3000
-EXPOSE 3000
-CMD ["bun", "run", "./.output/server/index.mjs"]
-
-FROM oven/bun:1 AS with-copilot
-WORKDIR /app
-COPY --from=builder /app/.output ./.output
-COPY --from=builder /app/package.json ./
-RUN bun install -g @github/copilot
-ENV NODE_ENV=production NITRO_HOST=0.0.0.0 NITRO_PORT=3000
-EXPOSE 3000
-CMD ["bun", "run", "./.output/server/index.mjs"]
-
-# ── Full: all CLI tools ──
-FROM oven/bun:1 AS full
-WORKDIR /app
-COPY --from=builder /app/.output ./.output
-COPY --from=builder /app/package.json ./
-RUN bun install -g @anthropic-ai/claude-code @openai/codex opencode-ai @github/copilot
 ENV NODE_ENV=production NITRO_HOST=0.0.0.0 NITRO_PORT=3000
 EXPOSE 3000
 CMD ["bun", "run", "./.output/server/index.mjs"]

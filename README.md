@@ -57,6 +57,37 @@ bun run dev
 
 > **Note:** The live product is the desktop app. `bun run dev` is useful for renderer development, but Electron is the canonical runtime path for product behavior.
 
+## Docker Support
+
+Docker is supported as a secondary Nitro/runtime surface. It is useful for headless runs and runtime validation, but it is not the canonical desktop delivery path.
+
+Available image targets:
+
+- `base` - plain Nitro runtime
+- `with-claude` - includes Claude Code CLI
+- `with-codex` - includes Codex CLI
+
+Minimal examples:
+
+```bash
+docker build --target base -t gta-base .
+docker run --rm -p 3000:3000 gta-base
+
+docker build --target with-claude -t gta-with-claude .
+docker run --rm -p 3000:3000 \
+  -v "$HOME/.claude:/root/.claude" \
+  gta-with-claude
+
+docker build --target with-codex -t gta-with-codex .
+docker run --rm -p 3000:3000 \
+  -v "$HOME/.codex:/root/.codex" \
+  gta-with-codex
+```
+
+The mounted `~/.claude` and `~/.codex` directories carry the local auth and config state that the CLI-based runtimes expect. Docker does not replace that local setup.
+
+The app's in-process MCP HTTP server stays container-internal by default; the examples above expose only the Nitro app port.
+
 ## Tech Stack
 
 | Layer          | Technology                         |
@@ -76,14 +107,14 @@ bun run dev
 
 ```bash
 bun run dev                        # Dev server on port 3000
-bun run build                      # Vite client build (frontend only)
+bun run build                      # Build the Nitro-backed app into .output
 bun run test                       # Run tests
 bun run typecheck                  # TypeScript check
 bun run electron:dev               # Electron dev mode
 bun run electron:build:mac-arm64   # Full production build (client + server + MCP + DMG)
 ```
 
-> **Note:** `bun run build` only builds the frontend. Server-side changes (Nitro, codex-adapter, MCP server) require the full Electron build to take effect in the desktop app.
+> **Note:** `bun run build` emits the Nitro-backed runtime under `.output`. Electron packaging still uses the `electron:build:*` commands for desktop artifacts.
 
 ## Network Access
 
@@ -100,12 +131,16 @@ If you need a stricter offline posture, review these integrations before running
 
 ```
 src/                   # React frontend (renderer)
-  canvas/              # Skia canvas engine
+  canvas/              # Canvas layout engine and Skia rendering
   components/          # React components
-  services/            # Domain services
+  services/            # Domain services (analysis client, etc.)
   stores/              # Zustand state stores
-server/                # Node.js backend (AI pipeline, evals)
-electron/              # Electron main process
+server/                # Node.js backend (AI pipeline, MCP, services)
+  api/ai/              # AI route handlers (analyze, chat, events SSE)
+  mcp/                 # MCP server and product tools
+  services/            # Runtime status, revalidation, entity graph
+electron/              # Electron main process + persistence
+smoke-tests/           # Integration smoke tests (SSE, MCP, desktop)
 public/                # Static assets
 ```
 
@@ -115,9 +150,13 @@ public/                # Static assets
 - **Canvas is the product**: The entity graph canvas is the primary analysis surface. Chat is the control panel, not the workspace.
 - **AI integration**: Uses tool-based local runtimes (Claude Agent SDK, Codex JSON-RPC), not direct provider API calls.
 
-## Contributing
+## Documentation
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
+| Document                           | Purpose                 |
+| ---------------------------------- | ----------------------- |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute       |
+| [CHANGELOG.md](CHANGELOG.md)       | Release history         |
+| [SECURITY.md](SECURITY.md)         | Vulnerability reporting |
 
 ## License
 

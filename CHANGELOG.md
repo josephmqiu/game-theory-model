@@ -7,12 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.1] - 2026-03-23
 
+### Added
+
+- Persistent SSE endpoint (`GET /api/ai/events`) streams analysis state, phase progress, and entity graph changes to the renderer in real time
+- Runtime-status service tracks analysis lifecycle server-side — the renderer now receives state via SSE instead of polling or owning it directly
+- Run-status store in the renderer projects server-owned analysis state for UI components
+- MCP product tools run in-process with Nitro for Claude; Codex gets a dedicated stdio proxy
+- Dismiss API (`POST /api/ai/dismiss`) lets the renderer acknowledge and clear completed analysis runs
+- Smoke test suite covering SSE streaming, MCP tool execution, desktop launch, and live provider connectivity
+- Integration test suite for the analysis pipeline, orchestrator, revalidation service, SSE contract, and MCP product tools
+- Electron persistence layer for durable prefs/settings writes across app restarts
+
 ### Fixed
 
 - Hardened Electron persistence so prefs/settings writes are less likely to lose state on failure or overlap
 - Added runtime request validation to AI routes so malformed bodies fail with `400` instead of partial mutation or server exceptions
-- Improved Codex runtime observability by logging previously swallowed fire-and-forget request failures
-- Preserved queued revalidation work when the runtime is already busy instead of dropping stale IDs
+- Codex runtime failures that were previously swallowed now surface in logs for easier debugging
+- Revalidation no longer drops queued entity IDs when the runtime is busy — all pending work is preserved
 
 ### Changed
 
