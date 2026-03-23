@@ -100,6 +100,27 @@ function isActiveRun(runId: string): boolean {
 export function inferFailureKind(error?: string): RunFailureKind {
   if (!error) return "unknown";
   if (/rate.?limit|429/i.test(error)) return "rate_limit";
+  if (
+    /mcp server|missing tool|mcp transport|nitro mcp endpoint|failed to restore .*mcp|tool list|tools:\s*\{\}/i.test(
+      error,
+    )
+  ) {
+    return "mcp_transport_error";
+  }
+  if (
+    /invalid api key|unauthorized|forbidden|provider api|upstream api|status code 40[13]|status code 5\d\d/i.test(
+      error,
+    )
+  ) {
+    return "provider_api_error";
+  }
+  if (
+    /not logged in|please run \/login|could not resolve authentication method|auth(?:entication)? failed|session|failed to start app-server/i.test(
+      error,
+    )
+  ) {
+    return "connector_error";
+  }
   if (/timeout/i.test(error)) return "timeout";
   if (/parse|json|syntax|zod|validation/i.test(error)) return "validation";
   return "unknown";

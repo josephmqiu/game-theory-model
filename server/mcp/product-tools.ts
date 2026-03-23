@@ -265,63 +265,15 @@ export const CHAT_MODE_TOOL_DEFINITIONS = [
   },
 ] as const satisfies readonly ToolDefinition[];
 
-async function resolveProviderAndModel(args: {
-  provider?: string;
-  model?: string;
-}): Promise<{ provider?: string; model?: string }> {
-  let provider = args.provider;
-  let model = args.model;
-
-  if (!provider || !model) {
-    try {
-      const { useAIStore } = await import("@/stores/ai-store");
-      const { useAgentSettingsStore } =
-        await import("@/stores/agent-settings-store");
-      const aiState = useAIStore.getState();
-      const agentState = useAgentSettingsStore.getState();
-
-      if (!model) {
-        model = aiState.model || undefined;
-      }
-
-      if (!provider && model) {
-        const group = aiState.modelGroups.find((candidate) =>
-          candidate.models.some((entry) => entry.value === model),
-        );
-        if (group) {
-          provider = group.provider;
-        } else {
-          for (const [providerType, providerConfig] of Object.entries(
-            agentState.providers,
-          )) {
-            if (
-              providerConfig.isConnected &&
-              providerConfig.models.some((entry) => entry.value === model)
-            ) {
-              provider = providerType;
-              break;
-            }
-          }
-        }
-      }
-    } catch {
-      // Store access is best-effort only.
-    }
-  }
-
-  return { provider, model };
-}
-
 export async function handleStartAnalysis(args: {
   topic: string;
   provider?: string;
   model?: string;
 }): Promise<string> {
-  const { provider, model } = await resolveProviderAndModel(args);
   const { runId } = await analysisOrchestrator.runFull(
     args.topic,
-    provider,
-    model,
+    args.provider,
+    args.model,
   );
   return JSON.stringify({ runId, status: "started", estimatedPhases: 3 });
 }

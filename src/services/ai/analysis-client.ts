@@ -200,6 +200,36 @@ class EventStreamManager {
   private recoveryFailures = 0;
   private disposed = false;
   private lastPingAt = Date.now();
+  private readonly handleEventSourceOpen = () => {
+    if (this.disposed) {
+      return;
+    }
+
+    this.lastPingAt = Date.now();
+    if (this.getConnectionState() === "DISCONNECTED") {
+      this.recoveryFailures = 0;
+      void this.recover("eventsource-open").catch(() => {});
+      return;
+    }
+
+    if (this.getConnectionState() === "CONNECTING") {
+      this.setConnectionState("CONNECTED");
+    }
+  };
+  private readonly handleEventSourceMessage = (event: Event) => {
+    if (this.disposed) {
+      return;
+    }
+    this.handleMessageEvent(String((event as MessageEvent).data ?? ""));
+  };
+  private readonly handleEventSourceError = () => {
+    if (this.disposed || this.getConnectionState() === "RECOVERING") {
+      return;
+    }
+    void this
+      .recover("eventsource-error", { recycleEventSource: true })
+      .catch(() => {});
+  };
 
   constructor() {
     this.setConnectionState("RECOVERING");
@@ -236,6 +266,7 @@ class EventStreamManager {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
+    this.detachEventSourceListeners();
     this.eventSource?.close();
     this.eventSource = null;
     this.recoveryPromise = null;
@@ -285,6 +316,18 @@ class EventStreamManager {
     this.recoveryRetryTimer = null;
   }
 
+  private detachEventSourceListeners(
+    eventSource: EventSource | null = this.eventSource,
+  ): void {
+    if (!eventSource) {
+      return;
+    }
+
+    eventSource.removeEventListener("open", this.handleEventSourceOpen);
+    eventSource.removeEventListener("message", this.handleEventSourceMessage);
+    eventSource.removeEventListener("error", this.handleEventSourceError);
+  }
+
   private scheduleRecoveryRetry(): void {
     if (this.disposed || this.recoveryFailures >= MAX_RECOVERY_FAILURES) {
       return;
@@ -303,7 +346,10 @@ class EventStreamManager {
       return;
     }
 
-    this.eventSource?.close();
+    if (this.eventSource) {
+      this.detachEventSourceListeners();
+      this.eventSource.close();
+    }
     this.lastPingAt = Date.now();
     if (!options?.preserveConnectionState) {
       this.setConnectionState("CONNECTING");
@@ -312,38 +358,9 @@ class EventStreamManager {
     const eventSource = new EventSource("/api/ai/events");
     this.eventSource = eventSource;
 
-    eventSource.addEventListener("open", () => {
-      if (this.disposed) {
-        return;
-      }
-
-      this.lastPingAt = Date.now();
-      if (this.getConnectionState() === "DISCONNECTED") {
-        this.recoveryFailures = 0;
-        void this.recover("eventsource-open").catch(() => {});
-        return;
-      }
-
-      if (this.getConnectionState() === "CONNECTING") {
-        this.setConnectionState("CONNECTED");
-      }
-    });
-
-    eventSource.addEventListener("message", (event) => {
-      if (this.disposed) {
-        return;
-      }
-      this.handleMessageEvent(String((event as MessageEvent).data ?? ""));
-    });
-
-    eventSource.addEventListener("error", () => {
-      if (this.disposed || this.getConnectionState() === "RECOVERING") {
-        return;
-      }
-      void this
-        .recover("eventsource-error", { recycleEventSource: true })
-        .catch(() => {});
-    });
+    eventSource.addEventListener("open", this.handleEventSourceOpen);
+    eventSource.addEventListener("message", this.handleEventSourceMessage);
+    eventSource.addEventListener("error", this.handleEventSourceError);
   }
 
   private bufferEvent(envelope: StreamEnvelope): void {
@@ -524,7 +541,19 @@ export function isRunning(): boolean {
 
 export function abort(): void {
   abortRequested = true;
-  useRunStatusStore.getState().clearPhaseActivityText();
+  const store = useRunStatusStore.getState();
+  const runStatus = store.runStatus;
+  if (runStatus.status === "running") {
+    store.setRunStatus({
+      status: "cancelled",
+      kind: runStatus.kind,
+      runId: runStatus.runId,
+      activePhase: null,
+      progress: { ...runStatus.progress },
+      deferredRevalidationPending: runStatus.deferredRevalidationPending,
+    });
+  }
+  store.clearPhaseActivityText();
 
   void fetch("/api/ai/abort", { method: "POST" })
     .then(async (response) => {
@@ -535,8 +564,9 @@ export function abort(): void {
       console.warn("[analysis-client] abort-endpoint-unreachable", e);
     });
 
-  currentController?.abort();
+  const activeController = currentController;
   currentController = null;
+  activeController?.abort();
 }
 
 export async function hydrateAnalysisState(): Promise<AnalysisStateResponse | null> {
@@ -585,13 +615,20 @@ export async function startAnalysis(
 
     const contentType = response.headers.get("Content-Type") ?? "";
     if (!contentType.includes("application/json")) {
-      return { runId: "" };
+      throw new Error(
+        `Analyze kickoff returned non-JSON content type: ${contentType || "unknown"}`,
+      );
     }
 
-    const payload = (await response
-      .json()
-      .catch(() => null)) as { runId?: string } | null;
-    return { runId: payload?.runId ?? "" };
+    const payload = (await response.json().catch(() => null)) as
+      | { runId?: string }
+      | null;
+    const runId = payload?.runId?.trim();
+    if (!runId) {
+      throw new Error("Analyze kickoff response missing runId");
+    }
+
+    return { runId };
   } catch (error) {
     if (controller.signal.aborted) {
       return { runId: "" };

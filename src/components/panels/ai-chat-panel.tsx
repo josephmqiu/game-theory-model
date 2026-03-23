@@ -37,7 +37,6 @@ import { useChatHandlers } from "./ai-chat-handlers";
 import { FixedChecklist } from "./ai-chat-checklist";
 import {
   buildAnalysisCompleteMessage,
-  getAnalysisCompleteMessageId,
 } from "./ai-chat-lifecycle";
 
 export type AIChatMode = "analysis";
@@ -66,6 +65,33 @@ function resolveNextModel(
   if (models.some((m) => m.value === currentModel)) return currentModel;
   if (models.some((m) => m.value === preferredModel)) return preferredModel;
   return models[0].value;
+}
+
+type AnalysisTerminalStatus = "completed" | "failed" | "cancelled";
+
+function getAnalysisTerminalNoticeKey(
+  runId: string,
+  terminalStatus: AnalysisTerminalStatus,
+): string {
+  return `analysis-terminal-${terminalStatus}-${runId}`;
+}
+
+function buildAnalysisTerminalMessage(
+  runId: string,
+  terminalStatus: AnalysisTerminalStatus,
+  entityCount: number,
+): ChatMessageType {
+  if (terminalStatus === "completed") {
+    return buildAnalysisCompleteMessage(runId, entityCount);
+  }
+
+  const statusLabel = terminalStatus === "failed" ? "failed" : "cancelled";
+  return {
+    id: getAnalysisTerminalNoticeKey(runId, terminalStatus),
+    role: "assistant",
+    content: `Analysis ${statusLabel} for run ${runId}. ${entityCount} entities remain on the canvas.`,
+    timestamp: Date.now(),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +236,7 @@ export default function AIChatPanel({
   const isDocked = presentation === "docked";
   const isAnalysisMode = mode === "analysis";
   const previousAnalysisIdRef = useRef<string | null>(null);
-  const completedRunIdsRef = useRef<Set<string>>(new Set());
+  const terminalNoticeKeysRef = useRef<Set<string>>(new Set());
 
   // Poll analysis orchestrator running state
   useEffect(() => {
@@ -235,20 +261,48 @@ export default function AIChatPanel({
     let previousStatus = useRunStatusStore.getState().runStatus;
     return useRunStatusStore.subscribe((state) => {
       const nextStatus = state.runStatus;
-      const completedAnalysisRun =
+      const wasAnalysisRun =
         previousStatus.status === "running" &&
-        previousStatus.kind === "analysis" &&
-        nextStatus.status === "idle";
+        previousStatus.kind === "analysis";
 
-      if (completedAnalysisRun && previousStatus.runId) {
-        const messageId = getAnalysisCompleteMessageId(previousStatus.runId);
-        if (!completedRunIdsRef.current.has(messageId)) {
-          completedRunIdsRef.current.add(messageId);
-          const entityCount =
-            useEntityGraphStore.getState().analysis.entities.length;
-          useAIStore.getState().addMessage(
-            buildAnalysisCompleteMessage(previousStatus.runId, entityCount),
+      if (wasAnalysisRun) {
+        const entityCount =
+          useEntityGraphStore.getState().analysis.entities.length;
+
+        if (nextStatus.status === "idle" && previousStatus.runId) {
+          const noticeKey = getAnalysisTerminalNoticeKey(
+            previousStatus.runId,
+            "completed",
           );
+          if (!terminalNoticeKeysRef.current.has(noticeKey)) {
+            terminalNoticeKeysRef.current.add(noticeKey);
+            useAIStore.getState().addMessage(
+              buildAnalysisTerminalMessage(
+                previousStatus.runId,
+                "completed",
+                entityCount,
+              ),
+            );
+          }
+        } else if (
+          (nextStatus.status === "failed" ||
+            nextStatus.status === "cancelled") &&
+          nextStatus.runId
+        ) {
+          const noticeKey = getAnalysisTerminalNoticeKey(
+            nextStatus.runId,
+            nextStatus.status,
+          );
+          if (!terminalNoticeKeysRef.current.has(noticeKey)) {
+            terminalNoticeKeysRef.current.add(noticeKey);
+            useAIStore.getState().addMessage(
+              buildAnalysisTerminalMessage(
+                nextStatus.runId,
+                nextStatus.status,
+                entityCount,
+              ),
+            );
+          }
         }
       }
 
@@ -337,7 +391,7 @@ export default function AIChatPanel({
 
     const previousAnalysisId = previousAnalysisIdRef.current;
     previousAnalysisIdRef.current = analysisId;
-    completedRunIdsRef.current.clear();
+    terminalNoticeKeysRef.current.clear();
     if (previousAnalysisId === null || previousAnalysisId === analysisId) {
       return;
     }

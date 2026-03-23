@@ -104,6 +104,7 @@ const mockEntityGraph = {
     relationships: [] as AnalysisRelationship[],
     phases: [],
   })),
+  newAnalysis: vi.fn(),
   setPhaseStatus: vi.fn(),
   removePhaseEntities: vi.fn(),
 };
@@ -537,6 +538,8 @@ describe("analysis-orchestrator", () => {
     await expect(orchestrator.runFull("Topic 2")).rejects.toThrow(
       "A run is already active",
     );
+    expect(mockEntityGraph.newAnalysis).toHaveBeenCalledTimes(1);
+    expect(mockEntityGraph.newAnalysis).toHaveBeenCalledWith("Topic 1");
 
     // Clean up
     resolvePhase1(makePhaseResult("situational-grounding"));
@@ -1243,6 +1246,7 @@ describe("analysis-orchestrator", () => {
       const status = orchestrator.getStatus(runId);
       expect(status.status).toBe("failed");
       expect(status.error).toContain("interrupted");
+      expect(orchestrator._getActiveRun()).toBeNull();
 
       // Resolve the pending phase so the async execution can unwind
       resolvePhase1(makePhaseResult("situational-grounding"));

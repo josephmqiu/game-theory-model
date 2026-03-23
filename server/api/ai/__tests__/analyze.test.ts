@@ -1,269 +1,90 @@
-import { EventEmitter } from "node:events";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnalysisRuntimeOverrides } from "../../../../shared/types/analysis-runtime";
 
 const readBodyMock = vi.fn();
-const setResponseHeadersMock = vi.fn();
 const setResponseStatusMock = vi.fn();
 const runFullMock = vi.fn();
-const newAnalysisMock = vi.fn();
-const getAnalysisMock = vi.fn();
-const onMutationMock = vi.fn();
-const getSnapshotMock = vi.fn();
-
-const progressListeners = new Set<(event: Record<string, unknown>) => void>();
 
 vi.mock("h3", () => ({
   defineEventHandler: (handler: unknown) => handler,
   readBody: (...args: unknown[]) => readBodyMock(...args),
-  setResponseHeaders: (...args: unknown[]) => setResponseHeadersMock(...args),
   setResponseStatus: (...args: unknown[]) => setResponseStatusMock(...args),
-}));
-
-vi.mock("../../../config/analysis-runtime", () => ({
-  analysisRuntimeConfig: {
-    analyzeSse: {
-      keepaliveIntervalMs: 60_000,
-      streamTimeoutMs: 10,
-      snapshotSettleDelayMs: 0,
-    },
-  },
 }));
 
 vi.mock("../../../agents/analysis-agent", () => ({
   runFull: (...args: unknown[]) => runFullMock(...args),
-  onProgress: (callback: (event: Record<string, unknown>) => void) => {
-    progressListeners.add(callback);
-    return () => progressListeners.delete(callback);
-  },
 }));
-
-vi.mock("../../../services/entity-graph-service", () => ({
-  newAnalysis: (...args: unknown[]) => newAnalysisMock(...args),
-  getAnalysis: () => getAnalysisMock(),
-  onMutation: (...args: unknown[]) => onMutationMock(...args),
-}));
-
-vi.mock("../../../services/runtime-status", () => ({
-  getSnapshot: () => getSnapshotMock(),
-}));
-
-function emitProgress(event: Record<string, unknown>): void {
-  for (const listener of progressListeners) {
-    listener(event);
-  }
-}
-
-function createEvent() {
-  return {
-    node: {
-      req: new EventEmitter(),
-    },
-  };
-}
 
 describe("/api/ai/analyze", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    progressListeners.clear();
-    onMutationMock.mockReturnValue(() => {});
-    getSnapshotMock.mockReturnValue({
-      status: "idle",
-      kind: null,
-      runId: null,
-      activePhase: null,
-      progress: {
-        completed: 0,
-        total: 0,
-      },
-      deferredRevalidationPending: false,
-    });
-    getAnalysisMock.mockReturnValue({
-      id: "analysis-1",
-      name: "Topic",
-      topic: "Topic",
-      entities: [],
-      relationships: [],
-      phases: [],
-    });
   });
 
   it("returns 400 when topic is missing", async () => {
     readBodyMock.mockResolvedValue({});
 
     const route = (await import("../analyze")).default;
-    const result = await route(createEvent() as never);
+    const result = await route({} as never);
 
     expect(result).toEqual({ error: "Missing required field: topic" });
     expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 400);
     expect(runFullMock).not.toHaveBeenCalled();
   });
 
-  it("returns 400 when activePhases is not an array", async () => {
+  it("returns 400 when activePhases is invalid", async () => {
     readBodyMock.mockResolvedValue({
       topic: "Trade conflict",
       runtime: { activePhases: "baseline-model" },
     });
 
     const route = (await import("../analyze")).default;
-    const result = await route(createEvent() as never);
+    const result = await route({} as never);
 
     expect(result).toEqual({
       error: "activePhases must be an array of supported phases",
     });
     expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 400);
-    expect(newAnalysisMock).not.toHaveBeenCalled();
     expect(runFullMock).not.toHaveBeenCalled();
   });
 
-  it("returns 400 when activePhases contains an unknown phase", async () => {
-    readBodyMock.mockResolvedValue({
-      topic: "Trade conflict",
-      runtime: { activePhases: ["revalidation"] },
-    });
-
-    const route = (await import("../analyze")).default;
-    const result = await route(createEvent() as never);
-
-    expect(result).toEqual({
-      error:
-        "Invalid activePhases: revalidation. Allowed phases: situational-grounding, player-identification, baseline-model, historical-game, formal-modeling, assumptions, elimination, scenarios, meta-check",
-    });
-    expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 400);
-    expect(newAnalysisMock).not.toHaveBeenCalled();
-    expect(runFullMock).not.toHaveBeenCalled();
-  });
-
-  it("returns 400 when activePhases normalizes to an empty set", async () => {
-    readBodyMock.mockResolvedValue({
-      topic: "Trade conflict",
-      runtime: { activePhases: [] },
-    });
-
-    const route = (await import("../analyze")).default;
-    const result = await route(createEvent() as never);
-
-    expect(result).toEqual({
-      error: "activePhases must include at least one supported canonical phase",
-    });
-    expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 400);
-    expect(newAnalysisMock).not.toHaveBeenCalled();
-    expect(runFullMock).not.toHaveBeenCalled();
-  });
-
-  it("returns 409 when another run is already active and does not clear the graph", async () => {
-    readBodyMock.mockResolvedValue({
-      topic: "Trade conflict",
-    });
-    getSnapshotMock.mockReturnValue({
-      status: "running",
-      kind: "revalidation",
-      runId: "reval-123",
-      activePhase: "assumptions",
-      progress: {
-        completed: 2,
-        total: 4,
-      },
-      deferredRevalidationPending: false,
-    });
-
-    const route = (await import("../analyze")).default;
-    const result = await route(createEvent() as never);
-
-    expect(result).toEqual({ error: "Analysis already running" });
-    expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 409);
-    expect(setResponseHeadersMock).not.toHaveBeenCalled();
-    expect(newAnalysisMock).not.toHaveBeenCalled();
-    expect(runFullMock).not.toHaveBeenCalled();
-  });
-
-  it("forwards runtime overrides through the analyze request path", async () => {
+  it("returns 202 with a JSON run id payload", async () => {
     const runtime: AnalysisRuntimeOverrides = {
       webSearch: false,
       effortLevel: "quick",
       activePhases: ["scenarios", "situational-grounding"],
     };
     readBodyMock.mockResolvedValue({
-      topic: "Trade conflict",
+      topic: "  Trade conflict  ",
       provider: "openai",
       model: "gpt-5.4",
       runtime,
     });
-    runFullMock.mockImplementation(async () => {
-      queueMicrotask(() => {
-        emitProgress({
-          type: "analysis_completed",
-          runId: "run-123",
-        });
-      });
-      return { runId: "run-123" };
-    });
+    runFullMock.mockResolvedValue({ runId: "run-123" });
 
     const route = (await import("../analyze")).default;
-    const response = (await route(createEvent() as never)) as Response;
-    const body = await response.text();
+    const result = await route({} as never);
 
     expect(runFullMock).toHaveBeenCalledWith(
       "Trade conflict",
       "openai",
       "gpt-5.4",
-      expect.any(AbortSignal),
-      {
-        webSearch: false,
-        effortLevel: "quick",
-        activePhases: ["scenarios", "situational-grounding"],
-      },
+      undefined,
+      runtime,
     );
-    expect(newAnalysisMock).toHaveBeenCalledWith("Trade conflict");
-    expect(body).toContain('"channel":"started"');
-    expect(body).toContain('"runId":"run-123"');
-    expect(body).toContain('"channel":"snapshot"');
+    expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 202);
+    expect(result).toEqual({ runId: "run-123" });
   });
 
-  it("forwards phase_activity events on the existing progress channel", async () => {
+  it("maps active-run conflicts to 409 without clearing state in the route", async () => {
     readBodyMock.mockResolvedValue({
       topic: "Trade conflict",
     });
-    runFullMock.mockImplementation(async () => {
-      queueMicrotask(() => {
-        emitProgress({
-          type: "phase_activity",
-          phase: "situational-grounding",
-          runId: "run-activity",
-          kind: "note",
-          message: "Preparing phase analysis",
-        });
-      });
-      queueMicrotask(() => {
-        emitProgress({
-          type: "analysis_completed",
-          runId: "run-activity",
-        });
-      });
-      return { runId: "run-activity" };
-    });
+    runFullMock.mockRejectedValue(new Error("A run is already active"));
 
     const route = (await import("../analyze")).default;
-    const response = (await route(createEvent() as never)) as Response;
-    const body = await response.text();
+    const result = await route({} as never);
 
-    expect(body).toContain('"channel":"progress"');
-    expect(body).toContain('"type":"phase_activity"');
-    expect(body).toContain('"message":"Preparing phase analysis"');
-  });
-
-  it("emits a final snapshot even if the SSE transport times out before terminal progress", async () => {
-    readBodyMock.mockResolvedValue({
-      topic: "Trade conflict",
-    });
-    runFullMock.mockResolvedValue({ runId: "run-timeout" });
-
-    const route = (await import("../analyze")).default;
-    const response = (await route(createEvent() as never)) as Response;
-    const body = await response.text();
-
-    expect(body).toContain('"channel":"started"');
-    expect(body).toContain('"runId":"run-timeout"');
-    expect(body).toContain('"channel":"snapshot"');
+    expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 409);
+    expect(result).toEqual({ error: "Analysis already running" });
   });
 });

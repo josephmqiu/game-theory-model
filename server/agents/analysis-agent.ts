@@ -684,6 +684,10 @@ export async function runFull(
     logger,
   };
 
+  // Reset the graph only after the run lock is held so losing concurrent
+  // requests cannot wipe the canvas before acquireRun rejects them.
+  entityGraphService.newAnalysis(topic);
+
   logger.log("orchestrator", "analysis-start", {
     mode: "analysis",
     topic,
@@ -877,8 +881,33 @@ export async function runFull(
   return { runId };
 }
 
+function getTerminalRuntimeStatus(runId: string): RunStatus | null {
+  const snapshot = runtimeStatus.getSnapshot();
+  if (snapshot.kind !== "analysis" || snapshot.runId !== runId) {
+    return null;
+  }
+
+  if (snapshot.status !== "failed" && snapshot.status !== "cancelled") {
+    return null;
+  }
+
+  return {
+    runId,
+    status: snapshot.status === "cancelled" ? "interrupted" : "failed",
+    activePhase: snapshot.activePhase,
+    phasesCompleted: snapshot.progress.completed,
+    totalPhases: snapshot.progress.total,
+    error: snapshot.failureMessage,
+  };
+}
+
 export function getStatus(runId: string): RunStatus {
   if (!activeRun || activeRun.runId !== runId) {
+    const terminalStatus = getTerminalRuntimeStatus(runId);
+    if (terminalStatus) {
+      return terminalStatus;
+    }
+
     return {
       runId,
       status: "idle",
@@ -967,12 +996,15 @@ export function onProgress(
 
 export function markOrphanedRunsFailed(): void {
   if (activeRun && activeRun.status === "running") {
+    const runId = activeRun.runId;
     activeRun.status = "failed";
     activeRun.error = "Run interrupted (app restart)";
     activeRun.activePhase = null;
-    runtimeStatus.releaseRun(activeRun.runId, "failed", {
+    runtimeStatus.releaseRun(runId, "failed", {
       failureMessage: activeRun.error,
     });
+    activeRun = null;
+    runPromise = null;
   }
 }
 
