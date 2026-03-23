@@ -255,7 +255,10 @@ export function setupAutoUpdater(): void {
 
   autoUpdater.on("error", (err) => {
     // No releases published yet — treat as "no update available"
-    if (err?.message?.includes("404")) {
+    if (
+      err?.message?.includes("404") ||
+      err?.message?.includes("No published versions")
+    ) {
       setUpdaterState({ status: "not-available", error: undefined });
       return;
     }

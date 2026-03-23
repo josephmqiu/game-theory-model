@@ -1,6 +1,6 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { getServerLogDir } from '../../src/lib/runtime-state-paths'
 
 type ServerLogLevel = 'log' | 'warn' | 'error'
 const LOG_ENDPOINT = '/api/ai/log'
@@ -39,7 +39,7 @@ export interface RunContext {
   logger: RunLogger
 }
 
-const LOG_DIR = join(homedir(), '.game-theory-analyzer', 'logs')
+const LOG_DIR = getServerLogDir({ env: process.env })
 const IS_TEST_MODE =
   process.env.NODE_ENV === 'test' || import.meta.env?.MODE === 'test'
 

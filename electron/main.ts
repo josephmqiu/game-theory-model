@@ -9,14 +9,12 @@ import {
 import { execSync } from "node:child_process";
 import { fork, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
-import { join, resolve, extname, sep } from "node:path";
+import { join, resolve, extname, sep, dirname } from "node:path";
 import { homedir } from "node:os";
 import { readFile, writeFile, mkdir, unlink } from "node:fs/promises";
 
 import { buildAppMenu } from "./app-menu";
 import {
-  PORT_FILE_DIR_NAME,
-  PORT_FILE_NAME,
   VITE_DEV_PORT,
   WINDOW_WIDTH,
   WINDOW_HEIGHT,
@@ -44,6 +42,13 @@ import {
   setAutoUpdateEnabled,
 } from "./auto-updater";
 import { initLogger, log, getLogDir } from "./logger";
+import { applyGuiPathFix } from "./path-bootstrap";
+import { buildNitroChildEnv } from "./nitro-env";
+import { isRunningFromMountedDiskImage } from "./install-location";
+import {
+  getLegacyPortFilePath,
+  getPortFilePath,
+} from "../src/lib/runtime-state-paths";
 
 let mainWindow: BrowserWindow | null = null;
 let nitroProcess: ChildProcess | null = null;
@@ -59,12 +64,22 @@ const ANALYSIS_FILE_FILTER: OpenDialogOptions["filters"] = [
 ];
 
 const isDev = !app.isPackaged;
+
+function getUserDataPath(): string {
+  return app.getPath("userData");
+}
+
 // Settings stored in platform-standard app data dir (Electron-managed):
 // macOS: ~/Library/Application Support/Game Theory Analyzer/
 // Windows: %APPDATA%\Game Theory Analyzer\
 // Linux: ~/.config/Game Theory Analyzer/
-const SETTINGS_PATH = join(app.getPath("userData"), "settings.json");
-const PREFS_PATH = join(app.getPath("userData"), "preferences.json");
+function getSettingsPath(): string {
+  return join(getUserDataPath(), "settings.json");
+}
+
+function getPrefsPath(): string {
+  return join(getUserDataPath(), "preferences.json");
+}
 
 // ---------------------------------------------------------------------------
 // Renderer preferences (replaces localStorage which is origin-scoped)
@@ -76,7 +91,7 @@ let prefsWriteTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function loadPrefs(): Promise<void> {
   try {
-    const raw = await readFile(PREFS_PATH, "utf-8");
+    const raw = await readFile(getPrefsPath(), "utf-8");
     prefsCache = JSON.parse(raw);
   } catch {
     prefsCache = {};
@@ -91,8 +106,12 @@ function schedulePrefsWrite(): void {
     if (!prefsDirty) return;
     prefsDirty = false;
     try {
-      await mkdir(app.getPath("userData"), { recursive: true });
-      await writeFile(PREFS_PATH, JSON.stringify(prefsCache, null, 2), "utf-8");
+      await mkdir(getUserDataPath(), { recursive: true });
+      await writeFile(
+        getPrefsPath(),
+        JSON.stringify(prefsCache, null, 2),
+        "utf-8",
+      );
     } catch (err) {
       log.error(`[prefs] Failed to write preferences: ${err}`);
     }
@@ -104,61 +123,7 @@ function schedulePrefsWrite(): void {
 // ---------------------------------------------------------------------------
 
 function fixPath(): void {
-  if (process.platform === "win32") {
-    // Windows GUI apps inherit PATH from the system, but common tool install
-    // dirs (npm global, scoop, cargo, etc.) may be missing in packaged apps.
-    const home = homedir();
-    const extraDirs = [
-      join(home, "AppData", "Roaming", "npm"), // npm global
-      join(home, "AppData", "Local", "Programs", "Microsoft VS Code", "bin"), // VS Code CLI
-      join(home, ".cargo", "bin"), // Rust/cargo
-      join(home, "scoop", "shims"), // scoop
-      join(home, ".bun", "bin"), // bun
-    ];
-    const current = process.env.PATH || "";
-    const existing = new Set(current.split(";").map((p) => p.toLowerCase()));
-    const additions = extraDirs.filter((d) => !existing.has(d.toLowerCase()));
-    if (additions.length > 0) {
-      process.env.PATH = [...additions, current].join(";");
-    }
-    return;
-  }
-
-  if (process.platform !== "darwin" && process.platform !== "linux") return;
-
-  try {
-    const shell =
-      process.env.SHELL ||
-      (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash");
-    const shellPath = execSync(`${shell} -ilc 'echo -n "$PATH"'`, {
-      encoding: "utf-8",
-      timeout: 5000,
-    }).trim();
-    if (shellPath) {
-      const current = process.env.PATH || "";
-      process.env.PATH = [
-        ...new Set([...shellPath.split(":"), ...current.split(":")]),
-      ]
-        .filter(Boolean)
-        .join(":");
-    }
-  } catch {
-    // Packaged app may not have a login shell — add common tool dirs as fallback
-    const home = homedir();
-    const fallbackDirs = [
-      join(home, ".local", "bin"),
-      join(home, ".cargo", "bin"),
-      join(home, ".bun", "bin"),
-      "/usr/local/bin",
-      "/opt/homebrew/bin",
-    ];
-    const current = process.env.PATH || "";
-    const existing = new Set(current.split(":"));
-    const additions = fallbackDirs.filter((d) => !existing.has(d));
-    if (additions.length > 0) {
-      process.env.PATH = [...additions, current].join(":");
-    }
-  }
+  applyGuiPathFix(process.env, process.platform, homedir());
 }
 
 // ---------------------------------------------------------------------------
@@ -171,7 +136,7 @@ interface AppSettings {
 
 async function readAppSettings(): Promise<AppSettings> {
   try {
-    const raw = await readFile(SETTINGS_PATH, "utf-8");
+    const raw = await readFile(getSettingsPath(), "utf-8");
     return JSON.parse(raw);
   } catch {
     return {};
@@ -181,35 +146,49 @@ async function readAppSettings(): Promise<AppSettings> {
 async function writeAppSettings(patch: Partial<AppSettings>): Promise<void> {
   const current = await readAppSettings();
   const merged = { ...current, ...patch };
-  await mkdir(app.getPath("userData"), { recursive: true });
-  await writeFile(SETTINGS_PATH, JSON.stringify(merged, null, 2), "utf-8");
+  await mkdir(getUserDataPath(), { recursive: true });
+  await writeFile(getSettingsPath(), JSON.stringify(merged, null, 2), "utf-8");
 }
 
 // ---------------------------------------------------------------------------
-// Port file for MCP sync discovery (~/.game-theory-analyzer/.port)
+// Port file for MCP sync discovery.
 // ---------------------------------------------------------------------------
 
-const PORT_FILE_DIR = join(homedir(), PORT_FILE_DIR_NAME);
-const PORT_FILE_PATH = join(PORT_FILE_DIR, PORT_FILE_NAME);
+function getCanonicalPortFilePath(): string {
+  return isDev
+    ? getLegacyPortFilePath()
+    : getPortFilePath({ userDataDir: getUserDataPath() });
+}
+
+async function unlinkIfPresent(filePath: string): Promise<void> {
+  try {
+    await unlink(filePath);
+  } catch {
+    // Ignore if already removed
+  }
+}
 
 async function writePortFile(port: number): Promise<void> {
+  const portFilePath = getCanonicalPortFilePath();
   try {
-    await mkdir(PORT_FILE_DIR, { recursive: true });
+    await mkdir(dirname(portFilePath), { recursive: true });
     await writeFile(
-      PORT_FILE_PATH,
+      portFilePath,
       JSON.stringify({ port, pid: process.pid, timestamp: Date.now() }),
       "utf-8",
     );
+    if (!isDev) {
+      await unlinkIfPresent(getLegacyPortFilePath());
+    }
   } catch (err) {
     log.error(`[port-file] Failed to write port file: ${err}`);
   }
 }
 
 async function cleanupPortFile(): Promise<void> {
-  try {
-    await unlink(PORT_FILE_PATH);
-  } catch {
-    // Ignore if already removed
+  await unlinkIfPresent(getCanonicalPortFilePath());
+  if (!isDev) {
+    await unlinkIfPresent(getLegacyPortFilePath());
   }
 }
 
@@ -262,14 +241,12 @@ async function startNitroServer(): Promise<number> {
 
   return new Promise((resolve, reject) => {
     const child = fork(entry, [], {
-      env: {
-        ...process.env,
-        HOST: NITRO_HOST,
-        PORT: String(port),
-        NITRO_HOST: NITRO_HOST,
-        NITRO_PORT: String(port),
-        ELECTRON_RESOURCES_PATH: process.resourcesPath,
-      },
+      env: buildNitroChildEnv(process.env, {
+        host: NITRO_HOST,
+        port,
+        resourcesPath: process.resourcesPath,
+        userDataDir: getUserDataPath(),
+      }),
       stdio: "pipe",
     });
 
@@ -675,11 +652,54 @@ if (!gotTheLock) {
 // App lifecycle
 // ---------------------------------------------------------------------------
 
+async function blockMountedDiskImageLaunch(): Promise<boolean> {
+  if (!isRunningFromMountedDiskImage(process.platform, app.isPackaged, process.execPath)) {
+    return false;
+  }
+
+  const { response } = await dialog.showMessageBox({
+    type: "info",
+    buttons: ["Move to Applications", "Quit"],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+    title: APP_NAME,
+    message: `Install ${APP_NAME} before opening it.`,
+    detail:
+      "This copy is running directly from the mounted disk image. Move it to Applications first to avoid unnecessary macOS privacy prompts and to enable normal updates.",
+  });
+
+  if (response !== 0) {
+    app.quit();
+    return true;
+  }
+
+  try {
+    const moved = app.moveToApplicationsFolder();
+    if (!moved) {
+      app.quit();
+    }
+    return true;
+  } catch (err) {
+    dialog.showErrorBox(
+      APP_NAME,
+      `Could not move the app to Applications.\n\n${err instanceof Error ? err.message : String(err)}`,
+    );
+    app.quit();
+    return true;
+  }
+}
+
 app.on("ready", async () => {
-  await initLogger(app.getPath("userData"));
+  app.setName(APP_NAME);
+
+  if (await blockMountedDiskImageLaunch()) {
+    return;
+  }
+
+  await initLogger(getUserDataPath());
   fixPath();
   await loadPrefs();
-  app.setName(APP_NAME);
   setupIPC();
   buildAppMenu();
 

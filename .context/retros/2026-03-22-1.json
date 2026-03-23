@@ -1,0 +1,48 @@
+{
+  "date": "2026-03-22",
+  "window": "7d",
+  "metrics": {
+    "commits": 201,
+    "contributors": 1,
+    "prs_merged": 3,
+    "insertions": 313340,
+    "deletions": 435104,
+    "net_loc": -121764,
+    "test_loc": 44067,
+    "test_ratio": 0.141,
+    "active_days": 8,
+    "sessions": 36,
+    "deep_sessions": 11,
+    "avg_session_minutes": 45,
+    "loc_per_session_hour": 11650,
+    "feat_pct": 0.448,
+    "fix_pct": 0.189,
+    "peak_hour": 23,
+    "ai_assisted_commits": 86
+  },
+  "authors": {
+    "Joe Qiu": {
+      "commits": 201,
+      "insertions": 313340,
+      "deletions": 435104,
+      "test_ratio": 0.141,
+      "top_area": "src/"
+    }
+  },
+  "version_range": ["0.0.0", "0.4.0"],
+  "streak_days": 9,
+  "tweetable": "Week of Mar 15: 201 commits, 313k ins / 435k del, 14% tests, 3 PRs, peak: 11pm | Streak: 9d",
+  "backlog": {
+    "total_open": 3,
+    "p0_p1": 0,
+    "p2": 3,
+    "completed_this_period": 1,
+    "added_this_period": 3
+  },
+  "test_health": {
+    "total_test_files": 66,
+    "tests_added_this_period": 293,
+    "regression_test_commits": 3,
+    "test_files_changed": 293
+  }
+}

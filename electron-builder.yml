@@ -10,6 +10,8 @@ files:
   - electron-dist/**/*
   - "!node_modules"
 
+afterPack: scripts/electron-builder-after-pack.cjs
+
 extraResources:
   - from: .output/server
     to: server
