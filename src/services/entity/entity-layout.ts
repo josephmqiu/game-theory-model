@@ -7,7 +7,7 @@ import {
 
 // ── Column x-offsets by methodology phase ──
 
-const PHASE_COLUMN_X: Record<string, number> = {
+export const PHASE_COLUMN_X: Record<string, number> = {
   "situational-grounding": 100,
   "player-identification": 500,
   "baseline-model": 900,
