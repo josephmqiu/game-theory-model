@@ -9,8 +9,6 @@ import {
   AlertCircle,
   Zap,
   Terminal,
-  Play,
-  Square,
   Globe,
   Copy,
   RefreshCw,
@@ -368,7 +366,6 @@ export default function AgentSettingsDialog() {
   const mcpIntegrations = useAgentSettingsStore((s) => s.mcpIntegrations);
   const mcpHttpPort = useAgentSettingsStore((s) => s.mcpHttpPort);
   const toggleMCP = useAgentSettingsStore((s) => s.toggleMCPIntegration);
-  const setMCPTransport = useAgentSettingsStore((s) => s.setMCPTransport);
   const analysisWebSearch = useAgentSettingsStore((s) => s.analysisWebSearch);
   const analysisEffortLevel = useAgentSettingsStore(
     (s) => s.analysisEffortLevel,
@@ -391,7 +388,6 @@ export default function AgentSettingsDialog() {
   );
   const persist = useAgentSettingsStore((s) => s.persist);
   const mcpServerRunning = useAgentSettingsStore((s) => s.mcpServerRunning);
-  const mcpServerLocalIp = useAgentSettingsStore((s) => s.mcpServerLocalIp);
   const setMcpServerStatus = useAgentSettingsStore((s) => s.setMcpServerStatus);
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -406,8 +402,8 @@ export default function AgentSettingsDialog() {
 
   const [mcpInstalling, setMcpInstalling] = useState<string | null>(null);
   const [mcpError, setMcpError] = useState<string | null>(null);
-  const [mcpServerLoading, setMcpServerLoading] = useState(false);
   const [mcpServerError, setMcpServerError] = useState<string | null>(null);
+  const [mcpServerPort, setMcpServerPort] = useState<number>(mcpHttpPort);
   const [configCopied, setConfigCopied] = useState(false);
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(true);
   const [isElectron, setIsElectron] = useState(false);
@@ -428,9 +424,15 @@ export default function AgentSettingsDialog() {
           localIp: string | null;
         }) => {
           setMcpServerStatus(data.running, data.localIp);
+          if (typeof data.port === "number") {
+            setMcpServerPort(data.port);
+          }
+          setMcpServerError(null);
         },
       )
-      .catch(() => {});
+      .catch(() => {
+        setMcpServerError("Unable to read MCP server status.");
+      });
   }, [open, setMcpServerStatus]);
 
   // Fetch auto-update setting on dialog open (Electron only)
@@ -487,44 +489,17 @@ export default function AgentSettingsDialog() {
     [persist, toggleAnalysisPhase],
   );
 
-  const handleMcpServerToggle = useCallback(async () => {
-    setMcpServerLoading(true);
-    setMcpServerError(null);
-    try {
-      const action = mcpServerRunning ? "stop" : "start";
-      const res = await fetch("/api/mcp/server", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, port: mcpHttpPort }),
-      });
-      const data = await res.json();
-      if (data.error) {
-        setMcpServerError(data.error);
-      } else {
-        setMcpServerStatus(data.running ?? false, data.localIp);
-      }
-    } catch {
-      setMcpServerError(
-        t("agents.failedToMcp", {
-          action: mcpServerRunning ? "stop" : "start",
-        }),
-      );
-    } finally {
-      setMcpServerLoading(false);
-    }
-  }, [mcpServerRunning, mcpHttpPort, setMcpServerStatus, t]);
-
   const handleCopyConfig = useCallback(() => {
-    if (!mcpServerLocalIp) return;
+    if (!mcpServerRunning) return;
     const config = JSON.stringify(
-      { type: "http", url: `http://127.0.0.1:${mcpHttpPort}/mcp` },
+      { type: "http", url: `http://127.0.0.1:${mcpServerPort}/mcp` },
       null,
       2,
     );
     navigator.clipboard.writeText(config);
     setConfigCopied(true);
     setTimeout(() => setConfigCopied(false), 2000);
-  }, [mcpServerLocalIp, mcpHttpPort]);
+  }, [mcpServerPort, mcpServerRunning]);
 
   const handleToggleMCP = useCallback(
     async (tool: string) => {
@@ -539,20 +514,6 @@ export default function AgentSettingsDialog() {
         if (result.success) {
           toggleMCP(tool);
           persist();
-          // When the server fell back to HTTP mode (no node installed),
-          // the MCP HTTP server was auto-started — sync UI status
-          if (result.fallbackHttp) {
-            setMcpServerStatus(true, null);
-            // Refresh actual status (localIp) after server finishes starting
-            setTimeout(() => {
-              fetch("/api/mcp/server")
-                .then((r) => r.json())
-                .then((data: { running: boolean; localIp: string | null }) => {
-                  setMcpServerStatus(data.running, data.localIp);
-                })
-                .catch(() => {});
-            }, 500);
-          }
         } else {
           setMcpError(result.error ?? t("agents.failedTo", { action }));
         }
@@ -562,18 +523,7 @@ export default function AgentSettingsDialog() {
         setMcpInstalling(null);
       }
     },
-    [mcpIntegrations, toggleMCP, persist, setMcpServerStatus],
-  );
-
-  const handlePortBlur = useCallback(
-    async (value: string) => {
-      const port = parseInt(value, 10);
-      if (isNaN(port) || port < 1 || port > 65535 || port === mcpHttpPort)
-        return;
-      setMCPTransport("stdio", port);
-      persist();
-    },
-    [mcpHttpPort, setMCPTransport, persist],
+    [mcpIntegrations, toggleMCP, persist, t],
   );
 
   if (!open) return null;
@@ -773,40 +723,16 @@ export default function AgentSettingsDialog() {
                   : t("agents.mcpServerStopped")}
               </span>
               <span className="text-[11px] text-muted-foreground shrink-0">
+                managed by app
+              </span>
+              <span className="text-[11px] text-muted-foreground shrink-0">
                 {t("agents.port")}
               </span>
-              <input
-                type="text"
-                inputMode="numeric"
-                defaultValue={mcpHttpPort}
-                key={mcpHttpPort}
-                onBlur={(e) => handlePortBlur(e.target.value)}
-                disabled={mcpServerRunning || mcpServerLoading}
-                className="h-6 w-[52px] text-[11px] text-center tabular-nums bg-secondary text-foreground rounded border border-input focus:border-ring outline-none transition-colors disabled:opacity-50"
-              />
-              <Button
-                size="sm"
-                variant={mcpServerRunning ? "outline" : "default"}
-                onClick={handleMcpServerToggle}
-                disabled={mcpServerLoading}
-                className="h-7 px-3 text-[11px] shrink-0"
-              >
-                {mcpServerLoading ? (
-                  <Loader2 size={11} className="animate-spin" />
-                ) : mcpServerRunning ? (
-                  <>
-                    <Square size={10} className="mr-1" />
-                    {t("agents.mcpServerStop")}
-                  </>
-                ) : (
-                  <>
-                    <Play size={10} className="mr-1" />
-                    {t("agents.mcpServerStart")}
-                  </>
-                )}
-              </Button>
+              <span className="h-6 min-w-[52px] rounded border border-input bg-secondary px-2 text-[11px] leading-6 text-center tabular-nums text-foreground">
+                {mcpServerPort}
+              </span>
             </div>
-            {mcpServerRunning && mcpServerLocalIp && (
+            {mcpServerRunning && (
               <div className="mt-1.5 px-3 py-1.5 rounded-lg bg-secondary/20">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] text-muted-foreground">
@@ -825,7 +751,7 @@ export default function AgentSettingsDialog() {
                     )}
                   </Button>
                 </div>
-                <code className="text-[10px] text-muted-foreground font-mono select-all leading-none">{`{ "type": "http", "url": "http://127.0.0.1:${mcpHttpPort}/mcp" }`}</code>
+                <code className="text-[10px] text-muted-foreground font-mono select-all leading-none">{`{ "type": "http", "url": "http://127.0.0.1:${mcpServerPort}/mcp" }`}</code>
               </div>
             )}
             {mcpServerError && (

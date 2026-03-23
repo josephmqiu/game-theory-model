@@ -26,6 +26,12 @@ import {
   getRecordedLoopbackTriggers,
 } from "../services/analysis-tools";
 
+vi.mock("../utils/ai-logger", () => ({
+  serverLog: vi.fn(),
+  serverWarn: vi.fn(),
+  serverError: vi.fn(),
+}));
+
 vi.mock("../agents/analysis-agent", () => ({
   runFull: vi.fn().mockResolvedValue({ runId: "run-mock-123" }),
   getActiveStatus: vi.fn().mockReturnValue(null),

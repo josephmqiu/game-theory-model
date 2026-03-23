@@ -49,7 +49,7 @@ vi.mock("../../../utils/ai-logger", () => ({
   serverError: (...args: unknown[]) => serverErrorMock(...args),
 }));
 
-vi.mock("@/mcp/server", () => ({
+vi.mock("../../../mcp/product-tools", () => ({
   handleStartAnalysis: vi.fn(() => '{"runId":"r1"}'),
   handleGetAnalysisStatus: vi.fn(() => '{"status":"running"}'),
   handleCreateEntity: vi.fn(() => '{"id":"e1"}'),

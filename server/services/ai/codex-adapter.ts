@@ -5,7 +5,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { filterCodexEnv } from "../../utils/codex-client";
 import { serverLog, serverWarn } from "../../utils/ai-logger";
-import { resolveMcpServerScript } from "../../utils/mcp-server-manager";
+import { resolveMcpProxyScript } from "../../utils/mcp-server-manager";
 import type { ChatEvent } from "../../../shared/types/events";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 import { CODEX_MCP_SERVER_NAME, installMcpServer } from "./codex-config";
@@ -315,7 +315,7 @@ function installToolSurface(
   toolNames: readonly string[],
   runId?: string,
 ): void {
-  installMcpServer(resolveMcpServerCommand(), [resolveMcpServerScript()], {
+  installMcpServer(resolveMcpServerCommand(), [resolveMcpProxyScript()], {
     enabledTools: [...toolNames],
     env: runId ? { ANALYSIS_RUN_ID: runId } : undefined,
   });

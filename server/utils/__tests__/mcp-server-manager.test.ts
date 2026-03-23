@@ -1,27 +1,42 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const existsSyncMock = vi.fn((filePath: string) =>
+  filePath.endsWith("mcp-stdio-proxy.cjs"),
+);
+const getMcpServerStatusMock = vi.fn(() => ({
+  available: true,
+  port: 3100,
+}));
 
 vi.mock("node:fs", () => ({
-  existsSync: vi.fn((filePath: string) =>
-    filePath.endsWith(".pid") || filePath.endsWith(".port"),
-  ),
-  readFileSync: vi.fn((filePath: string) =>
-    filePath.endsWith(".pid") ? "12345" : "3100",
-  ),
-  unlinkSync: vi.fn(),
-  writeFileSync: vi.fn(),
+  existsSync: (filePath: string) => existsSyncMock(filePath),
+}));
+
+vi.mock("../../mcp/mcp-server", () => ({
+  MCP_HTTP_HOST: "127.0.0.1",
+  getMcpServerStatus: () => getMcpServerStatusMock(),
 }));
 
 describe("mcp-server-manager", () => {
-  it("reports localhost for the MCP HTTP status", async () => {
-    const killSpy = vi.spyOn(process, "kill").mockReturnValue(true as never);
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
-    const { getMcpServerStatus } = await import("../mcp-server-manager");
-    expect(getMcpServerStatus()).toEqual({
+  it("reports the in-process MCP status", async () => {
+    const { getStatus } = await import("../mcp-server-manager");
+
+    expect(getStatus()).toEqual({
       running: true,
       port: 3100,
       localIp: "127.0.0.1",
+      available: true,
+      mcpAvailable: true,
     });
+  });
 
-    killSpy.mockRestore();
+  it("resolves the stdio proxy script path", async () => {
+    const { resolveMcpProxyScript } = await import("../mcp-server-manager");
+
+    expect(resolveMcpProxyScript()).toContain("dist/mcp-stdio-proxy.cjs");
   });
 });
