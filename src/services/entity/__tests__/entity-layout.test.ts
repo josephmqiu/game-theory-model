@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { AnalysisEntity } from "@/types/entity";
-import { layoutEntities } from "@/services/entity/entity-layout";
+import {
+  layoutEntities,
+  PHASE_COLUMN_X,
+} from "@/services/entity/entity-layout";
 import {
   ENTITY_CARD_LAYOUT,
   getEntityCardMetrics,
@@ -126,5 +129,37 @@ describe("entity layout", () => {
     const positions = layoutEntities(entities);
 
     expect(positions.get("p1")).toEqual({ x: 500, y: 0 });
+  });
+});
+
+describe("layoutEntities — synthesis column", () => {
+  it("routes analysis-report to synthesis column x=3700", () => {
+    const entities = [
+      makeEntity({ id: "rpt-1", type: "analysis-report", phase: "meta-check" }),
+    ];
+    const positions = layoutEntities(entities);
+    expect(positions.get("rpt-1")?.x).toBe(3700);
+  });
+
+  it("does not affect other entity type positioning", () => {
+    const entities = [
+      makeEntity({ id: "mc-1", type: "meta-check", phase: "meta-check" }),
+    ];
+    const positions = layoutEntities(entities);
+    expect(positions.get("mc-1")?.x).toBe(3300);
+  });
+
+  it("gives analysis-report its own vertical cursor", () => {
+    const entities = [
+      makeEntity({ id: "mc-1", type: "meta-check", phase: "meta-check" }),
+      makeEntity({ id: "rpt-1", type: "analysis-report", phase: "meta-check" }),
+    ];
+    const positions = layoutEntities(entities);
+    // analysis-report should start at y=0 in its own column, not stacked after mc-1
+    expect(positions.get("rpt-1")?.y).toBe(0);
+  });
+
+  it("includes synthesis in PHASE_COLUMN_X", () => {
+    expect(PHASE_COLUMN_X["synthesis"]).toBe(3700);
   });
 });

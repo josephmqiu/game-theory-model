@@ -1160,6 +1160,7 @@ export class SkiaEngine {
     scenario: "#22D3EE",
     "central-thesis": "#A78BFA",
     "meta-check": "#F97316",
+    "analysis-report": "#A1A1AA",
   };
 
   /** Resolve entity type color, with player index hue pool support. */
