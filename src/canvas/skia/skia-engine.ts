@@ -7,6 +7,7 @@ import type {
   RelationshipType,
 } from "@/types/entity";
 import { RELATIONSHIP_CATEGORY } from "@/types/entity";
+import type { RoutedEdge } from "@/services/entity/edge-routing";
 import { useCanvasStore } from "@/stores/canvas-store";
 import {
   useDocumentStore,
@@ -483,6 +484,7 @@ export class SkiaEngine {
   // Entity graph data (set by analysis-canvas, consumed by render loop)
   entityMap = new Map<string, AnalysisEntity>();
   entityRelationships: AnalysisRelationship[] = [];
+  routedEdges: RoutedEdge[] = [];
   searchHighlightIds = new Set<string>();
 
   // Component/instance IDs for colored frame labels
@@ -675,37 +677,60 @@ export class SkiaEngine {
 
     // Draw relationship edges (behind entity nodes)
     if (this.entityMap.size > 0) {
-      const posMap = new Map<string, { cx: number; cy: number }>();
-      for (const rn of this.renderNodes) {
-        if (
-          typeof rn.node.role === "string" &&
-          rn.node.role.startsWith("entity-")
-        ) {
-          posMap.set(rn.node.id, {
-            cx: rn.absX + rn.absW / 2,
-            cy: rn.absY + rn.absH / 2,
-          });
+      if (this.routedEdges.length > 0) {
+        // ── Draw routed edges in 3 passes: structural (back) → evidence → downstream (front) ──
+        const routedByCategory: Record<string, RoutedEdge[]> = {
+          structural: [],
+          evidence: [],
+          downstream: [],
+        };
+        for (const edge of this.routedEdges) {
+          routedByCategory[edge.category].push(edge);
         }
-      }
-      // ── Draw relationship edges in 3 passes: structural (back) → evidence → downstream (front) ──
-      const edgesByCategory: Record<string, typeof this.entityRelationships> = {
-        structural: [],
-        evidence: [],
-        downstream: [],
-      };
-      for (const rel of this.entityRelationships) {
-        const cat = RELATIONSHIP_CATEGORY[rel.type] ?? "structural";
-        edgesByCategory[cat].push(rel);
-      }
-      for (const category of [
-        "structural",
-        "evidence",
-        "downstream",
-      ] as const) {
-        for (const rel of edgesByCategory[category]) {
-          const from = posMap.get(rel.fromEntityId);
-          const to = posMap.get(rel.toEntityId);
-          if (from && to) this.drawRelationshipEdge(canvas, from, to, rel.type);
+        for (const category of [
+          "structural",
+          "evidence",
+          "downstream",
+        ] as const) {
+          for (const edge of routedByCategory[category]) {
+            this.drawRoutedEdge(canvas, edge);
+          }
+        }
+      } else {
+        // Fallback to old center-to-center drawing if no routed edges
+        const posMap = new Map<string, { cx: number; cy: number }>();
+        for (const rn of this.renderNodes) {
+          if (
+            typeof rn.node.role === "string" &&
+            rn.node.role.startsWith("entity-")
+          ) {
+            posMap.set(rn.node.id, {
+              cx: rn.absX + rn.absW / 2,
+              cy: rn.absY + rn.absH / 2,
+            });
+          }
+        }
+        const edgesByCategory: Record<string, typeof this.entityRelationships> =
+          {
+            structural: [],
+            evidence: [],
+            downstream: [],
+          };
+        for (const rel of this.entityRelationships) {
+          const cat = RELATIONSHIP_CATEGORY[rel.type] ?? "structural";
+          edgesByCategory[cat].push(rel);
+        }
+        for (const category of [
+          "structural",
+          "evidence",
+          "downstream",
+        ] as const) {
+          for (const rel of edgesByCategory[category]) {
+            const from = posMap.get(rel.fromEntityId);
+            const to = posMap.get(rel.toEntityId);
+            if (from && to)
+              this.drawRelationshipEdge(canvas, from, to, rel.type);
+          }
         }
       }
     }
@@ -942,30 +967,53 @@ export class SkiaEngine {
     const entityMap = new Map<string, AnalysisEntity>();
     for (const e of entities) entityMap.set(e.id, e);
 
-    // Build a position lookup for edge drawing
-    const posMap = new Map<string, { cx: number; cy: number }>();
-    for (const rn of entityRenderNodes) {
-      posMap.set(rn.node.id, {
-        cx: rn.absX + rn.absW / 2,
-        cy: rn.absY + rn.absH / 2,
-      });
-    }
-
     // ── Draw relationship edges in 3 passes: structural (back) → evidence → downstream (front) ──
-    const edgesByCategory: Record<string, typeof relationships> = {
-      structural: [],
-      evidence: [],
-      downstream: [],
-    };
-    for (const rel of relationships) {
-      const cat = RELATIONSHIP_CATEGORY[rel.type] ?? "structural";
-      edgesByCategory[cat].push(rel);
-    }
-    for (const category of ["structural", "evidence", "downstream"] as const) {
-      for (const rel of edgesByCategory[category]) {
-        const from = posMap.get(rel.fromEntityId);
-        const to = posMap.get(rel.toEntityId);
-        if (from && to) this.drawRelationshipEdge(canvas, from, to, rel.type);
+    if (this.routedEdges.length > 0) {
+      const routedByCategory: Record<string, RoutedEdge[]> = {
+        structural: [],
+        evidence: [],
+        downstream: [],
+      };
+      for (const edge of this.routedEdges) {
+        routedByCategory[edge.category].push(edge);
+      }
+      for (const category of [
+        "structural",
+        "evidence",
+        "downstream",
+      ] as const) {
+        for (const edge of routedByCategory[category]) {
+          this.drawRoutedEdge(canvas, edge);
+        }
+      }
+    } else {
+      // Fallback to old center-to-center drawing if no routed edges
+      const posMap = new Map<string, { cx: number; cy: number }>();
+      for (const rn of entityRenderNodes) {
+        posMap.set(rn.node.id, {
+          cx: rn.absX + rn.absW / 2,
+          cy: rn.absY + rn.absH / 2,
+        });
+      }
+      const edgesByCategory: Record<string, typeof relationships> = {
+        structural: [],
+        evidence: [],
+        downstream: [],
+      };
+      for (const rel of relationships) {
+        const cat = RELATIONSHIP_CATEGORY[rel.type] ?? "structural";
+        edgesByCategory[cat].push(rel);
+      }
+      for (const category of [
+        "structural",
+        "evidence",
+        "downstream",
+      ] as const) {
+        for (const rel of edgesByCategory[category]) {
+          const from = posMap.get(rel.fromEntityId);
+          const to = posMap.get(rel.toEntityId);
+          if (from && to) this.drawRelationshipEdge(canvas, from, to, rel.type);
+        }
       }
     }
 
@@ -1266,6 +1314,132 @@ export class SkiaEngine {
     const path = new ck.Path();
     path.moveTo(from.cx, from.cy);
     path.quadTo(cpx, cpy, to.cx, to.cy);
+    canvas.drawPath(path, paint);
+    path.delete();
+    paint.delete();
+  }
+
+  // ── Draw a routed edge as a smooth cubic Bézier through waypoints ──
+
+  private drawRoutedEdge(canvas: Canvas, edge: RoutedEdge) {
+    const ck = this.ck;
+    const style = SkiaEngine.EDGE_STYLE[edge.relType] ?? {
+      color: "#52525B",
+      width: 1.5,
+      opacity: 0.15,
+    };
+
+    const paint = new ck.Paint();
+    paint.setStyle(ck.PaintStyle.Stroke);
+    paint.setAntiAlias(true);
+    paint.setStrokeWidth(style.width);
+    paint.setColor(parseColor(ck, style.color));
+    paint.setAlphaf(style.opacity);
+
+    if (style.dash) {
+      const effect = ck.PathEffect.MakeDash(style.dash, 0);
+      if (effect) paint.setPathEffect(effect);
+    }
+
+    // Build the full point sequence: from → waypoints → to
+    const pts = [edge.from, ...edge.waypoints, edge.to];
+
+    const path = new ck.Path();
+    path.moveTo(pts[0].x, pts[0].y);
+
+    if (pts.length === 2) {
+      // Degenerate: just a line
+      path.lineTo(pts[1].x, pts[1].y);
+    } else if (pts.length === 3) {
+      // Single quadratic curve
+      path.quadTo(pts[1].x, pts[1].y, pts[2].x, pts[2].y);
+    } else {
+      // Smooth cubic Bézier through waypoints:
+      // For each segment between consecutive points, use cubic curves
+      // with control points that create smooth transitions.
+      //
+      // Strategy: treat waypoints as defining a polyline, then smooth each
+      // segment using 1/3 rule for control points with direction from
+      // neighboring segments.
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p0 = pts[i];
+        const p1 = pts[i + 1];
+
+        if (i === 0) {
+          // First segment: use the first point as cp1 and midpoint as cp2
+          const cp1x = p0.x + (p1.x - p0.x) * 0.5;
+          const cp1y = p0.y;
+          const cp2x = p1.x;
+          const cp2y = p0.y + (p1.y - p0.y) * 0.5;
+          path.cubicTo(cp1x, cp1y, cp2x, cp2y, p1.x, p1.y);
+        } else if (i === pts.length - 2) {
+          // Last segment: mirror the first segment approach
+          const cp1x = p0.x;
+          const cp1y = p0.y + (p1.y - p0.y) * 0.5;
+          const cp2x = p0.x + (p1.x - p0.x) * 0.5;
+          const cp2y = p1.y;
+          path.cubicTo(cp1x, cp1y, cp2x, cp2y, p1.x, p1.y);
+        } else {
+          // Middle segments: straight line (these are the vertical channel segments)
+          path.lineTo(p1.x, p1.y);
+        }
+      }
+    }
+
+    canvas.drawPath(path, paint);
+    path.delete();
+    paint.delete();
+
+    // Arrowhead for downstream edges
+    if (edge.category === "downstream") {
+      this.drawArrowhead(canvas, edge, style.color, style.opacity);
+    }
+  }
+
+  // ── Draw an arrowhead triangle at the target port of a downstream edge ──
+
+  private drawArrowhead(
+    canvas: Canvas,
+    edge: RoutedEdge,
+    color: string,
+    opacity: number,
+  ) {
+    const ck = this.ck;
+    const ARROW_SIZE = 6;
+    const { to } = edge;
+
+    const paint = new ck.Paint();
+    paint.setStyle(ck.PaintStyle.Fill);
+    paint.setAntiAlias(true);
+    paint.setColor(parseColor(ck, color));
+    paint.setAlphaf(opacity);
+
+    const path = new ck.Path();
+
+    switch (edge.direction) {
+      case "forward":
+        // Arrow pointing LEFT (into left port) — tip at to.x, spreads right
+        path.moveTo(to.x, to.y);
+        path.lineTo(to.x + ARROW_SIZE, to.y - ARROW_SIZE / 2);
+        path.lineTo(to.x + ARROW_SIZE, to.y + ARROW_SIZE / 2);
+        path.close();
+        break;
+      case "backward":
+        // Arrow pointing RIGHT (into right port) — tip at to.x, spreads left
+        path.moveTo(to.x, to.y);
+        path.lineTo(to.x - ARROW_SIZE, to.y - ARROW_SIZE / 2);
+        path.lineTo(to.x - ARROW_SIZE, to.y + ARROW_SIZE / 2);
+        path.close();
+        break;
+      case "same-phase":
+        // Arrow pointing DOWN (into top port) — tip at to.y, spreads up
+        path.moveTo(to.x, to.y);
+        path.lineTo(to.x - ARROW_SIZE / 2, to.y - ARROW_SIZE);
+        path.lineTo(to.x + ARROW_SIZE / 2, to.y - ARROW_SIZE);
+        path.close();
+        break;
+    }
+
     canvas.drawPath(path, paint);
     path.delete();
     paint.delete();

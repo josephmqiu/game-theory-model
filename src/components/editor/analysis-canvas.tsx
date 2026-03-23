@@ -3,6 +3,9 @@ import { loadCanvasKit } from "@/canvas/skia/skia-init";
 import { SkiaEngine, screenToScene } from "@/canvas/skia/skia-engine";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { entityToRenderNode } from "@/services/entity/entity-to-pennode";
+import { routeEdges } from "@/services/entity/edge-routing";
+import type { EntityRect } from "@/services/entity/edge-routing";
+import { getEntityCardMetrics } from "@/services/entity/entity-card-metrics";
 import type { AnalysisEntity } from "@/types/entity";
 import type { MethodologyPhase } from "@/types/methodology";
 
@@ -131,12 +134,32 @@ export default function AnalysisCanvas({
       (r) => visibleIds.has(r.fromEntityId) && visibleIds.has(r.toEntityId),
     );
 
+    // Build EntityRects for edge routing
+    const entityRects: EntityRect[] = [];
+    for (const entity of visibleEntities) {
+      const layoutEntry = layout[entity.id];
+      if (!layoutEntry) continue;
+      const metrics = getEntityCardMetrics(entity.type);
+      entityRects.push({
+        id: entity.id,
+        x: layoutEntry.x,
+        y: layoutEntry.y,
+        w: metrics.width,
+        h: metrics.height,
+        phase: entity.phase,
+      });
+    }
+
+    // Route edges through inter-column channels
+    const routed = routeEdges(entityRects, visibleRelationships);
+
     // Store render data on the engine — the render loop handles drawing
     engine.renderNodes = renderNodes;
     engine.spatialIndex.rebuild(renderNodes);
     engine.entityMap.clear();
     for (const e of visibleEntities) engine.entityMap.set(e.id, e);
     engine.entityRelationships = visibleRelationships;
+    engine.routedEdges = routed;
     engine.searchHighlightIds = new Set(searchHighlight);
 
     engine.markDirty();
