@@ -1,9 +1,27 @@
 import { execSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
 
 const isWindows = platform() === 'win32'
+
+function getNvmClaudeCandidates(homeDir: string): string[] {
+  const versionRoot = join(homeDir, '.nvm', 'versions', 'node')
+  const candidates = [join(homeDir, '.nvm', 'current', 'bin', 'claude')]
+
+  try {
+    const entries = readdirSync(versionRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => join(versionRoot, entry.name, 'bin', 'claude'))
+      .sort()
+      .reverse()
+    candidates.push(...entries)
+  } catch {
+    // Ignore when nvm is not installed.
+  }
+
+  return candidates
+}
 
 /**
  * Resolve the absolute path to the standalone `claude` binary.
@@ -35,8 +53,14 @@ export function resolveClaudeCli(): string | undefined {
       ]
     : [
         join(homedir(), '.local', 'bin', 'claude'),
+        join(homedir(), '.asdf', 'shims', 'claude'),
+        join(homedir(), '.mise', 'shims', 'claude'),
+        join(homedir(), '.local', 'share', 'mise', 'shims', 'claude'),
+        join(homedir(), '.volta', 'bin', 'claude'),
+        ...getNvmClaudeCandidates(homedir()),
         '/usr/local/bin/claude',
         '/opt/homebrew/bin/claude',
+        '/home/linuxbrew/.linuxbrew/bin/claude',
       ]
   for (const c of candidates) {
     if (c && existsSync(c)) return c

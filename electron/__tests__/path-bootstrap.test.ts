@@ -19,9 +19,15 @@ describe('path bootstrap', () => {
 
     expect(result?.split(':')).toEqual([
       '/Users/tester/.local/bin',
+      '/Users/tester/.asdf/shims',
+      '/Users/tester/.mise/shims',
+      '/Users/tester/.local/share/mise/shims',
+      '/Users/tester/.volta/bin',
+      '/Users/tester/.nvm/current/bin',
       '/Users/tester/.cargo/bin',
       '/Users/tester/.bun/bin',
       '/usr/local/bin',
+      '/home/linuxbrew/.linuxbrew/bin',
       '/usr/bin',
       '/opt/homebrew/bin',
     ])
