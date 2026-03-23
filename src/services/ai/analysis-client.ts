@@ -329,7 +329,7 @@ class EventStreamManager {
   }
 
   private scheduleRecoveryRetry(): void {
-    if (this.disposed || this.recoveryFailures >= MAX_RECOVERY_FAILURES) {
+    if (this.disposed) {
       return;
     }
 
@@ -497,9 +497,8 @@ class EventStreamManager {
 
         if (this.recoveryFailures >= MAX_RECOVERY_FAILURES) {
           this.setConnectionState("DISCONNECTED");
-        } else {
-          this.scheduleRecoveryRetry();
         }
+        this.scheduleRecoveryRetry();
 
         throw e;
       } finally {
@@ -540,10 +539,18 @@ export function isRunning(): boolean {
 }
 
 export function abort(): void {
-  abortRequested = true;
   const store = useRunStatusStore.getState();
   const runStatus = store.runStatus;
-  if (runStatus.status === "running") {
+  const shouldAbortRunningAnalysis =
+    runStatus.status === "running" && runStatus.kind === "analysis";
+  const shouldAbortKickoffRequest = currentController !== null;
+
+  if (!shouldAbortRunningAnalysis && !shouldAbortKickoffRequest) {
+    return;
+  }
+
+  abortRequested = true;
+  if (shouldAbortRunningAnalysis) {
     store.setRunStatus({
       status: "cancelled",
       kind: runStatus.kind,
@@ -555,14 +562,16 @@ export function abort(): void {
   }
   store.clearPhaseActivityText();
 
-  void fetch("/api/ai/abort", { method: "POST" })
-    .then(async (response) => {
-      if (!response.ok) return;
-      await response.json().catch(() => null as AbortAnalysisResponse | null);
-    })
-    .catch((e) => {
-      console.warn("[analysis-client] abort-endpoint-unreachable", e);
-    });
+  if (shouldAbortRunningAnalysis) {
+    void fetch("/api/ai/abort", { method: "POST" })
+      .then(async (response) => {
+        if (!response.ok) return;
+        await response.json().catch(() => null as AbortAnalysisResponse | null);
+      })
+      .catch((e) => {
+        console.warn("[analysis-client] abort-endpoint-unreachable", e);
+      });
+  }
 
   const activeController = currentController;
   currentController = null;

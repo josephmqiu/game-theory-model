@@ -510,7 +510,12 @@ export default function AgentSettingsDialog() {
       setMcpInstalling(tool);
       setMcpError(null);
       try {
-        const result = await callMcpInstall(tool, action);
+        const result = await callMcpInstall(
+          tool,
+          action,
+          undefined,
+          mcpServerPort,
+        );
         if (result.success) {
           toggleMCP(tool);
           persist();
@@ -523,7 +528,7 @@ export default function AgentSettingsDialog() {
         setMcpInstalling(null);
       }
     },
-    [mcpIntegrations, toggleMCP, persist, t],
+    [mcpIntegrations, mcpServerPort, toggleMCP, persist, t],
   );
 
   if (!open) return null;

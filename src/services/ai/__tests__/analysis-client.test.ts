@@ -621,4 +621,86 @@ describe("analysis-client", () => {
     });
     expect(useRunStatusStore.getState().phaseActivityText).toBeNull();
   });
+
+  it("leaves revalidation runs untouched when abort cannot stop them server-side", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      if (input === "/api/ai/state") {
+        return Promise.resolve(
+          stateResponse(
+            makeAnalysis(),
+            makeRunStatus({
+              status: "running",
+              kind: "revalidation",
+              runId: "run-revalidation",
+              activePhase: "player-identification",
+            }),
+            1,
+          ),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const { client, useRunStatusStore } = await loadModules();
+
+    await client.hydrateAnalysisState();
+    useRunStatusStore.getState().setPhaseActivityText("Still revalidating");
+
+    client.abort();
+    await flushMicrotasks();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(client.isRunning()).toBe(true);
+    expect(useRunStatusStore.getState().runStatus).toMatchObject({
+      status: "running",
+      kind: "revalidation",
+      runId: "run-revalidation",
+      activePhase: "player-identification",
+    });
+    expect(useRunStatusStore.getState().phaseActivityText).toBe(
+      "Still revalidating",
+    );
+  });
+
+  it("keeps retrying recovery after hitting the disconnected threshold", async () => {
+    vi.useFakeTimers();
+    const recoveredEntity = makeEntity("entity-recovered-after-disconnect");
+    let stateAttempts = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      if (input === "/api/ai/state") {
+        stateAttempts += 1;
+        if (stateAttempts <= 5) {
+          return Promise.reject(new Error(`state failed ${stateAttempts}`));
+        }
+        return Promise.resolve(
+          stateResponse(makeAnalysis([recoveredEntity]), makeRunStatus(), 6),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const { client, useEntityGraphStore, useRunStatusStore } =
+      await loadModules();
+
+    await expect(client.hydrateAnalysisState()).rejects.toThrow("state failed 1");
+
+    for (const delayMs of [1_000, 2_000, 4_000, 8_000]) {
+      await vi.advanceTimersByTimeAsync(delayMs);
+      await flushMicrotasks();
+    }
+
+    expect(useRunStatusStore.getState().connectionState).toBe("DISCONNECTED");
+
+    await vi.advanceTimersByTimeAsync(16_000);
+    await flushMicrotasks();
+
+    await waitFor(() => {
+      expect(useRunStatusStore.getState().connectionState).toBe("CONNECTED");
+      expect(useEntityGraphStore.getState().analysis.entities).toEqual([
+        recoveredEntity,
+      ]);
+    });
+  });
 });
