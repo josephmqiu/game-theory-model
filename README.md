@@ -57,6 +57,35 @@ bun run dev
 
 > **Note:** The live product is the desktop app. `bun run dev` is useful for renderer development, but Electron is the canonical runtime path for product behavior.
 
+## Docker Support
+
+Docker is supported as a secondary Nitro/runtime surface. It is useful for headless runs and runtime validation, but it is not the canonical desktop delivery path.
+
+Available image targets:
+
+- `base` - plain Nitro runtime
+- `with-claude` - includes Claude Code CLI
+- `with-codex` - includes Codex CLI
+
+Minimal examples:
+
+```bash
+docker build --target base -t gta-base .
+docker run --rm -p 3000:3000 gta-base
+
+docker build --target with-claude -t gta-with-claude .
+docker run --rm -p 3000:3000 \
+  -v "$HOME/.claude:/root/.claude" \
+  gta-with-claude
+
+docker build --target with-codex -t gta-with-codex .
+docker run --rm -p 3000:3000 \
+  -v "$HOME/.codex:/root/.codex" \
+  gta-with-codex
+```
+
+The mounted `~/.claude` and `~/.codex` directories carry the local auth and config state that the CLI-based runtimes expect. Docker does not replace that local setup.
+
 ## Tech Stack
 
 | Layer          | Technology                         |
@@ -76,14 +105,14 @@ bun run dev
 
 ```bash
 bun run dev                        # Dev server on port 3000
-bun run build                      # Vite client build (frontend only)
+bun run build                      # Build the Nitro-backed app into .output
 bun run test                       # Run tests
 bun run typecheck                  # TypeScript check
 bun run electron:dev               # Electron dev mode
 bun run electron:build:mac-arm64   # Full production build (client + server + MCP + DMG)
 ```
 
-> **Note:** `bun run build` only builds the frontend. Server-side changes (Nitro, codex-adapter, MCP server) require the full Electron build to take effect in the desktop app.
+> **Note:** `bun run build` emits the Nitro-backed runtime under `.output`. Electron packaging still uses the `electron:build:*` commands for desktop artifacts.
 
 ## Network Access
 
@@ -121,14 +150,11 @@ public/                # Static assets
 
 ## Documentation
 
-| Document                                                                                 | Purpose                                          |
-| ---------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| [CONTRIBUTING.md](CONTRIBUTING.md)                                                       | How to contribute                                |
-| [CHANGELOG.md](CHANGELOG.md)                                                             | Release history                                  |
-| [DESIGN.md](DESIGN.md)                                                                   | Design system (colors, typography, entity cards) |
-| [SECURITY.md](SECURITY.md)                                                               | Vulnerability reporting                          |
-| [docs/architecture/architecture-contract.md](docs/architecture/architecture-contract.md) | Canonical target architecture                    |
-| [docs/game-theory-analytical-methodology.md](docs/game-theory-analytical-methodology.md) | 10-phase analytical methodology                  |
+| Document                           | Purpose                 |
+| ---------------------------------- | ----------------------- |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute       |
+| [CHANGELOG.md](CHANGELOG.md)       | Release history         |
+| [SECURITY.md](SECURITY.md)         | Vulnerability reporting |
 
 ## License
 
