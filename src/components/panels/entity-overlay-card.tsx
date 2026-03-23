@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { PHASE_LABELS, PHASE_NUMBERS } from "@/types/methodology";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import * as analysisClient from "@/services/ai/analysis-client";
+import { useCanvasStore } from "@/stores/canvas-store";
+import { AnalysisReportOverlay } from "@/components/panels/analysis-report-overlay";
 import type {
   AnalysisEntity,
   EntityType,
@@ -39,6 +41,7 @@ import type {
   ScenarioData,
   CentralThesisData,
   MetaCheckData,
+  AnalysisReportData,
 } from "@/types/entity";
 
 // ── Props ──
@@ -81,7 +84,7 @@ const ENTITY_TYPE_COLORS: Record<EntityType, string> = {
   scenario: "#22D3EE",
   "central-thesis": "#A78BFA",
   "meta-check": "#F97316",
-  "analysis-report": "#A78BFA",
+  "analysis-report": "#A1A1AA",
 };
 
 const ENTITY_TYPE_I18N_KEYS: Record<EntityType, string> = {
@@ -1032,7 +1035,13 @@ function EditableEntityData({
   }
 }
 
-function EntityDataSection({ entity }: { entity: AnalysisEntity }) {
+function EntityDataSection({
+  entity,
+  onEntityClick,
+}: {
+  entity: AnalysisEntity;
+  onEntityClick?: (entityId: string) => void;
+}) {
   switch (entity.data.type) {
     case "fact":
       return <FactDetails data={entity.data} />;
@@ -1089,7 +1098,12 @@ function EntityDataSection({ entity }: { entity: AnalysisEntity }) {
     case "meta-check":
       return <MetaCheckDetails data={entity.data} />;
     case "analysis-report":
-      return null; // not implemented — Task 4
+      return (
+        <AnalysisReportOverlay
+          data={entity.data as AnalysisReportData}
+          onEntityClick={onEntityClick ?? (() => {})}
+        />
+      );
   }
 }
 
@@ -1250,6 +1264,10 @@ export default function EntityOverlayCard({
     setEditing(false);
   }, [entity.data, entity.rationale]);
 
+  const handleEntityNavigation = useCallback((entityId: string) => {
+    useCanvasStore.getState().setFocusedEntityId(entityId);
+  }, []);
+
   // Position: right of node by default, flip left if near right edge
   const viewportWidth =
     typeof window !== "undefined" ? window.innerWidth : 1920;
@@ -1301,7 +1319,10 @@ export default function EntityOverlayCard({
           {editing ? (
             <EditableEntityData data={editData} onChange={setEditData} />
           ) : (
-            <EntityDataSection entity={entity} />
+            <EntityDataSection
+              entity={entity}
+              onEntityClick={handleEntityNavigation}
+            />
           )}
         </div>
 
