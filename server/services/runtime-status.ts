@@ -30,6 +30,7 @@ const deferredStaleIds = new Set<string>();
 
 let activeRun: RuntimeRunState | null = null;
 let snapshot: RunStatus = createIdleSnapshot();
+let revision = 0;
 
 function createIdleSnapshot(): RunStatus {
   return {
@@ -57,7 +58,9 @@ function emitStatusChange(
   event: string,
   data?: Record<string, unknown>,
 ): void {
+  const currentRevision = incrementRevision();
   serverLog(runId, "runtime-status", event, {
+    revision: currentRevision,
     status: snapshot.status,
     kind: snapshot.kind,
     activePhase: snapshot.activePhase,
@@ -104,6 +107,15 @@ export function inferFailureKind(error?: string): RunFailureKind {
 
 export function getSnapshot(): RunStatus {
   return cloneSnapshot(snapshot);
+}
+
+export function getRevision(): number {
+  return revision;
+}
+
+export function incrementRevision(): number {
+  revision += 1;
+  return revision;
 }
 
 export function onStatusChange(callback: StatusChangeListener): () => void {
@@ -434,6 +446,7 @@ export function hasDeferredRevalidationIds(): boolean {
 export function _resetForTest(): void {
   activeRun = null;
   snapshot = createIdleSnapshot();
+  revision = 0;
   deferredStaleIds.clear();
   listeners.clear();
 }

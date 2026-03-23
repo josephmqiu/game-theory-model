@@ -30,6 +30,7 @@ export interface RunStatus {
 export interface AnalysisStateResponse {
   analysis: Analysis;
   runStatus: RunStatus;
+  revision: number;
 }
 
 export interface AbortAnalysisResponse {

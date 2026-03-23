@@ -13,6 +13,7 @@ import * as analysisOrchestrator from "../../agents/analysis-agent";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 import { normalizeRequestedActivePhases } from "../../services/analysis-phase-selection";
 import * as entityGraphService from "../../services/entity-graph-service";
+import * as runtimeStatus from "../../services/runtime-status";
 
 interface AnalyzeBody {
   topic: string;
@@ -49,6 +50,11 @@ export default defineEventHandler(async (event) => {
       error:
         error instanceof Error ? error.message : "Invalid runtime.activePhases",
     };
+  }
+
+  if (runtimeStatus.getSnapshot().status === "running") {
+    setResponseStatus(event, 409);
+    return { error: "Analysis already running" };
   }
 
   setResponseHeaders(event, {

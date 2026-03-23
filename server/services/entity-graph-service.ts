@@ -18,6 +18,7 @@ import type {
 import type { AnalysisMutationEvent } from "../../shared/types/events";
 import { serverLog } from "../utils/ai-logger";
 import { RELATIONSHIP_CATEGORY } from "../../src/types/entity";
+import * as runtimeStatus from "./runtime-status";
 import {
   normalizePhaseStates,
   upsertPhaseStatus,
@@ -55,6 +56,7 @@ function normalizeAnalysis(analysisState: Analysis): Analysis {
 }
 
 function emit(event: AnalysisMutationEvent): void {
+  runtimeStatus.incrementRevision();
   for (const cb of listeners) {
     cb(event);
   }

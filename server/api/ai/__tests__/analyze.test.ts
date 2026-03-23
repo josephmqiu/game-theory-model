@@ -9,6 +9,7 @@ const runFullMock = vi.fn();
 const newAnalysisMock = vi.fn();
 const getAnalysisMock = vi.fn();
 const onMutationMock = vi.fn();
+const getSnapshotMock = vi.fn();
 
 const progressListeners = new Set<(event: Record<string, unknown>) => void>();
 
@@ -43,6 +44,10 @@ vi.mock("../../../services/entity-graph-service", () => ({
   onMutation: (...args: unknown[]) => onMutationMock(...args),
 }));
 
+vi.mock("../../../services/runtime-status", () => ({
+  getSnapshot: () => getSnapshotMock(),
+}));
+
 function emitProgress(event: Record<string, unknown>): void {
   for (const listener of progressListeners) {
     listener(event);
@@ -62,6 +67,17 @@ describe("/api/ai/analyze", () => {
     vi.clearAllMocks();
     progressListeners.clear();
     onMutationMock.mockReturnValue(() => {});
+    getSnapshotMock.mockReturnValue({
+      status: "idle",
+      kind: null,
+      runId: null,
+      activePhase: null,
+      progress: {
+        completed: 0,
+        total: 0,
+      },
+      deferredRevalidationPending: false,
+    });
     getAnalysisMock.mockReturnValue({
       id: "analysis-1",
       name: "Topic",
@@ -131,6 +147,32 @@ describe("/api/ai/analyze", () => {
       error: "activePhases must include at least one supported canonical phase",
     });
     expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 400);
+    expect(newAnalysisMock).not.toHaveBeenCalled();
+    expect(runFullMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 when another run is already active and does not clear the graph", async () => {
+    readBodyMock.mockResolvedValue({
+      topic: "Trade conflict",
+    });
+    getSnapshotMock.mockReturnValue({
+      status: "running",
+      kind: "revalidation",
+      runId: "reval-123",
+      activePhase: "assumptions",
+      progress: {
+        completed: 2,
+        total: 4,
+      },
+      deferredRevalidationPending: false,
+    });
+
+    const route = (await import("../analyze")).default;
+    const result = await route(createEvent() as never);
+
+    expect(result).toEqual({ error: "Analysis already running" });
+    expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 409);
+    expect(setResponseHeadersMock).not.toHaveBeenCalled();
     expect(newAnalysisMock).not.toHaveBeenCalled();
     expect(runFullMock).not.toHaveBeenCalled();
   });

@@ -344,6 +344,7 @@ describe("analysis-client", () => {
             progress: { completed: 1, total: 9 },
             deferredRevalidationPending: false,
           },
+          revision: 1,
         } satisfies AnalysisStateResponse),
         {
           headers: { "Content-Type": "application/json" },
@@ -383,6 +384,7 @@ describe("analysis-client", () => {
               progress: { completed: 0, total: 9 },
               deferredRevalidationPending: false,
             },
+            revision: 1,
           } satisfies AnalysisStateResponse),
           {
             headers: { "Content-Type": "application/json" },
@@ -401,6 +403,7 @@ describe("analysis-client", () => {
               progress: { completed: 1, total: 9 },
               deferredRevalidationPending: false,
             },
+            revision: 2,
           } satisfies AnalysisStateResponse),
           {
             headers: { "Content-Type": "application/json" },
@@ -456,6 +459,7 @@ describe("analysis-client", () => {
               progress: { completed: 0, total: 9 },
               deferredRevalidationPending: false,
             },
+            revision: 1,
           } satisfies AnalysisStateResponse),
           {
             headers: { "Content-Type": "application/json" },
@@ -474,6 +478,7 @@ describe("analysis-client", () => {
               progress: { completed: 1, total: 9 },
               deferredRevalidationPending: false,
             },
+            revision: 2,
           } satisfies AnalysisStateResponse),
           {
             headers: { "Content-Type": "application/json" },
@@ -517,6 +522,7 @@ describe("analysis-client", () => {
               progress: { completed: 0, total: 9 },
               deferredRevalidationPending: false,
             },
+            revision: 1,
           } satisfies AnalysisStateResponse),
           {
             headers: { "Content-Type": "application/json" },
