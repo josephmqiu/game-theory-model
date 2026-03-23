@@ -1,335 +1,282 @@
 /**
- * SSE contract tests: verify server event format matches what the client expects.
+ * SSE contract tests: verify events.get.ts handler produces correct SSE output.
  *
- * These tests validate the wire format and envelope shapes of SSE events
- * against the shared type definitions used by both server and client.
+ * Uses the same FakeServerResponse + listener-based mock pattern as the existing
+ * events.test.ts, but focuses on contract correctness: does the server emit
+ * events in the exact format the client expects?
  */
 
-import { describe, expect, it, beforeEach } from "vitest";
-import type {
-  AnalysisMutationEvent,
-  AnalysisProgressEvent,
-  PhaseSummary,
-} from "../../../shared/types/events";
-import type { RunStatus } from "../../../shared/types/api";
+import { EventEmitter } from "node:events";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-describe("SSE contract tests", () => {
-  // ── Mutation channel ──
+// ── Listener-based mocks (same pattern as events.test.ts) ──
 
-  describe("mutation events", () => {
-    const mutationTypes: Array<{
-      name: string;
-      event: AnalysisMutationEvent;
-    }> = [
-      {
-        name: "entity_created",
-        event: {
-          type: "entity_created",
-          entity: {
-            id: "e-1",
-            type: "fact",
-            phase: "situational-grounding",
-            data: {
-              type: "fact",
-              date: "2026-01-01",
-              source: "test",
-              content: "A fact",
-              category: "action",
-            },
-            confidence: "high",
-            rationale: "test",
-            revision: 1,
-            stale: false,
-          } as any,
-        },
-      },
-      {
-        name: "entity_updated",
-        event: {
-          type: "entity_updated",
-          entity: {
-            id: "e-1",
-            type: "fact",
-            phase: "situational-grounding",
-            data: {
-              type: "fact",
-              date: "2026-01-01",
-              source: "test",
-              content: "Updated fact",
-              category: "action",
-            },
-            confidence: "high",
-            rationale: "updated",
-            revision: 2,
-            stale: false,
-          } as any,
-          previousProvenance: {
-            source: "phase-derived",
-            runId: "run-1",
-            phase: "situational-grounding",
-          },
-        },
-      },
-      {
-        name: "entity_deleted",
-        event: { type: "entity_deleted", entityId: "e-1" },
-      },
-      {
-        name: "relationship_created",
-        event: {
-          type: "relationship_created",
-          relationship: {
-            id: "r-1",
-            type: "precedes",
-            fromEntityId: "e-1",
-            toEntityId: "e-2",
-          } as any,
-        },
-      },
-      {
-        name: "relationship_updated",
-        event: {
-          type: "relationship_updated",
-          relationship: {
-            id: "r-1",
-            type: "supports",
-            fromEntityId: "e-1",
-            toEntityId: "e-2",
-          } as any,
-        },
-      },
-      {
-        name: "relationship_deleted",
-        event: { type: "relationship_deleted", relationshipId: "r-1" },
-      },
-      {
-        name: "stale_marked",
-        event: { type: "stale_marked", entityIds: ["e-1", "e-2"] },
-      },
-      {
-        name: "state_changed",
-        event: { type: "state_changed" },
-      },
+const mutationListeners = new Set<(event: Record<string, unknown>) => void>();
+const statusListeners = new Set<(event: Record<string, unknown>) => void>();
+const orchestratorListeners = new Set<(event: Record<string, unknown>) => void>();
+const revalidationListeners = new Set<(event: Record<string, unknown>) => void>();
+
+let currentRevision = 0;
+
+vi.mock("h3", () => ({
+  defineEventHandler: (handler: unknown) => handler,
+}));
+
+vi.mock("../../services/entity-graph-service", () => ({
+  onMutation: (callback: (event: Record<string, unknown>) => void) => {
+    mutationListeners.add(callback);
+    return () => mutationListeners.delete(callback);
+  },
+}));
+
+vi.mock("../../services/runtime-status", () => ({
+  getRevision: () => currentRevision,
+  onStatusChange: (callback: (event: Record<string, unknown>) => void) => {
+    statusListeners.add(callback);
+    return () => statusListeners.delete(callback);
+  },
+}));
+
+vi.mock("../../agents/analysis-agent", () => ({
+  onProgress: (callback: (event: Record<string, unknown>) => void) => {
+    orchestratorListeners.add(callback);
+    return () => orchestratorListeners.delete(callback);
+  },
+}));
+
+vi.mock("../../services/revalidation-service", () => ({
+  onProgress: (callback: (event: Record<string, unknown>) => void) => {
+    revalidationListeners.add(callback);
+    return () => revalidationListeners.delete(callback);
+  },
+}));
+
+// ── FakeServerResponse ──
+
+class FakeServerResponse extends EventEmitter {
+  headers: Record<string, string> | null = null;
+  chunks: string[] = [];
+
+  writeHead(_statusCode: number, headers: Record<string, string>): void {
+    this.headers = headers;
+  }
+
+  write(chunk: string): void {
+    this.chunks.push(chunk);
+  }
+
+  close(): void {
+    this.emit("close");
+  }
+}
+
+function createEvent() {
+  const res = new FakeServerResponse();
+  return { event: { node: { res } }, res };
+}
+
+/** Parse SSE chunks into JSON objects, same as the client does. */
+function parseEvents(chunks: string[]): Array<Record<string, unknown>> {
+  return chunks
+    .join("")
+    .split("\n\n")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.startsWith("data: "))
+    .map((entry) => JSON.parse(entry.slice(6)) as Record<string, unknown>);
+}
+
+function emitMutation(revision: number, event: Record<string, unknown>): void {
+  currentRevision = revision;
+  for (const listener of mutationListeners) listener(event);
+}
+
+function emitStatus(revision: number, event: Record<string, unknown>): void {
+  currentRevision = revision;
+  for (const listener of statusListeners) listener(event);
+}
+
+function emitOrchestratorProgress(revision: number, event: Record<string, unknown>): void {
+  currentRevision = revision;
+  for (const listener of orchestratorListeners) listener(event);
+}
+
+function emitRevalidationProgress(revision: number, event: Record<string, unknown>): void {
+  currentRevision = revision;
+  for (const listener of revalidationListeners) listener(event);
+}
+
+// ── Tests ──
+
+describe("SSE contract: events.get.ts handler", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    currentRevision = 0;
+    mutationListeners.clear();
+    statusListeners.clear();
+    orchestratorListeners.clear();
+    revalidationListeners.clear();
+    vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  it("sets correct SSE headers", async () => {
+    const { event, res } = createEvent();
+    const route = (await import("../../api/ai/events.get")).default;
+    const pending = route(event as never);
+
+    res.close();
+    await pending;
+
+    expect(res.headers).toEqual({
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+  });
+
+  it("mutation events flow through with channel, type, revision, and entity data", async () => {
+    const { event, res } = createEvent();
+    const route = (await import("../../api/ai/events.get")).default;
+    const pending = route(event as never);
+
+    emitMutation(5, {
+      type: "entity_created",
+      entity: { id: "e-1", type: "fact", phase: "situational-grounding" },
+    });
+
+    res.close();
+    await pending;
+
+    const parsed = parseEvents(res.chunks);
+    expect(parsed.length).toBe(1);
+    expect(parsed[0]).toEqual({
+      channel: "mutation",
+      revision: 5,
+      type: "entity_created",
+      entity: { id: "e-1", type: "fact", phase: "situational-grounding" },
+    });
+  });
+
+  it("all 8 mutation event types produce valid SSE with correct channel", async () => {
+    const { event, res } = createEvent();
+    const route = (await import("../../api/ai/events.get")).default;
+    const pending = route(event as never);
+
+    const mutationEvents = [
+      { type: "entity_created", entity: { id: "e1" } },
+      { type: "entity_updated", entity: { id: "e1" }, previousProvenance: {} },
+      { type: "entity_deleted", entityId: "e1" },
+      { type: "relationship_created", relationship: { id: "r1" } },
+      { type: "relationship_updated", relationship: { id: "r1" } },
+      { type: "relationship_deleted", relationshipId: "r1" },
+      { type: "stale_marked", entityIds: ["e1", "e2"] },
+      { type: "state_changed" },
     ];
 
-    for (const { name, event } of mutationTypes) {
-      it(`${name} round-trips through JSON correctly`, () => {
-        const envelope = {
-          channel: "mutation" as const,
-          revision: 42,
-          ...event,
-        };
+    mutationEvents.forEach((evt, i) => emitMutation(i + 1, evt));
 
-        // Simulate SSE wire format
-        const wire = `data: ${JSON.stringify(envelope)}\n\n`;
-        const parsed = JSON.parse(wire.slice(6, -2));
+    res.close();
+    await pending;
 
-        expect(parsed.channel).toBe("mutation");
-        expect(parsed.revision).toBe(42);
-        expect(parsed.type).toBe(name);
-      });
+    const parsed = parseEvents(res.chunks);
+    expect(parsed.length).toBe(8);
+
+    for (let i = 0; i < mutationEvents.length; i++) {
+      expect(parsed[i].channel).toBe("mutation");
+      expect(parsed[i].type).toBe(mutationEvents[i].type);
+      expect(typeof parsed[i].revision).toBe("number");
     }
   });
 
-  // ── Progress channel ──
+  it("terminal progress events (analysis_completed, analysis_failed) are filtered out", async () => {
+    const { event, res } = createEvent();
+    const route = (await import("../../api/ai/events.get")).default;
+    const pending = route(event as never);
 
-  describe("progress events", () => {
-    const summary: PhaseSummary = {
-      entitiesCreated: 3,
-      relationshipsCreated: 1,
-      entitiesUpdated: 0,
-      durationMs: 1500,
+    // Emit both terminal and non-terminal progress events
+    emitOrchestratorProgress(1, {
+      type: "phase_started",
+      phase: "situational-grounding",
+      runId: "run-1",
+    });
+    emitOrchestratorProgress(2, {
+      type: "analysis_completed",
+      runId: "run-1",
+    });
+    emitRevalidationProgress(3, {
+      type: "phase_activity",
+      phase: "assumptions",
+      runId: "reval-1",
+      kind: "note",
+      message: "Revalidating",
+    });
+    emitRevalidationProgress(4, {
+      type: "analysis_failed",
+      runId: "reval-1",
+      error: "should be filtered",
+    });
+
+    res.close();
+    await pending;
+
+    const parsed = parseEvents(res.chunks);
+    // Only non-terminal events should appear
+    expect(parsed.length).toBe(2);
+    expect(parsed[0].type).toBe("phase_started");
+    expect(parsed[1].type).toBe("phase_activity");
+
+    // Terminal events must NOT appear
+    const types = parsed.map((e) => e.type);
+    expect(types).not.toContain("analysis_completed");
+    expect(types).not.toContain("analysis_failed");
+  });
+
+  it("status channel forwards RunStatus with all required fields", async () => {
+    const { event, res } = createEvent();
+    const route = (await import("../../api/ai/events.get")).default;
+    const pending = route(event as never);
+
+    emitStatus(7, {
+      status: "running",
+      kind: "analysis",
+      runId: "run-1",
+      activePhase: "player-identification",
+      progress: { completed: 1, total: 9 },
+      deferredRevalidationPending: false,
+    });
+
+    res.close();
+    await pending;
+
+    const parsed = parseEvents(res.chunks);
+    expect(parsed.length).toBe(1);
+    expect(parsed[0].channel).toBe("status");
+    expect(parsed[0].revision).toBe(7);
+    // Verify all RunStatus fields that the client depends on
+    expect(parsed[0].status).toBe("running");
+    expect(parsed[0].kind).toBe("analysis");
+    expect(parsed[0].runId).toBe("run-1");
+    expect(parsed[0].activePhase).toBe("player-identification");
+    expect(parsed[0].progress).toEqual({ completed: 1, total: 9 });
+    expect(parsed[0].deferredRevalidationPending).toBe(false);
+  });
+
+  it("client can strip envelope to get clean payload", () => {
+    // The client's stripEnvelope removes channel and revision.
+    // Verify this contract holds for all channel types.
+    const mutationEnvelope = {
+      channel: "mutation",
+      revision: 5,
+      type: "entity_created",
+      entity: { id: "e-1", type: "fact" },
     };
 
-    const progressTypes: Array<{
-      name: string;
-      event: AnalysisProgressEvent;
-    }> = [
-      {
-        name: "phase_started",
-        event: {
-          type: "phase_started",
-          phase: "situational-grounding",
-          runId: "run-1",
-        },
-      },
-      {
-        name: "phase_activity",
-        event: {
-          type: "phase_activity",
-          phase: "situational-grounding",
-          runId: "run-1",
-          kind: "tool",
-          message: "Calling web search",
-          toolName: "WebSearch",
-        },
-      },
-      {
-        name: "phase_completed",
-        event: {
-          type: "phase_completed",
-          phase: "situational-grounding",
-          runId: "run-1",
-          summary,
-        },
-      },
-      {
-        name: "analysis_completed",
-        event: { type: "analysis_completed", runId: "run-1" },
-      },
-      {
-        name: "analysis_failed",
-        event: {
-          type: "analysis_failed",
-          runId: "run-1",
-          error: "Phase timeout exceeded",
-        },
-      },
-    ];
-
-    for (const { name, event } of progressTypes) {
-      it(`${name} round-trips through JSON correctly`, () => {
-        const envelope = {
-          channel: "progress" as const,
-          revision: 10,
-          ...event,
-        };
-
-        const wire = `data: ${JSON.stringify(envelope)}\n\n`;
-        const parsed = JSON.parse(wire.slice(6, -2));
-
-        expect(parsed.channel).toBe("progress");
-        expect(parsed.revision).toBe(10);
-        expect(parsed.type).toBe(name);
-      });
-    }
-  });
-
-  // ── Status channel ──
-
-  describe("status events", () => {
-    it("RunStatus envelope has all required fields", () => {
-      const status: RunStatus = {
-        status: "running",
-        kind: "analysis",
-        runId: "run-1",
-        activePhase: "situational-grounding",
-        progress: { completed: 2, total: 9 },
-        deferredRevalidationPending: false,
-      };
-
-      const envelope = {
-        channel: "status" as const,
-        revision: 5,
-        ...status,
-      };
-
-      const parsed = JSON.parse(JSON.stringify(envelope));
-
-      expect(parsed.channel).toBe("status");
-      expect(parsed.revision).toBe(5);
-      expect(parsed.status).toBe("running");
-      expect(parsed.kind).toBe("analysis");
-      expect(parsed.runId).toBe("run-1");
-      expect(parsed.activePhase).toBe("situational-grounding");
-      expect(parsed.progress).toEqual({ completed: 2, total: 9 });
-      expect(parsed.deferredRevalidationPending).toBe(false);
+    const { channel: _c, revision: _r, ...payload } = mutationEnvelope;
+    expect(payload).toEqual({
+      type: "entity_created",
+      entity: { id: "e-1", type: "fact" },
     });
-
-    it("failed RunStatus includes failure metadata", () => {
-      const status: RunStatus = {
-        status: "failed",
-        kind: "analysis",
-        runId: "run-1",
-        activePhase: null,
-        progress: { completed: 3, total: 9 },
-        failedPhase: "baseline-model",
-        failureKind: "provider_api_error",
-        failureMessage: "Rate limit exceeded",
-        deferredRevalidationPending: false,
-      };
-
-      const parsed = JSON.parse(JSON.stringify(status));
-
-      expect(parsed.failedPhase).toBe("baseline-model");
-      expect(parsed.failureKind).toBe("provider_api_error");
-      expect(parsed.failureMessage).toBe("Rate limit exceeded");
-    });
-  });
-
-  // ── Ping channel ──
-
-  describe("ping events", () => {
-    it("ping envelope is valid", () => {
-      const envelope = { channel: "ping" as const, revision: 0 };
-      const wire = `data: ${JSON.stringify(envelope)}\n\n`;
-      const parsed = JSON.parse(wire.slice(6, -2));
-
-      expect(parsed.channel).toBe("ping");
-      expect(parsed.revision).toBe(0);
-    });
-  });
-
-  // ── Wire format ──
-
-  describe("SSE wire format", () => {
-    it("events are encoded as data: {json}\\n\\n", () => {
-      const events = [
-        {
-          channel: "mutation",
-          revision: 1,
-          type: "entity_created",
-          entity: { id: "e-1" },
-        },
-        { channel: "ping", revision: 2 },
-        {
-          channel: "progress",
-          revision: 3,
-          type: "phase_started",
-          phase: "situational-grounding",
-          runId: "r1",
-        },
-      ];
-
-      // Encode as the server does
-      const encoded = events
-        .map((e) => `data: ${JSON.stringify(e)}\n\n`)
-        .join("");
-
-      // Parse as the client does (split on double newline)
-      const parsed = encoded
-        .split("\n\n")
-        .map((chunk) => chunk.trim())
-        .filter((chunk) => chunk.startsWith("data: "))
-        .map((chunk) => JSON.parse(chunk.slice(6)));
-
-      expect(parsed.length).toBe(3);
-      expect(parsed[0].channel).toBe("mutation");
-      expect(parsed[1].channel).toBe("ping");
-      expect(parsed[2].channel).toBe("progress");
-    });
-
-    it("events.get.ts filters terminal progress events", () => {
-      // The server's events.get.ts filters analysis_completed and analysis_failed
-      // from the progress channel (lines 56-61). These are only sent via
-      // the runtime-status channel. Verify this contract.
-      const terminalTypes = ["analysis_completed", "analysis_failed"];
-      const nonTerminalTypes = [
-        "phase_started",
-        "phase_activity",
-        "phase_completed",
-      ];
-
-      // These SHOULD be streamed on the progress channel
-      for (const type of nonTerminalTypes) {
-        expect(terminalTypes).not.toContain(type);
-      }
-
-      // Terminal events SHOULD NOT appear on the progress channel
-      // (they come via the status channel instead)
-      for (const type of terminalTypes) {
-        expect(nonTerminalTypes).not.toContain(type);
-      }
-    });
+    // channel and revision should not leak into the payload
+    expect(payload).not.toHaveProperty("channel");
+    expect(payload).not.toHaveProperty("revision");
   });
 });

@@ -11,23 +11,46 @@ type PhaseResponses = Partial<
 >;
 
 /**
- * Detects which phase a runAnalysisPhase call is for by inspecting the prompt/systemPrompt text.
+ * Detects which phase a runAnalysisPhase call is for.
+ * Checks the system prompt first (contains "Phase N: Name" header),
+ * then falls back to the user prompt.
  */
 function detectPhaseFromPrompt(prompt: string, systemPrompt?: string): MethodologyPhase | null {
-  const phasePatterns: [RegExp, MethodologyPhase][] = [
-    [/situational[- ]?grounding|phase\s*1\b/i, "situational-grounding"],
-    [/player[- ]?identification|phase\s*2\b/i, "player-identification"],
-    [/baseline[- ]?model|phase\s*3\b/i, "baseline-model"],
-    [/historical[- ]?game|phase\s*4\b/i, "historical-game"],
-    [/formal[- ]?model/i, "formal-modeling"],
-    [/assumptions|phase\s*7\b/i, "assumptions"],
-    [/elimination|phase\s*8\b/i, "elimination"],
-    [/scenarios|phase\s*9\b/i, "scenarios"],
-    [/meta[- ]?check|phase\s*10\b/i, "meta-check"],
+  // Phase number patterns — unambiguous, checked against systemPrompt first
+  const phaseNumberPatterns: [RegExp, MethodologyPhase][] = [
+    [/phase\s*1\b[:\s]/i, "situational-grounding"],
+    [/phase\s*2\b[:\s]/i, "player-identification"],
+    [/phase\s*3\b[:\s]/i, "baseline-model"],
+    [/phase\s*4\b[:\s]/i, "historical-game"],
+    [/phase\s*6\b[:\s]/i, "formal-modeling"],
+    [/phase\s*7\b[:\s]/i, "assumptions"],
+    [/phase\s*8\b[:\s]/i, "elimination"],
+    [/phase\s*9\b[:\s]/i, "scenarios"],
+    [/phase\s*10\b[:\s]/i, "meta-check"],
   ];
 
-  const text = `${prompt}\n${systemPrompt ?? ""}`;
-  for (const [pattern, phase] of phasePatterns) {
+  // Check system prompt first — it has the canonical "Phase N:" header
+  if (systemPrompt) {
+    for (const [pattern, phase] of phaseNumberPatterns) {
+      if (pattern.test(systemPrompt)) return phase;
+    }
+  }
+
+  // Fallback: check phase names in combined text
+  const namePatterns: [RegExp, MethodologyPhase][] = [
+    [/situational[- ]?grounding/i, "situational-grounding"],
+    [/player[- ]?identification/i, "player-identification"],
+    [/baseline[- ]?(strategic\s+)?model/i, "baseline-model"],
+    [/historical[- ]?(repeated\s+)?game/i, "historical-game"],
+    [/formal[- ]?model/i, "formal-modeling"],
+    [/\bassumptions\b/i, "assumptions"],
+    [/\belimination\b/i, "elimination"],
+    [/\bscenarios\b/i, "scenarios"],
+    [/meta[- ]?check/i, "meta-check"],
+  ];
+
+  const text = systemPrompt ?? prompt;
+  for (const [pattern, phase] of namePatterns) {
     if (pattern.test(text)) return phase;
   }
   return null;
