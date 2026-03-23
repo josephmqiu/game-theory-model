@@ -1,4 +1,4 @@
-name: Docker
+name: Docker Runtime Validation
 
 on:
   workflow_dispatch:
@@ -11,8 +11,8 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push:
-    name: Build Docker Image (${{ matrix.variant }})
+  build-runtime-images:
+    name: Build Docker Runtime Image (${{ matrix.variant }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -28,15 +28,6 @@ jobs:
           - variant: codex
             target: with-codex
             suffix: '-codex'
-          - variant: opencode
-            target: with-opencode
-            suffix: '-opencode'
-          - variant: copilot
-            target: with-copilot
-            suffix: '-copilot'
-          - variant: full
-            target: full
-            suffix: '-full'
 
     steps:
       - uses: actions/checkout@v4
@@ -56,7 +47,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build image without publishing
+      - name: Build runtime image without publishing
         uses: docker/build-push-action@v6
         with:
           context: .

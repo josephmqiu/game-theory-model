@@ -86,6 +86,8 @@ docker run --rm -p 3000:3000 \
 
 The mounted `~/.claude` and `~/.codex` directories carry the local auth and config state that the CLI-based runtimes expect. Docker does not replace that local setup.
 
+The app's in-process MCP HTTP server stays container-internal by default; the examples above expose only the Nitro app port.
+
 ## Tech Stack
 
 | Layer          | Technology                         |
