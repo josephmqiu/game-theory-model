@@ -1,10 +1,9 @@
 import { readFile, writeFile, access } from 'node:fs/promises'
 import { constants } from 'node:fs'
-import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import type { PenDocument } from '../types/pen'
 import { sanitizeObject } from './utils/sanitize'
-import { PORT_FILE_DIR_NAME, PORT_FILE_NAME } from '@/constants/app'
+import { getPortFileReadCandidates } from '../lib/runtime-state-paths'
 
 const cache = new Map<string, { doc: PenDocument; mtime: number }>()
 
@@ -16,8 +15,6 @@ export function resolveDocPath(filePath?: string): string {
   if (!filePath || filePath === LIVE_CANVAS_PATH) return LIVE_CANVAS_PATH
   return resolve(filePath)
 }
-
-const PORT_FILE_PATH = join(homedir(), PORT_FILE_DIR_NAME, PORT_FILE_NAME)
 
 // ---------------------------------------------------------------------------
 // Sync URL discovery
@@ -33,15 +30,25 @@ function isPidAlive(pid: number): boolean {
 }
 
 /** Read the port file and return the Nitro sync base URL, or null if unavailable. */
-export async function getSyncUrl(): Promise<string | null> {
-  try {
-    const raw = await readFile(PORT_FILE_PATH, 'utf-8')
-    const { port, pid } = JSON.parse(raw) as { port: number; pid: number }
-    if (!isPidAlive(pid)) return null
-    return `http://127.0.0.1:${port}`
-  } catch {
-    return null
+export async function readSyncUrlFromPortFiles(
+  portFilePaths: string[],
+): Promise<string | null> {
+  for (const portFilePath of portFilePaths) {
+    try {
+      const raw = await readFile(portFilePath, 'utf-8')
+      const { port, pid } = JSON.parse(raw) as { port: number; pid: number }
+      if (!isPidAlive(pid)) continue
+      return `http://127.0.0.1:${port}`
+    } catch {
+      // Try the next discovery location.
+    }
   }
+  return null
+}
+
+/** Read the port file and return the Nitro sync base URL, or null if unavailable. */
+export async function getSyncUrl(): Promise<string | null> {
+  return readSyncUrlFromPortFiles(getPortFileReadCandidates())
 }
 
 /** Fetch the current document from the live Electron canvas. */

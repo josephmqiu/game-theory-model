@@ -6,10 +6,6 @@
 export const GITHUB_OWNER = "josephmqiu";
 export const GITHUB_REPO = "game-theory-model";
 
-// Port file for MCP sync discovery
-export const PORT_FILE_DIR_NAME = ".game-theory-analyzer";
-export const PORT_FILE_NAME = ".port";
-
 // Dev server
 export const VITE_DEV_PORT = 3000;
 
