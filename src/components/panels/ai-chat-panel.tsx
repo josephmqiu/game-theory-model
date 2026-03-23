@@ -35,9 +35,7 @@ import CopilotLogo from "@/components/icons/copilot-logo";
 import ChatMessage from "./chat-message";
 import { useChatHandlers } from "./ai-chat-handlers";
 import { FixedChecklist } from "./ai-chat-checklist";
-import {
-  buildAnalysisCompleteMessage,
-} from "./ai-chat-lifecycle";
+import { buildAnalysisCompleteMessage } from "./ai-chat-lifecycle";
 
 export type AIChatMode = "analysis";
 export type AIChatPresentation = "floating" | "docked";
@@ -214,7 +212,6 @@ export default function AIChatPanel({
   const toggleMinimize = useAIStore((s) => s.toggleMinimize);
   const hydrateModelPreference = useAIStore((s) => s.hydrateModelPreference);
   const model = useAIStore((s) => s.model);
-  const setModel = useAIStore((s) => s.setModel);
   const selectModel = useAIStore((s) => s.selectModel);
   const availableModels = useAIStore((s) => s.availableModels);
   const setAvailableModels = useAIStore((s) => s.setAvailableModels);
@@ -276,13 +273,15 @@ export default function AIChatPanel({
           );
           if (!terminalNoticeKeysRef.current.has(noticeKey)) {
             terminalNoticeKeysRef.current.add(noticeKey);
-            useAIStore.getState().addMessage(
-              buildAnalysisTerminalMessage(
-                previousStatus.runId,
-                "completed",
-                entityCount,
-              ),
-            );
+            useAIStore
+              .getState()
+              .addMessage(
+                buildAnalysisTerminalMessage(
+                  previousStatus.runId,
+                  "completed",
+                  entityCount,
+                ),
+              );
           }
         } else if (
           (nextStatus.status === "failed" ||
@@ -295,13 +294,15 @@ export default function AIChatPanel({
           );
           if (!terminalNoticeKeysRef.current.has(noticeKey)) {
             terminalNoticeKeysRef.current.add(noticeKey);
-            useAIStore.getState().addMessage(
-              buildAnalysisTerminalMessage(
-                nextStatus.runId,
-                nextStatus.status,
-                entityCount,
-              ),
-            );
+            useAIStore
+              .getState()
+              .addMessage(
+                buildAnalysisTerminalMessage(
+                  nextStatus.runId,
+                  nextStatus.status,
+                  entityCount,
+                ),
+              );
           }
         }
       }
@@ -354,7 +355,9 @@ export default function AIChatPanel({
       const { model: currentModel, preferredModel } = useAIStore.getState();
       const nextModel = resolveNextModel(flat, currentModel, preferredModel);
       if (nextModel && nextModel !== currentModel) {
-        setModel(nextModel);
+        // Use selectModel to also update the persisted preference,
+        // clearing any stale model that no longer exists in the available list.
+        useAIStore.getState().selectModel(nextModel);
       }
       setLoadingModels(false);
       return;
