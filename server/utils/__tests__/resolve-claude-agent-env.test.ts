@@ -29,13 +29,15 @@ describe('buildClaudeAgentEnv', () => {
     process.env = originalEnv
   })
 
-  it('strips ambient Anthropic direct-auth env vars from process.env', async () => {
+  it('preserves the real HOME and strips direct-auth config overrides', async () => {
     process.env.PATH = '/usr/bin'
     process.env.HOME = '/mock-home'
     process.env[GAME_THEORY_ANALYZER_USER_DATA_DIR_ENV] = '/mock-user-data'
     process.env.ANTHROPIC_API_KEY = 'ambient-key'
     process.env.ANTHROPIC_AUTH_TOKEN = 'ambient-token'
     process.env.ANTHROPIC_CUSTOM_HEADERS = '{"x-test":"1"}'
+    process.env.CLAUDE_CONFIG_DIR = '/ambient-config'
+    process.env.XDG_CONFIG_HOME = '/ambient-xdg-config'
 
     readFileSyncMock.mockImplementation(() => {
       throw new Error('missing settings')
@@ -45,15 +47,29 @@ describe('buildClaudeAgentEnv', () => {
     const env = buildClaudeAgentEnv()
 
     expect(env.PATH).toBe('/usr/bin')
-    expect(env.HOME).toBe('/mock-user-data/claude-runtime/home')
-    expect(env.CLAUDE_CONFIG_DIR).toBe('/mock-user-data/claude-runtime/config')
+    expect(env.HOME).toBe('/mock-home')
+    expect(env.CLAUDE_CONFIG_DIR).toBeUndefined()
+    expect(env.XDG_CONFIG_HOME).toBeUndefined()
+    expect(env.XDG_CACHE_HOME).toBe('/mock-user-data/claude-runtime/cache')
+    expect(env.XDG_DATA_HOME).toBe('/mock-user-data/claude-runtime/data')
+    expect(env.XDG_STATE_HOME).toBe('/mock-user-data/claude-runtime/state')
     expect(env.ANTHROPIC_API_KEY).toBeUndefined()
     expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined()
     expect(env.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined()
+
+    expect(mkdirSyncMock).toHaveBeenCalledTimes(3)
+    expect(mkdirSyncMock.mock.calls).toEqual([
+      ['/mock-user-data/claude-runtime/cache', { recursive: true }],
+      ['/mock-user-data/claude-runtime/data', { recursive: true }],
+      ['/mock-user-data/claude-runtime/state', { recursive: true }],
+    ])
+    expect(writeFileSyncMock).not.toHaveBeenCalled()
   })
 
-  it('keeps explicit Claude settings env and strips CLAUDECODE', async () => {
+  it('keeps explicit Claude settings env but ignores auth-session location keys', async () => {
     process.env.PATH = '/usr/bin'
+    process.env.HOME = '/mock-home'
+    process.env[GAME_THEORY_ANALYZER_USER_DATA_DIR_ENV] = '/mock-user-data'
     process.env.CLAUDECODE = '1'
     process.env.ANTHROPIC_API_KEY = 'ambient-key'
 
@@ -63,6 +79,9 @@ describe('buildClaudeAgentEnv', () => {
           env: {
             ANTHROPIC_API_KEY: 'settings-key',
             ANTHROPIC_CUSTOM_HEADERS: { 'x-from-settings': '1' },
+            HOME: '/bad-settings-home',
+            CLAUDE_CONFIG_DIR: '/bad-settings-config',
+            XDG_CONFIG_HOME: '/bad-settings-xdg-config',
             CLAUDECODE: '1',
           },
         })
@@ -75,6 +94,12 @@ describe('buildClaudeAgentEnv', () => {
 
     expect(env.ANTHROPIC_API_KEY).toBe('settings-key')
     expect(env.ANTHROPIC_CUSTOM_HEADERS).toBe('{"x-from-settings":"1"}')
+    expect(env.HOME).toBe('/mock-home')
+    expect(env.CLAUDE_CONFIG_DIR).toBeUndefined()
+    expect(env.XDG_CONFIG_HOME).toBeUndefined()
+    expect(env.XDG_CACHE_HOME).toBe('/mock-user-data/claude-runtime/cache')
+    expect(env.XDG_DATA_HOME).toBe('/mock-user-data/claude-runtime/data')
+    expect(env.XDG_STATE_HOME).toBe('/mock-user-data/claude-runtime/state')
     expect(env.CLAUDECODE).toBeUndefined()
   })
 
@@ -97,48 +122,5 @@ describe('buildClaudeAgentEnv', () => {
 
     expect(env.ANTHROPIC_API_KEY).toBe('settings-token')
     expect(env.ANTHROPIC_AUTH_TOKEN).toBe('settings-token')
-  })
-
-  it('seeds isolated Claude auth state without copying path-heavy project data', async () => {
-    process.env[GAME_THEORY_ANALYZER_USER_DATA_DIR_ENV] = '/mock-user-data'
-
-    readFileSyncMock.mockImplementation((filePath: string) => {
-      if (filePath === '/mock-home/.claude.json') {
-        return JSON.stringify({
-          anonymousId: 'anon-1',
-          oauthAccount: { accountUuid: 'acct-1' },
-          userID: 'user-1',
-          customApiKeyResponses: { approved: ['hash-1'] },
-          projects: { '/Users/tester/Desktop': { allowedTools: [] } },
-          mcpServers: { pencil: { command: 'node' } },
-          githubRepoPaths: ['/Volumes/team/repo'],
-        })
-      }
-      throw new Error('missing file')
-    })
-
-    const { buildClaudeAgentEnv } = await import('../resolve-claude-agent-env')
-    buildClaudeAgentEnv()
-
-    expect(writeFileSyncMock).toHaveBeenCalledTimes(2)
-
-    for (const call of writeFileSyncMock.mock.calls as Array<
-      [string, string, string]
-    >) {
-      const [filePath, content] = call
-      expect(filePath).toMatch(
-        /\/mock-user-data\/claude-runtime\/(config|home)\/\.claude\.json$/,
-      )
-      const parsed = JSON.parse(content)
-      expect(parsed).toEqual({
-        anonymousId: 'anon-1',
-        oauthAccount: { accountUuid: 'acct-1' },
-        userID: 'user-1',
-        customApiKeyResponses: { approved: ['hash-1'] },
-      })
-      expect(parsed.projects).toBeUndefined()
-      expect(parsed.mcpServers).toBeUndefined()
-      expect(parsed.githubRepoPaths).toBeUndefined()
-    }
   })
 })

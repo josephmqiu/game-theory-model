@@ -35,14 +35,14 @@ body:
     attributes:
       label: Area
       options:
-        - Canvas / Drawing
-        - AI / Generation
-        - MCP Server
-        - Design System / Variables
-        - Code Generation
+        - Analysis workflow / methodology
+        - Entity graph canvas
+        - AI runtime / providers
+        - MCP / product tools
         - Electron / Desktop
-        - Figma Import
-        - UI / Panels
+        - Persistence / .gta files
+        - UI / panels
+        - Docs / contributor experience
         - Other
 
   - type: textarea

@@ -1,286 +1,154 @@
-import { defineEventHandler, readBody, setResponseHeaders } from 'h3'
-import { homedir } from 'node:os'
-import { join, resolve, dirname } from 'node:path'
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
-import { execSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
+import { defineEventHandler, readBody, setResponseHeaders } from "h3";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { MCP_DEFAULT_PORT } from "../../../src/constants/app";
 import {
   getCodexConfigPath,
   installMcpServer as installCodexMcpServer,
   uninstallMcpServer as uninstallCodexMcpServer,
-} from '../../services/ai/codex-config'
-
-// ESM-compatible __dirname polyfill
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-
-const MCP_DEFAULT_PORT = 3100
+} from "../../services/ai/codex-config";
+import { resolveMcpProxyScript } from "../../utils/mcp-server-manager";
 
 interface InstallBody {
-  tool: string
-  action: 'install' | 'uninstall'
-  transportMode?: 'stdio' | 'http' | 'both'
-  httpPort?: number
+  tool: string;
+  action: "install" | "uninstall";
+  transportMode?: "stdio" | "http" | "both";
+  httpPort?: number;
 }
 
 interface InstallResult {
-  success: boolean
-  error?: string
-  configPath?: string
-  /** True when node was not found and HTTP URL fallback was used */
-  fallbackHttp?: boolean
+  success: boolean;
+  error?: string;
+  configPath?: string;
 }
 
-const MCP_SERVER_NAME = 'game-theory-analyzer'
+const MCP_SERVER_NAME = "game-theory-analyzer";
+const UNSUPPORTED_CLI_ERROR =
+  "This CLI is not yet supported with the in-process MCP server.";
 
-/**
- * Resolve the absolute path to the compiled MCP server.
- * In dev: <project>/dist/mcp-server.cjs
- * In production (Electron): <resources>/mcp-server.cjs
- */
-function resolveMcpServerPath(): string {
-  // Electron production: extraResources places it in resourcesPath
-  const electronResources = process.env.ELECTRON_RESOURCES_PATH
-  if (electronResources) {
-    const electronPath = join(electronResources, 'mcp-server.cjs')
-    if (existsSync(electronPath)) return electronPath
-  }
-  // Try dist/ in the project root (dev + web build)
-  const projectDist = resolve(process.cwd(), 'dist', 'mcp-server.cjs')
-  if (existsSync(projectDist)) return projectDist
-  // Fallback: try relative to this file
-  const serverDist = resolve(__dirname, '..', '..', '..', 'dist', 'mcp-server.cjs')
-  if (existsSync(serverDist)) return serverDist
-  return projectDist // Return expected path even if not yet compiled
+function resolveMcpProxyCommand(): string {
+  if (process.env.ELECTRON_RESOURCES_PATH) return "node";
+  return process.release?.name === "node" ? process.execPath : "node";
 }
 
-/**
- * Detect if `node` is available on the system.
- * Checks PATH first, then common install locations (the Nitro/Electron
- * process may run with a stripped PATH that doesn't include the user's
- * node installation).
- * Caches the result for the lifetime of the process.
- */
-let _nodeAvailable: boolean | null = null
-function isNodeAvailable(): boolean {
-  if (_nodeAvailable !== null) return _nodeAvailable
-
-  // Try PATH first
-  try {
-    execSync('node --version', { stdio: 'ignore', timeout: 5000 })
-    _nodeAvailable = true
-    return true
-  } catch { /* not on PATH */ }
-
-  // Check common absolute paths (macOS/Linux + Windows)
-  const candidates = process.platform === 'win32'
-    ? [
-        join(process.env.ProgramFiles ?? 'C:\\Program Files', 'nodejs', 'node.exe'),
-        join(process.env.LOCALAPPDATA ?? '', 'fnm_multishells', '**', 'node.exe'),
-        join(homedir(), '.nvm', 'current', 'bin', 'node.exe'),
-      ]
-    : [
-        '/usr/local/bin/node',
-        '/usr/bin/node',
-        join(homedir(), '.nvm', 'versions', 'node'),  // nvm directory
-        '/opt/homebrew/bin/node',
-      ]
-
-  for (const p of candidates) {
-    if (existsSync(p)) {
-      _nodeAvailable = true
-      return true
-    }
-  }
-
-  _nodeAvailable = false
-  return false
-}
-
-function buildMcpServerEntry(
-  serverPath: string,
-  transportMode: 'stdio' | 'http' | 'both' = 'stdio',
-  httpPort = MCP_DEFAULT_PORT,
-): { command: string; args: string[] } {
-  switch (transportMode) {
-    case 'http':
-      return { command: 'node', args: [serverPath, '--http', '--port', String(httpPort)] }
-    case 'both':
-      return { command: 'node', args: [serverPath, '--http', '--port', String(httpPort), '--stdio'] }
-    default:
-      return { command: 'node', args: [serverPath] }
-  }
-}
-
-/** Build an HTTP URL-based MCP server entry (no local node required). */
-function buildMcpHttpUrlEntry(httpPort = MCP_DEFAULT_PORT): { type: 'http'; url: string } {
-  return { type: 'http', url: `http://127.0.0.1:${httpPort}/mcp` }
-}
-
-/** Config file locations and formats for each CLI tool. */
-interface CliConfigDef {
-  configPath: () => string
-  read: (filePath: string) => Promise<Record<string, any>>
-  write: (filePath: string, config: Record<string, any>) => Promise<void>
-}
-
-function installMcpServer(
-  config: Record<string, any>,
-  serverPath: string,
-  transportMode?: 'stdio' | 'http' | 'both',
-  httpPort?: number,
-): Record<string, any> {
+function buildClaudeHttpEntry(port: number): { type: "http"; url: string } {
   return {
-    ...config,
-    mcpServers: {
-      ...(config.mcpServers ?? {}),
-      [MCP_SERVER_NAME]: buildMcpServerEntry(serverPath, transportMode, httpPort),
-    },
-  }
+    type: "http",
+    url: `http://127.0.0.1:${port}/mcp`,
+  };
 }
 
-/** Install MCP server using HTTP URL (for environments without node). */
-function installMcpServerHttpUrl(
-  config: Record<string, any>,
-  httpPort?: number,
-): Record<string, any> {
-  return {
-    ...config,
-    mcpServers: {
-      ...(config.mcpServers ?? {}),
-      [MCP_SERVER_NAME]: buildMcpHttpUrlEntry(httpPort),
-    },
-  }
-}
-
-function uninstallMcpServer(config: Record<string, any>): Record<string, any> {
-  const servers = { ...(config.mcpServers ?? {}) }
-  delete servers[MCP_SERVER_NAME]
-  return { ...config, mcpServers: Object.keys(servers).length > 0 ? servers : undefined }
-}
-
-const CLI_CONFIGS: Record<string, CliConfigDef> = {
-  'claude-code': {
-    configPath: () => join(homedir(), '.claude.json'),
-    read: readJsonConfig,
-    write: writeJsonConfig,
-  },
-  'gemini-cli': {
-    configPath: () => join(homedir(), '.gemini', 'settings.json'),
-    read: readJsonConfig,
-    write: writeJsonConfig,
-  },
-  'opencode-cli': {
-    configPath: () => join(homedir(), '.opencode', 'config.json'),
-    read: readJsonConfig,
-    write: writeJsonConfig,
-  },
-  'kiro-cli': {
-    configPath: () => join(homedir(), '.kiro', 'settings.json'),
-    read: readJsonConfig,
-    write: writeJsonConfig,
-  },
-  'copilot-cli': {
-    configPath: () => join(homedir(), '.config', 'github-copilot', 'mcp.json'),
-    read: readJsonConfig,
-    write: writeJsonConfig,
-  },
-}
-
-async function readJsonConfig(filePath: string): Promise<Record<string, any>> {
+async function readJsonConfig(filePath: string): Promise<Record<string, unknown>> {
   try {
-    const text = await readFile(filePath, 'utf-8')
-    return JSON.parse(text)
+    const text = await readFile(filePath, "utf-8");
+    return JSON.parse(text) as Record<string, unknown>;
   } catch {
-    return {}
+    return {};
   }
 }
 
 async function writeJsonConfig(
   filePath: string,
-  config: Record<string, any>,
+  config: Record<string, unknown>,
 ): Promise<void> {
-  const dir = join(filePath, '..')
-  if (!existsSync(dir)) {
-    await mkdir(dir, { recursive: true })
+  const parentDir = dirname(filePath);
+  if (!existsSync(parentDir)) {
+    await mkdir(parentDir, { recursive: true });
   }
-  await writeFile(filePath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
+  await writeFile(filePath, JSON.stringify(config, null, 2) + "\n", "utf-8");
 }
 
-/**
- * POST /api/ai/mcp-install
- * Install or uninstall the Game Theory Analyzer MCP server into a CLI tool's config.
- */
+function installClaudeCodeMcp(
+  config: Record<string, unknown>,
+  port: number,
+): Record<string, unknown> {
+  const mcpServers =
+    config.mcpServers && typeof config.mcpServers === "object"
+      ? (config.mcpServers as Record<string, unknown>)
+      : {};
+
+  return {
+    ...config,
+    mcpServers: {
+      ...mcpServers,
+      [MCP_SERVER_NAME]: buildClaudeHttpEntry(port),
+    },
+  };
+}
+
+function uninstallClaudeCodeMcp(
+  config: Record<string, unknown>,
+): Record<string, unknown> {
+  const mcpServers =
+    config.mcpServers && typeof config.mcpServers === "object"
+      ? { ...(config.mcpServers as Record<string, unknown>) }
+      : {};
+
+  delete mcpServers[MCP_SERVER_NAME];
+
+  return {
+    ...config,
+    mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
+  };
+}
+
 export default defineEventHandler(async (event) => {
-  const body = await readBody<InstallBody>(event)
-  setResponseHeaders(event, { 'Content-Type': 'application/json' })
+  const body = await readBody<InstallBody>(event);
+  setResponseHeaders(event, { "Content-Type": "application/json" });
 
   if (!body?.tool || !body?.action) {
-    return { success: false, error: 'Missing tool or action field' } satisfies InstallResult
+    return { success: false, error: "Missing tool or action field" } satisfies InstallResult;
   }
 
+  const port = body.httpPort ?? MCP_DEFAULT_PORT;
+
   try {
-    if (body.tool === 'codex-cli') {
-      if (body.transportMode && body.transportMode !== 'stdio') {
+    if (body.tool === "codex-cli") {
+      if (body.transportMode && body.transportMode !== "stdio") {
         return {
           success: false,
-          error: 'Codex CLI MCP install only supports stdio transport.',
-        } satisfies InstallResult
+          error: "Codex CLI MCP install only supports stdio transport.",
+        } satisfies InstallResult;
       }
 
-      if (body.action === 'uninstall') {
-        uninstallCodexMcpServer()
+      if (body.action === "uninstall") {
+        uninstallCodexMcpServer();
       } else {
-        const serverPath = resolveMcpServerPath()
-        installCodexMcpServer('node', [serverPath])
+        installCodexMcpServer(resolveMcpProxyCommand(), [resolveMcpProxyScript()]);
       }
 
       return {
         success: true,
         configPath: getCodexConfigPath(),
-      } satisfies InstallResult
+      } satisfies InstallResult;
     }
 
-    const cliConfig = CLI_CONFIGS[body.tool]
-    if (!cliConfig) {
-      return { success: false, error: `Unknown CLI tool: ${body.tool}` } satisfies InstallResult
+    if (body.tool === "claude-code") {
+      const configPath = join(homedir(), ".claude.json");
+      const config = await readJsonConfig(configPath);
+      const updated =
+        body.action === "uninstall"
+          ? uninstallClaudeCodeMcp(config)
+          : installClaudeCodeMcp(config, port);
+
+      await writeJsonConfig(configPath, updated);
+
+      return {
+        success: true,
+        configPath,
+      } satisfies InstallResult;
     }
 
-    const configPath = cliConfig.configPath()
-    const config = await cliConfig.read(configPath)
-
-    let updated: Record<string, any>
-    let fallbackHttp = false
-
-    if (body.action === 'uninstall') {
-      updated = uninstallMcpServer(config)
-    } else if (!isNodeAvailable()) {
-      // No node on this machine — fall back to HTTP URL config
-      // and ensure the MCP HTTP server is running
-      const httpPort = body.httpPort ?? MCP_DEFAULT_PORT
-      updated = installMcpServerHttpUrl(config, httpPort)
-      fallbackHttp = true
-
-      // Auto-start the MCP HTTP server so the URL is reachable
-      try {
-        const { startMcpHttpServer } = await import('../../utils/mcp-server-manager')
-        startMcpHttpServer(httpPort)
-      } catch {
-        // Non-fatal: server may already be running or will be started manually
-      }
-    } else {
-      const serverPath = resolveMcpServerPath()
-      updated = installMcpServer(config, serverPath, body.transportMode, body.httpPort)
-    }
-
-    await cliConfig.write(configPath, updated)
-
-    return { success: true, configPath, ...(fallbackHttp ? { fallbackHttp } : {}) } satisfies InstallResult
-  } catch (err) {
     return {
       success: false,
-      error: err instanceof Error ? err.message : String(err),
-    } satisfies InstallResult
+      error: UNSUPPORTED_CLI_ERROR,
+    } satisfies InstallResult;
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    } satisfies InstallResult;
   }
-})
+});

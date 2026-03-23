@@ -35,14 +35,17 @@ describe("AIChatPanel analysis mode", () => {
     expect(source).not.toContain("handleSendWrapped");
   });
 
-  it("keeps lifecycle announcements on one completion path", () => {
+  it("keeps lifecycle announcements for completed, failed, and cancelled runs", () => {
     const source = readFileSync(aiChatPanelPath, "utf8");
 
-    // Chat panel only handles analysis_completed — phase activity moved to PhaseProgress bar
-    expect(source).toContain("analysisClient.onProgress((event)");
-    expect(source).toContain("completedRunIdsRef");
+    expect(source).toContain("useRunStatusStore.subscribe");
+    expect(source).toContain("terminalNoticeKeysRef");
+    expect(source).toContain("getAnalysisTerminalNoticeKey");
+    expect(source).toContain("buildAnalysisTerminalMessage");
     expect(source).toContain("buildAnalysisCompleteMessage");
-    expect(source).toContain("analysis_completed");
+    expect(source).toContain('nextStatus.status === "idle"');
+    expect(source).toContain('nextStatus.status === "failed"');
+    expect(source).toContain('nextStatus.status === "cancelled"');
   });
 
   it("does not depend on the old analysis store", () => {

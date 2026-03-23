@@ -21,7 +21,7 @@ import {
   handleDeleteRelationship,
   handleRerunPhases,
   handleAbortAnalysis,
-} from "@/mcp/server";
+} from "../../mcp/product-tools";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 import type { AnalysisActivityCallback } from "./analysis-activity";
 

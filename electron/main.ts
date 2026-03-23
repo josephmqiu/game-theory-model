@@ -9,6 +9,7 @@ import {
 import { execSync } from "node:child_process";
 import { fork, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
+import { existsSync } from "node:fs";
 import { join, resolve, extname, sep, dirname } from "node:path";
 import { homedir } from "node:os";
 import { readFile, writeFile, mkdir, unlink } from "node:fs/promises";
@@ -46,15 +47,21 @@ import { applyGuiPathFix } from "./path-bootstrap";
 import { buildNitroChildEnv } from "./nitro-env";
 import { isRunningFromMountedDiskImage } from "./install-location";
 import {
+  getConfiguredUserDataDir,
   getLegacyPortFilePath,
   getPortFilePath,
 } from "../src/lib/runtime-state-paths";
+import {
+  createAppSettingsStore,
+  createPreferenceStore,
+} from "./persistence";
 
 let mainWindow: BrowserWindow | null = null;
 let nitroProcess: ChildProcess | null = null;
 let serverPort = 0;
 let pendingFilePath: string | null = null;
 const APP_NAME = "Game Theory Analyzer";
+const SMOKE_READY_FILE_NAME = "smoke-ready.json";
 const ANALYSIS_FILE_EXTENSION = ".gta";
 const ANALYSIS_FILE_FILTER: OpenDialogOptions["filters"] = [
   {
@@ -63,10 +70,21 @@ const ANALYSIS_FILE_FILTER: OpenDialogOptions["filters"] = [
   },
 ];
 
-const isDev = !app.isPackaged;
+const isSmokeTestMode = process.env.GAME_THEORY_SMOKE_TEST === "1";
+const configuredUserDataDir = getConfiguredUserDataDir({ env: process.env });
+
+if (configuredUserDataDir) {
+  app.setPath("userData", configuredUserDataDir);
+}
+
+const isDev = !app.isPackaged && !isSmokeTestMode;
 
 function getUserDataPath(): string {
   return app.getPath("userData");
+}
+
+function getSmokeReadyFilePath(): string {
+  return join(getUserDataPath(), SMOKE_READY_FILE_NAME);
 }
 
 // Settings stored in platform-standard app data dir (Electron-managed):
@@ -85,37 +103,14 @@ function getPrefsPath(): string {
 // Renderer preferences (replaces localStorage which is origin-scoped)
 // ---------------------------------------------------------------------------
 
-let prefsCache: Record<string, string> = {};
-let prefsDirty = false;
-let prefsWriteTimer: ReturnType<typeof setTimeout> | null = null;
+const prefsStore = createPreferenceStore({
+  getPrefsPath,
+  getUserDataPath,
+  logError: (message) => log.error(message),
+});
 
 async function loadPrefs(): Promise<void> {
-  try {
-    const raw = await readFile(getPrefsPath(), "utf-8");
-    prefsCache = JSON.parse(raw);
-  } catch {
-    prefsCache = {};
-  }
-}
-
-function schedulePrefsWrite(): void {
-  if (prefsWriteTimer) return;
-  prefsDirty = true;
-  prefsWriteTimer = setTimeout(async () => {
-    prefsWriteTimer = null;
-    if (!prefsDirty) return;
-    prefsDirty = false;
-    try {
-      await mkdir(getUserDataPath(), { recursive: true });
-      await writeFile(
-        getPrefsPath(),
-        JSON.stringify(prefsCache, null, 2),
-        "utf-8",
-      );
-    } catch (err) {
-      log.error(`[prefs] Failed to write preferences: ${err}`);
-    }
-  }, 500);
+  await prefsStore.load();
 }
 
 // ---------------------------------------------------------------------------
@@ -134,20 +129,17 @@ interface AppSettings {
   autoUpdate?: boolean;
 }
 
+const appSettingsStore = createAppSettingsStore<AppSettings>({
+  getSettingsPath,
+  getUserDataPath,
+});
+
 async function readAppSettings(): Promise<AppSettings> {
-  try {
-    const raw = await readFile(getSettingsPath(), "utf-8");
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
+  return appSettingsStore.read();
 }
 
 async function writeAppSettings(patch: Partial<AppSettings>): Promise<void> {
-  const current = await readAppSettings();
-  const merged = { ...current, ...patch };
-  await mkdir(getUserDataPath(), { recursive: true });
-  await writeFile(getSettingsPath(), JSON.stringify(merged, null, 2), "utf-8");
+  await appSettingsStore.write(patch);
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +184,23 @@ async function cleanupPortFile(): Promise<void> {
   }
 }
 
+async function writeSmokeReadyFile(data: Record<string, unknown>): Promise<void> {
+  if (!isSmokeTestMode) return;
+
+  const filePath = getSmokeReadyFilePath();
+  try {
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
+  } catch (err) {
+    log.error(`[smoke] Failed to write readiness file: ${err}`);
+  }
+}
+
+async function cleanupSmokeReadyFile(): Promise<void> {
+  if (!isSmokeTestMode) return;
+  await unlinkIfPresent(getSmokeReadyFilePath());
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -213,9 +222,20 @@ function getFreePorts(): Promise<number> {
 }
 
 function getServerEntry(): string {
-  if (isDev) {
-    // In dev, the Nitro output lives at .output/server/index.mjs
-    return join(app.getAppPath(), ".output", "server", "index.mjs");
+  if (!app.isPackaged) {
+    const appPath = app.getAppPath();
+    const candidates = [
+      join(appPath, ".output", "server", "index.mjs"),
+      resolve(appPath, "..", ".output", "server", "index.mjs"),
+    ];
+
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) {
+        return candidate;
+      }
+    }
+
+    return candidates[0];
   }
   // In production, extraResources copies .output into the resources folder
   return join(process.resourcesPath, "server", "index.mjs");
@@ -240,6 +260,8 @@ async function startNitroServer(): Promise<number> {
   const entry = getServerEntry();
 
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
     const child = fork(entry, [], {
       env: buildNitroChildEnv(process.env, {
         host: NITRO_HOST,
@@ -252,12 +274,26 @@ async function startNitroServer(): Promise<number> {
 
     nitroProcess = child;
 
+    const settleResolve = () => {
+      if (settled) return;
+      settled = true;
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      resolve(port);
+    };
+
+    const settleReject = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      reject(error);
+    };
+
     child.stdout?.on("data", (data: Buffer) => {
       const msg = data.toString();
       log.info(`[nitro] ${msg.trimEnd()}`);
       // Resolve once Nitro reports it's listening
       if (msg.includes("Listening") || msg.includes("ready")) {
-        resolve(port);
+        settleResolve();
       }
     });
 
@@ -265,8 +301,17 @@ async function startNitroServer(): Promise<number> {
       log.error(`[nitro:err] ${data.toString().trimEnd()}`);
     });
 
-    child.on("error", reject);
+    child.on("error", (error) => {
+      settleReject(
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    });
     child.on("exit", (code) => {
+      if (!settled) {
+        settleReject(
+          new Error(`Nitro exited before readiness with code ${code ?? "unknown"}`),
+        );
+      }
       if (code !== 0 && code !== null) {
         log.error(`Nitro exited with code ${code}`);
       }
@@ -300,8 +345,47 @@ async function startNitroServer(): Promise<number> {
       process.platform === "win32"
         ? NITRO_FALLBACK_TIMEOUT_WIN
         : NITRO_FALLBACK_TIMEOUT_DEFAULT;
-    setTimeout(() => resolve(port), fallbackMs);
+    fallbackTimer = setTimeout(() => settleResolve(), fallbackMs);
   });
+}
+
+async function waitForAnalysisStateReady(
+  port: number,
+  timeoutMs = 15_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  const url = `http://${NITRO_HOST}:${port}/api/ai/state`;
+
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        return;
+      }
+    } catch {
+      // Retry until timeout.
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error(`Timed out waiting for ${url}`);
+}
+
+function handleStartupFailure(err: unknown, title: string): void {
+  const detail = err instanceof Error ? err.message : String(err);
+  log.error(`${title}: ${detail}`);
+
+  if (isSmokeTestMode) {
+    app.exit(1);
+    return;
+  }
+
+  dialog.showErrorBox(
+    APP_NAME,
+    `${title}.\n\n${detail}\n\nThe application will now quit.`,
+  );
+  app.quit();
 }
 
 // ---------------------------------------------------------------------------
@@ -433,8 +517,24 @@ function createWindow(): void {
         );
       }
     }
-    mainWindow.show();
+    if (!isSmokeTestMode) {
+      mainWindow.show();
+    }
     broadcastUpdaterState();
+
+    if (!isDev) {
+      try {
+        await waitForAnalysisStateReady(serverPort);
+        await writeSmokeReadyFile({
+          ready: true,
+          port: serverPort,
+          timestamp: Date.now(),
+          url: `http://${NITRO_HOST}:${serverPort}/editor`,
+        });
+      } catch (err) {
+        handleStartupFailure(err, "Smoke readiness probe failed");
+      }
+    }
   });
 
   // Toggle fullscreen class to remove traffic-light padding in fullscreen
@@ -553,16 +653,14 @@ function setupIPC(): void {
 
   // Generic renderer preferences (replaces localStorage which is origin-scoped
   // and lost when Nitro server restarts on a different random port)
-  ipcMain.handle("prefs:getAll", () => ({ ...prefsCache }));
+  ipcMain.handle("prefs:getAll", () => prefsStore.getAll());
 
   ipcMain.handle("prefs:set", (_event, key: string, value: string) => {
-    prefsCache[key] = value;
-    schedulePrefsWrite();
+    prefsStore.set(key, value);
   });
 
   ipcMain.handle("prefs:remove", (_event, key: string) => {
-    delete prefsCache[key];
-    schedulePrefsWrite();
+    prefsStore.remove(key);
   });
 
   ipcMain.handle("log:getDir", () => getLogDir());
@@ -653,6 +751,10 @@ if (!gotTheLock) {
 // ---------------------------------------------------------------------------
 
 async function blockMountedDiskImageLaunch(): Promise<boolean> {
+  if (isSmokeTestMode) {
+    return false;
+  }
+
   if (!isRunningFromMountedDiskImage(process.platform, app.isPackaged, process.execPath)) {
     return false;
   }
@@ -709,12 +811,7 @@ app.on("ready", async () => {
       log.info(`Nitro server started on port ${serverPort}`);
       await writePortFile(serverPort);
     } catch (err) {
-      log.error(`Failed to start Nitro server: ${err}`);
-      dialog.showErrorBox(
-        APP_NAME,
-        `Failed to start the application server.\n\n${err instanceof Error ? err.message : String(err)}\n\nThe application will now quit.`,
-      );
-      app.quit();
+      handleStartupFailure(err, "Failed to start the application server");
       return;
     }
   } else {
@@ -731,7 +828,7 @@ app.on("ready", async () => {
     pendingFilePath = getFilePathFromArgs(process.argv);
   }
 
-  if (!isDev) {
+  if (!isDev && !isSmokeTestMode) {
     const settings = await readAppSettings();
     const autoUpdate = settings.autoUpdate !== false;
     setAutoUpdateEnabled(autoUpdate);
@@ -757,6 +854,7 @@ app.on("activate", () => {
 
 app.on("before-quit", async () => {
   clearUpdateTimer();
+  await cleanupSmokeReadyFile();
   await cleanupPortFile();
   killNitroProcess();
 });
@@ -784,6 +882,8 @@ function killNitroProcess(): void {
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
   process.on(signal, () => {
     killNitroProcess();
-    cleanupPortFile().finally(() => process.exit(0));
+    Promise.all([cleanupPortFile(), cleanupSmokeReadyFile()]).finally(() =>
+      process.exit(0),
+    );
   });
 }

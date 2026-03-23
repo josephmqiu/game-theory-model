@@ -34,12 +34,17 @@ export default function AnalysisLauncher({
     const topic = rawTopic.trim();
     if (!topic || !canUseModel) return;
 
+    // Guard against a stale persisted model that isn't in the available list.
+    const validModel = availableModels.some((m) => m.value === model)
+      ? model
+      : (availableModels[0]?.value ?? model);
+
     const currentProvider = modelGroups.find((group) =>
-      group.models.some((candidate) => candidate.value === model),
+      group.models.some((candidate) => candidate.value === validModel),
     )?.provider;
 
     setInput("");
-    onStartAnalysis(topic, currentProvider, model);
+    onStartAnalysis(topic, currentProvider, validModel);
   };
 
   return (

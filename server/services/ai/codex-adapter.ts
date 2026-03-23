@@ -5,7 +5,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { filterCodexEnv } from "../../utils/codex-client";
 import { serverLog, serverWarn } from "../../utils/ai-logger";
-import { resolveMcpServerScript } from "../../utils/mcp-server-manager";
+import { resolveMcpProxyScript } from "../../utils/mcp-server-manager";
 import type { ChatEvent } from "../../../shared/types/events";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 import { CODEX_MCP_SERVER_NAME, installMcpServer } from "./codex-config";
@@ -202,6 +202,19 @@ function normalizeAnalysisError(error: unknown): Error {
   return new Error(buildCodexTurnFailureMessage(message));
 }
 
+function logSendRequestFailure(
+  runId: string | undefined,
+  event: string,
+  context: Record<string, unknown>,
+): (error: unknown) => void {
+  return (error: unknown) => {
+    serverWarn(runId, "codex-adapter", event, {
+      ...context,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  };
+}
+
 function createTurnInput(prompt: string): Array<Record<string, string>> {
   return [{ type: "text", text: prompt }];
 }
@@ -315,9 +328,17 @@ function installToolSurface(
   toolNames: readonly string[],
   runId?: string,
 ): void {
-  installMcpServer(resolveMcpServerCommand(), [resolveMcpServerScript()], {
+  const env: Record<string, string> = {};
+  if (runId) {
+    env.ANALYSIS_RUN_ID = runId;
+  }
+  if (process.env.MCP_PORT?.trim()) {
+    env.MCP_PORT = process.env.MCP_PORT.trim();
+  }
+
+  installMcpServer(resolveMcpServerCommand(), [resolveMcpProxyScript()], {
     enabledTools: [...toolNames],
-    env: runId ? { ANALYSIS_RUN_ID: runId } : undefined,
+    env: Object.keys(env).length > 0 ? env : undefined,
   });
   serverLog(runId, "codex-adapter", "mcp-config-written", {
     toolNames,
@@ -684,7 +705,11 @@ export async function* streamChat(
         });
         if (turnId) {
           sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(
-            () => {},
+            logSendRequestFailure(runId, "turn-interrupt-failed", {
+              reason: "tool-call-limit",
+              threadId,
+              turnId,
+            }),
           );
         }
         turnError = `Turn interrupted: exceeded ${MAX_TOOL_CALLS_PER_TURN} tool calls`;
@@ -717,7 +742,13 @@ export async function* streamChat(
         sendRequest(conn, "item/tool/approveUserInput", {
           id: approvalId,
           approved: true,
-        }).catch(() => {});
+        }).catch(
+          logSendRequestFailure(runId, "approval-response-failed", {
+            approvalId,
+            method: "item/tool/approveUserInput",
+            threadId,
+          }),
+        );
       }
       return;
     }
@@ -745,7 +776,13 @@ export async function* streamChat(
             reason:
               "File/command operations are not permitted in the current trust tier",
           },
-        ).catch(() => {});
+        ).catch(
+          logSendRequestFailure(runId, "approval-response-failed", {
+            approvalId,
+            method,
+            threadId,
+          }),
+        );
       }
       return;
     }
@@ -780,7 +817,13 @@ export async function* streamChat(
   const onAbort = () => {
     aborted = true;
     if (turnId) {
-      sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(() => {});
+      sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(
+        logSendRequestFailure(runId, "turn-interrupt-failed", {
+          reason: "abort-signal",
+          threadId,
+          turnId,
+        }),
+      );
     }
     // Wake the wait loop so it can exit
     resolveWait?.();
@@ -791,7 +834,11 @@ export async function* streamChat(
       aborted = true;
       if (turnId) {
         sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(
-          () => {},
+          logSendRequestFailure(runId, "turn-interrupt-failed", {
+            reason: "already-aborted",
+            threadId,
+            turnId,
+          }),
         );
       }
     } else {
@@ -817,7 +864,11 @@ export async function* streamChat(
         });
         if (turnId) {
           await sendRequest(conn, "turn/interrupt", { threadId, turnId }).catch(
-            () => {},
+            logSendRequestFailure(runId, "turn-interrupt-failed", {
+              reason: "timeout",
+              threadId,
+              turnId,
+            }),
           );
         }
         yield {
@@ -1042,7 +1093,14 @@ export async function runAnalysisPhase<T = unknown>(
             reason: approved
               ? "Approved analysis read-only MCP tool"
               : "Analysis mode only permits read-only MCP tools",
-          }).catch(() => {});
+          }).catch(
+            logSendRequestFailure(runId, "approval-response-failed", {
+              approvalId,
+              method: "item/tool/approveUserInput",
+              threadId,
+              toolName,
+            }),
+          );
           serverLog(runId, "codex-adapter", "analysis-tool-approval", {
             approvalId,
             toolName,
@@ -1075,7 +1133,13 @@ export async function runAnalysisPhase<T = unknown>(
               approved: false,
               reason: "Analysis mode only permits read-only MCP tool access",
             },
-          ).catch(() => {});
+          ).catch(
+            logSendRequestFailure(runId, "approval-response-failed", {
+              approvalId,
+              method,
+              threadId,
+            }),
+          );
         }
       }
     });
@@ -1114,7 +1178,13 @@ export async function runAnalysisPhase<T = unknown>(
             await sendRequest(conn, "turn/interrupt", {
               threadId,
               turnId,
-            }).catch(() => {});
+            }).catch(
+              logSendRequestFailure(runId, "turn-interrupt-failed", {
+                reason: "analysis-abort",
+                threadId,
+                turnId,
+              }),
+            );
           }
           throw new Error("Aborted");
         }
@@ -1123,7 +1193,13 @@ export async function runAnalysisPhase<T = unknown>(
             await sendRequest(conn, "turn/interrupt", {
               threadId,
               turnId,
-            }).catch(() => {});
+            }).catch(
+              logSendRequestFailure(runId, "turn-interrupt-failed", {
+                reason: "analysis-fatal-error",
+                threadId,
+                turnId,
+              }),
+            );
           }
           throw new Error(fatalError);
         }
@@ -1132,7 +1208,13 @@ export async function runAnalysisPhase<T = unknown>(
             await sendRequest(conn, "turn/interrupt", {
               threadId,
               turnId,
-            }).catch(() => {});
+            }).catch(
+              logSendRequestFailure(runId, "turn-interrupt-failed", {
+                reason: "analysis-timeout",
+                threadId,
+                turnId,
+              }),
+            );
           }
           throw new Error("Analysis phase timed out");
         }

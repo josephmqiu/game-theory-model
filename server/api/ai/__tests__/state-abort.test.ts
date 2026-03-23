@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Analysis } from "../../../../shared/types/entity";
 
 const getAnalysisMock = vi.fn();
-const getActiveStatusMock = vi.fn();
+const getSnapshotMock = vi.fn();
+const getRevisionMock = vi.fn();
 const isRunningMock = vi.fn();
 const abortMock = vi.fn();
 
@@ -11,9 +12,13 @@ vi.mock("../../../services/entity-graph-service", () => ({
 }));
 
 vi.mock("../../../agents/analysis-agent", () => ({
-  getActiveStatus: () => getActiveStatusMock(),
   isRunning: () => isRunningMock(),
   abort: () => abortMock(),
+}));
+
+vi.mock("../../../services/runtime-status", () => ({
+  getSnapshot: () => getSnapshotMock(),
+  getRevision: () => getRevisionMock(),
 }));
 
 function createAnalysis(): Analysis {
@@ -57,47 +62,39 @@ describe("/api/ai/state and /api/ai/abort", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getAnalysisMock.mockReturnValue(createAnalysis());
+    getRevisionMock.mockReturnValue(0);
   });
 
-  it("returns idle run status from the current analysis when no run is active", async () => {
-    getActiveStatusMock.mockReturnValue(null);
+  it("returns runtime-status snapshot and revision from the server-owned state", async () => {
+    getSnapshotMock.mockReturnValue({
+      status: "running",
+      kind: "revalidation",
+      runId: "reval-123",
+      activePhase: "player-identification",
+      progress: {
+        completed: 1,
+        total: 3,
+      },
+      deferredRevalidationPending: true,
+    });
+    getRevisionMock.mockReturnValue(17);
 
     const route = (await import("../state")).default;
     const result = route({} as never);
 
     expect(result.analysis.topic).toBe("Trade conflict");
     expect(result.runStatus).toEqual({
-      status: "idle",
-      runId: null,
-      activePhase: null,
-      progress: {
-        completed: 1,
-        total: 9,
-      },
-    });
-  });
-
-  it("returns active run status while analysis is running", async () => {
-    getActiveStatusMock.mockReturnValue({
-      runId: "run-123",
       status: "running",
-      activePhase: "player-identification",
-      phasesCompleted: 1,
-      totalPhases: 9,
-    });
-
-    const route = (await import("../state")).default;
-    const result = route({} as never);
-
-    expect(result.runStatus).toEqual({
-      status: "running",
-      runId: "run-123",
+      kind: "revalidation",
+      runId: "reval-123",
       activePhase: "player-identification",
       progress: {
         completed: 1,
-        total: 9,
+        total: 3,
       },
+      deferredRevalidationPending: true,
     });
+    expect(result.revision).toBe(17);
   });
 
   it("returns aborted true when a run is active", async () => {

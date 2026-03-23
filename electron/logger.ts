@@ -40,8 +40,11 @@ async function writeLine(level: string, msg: string): Promise<void> {
   }
   try {
     await appendFile(logFilePath, line, 'utf-8')
-  } catch {
-    // Disk full or permission error — silently drop
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    process.stderr.write(
+      `${timestamp()} [LOGGER_FALLBACK] Failed to append log file: ${detail}\n`,
+    )
   }
 }
 

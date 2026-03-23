@@ -11,7 +11,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: App version (check Help > About or `package.json`)
+      description: App version (check `package.json`, the packaged app version, or the macOS native About panel if applicable)
       placeholder: e.g. 0.3.2
     validations:
       required: true
@@ -21,10 +21,10 @@ body:
     attributes:
       label: Platform
       options:
-        - Web (browser)
         - macOS (Electron)
         - Windows (Electron)
         - Linux (Electron)
+        - Renderer dev server (development only)
     validations:
       required: true
 
@@ -67,4 +67,4 @@ body:
     id: context
     attributes:
       label: Additional Context
-      description: Any other context — browser version, OS version, error logs, etc.
+      description: Any other context — OS version, logs, CLI/runtime details, or browser version for renderer-dev-only issues.

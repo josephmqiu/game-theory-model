@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-03-23
+
+### Fixed
+
+- Hardened Electron persistence so prefs/settings writes are less likely to lose state on failure or overlap
+- Added runtime request validation to AI routes so malformed bodies fail with `400` instead of partial mutation or server exceptions
+- Improved Codex runtime observability by logging previously swallowed fire-and-forget request failures
+- Preserved queued revalidation work when the runtime is already busy instead of dropping stale IDs
+
+### Changed
+
+- Removed confirmed orphaned files, dead store symbols, and clearly unused dependencies from the live product path
+- Realigned public docs, issue templates, and PR guidance around the desktop-first product and renderer-dev distinction
+- Refreshed the macOS release build for the patch release artifacts
+
 ## [0.4.0] - 2026-03-21
 
 ### Added

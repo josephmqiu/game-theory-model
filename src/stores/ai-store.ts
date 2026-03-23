@@ -131,7 +131,6 @@ interface AIState {
 
   hydrateModelPreference: () => void;
   selectModel: (model: string) => void;
-  setModel: (model: string) => void;
   setAvailableModels: (models: AIModelInfo[]) => void;
   setModelGroups: (groups: ModelGroup[]) => void;
   setLoadingModels: (v: boolean) => void;
@@ -261,7 +260,6 @@ export const useAIStore = create<AIState>((set, get) => ({
     writeStoredModelPreference(model);
     set({ model, preferredModel: model });
   },
-  setModel: (model) => set({ model }),
   setAvailableModels: (availableModels) => set({ availableModels }),
   setModelGroups: (modelGroups) => set({ modelGroups }),
   setLoadingModels: (isLoadingModels) => set({ isLoadingModels }),

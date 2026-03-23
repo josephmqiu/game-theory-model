@@ -13,8 +13,10 @@ describe("agent settings dialog MCP config", () => {
   it("keeps copied and displayed MCP HTTP config pinned to localhost", () => {
     const source = readFileSync(dialogPath, "utf8");
 
-    expect(source).toContain('http://127.0.0.1:${mcpHttpPort}/mcp');
+    expect(source).toContain('http://127.0.0.1:${mcpServerPort}/mcp');
     expect(source).not.toContain('http://${mcpServerLocalIp}:${mcpHttpPort}/mcp');
+    expect(source).toContain("callMcpInstall(");
+    expect(source).toContain("mcpServerPort");
   });
 
   it("exposes analysis runtime controls in the existing dialog", () => {

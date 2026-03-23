@@ -26,6 +26,12 @@ import {
   getRecordedLoopbackTriggers,
 } from "../services/analysis-tools";
 
+vi.mock("../utils/ai-logger", () => ({
+  serverLog: vi.fn(),
+  serverWarn: vi.fn(),
+  serverError: vi.fn(),
+}));
+
 vi.mock("../agents/analysis-agent", () => ({
   runFull: vi.fn().mockResolvedValue({ runId: "run-mock-123" }),
   getActiveStatus: vi.fn().mockReturnValue(null),
@@ -41,23 +47,6 @@ vi.mock("../services/revalidation-service", () => ({
     return null;
   }),
   getActiveRevalStatus: vi.fn().mockReturnValue(null),
-}));
-
-vi.mock("@/stores/ai-store", () => ({
-  useAIStore: {
-    getState: () => ({
-      model: "",
-      modelGroups: [],
-    }),
-  },
-}));
-
-vi.mock("@/stores/agent-settings-store", () => ({
-  useAgentSettingsStore: {
-    getState: () => ({
-      providers: {},
-    }),
-  },
 }));
 
 function makeFactData() {
@@ -130,6 +119,22 @@ describe("handleStartAnalysis", () => {
       status: "started",
       estimatedPhases: 3,
     });
+  });
+
+  it("forwards explicit provider and model args without reading renderer stores", async () => {
+    const { runFull } = await import("../agents/analysis-agent");
+
+    await handleStartAnalysis({
+      topic: "US-China semiconductor trade war",
+      provider: "anthropic",
+      model: "claude-sonnet-4-20250514",
+    });
+
+    expect(runFull).toHaveBeenCalledWith(
+      "US-China semiconductor trade war",
+      "anthropic",
+      "claude-sonnet-4-20250514",
+    );
   });
 });
 

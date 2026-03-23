@@ -11,7 +11,7 @@ import { EventEmitter } from "node:events";
 
 const ORIGINAL_ENV = { ...process.env };
 const mockInstallMcpServer = vi.fn();
-const mockResolveMcpServerScript = vi.fn(() => "/mock/dist/mcp-server.cjs");
+const mockResolveMcpProxyScript = vi.fn(() => "/mock/dist/mcp-stdio-proxy.cjs");
 
 class MockChildProcess extends EventEmitter {
   stdin = {
@@ -76,7 +76,7 @@ vi.mock("../codex-config", () => ({
 }));
 
 vi.mock("../../../utils/mcp-server-manager", () => ({
-  resolveMcpServerScript: () => mockResolveMcpServerScript(),
+  resolveMcpProxyScript: () => mockResolveMcpProxyScript(),
 }));
 
 function emitResponse(id: number, result: unknown) {
@@ -667,7 +667,7 @@ describe("codex-adapter", () => {
       expect(mockInstallMcpServer).toHaveBeenNthCalledWith(
         1,
         expect.any(String),
-        ["/mock/dist/mcp-server.cjs"],
+        ["/mock/dist/mcp-stdio-proxy.cjs"],
         expect.objectContaining({
           enabledTools: [
             "get_entity",
@@ -680,7 +680,7 @@ describe("codex-adapter", () => {
       expect(mockInstallMcpServer).toHaveBeenNthCalledWith(
         2,
         expect.any(String),
-        ["/mock/dist/mcp-server.cjs"],
+        ["/mock/dist/mcp-stdio-proxy.cjs"],
         expect.objectContaining({
           enabledTools: [
             "get_entity",

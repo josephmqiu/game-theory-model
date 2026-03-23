@@ -7,8 +7,8 @@ on:
     branches: [main, v0.0.1]
 
 jobs:
-  lint-and-test:
-    name: Lint & Test
+  branch-confidence:
+    name: Branch Confidence
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -22,17 +22,14 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Type check
-        run: bun run typecheck
+      - name: Run branch-confidence gate
+        run: bun run check:pr
 
-      - name: Run tests
-        run: bun run test
-
-  build-web:
-    name: Build Web
+  smoke-server:
+    name: Smoke Server
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: lint-and-test
+    timeout-minutes: 15
+    needs: branch-confidence
 
     steps:
       - uses: actions/checkout@v4
@@ -44,12 +41,11 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build
-        run: bun run build
+      - name: Prepare smoke artifacts
+        run: bun run test:smoke:prepare
 
-      - name: Upload web build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-build
-          path: .output/
-          retention-days: 7
+      - name: Run SSE smoke test
+        run: bun run smoke-tests/sse.ts
+
+      - name: Run MCP smoke test
+        run: bun run smoke-tests/mcp.ts

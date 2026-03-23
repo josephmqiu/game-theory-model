@@ -18,6 +18,7 @@ import type {
 import type { AnalysisMutationEvent } from "../../shared/types/events";
 import { serverLog } from "../utils/ai-logger";
 import { RELATIONSHIP_CATEGORY } from "../../src/types/entity";
+import * as runtimeStatus from "./runtime-status";
 import {
   normalizePhaseStates,
   upsertPhaseStatus,
@@ -92,9 +93,12 @@ function bfsDownstream(
   return Array.from(visited);
 }
 
-function mutate(): void {
-  _isDirty = true;
+function mutate(options?: { markDirty?: boolean }): void {
+  if (options?.markDirty ?? true) {
+    _isDirty = true;
+  }
   _revision += 1;
+  runtimeStatus.incrementRevision();
 }
 
 function entitySourceForProvenance(
@@ -115,10 +119,10 @@ function entitySourceForProvenance(
 export function newAnalysis(topic: string): void {
   analysis = createEmptyAnalysis(topic);
   _isDirty = false;
-  _revision += 1;
   _fileName = null;
   _filePath = null;
   _fileHandle = null;
+  mutate({ markDirty: false });
 }
 
 export function loadAnalysis(
@@ -131,10 +135,10 @@ export function loadAnalysis(
 ): void {
   analysis = normalizeAnalysis(loaded);
   _isDirty = false;
-  _revision += 1;
   _fileName = source?.fileName ?? null;
   _filePath = source?.filePath ?? null;
   _fileHandle = source?.fileHandle ?? null;
+  mutate({ markDirty: false });
 }
 
 export function getAnalysis(): Readonly<Analysis> {

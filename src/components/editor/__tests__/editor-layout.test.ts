@@ -26,7 +26,9 @@ describe("editor layout", () => {
     expect(source).toContain("AnalysisLauncher");
     expect(source).toContain('mode="analysis"');
     expect(source).toContain('presentation="docked"');
-    expect(source).toContain('<AIChatPanel mode="analysis" presentation="docked" />');
+    expect(source).toContain(
+      '<AIChatPanel mode="analysis" presentation="docked" />',
+    );
     expect(source).not.toContain("useAnalysisStore");
   });
 
@@ -42,7 +44,7 @@ describe("editor layout", () => {
       "analysisClient.startAnalysis(topic, provider, model, runtime)",
     );
     expect(source).toContain(
-      '<AnalysisLauncher onStartAnalysis={startOrchestrator} />',
+      "<AnalysisLauncher onStartAnalysis={startOrchestrator} />",
     );
   });
 
@@ -101,7 +103,7 @@ describe("editor layout", () => {
     expect(launcherSource).toContain("EXAMPLE_TOPICS");
     expect(launcherSource).toContain('t("ai.noModelsConnected")');
     expect(launcherSource).toContain(
-      "onStartAnalysis(topic, currentProvider, model)",
+      "onStartAnalysis(topic, currentProvider, validModel)",
     );
   });
 

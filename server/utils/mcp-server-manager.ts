@@ -1,143 +1,71 @@
-import { spawn } from 'node:child_process'
-import { existsSync, writeFileSync, unlinkSync, readFileSync } from 'node:fs'
-import { join, resolve, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { tmpdir } from 'node:os'
+import { existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { MCP_HTTP_HOST, getMcpServerStatus } from "../mcp/mcp-server";
 
 function resolveModuleDirname(): string {
   const importMetaUrl =
-    typeof import.meta !== 'undefined' ? import.meta.url : undefined
-  if (typeof importMetaUrl === 'string') {
-    return dirname(fileURLToPath(importMetaUrl))
+    typeof import.meta !== "undefined" ? import.meta.url : undefined;
+  if (typeof importMetaUrl === "string") {
+    return dirname(fileURLToPath(importMetaUrl));
   }
-  if (typeof __dirname === 'string') {
-    return __dirname
+  if (typeof __dirname === "string") {
+    return __dirname;
   }
-  return process.cwd()
+  return process.cwd();
 }
 
-const __dirname = resolveModuleDirname()
+const __dirname = resolveModuleDirname();
 
-// PID/Port files for tracking the detached MCP server process across restarts
-const MCP_PID_FILE = join(tmpdir(), 'game-theory-analyzer-mcp-server.pid')
-const MCP_PORT_FILE = join(tmpdir(), 'game-theory-analyzer-mcp-server.port')
-const MCP_HTTP_HOST = '127.0.0.1'
-
-/** Resolve the MCP server script path across dev, web build, and Electron production. */
-export function resolveMcpServerScript(): string {
-  // Electron production: extraResources
-  const electronResources = process.env.ELECTRON_RESOURCES_PATH
+export function resolveMcpProxyScript(): string {
+  const candidatePaths: string[] = [];
+  const electronResources = process.env.ELECTRON_RESOURCES_PATH;
   if (electronResources) {
-    const p = join(electronResources, 'mcp-server.cjs')
-    if (existsSync(p)) return p
+    const resourcePath = join(electronResources, "mcp-stdio-proxy.cjs");
+    candidatePaths.push(resourcePath);
+    if (existsSync(resourcePath)) return resourcePath;
   }
-  // dev + web build (from cwd)
-  const fromCwd = resolve(process.cwd(), 'dist', 'mcp-server.cjs')
-  if (existsSync(fromCwd)) return fromCwd
-  // Fallback: relative to this file (Nitro bundled output)
-  const fromFile = resolve(__dirname, '..', '..', '..', 'dist', 'mcp-server.cjs')
-  if (existsSync(fromFile)) return fromFile
-  return fromCwd
+
+  const fromCwd = resolve(process.cwd(), "dist", "mcp-stdio-proxy.cjs");
+  candidatePaths.push(fromCwd);
+  if (existsSync(fromCwd)) return fromCwd;
+
+  const fromFile = resolve(
+    __dirname,
+    "..",
+    "..",
+    "..",
+    "dist",
+    "mcp-stdio-proxy.cjs",
+  );
+  candidatePaths.push(fromFile);
+  if (existsSync(fromFile)) return fromFile;
+
+  throw new Error(
+    [
+      "Missing MCP stdio proxy build artifact.",
+      "Expected one of:",
+      ...candidatePaths.map((candidate) => `- ${candidate}`),
+      'Launch the desktop runtime so it can compile/package "dist/mcp-stdio-proxy.cjs".',
+      'Plain "bun run dev" is not a supported Codex/Claude runtime path.',
+    ].join("\n"),
+  );
 }
 
-/** Check if a process with the given PID is running. */
-function isProcessRunning(pid: number): boolean {
-  try {
-    // Signal 0 checks existence without actually sending a signal
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
-}
+export function getStatus(): {
+  running: boolean;
+  port: number | null;
+  localIp: string | null;
+  available: boolean;
+  mcpAvailable: boolean;
+} {
+  const status = getMcpServerStatus();
 
-/** Read PID from file if it exists and process is still running. */
-function getRunningPid(): { pid: number; port: number } | null {
-  try {
-    if (!existsSync(MCP_PID_FILE)) return null
-    const pid = parseInt(readFileSync(MCP_PID_FILE, 'utf-8').trim(), 10)
-    if (isNaN(pid) || !isProcessRunning(pid)) {
-      // Stale PID file - clean up
-      try { unlinkSync(MCP_PID_FILE) } catch { /* ignore */ }
-      try { unlinkSync(MCP_PORT_FILE) } catch { /* ignore */ }
-      return null
-    }
-    const port = existsSync(MCP_PORT_FILE)
-      ? parseInt(readFileSync(MCP_PORT_FILE, 'utf-8').trim(), 10)
-      : 3100
-    return { pid, port: isNaN(port) ? 3100 : port }
-  } catch {
-    return null
-  }
-}
-
-export function getMcpServerStatus(): { running: boolean; port: number | null; localIp: string | null } {
-  const info = getRunningPid()
-  if (!info) {
-    return { running: false, port: null, localIp: null }
-  }
-  return { running: true, port: info.port, localIp: MCP_HTTP_HOST }
-}
-
-export function startMcpHttpServer(port: number): { running: boolean; port: number; localIp: string | null; error?: string } {
-  // Check if already running
-  const existing = getRunningPid()
-  if (existing) {
-    return { running: true, port: existing.port, localIp: MCP_HTTP_HOST }
-  }
-
-  const serverScript = resolveMcpServerScript()
-
-  try {
-    // CRITICAL: Use detached mode with unref() so the MCP server survives
-    // independently of the parent Nitro process. This prevents the server
-    // from dying when:
-    // 1. The UI settings dialog is closed
-    // 2. The user interacts with the editor canvas
-    // 3. The Nitro server restarts or hot-reloads
-    // 4. The Electron app sends SIGTERM to Nitro on window close
-    //
-    // The process runs in its own session and writes its PID to a file
-    // for later tracking and graceful shutdown.
-    const child = spawn(process.execPath, [serverScript, '--http', '--port', String(port)], {
-      stdio: ['ignore', 'ignore', 'ignore'],
-      env: { ...process.env },
-      detached: true,
-      windowsHide: true,
-    })
-
-    // Allow parent to exit independently of child
-    child.unref()
-
-    // Write PID to file for later tracking (after brief delay to ensure startup)
-    const childPid = child.pid
-    if (childPid) {
-      setTimeout(() => {
-        try {
-          if (isProcessRunning(childPid)) {
-            writeFileSync(MCP_PID_FILE, String(childPid), 'utf-8')
-            writeFileSync(MCP_PORT_FILE, String(port), 'utf-8')
-          }
-        } catch { /* ignore write errors */ }
-      }, 100)
-    }
-
-    return { running: true, port, localIp: MCP_HTTP_HOST }
-  } catch (err) {
-    return { running: false, port, localIp: null, error: err instanceof Error ? err.message : String(err) }
-  }
-}
-
-export function stopMcpHttpServer(): { running: false } {
-  const info = getRunningPid()
-  if (info) {
-    try {
-      // Use process.kill which is cross-platform and safe
-      process.kill(info.pid, 'SIGTERM')
-    } catch { /* process may have already exited */ }
-    // Clean up PID/Port files
-    try { unlinkSync(MCP_PID_FILE) } catch { /* ignore */ }
-    try { unlinkSync(MCP_PORT_FILE) } catch { /* ignore */ }
-  }
-  return { running: false }
+  return {
+    running: status.available,
+    port: status.port,
+    localIp: status.available ? MCP_HTTP_HOST : null,
+    available: status.available,
+    mcpAvailable: status.available,
+  };
 }

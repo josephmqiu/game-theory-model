@@ -130,7 +130,6 @@ export default function EditorLayout() {
         // Abort any existing run via the client (manages its own AbortController)
         analysisClient.abort();
         clearEditorChrome();
-        useEntityGraphStore.getState().newAnalysis(topic);
         const runtime = buildAnalysisRuntimeOverrides(
           useAgentSettingsStore.getState(),
         );
@@ -180,9 +179,7 @@ export default function EditorLayout() {
   useEffect(() => {
     void initAppStorage().then(() => {
       useAgentSettingsStore.getState().hydrate();
-      void analysisClient.hydrateAnalysisState({
-        enableRecoveryPolling: true,
-      });
+      void analysisClient.hydrateAnalysisState();
     });
   }, []);
 

@@ -32,7 +32,7 @@ describe("phase status UI", () => {
   it("keeps the failure tooltip wiring in the sidebar source", () => {
     const source = readFileSync(phaseSidebarPath, "utf8");
 
-    expect(source).toContain("getPhaseFailureLabel");
+    expect(source).toContain("getRunFailureLabel");
     expect(source).toContain('TooltipContent side="right"');
   });
 });

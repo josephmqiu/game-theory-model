@@ -7,6 +7,7 @@ import type {
   AnalysisRelationship,
 } from "../../../shared/types/entity";
 import type { PhaseOutputEntity, PhaseResult } from "../analysis-service";
+import * as runtimeStatus from "../runtime-status";
 
 // ── Mock analysis-service ──
 
@@ -247,19 +248,7 @@ describe("revalidation-service", () => {
     expect(deferred.has("e2")).toBe(true);
   });
 
-  // ── 4. onRunComplete triggers deferred revalidation ──
-
-  it("onRunComplete triggers deferred revalidation", async () => {
-    mockIsRunning.mockReturnValue(true);
-
-    // Schedule while running — gets deferred
-    revalidation.scheduleRevalidation(["e1"]);
-
-    await vi.advanceTimersByTimeAsync(5000);
-    expect(mockRunPhase).not.toHaveBeenCalled();
-
-    // Run completes
-    mockIsRunning.mockReturnValue(false);
+  it("re-queues stale ids when revalidation is already active", async () => {
     mockEntityGraph.getAnalysis.mockReturnValue({
       id: "test",
       name: "test",
@@ -270,26 +259,54 @@ describe("revalidation-service", () => {
     });
     mockRunPhase.mockResolvedValue(makePhaseResult("situational-grounding"));
 
-    revalidation.onRunComplete();
+    expect(
+      runtimeStatus.acquireRun("revalidation", "existing-reval", {
+        totalPhases: 1,
+      }),
+    ).toBe(true);
 
-    // Should trigger revalidation with deferred IDs
-    // Allow the async revalidate to execute
-    await vi.advanceTimersByTimeAsync(0);
+    revalidation.scheduleRevalidation(["e1"]);
+
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(mockRunPhase).not.toHaveBeenCalled();
+    expect(revalidation._getPendingStaleIds()).toEqual(new Set(["e1"]));
+
+    runtimeStatus.releaseRun("existing-reval", "completed");
+    await vi.advanceTimersByTimeAsync(2000);
 
     expect(mockRunPhase).toHaveBeenCalled();
-
-    // Deferred IDs should be cleared
-    expect(revalidation._getDeferredStaleIds().size).toBe(0);
+    expect(revalidation._getPendingStaleIds().size).toBe(0);
   });
 
-  it("suppresses deferred auto-revalidation for subset runs", async () => {
+  // ── 4. onRunComplete preserves deferred revalidation for explicit user action ──
+
+  it("onRunComplete does not auto-start deferred revalidation", async () => {
+    mockIsRunning.mockReturnValue(true);
+
+    // Schedule while running — gets deferred
+    revalidation.scheduleRevalidation(["e1"]);
+
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(mockRunPhase).not.toHaveBeenCalled();
+
+    // Run completes
+    mockIsRunning.mockReturnValue(false);
+    revalidation.onRunComplete();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(mockRunPhase).not.toHaveBeenCalled();
+    expect(revalidation._getDeferredStaleIds()).toEqual(new Set(["e1"]));
+  });
+
+  it("preserves deferred stale ids for subset runs instead of auto-clearing them", async () => {
     mockIsRunning.mockReturnValue(true);
 
     revalidation.scheduleRevalidation(["e1", "e2"]);
     await vi.advanceTimersByTimeAsync(5000);
 
     expect(revalidation._getDeferredStaleIds().size).toBe(2);
-    expect(revalidation._getPendingStaleIds().size).toBe(2);
+    expect(revalidation._getPendingStaleIds().size).toBe(0);
 
     mockIsRunning.mockReturnValue(false);
     revalidation.onRunComplete(
@@ -302,7 +319,7 @@ describe("revalidation-service", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(mockRunPhase).not.toHaveBeenCalled();
-    expect(revalidation._getDeferredStaleIds().size).toBe(0);
+    expect(revalidation._getDeferredStaleIds().size).toBe(2);
     expect(revalidation._getPendingStaleIds().size).toBe(0);
   });
 
