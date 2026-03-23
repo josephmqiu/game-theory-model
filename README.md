@@ -100,12 +100,16 @@ If you need a stricter offline posture, review these integrations before running
 
 ```
 src/                   # React frontend (renderer)
-  canvas/              # Skia canvas engine
+  canvas/              # Canvas layout engine and Skia rendering
   components/          # React components
-  services/            # Domain services
+  services/            # Domain services (analysis client, etc.)
   stores/              # Zustand state stores
-server/                # Node.js backend (AI pipeline, evals)
-electron/              # Electron main process
+server/                # Node.js backend (AI pipeline, MCP, services)
+  api/ai/              # AI route handlers (analyze, chat, events SSE)
+  mcp/                 # MCP server and product tools
+  services/            # Runtime status, revalidation, entity graph
+electron/              # Electron main process + persistence
+smoke-tests/           # Integration smoke tests (SSE, MCP, desktop)
 public/                # Static assets
 ```
 
@@ -115,9 +119,16 @@ public/                # Static assets
 - **Canvas is the product**: The entity graph canvas is the primary analysis surface. Chat is the control panel, not the workspace.
 - **AI integration**: Uses tool-based local runtimes (Claude Agent SDK, Codex JSON-RPC), not direct provider API calls.
 
-## Contributing
+## Documentation
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
+| Document                                                                                 | Purpose                                          |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                                                       | How to contribute                                |
+| [CHANGELOG.md](CHANGELOG.md)                                                             | Release history                                  |
+| [DESIGN.md](DESIGN.md)                                                                   | Design system (colors, typography, entity cards) |
+| [SECURITY.md](SECURITY.md)                                                               | Vulnerability reporting                          |
+| [docs/architecture/architecture-contract.md](docs/architecture/architecture-contract.md) | Canonical target architecture                    |
+| [docs/game-theory-analytical-methodology.md](docs/game-theory-analytical-methodology.md) | 10-phase analytical methodology                  |
 
 ## License
 
