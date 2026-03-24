@@ -17,8 +17,8 @@ import { createMockRunAnalysisPhase } from "../../__test-utils__/mock-adapter";
 // ── Mock ONLY the AI adapters ──
 
 const defaultMock = createMockRunAnalysisPhase();
-const mockRunAnalysisPhase = vi.fn(
-  (...args: unknown[]) => (defaultMock as Function)(...args),
+const mockRunAnalysisPhase = vi.fn((...args: unknown[]) =>
+  (defaultMock as Function)(...args),
 );
 
 vi.mock("../../services/ai/claude-adapter", () => ({
@@ -59,8 +59,8 @@ function flushAsync(ms = 10): Promise<void> {
 describe("orchestrator pipeline integration", () => {
   beforeEach(() => {
     resetAllServices();
-    mockRunAnalysisPhase.mockImplementation(
-      (...args: unknown[]) => (defaultMock as Function)(...args),
+    mockRunAnalysisPhase.mockImplementation((...args: unknown[]) =>
+      (defaultMock as Function)(...args),
     );
   });
 
@@ -101,12 +101,18 @@ describe("orchestrator pipeline integration", () => {
     // All relationship endpoints are valid entity IDs (no dangling refs)
     const entityIds = new Set(analysis.entities.map((e) => e.id));
     for (const rel of analysis.relationships) {
-      expect(entityIds.has(rel.fromEntityId), `dangling from: ${rel.fromEntityId}`).toBe(true);
-      expect(entityIds.has(rel.toEntityId), `dangling to: ${rel.toEntityId}`).toBe(true);
+      expect(
+        entityIds.has(rel.fromEntityId),
+        `dangling from: ${rel.fromEntityId}`,
+      ).toBe(true);
+      expect(
+        entityIds.has(rel.toEntityId),
+        `dangling to: ${rel.toEntityId}`,
+      ).toBe(true);
     }
 
-    // The adapter was called once per phase (no retries)
-    expect(mockRunAnalysisPhase).toHaveBeenCalledTimes(testPhases.length);
+    // The adapter was called once per phase plus once for synthesis (no retries)
+    expect(mockRunAnalysisPhase).toHaveBeenCalledTimes(testPhases.length + 1);
   });
 
   it("transitions runtime-status through running to idle, with kind=analysis", async () => {
@@ -174,14 +180,22 @@ describe("orchestrator pipeline integration", () => {
 
   it("classifyFailure distinguishes terminal from retryable errors", () => {
     // Terminal — no retry, run fails immediately
-    expect(orchestrator.classifyFailure("schema refused by provider")).toBe("terminal");
-    expect(orchestrator.classifyFailure("not permitted for this model")).toBe("terminal");
-    expect(orchestrator.classifyFailure("invalid_json_schema")).toBe("terminal");
+    expect(orchestrator.classifyFailure("schema refused by provider")).toBe(
+      "terminal",
+    );
+    expect(orchestrator.classifyFailure("not permitted for this model")).toBe(
+      "terminal",
+    );
+    expect(orchestrator.classifyFailure("invalid_json_schema")).toBe(
+      "terminal",
+    );
 
     // Retryable — orchestrator retries up to MAX_RETRIES
     expect(orchestrator.classifyFailure("ECONNREFUSED")).toBe("retryable");
     expect(orchestrator.classifyFailure("empty response")).toBe("retryable");
-    expect(orchestrator.classifyFailure("zod validation failed")).toBe("retryable");
+    expect(orchestrator.classifyFailure("zod validation failed")).toBe(
+      "retryable",
+    );
     expect(orchestrator.classifyFailure("JSON parse error")).toBe("retryable");
   });
 });

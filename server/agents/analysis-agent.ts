@@ -36,6 +36,10 @@ import { resolveAnalysisRuntime } from "../config/analysis-runtime-resolver";
 import * as runtimeStatus from "../services/runtime-status";
 import { createRunLogger, timer } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
+import {
+  synthesizeReport,
+  SYNTHESIS_SYSTEM_PROMPT,
+} from "../services/synthesis-service";
 
 // ── Types ──
 
@@ -113,6 +117,115 @@ const TRIGGER_TARGET_PHASE: Record<LoopbackTriggerType, MethodologyPhase> = {
 };
 const PHASE_TIMEOUT_MS = analysisRuntimeConfig.orchestrator.phaseTimeoutMs;
 const RUN_TIMEOUT_MS = analysisRuntimeConfig.orchestrator.runTimeoutMs;
+
+// ── Synthesis adapter ──
+
+interface SynthesisAdapter {
+  runAnalysisPhase<T = unknown>(
+    prompt: string,
+    systemPrompt: string,
+    model: string,
+    schema: Record<string, unknown>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    options?: any,
+  ): Promise<T>;
+}
+
+async function loadSynthesisAdapter(
+  provider?: string,
+): Promise<SynthesisAdapter> {
+  if (process.env.GAME_THEORY_ANALYSIS_TEST_MODE === "1") {
+    return import("../services/ai/test-adapter");
+  }
+  if (provider === "openai") {
+    return import("../services/ai/codex-adapter");
+  }
+  if (provider === "anthropic" || !provider) {
+    return import("../services/ai/claude-adapter");
+  }
+  throw new Error(`Unknown provider for synthesis: ${provider}`);
+}
+
+/** JSON Schema for synthesis structured output — mirrors analysisReportDataSchema */
+const SYNTHESIS_OUTPUT_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  properties: {
+    type: { type: "string", enum: ["analysis-report"] },
+    executive_summary: { type: "string" },
+    why: { type: "string" },
+    key_evidence: { type: "array", items: { type: "string" } },
+    open_assumptions: { type: "array", items: { type: "string" } },
+    entity_references: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          entity_id: { type: "string" },
+          display_name: { type: "string" },
+        },
+        required: ["entity_id", "display_name"],
+        additionalProperties: false,
+      },
+    },
+    prediction_verdict: {
+      anyOf: [
+        {
+          type: "object",
+          properties: {
+            event_question: { type: "string" },
+            predicted_probability: { type: "number" },
+            market_probability: {
+              anyOf: [{ type: "number" }, { type: "null" }],
+            },
+            price_as_of: { anyOf: [{ type: "string" }, { type: "null" }] },
+            edge: { anyOf: [{ type: "number" }, { type: "null" }] },
+            verdict: {
+              anyOf: [
+                { type: "string", enum: ["overpriced", "underpriced", "fair"] },
+                { type: "null" },
+              ],
+            },
+            bet_direction: {
+              anyOf: [
+                { type: "string", enum: ["yes", "no", "hold"] },
+                { type: "null" },
+              ],
+            },
+            confidence: { type: "string", enum: ["high", "medium", "low"] },
+          },
+          required: [
+            "event_question",
+            "predicted_probability",
+            "market_probability",
+            "price_as_of",
+            "edge",
+            "verdict",
+            "bet_direction",
+            "confidence",
+          ],
+          additionalProperties: false,
+        },
+        { type: "null" },
+      ],
+    },
+    what_would_change: { type: "array", items: { type: "string" } },
+    source_url: { anyOf: [{ type: "string" }, { type: "null" }] },
+    analysis_timestamp: { type: "string" },
+  },
+  required: [
+    "type",
+    "executive_summary",
+    "why",
+    "key_evidence",
+    "open_assumptions",
+    "entity_references",
+    "prediction_verdict",
+    "what_would_change",
+    "source_url",
+    "analysis_timestamp",
+  ],
+  additionalProperties: false,
+};
 
 // ── Module-level state ──
 
@@ -268,7 +381,10 @@ function resolveLoopbackJumpIndex(
     );
 
     if (directActiveIndex !== -1) {
-      if (directActiveIndex < phaseIndex && directActiveIndex < earliestJumpIndex) {
+      if (
+        directActiveIndex < phaseIndex &&
+        directActiveIndex < earliestJumpIndex
+      ) {
         earliestJumpIndex = directActiveIndex;
       }
       continue;
@@ -640,7 +756,8 @@ export async function runFull(
   const activePhases = normalizeRequestedActivePhases(
     runtimeOverrides?.activePhases,
   );
-  const autoRevalidationEnabled = activePhases.length === SUPPORTED_PHASES.length;
+  const autoRevalidationEnabled =
+    activePhases.length === SUPPORTED_PHASES.length;
 
   if (
     !runtimeStatus.acquireRun("analysis", runId, {
@@ -781,7 +898,10 @@ export async function runFull(
             triggers,
           );
 
-          if (earliestTargetIndex !== null && earliestTargetIndex < phaseIndex) {
+          if (
+            earliestTargetIndex !== null &&
+            earliestTargetIndex < phaseIndex
+          ) {
             passCount++;
 
             if (passCount >= MAX_LOOPBACK_PASSES) {
@@ -846,6 +966,35 @@ export async function runFull(
         });
 
         emitProgress({ type: "analysis_completed", runId: run.runId });
+
+        // Trigger synthesis report generation
+        emitProgress({ type: "synthesis_started", runId: run.runId });
+        try {
+          const adapter = await loadSynthesisAdapter(run.provider);
+          const model = run.model ?? "claude-sonnet-4-20250514";
+          await synthesizeReport({
+            runId: run.runId,
+            aiCaller: async (graphSummary: string) => {
+              return adapter.runAnalysisPhase(
+                graphSummary,
+                SYNTHESIS_SYSTEM_PROMPT,
+                model,
+                SYNTHESIS_OUTPUT_SCHEMA,
+                {
+                  runId: run.runId,
+                  webSearch: false,
+                },
+              );
+            },
+          });
+          emitProgress({ type: "synthesis_completed", runId: run.runId });
+        } catch (err) {
+          run.logger.log("orchestrator", "synthesis-failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+          // Synthesis failure does not affect run completion
+        }
+
         runtimeStatus.releaseRun(run.runId, "completed");
       } else {
         // Run ended with failure or interruption — log the terminal event
