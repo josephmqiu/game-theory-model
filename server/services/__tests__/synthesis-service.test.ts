@@ -41,15 +41,18 @@ beforeEach(() => {
 
 // ── Tests ──
 
-describe("SYNTHESIS_SYSTEM_PROMPT", () => {
-  it("is a non-empty string constant", () => {
+describe("synthesis system prompt", () => {
+  it("provides AI instructions for generating executive analysis reports from entity graphs", () => {
     expect(typeof SYNTHESIS_SYSTEM_PROMPT).toBe("string");
     expect(SYNTHESIS_SYSTEM_PROMPT.length).toBeGreaterThan(0);
+    // The prompt must instruct the AI about the key report fields
+    expect(SYNTHESIS_SYSTEM_PROMPT).toContain("executive_summary");
+    expect(SYNTHESIS_SYSTEM_PROMPT).toContain("entity_references");
   });
 });
 
-describe("serializeGraphSummary", () => {
-  it("produces one line per entity: [id] type (phase): name", () => {
+describe("graph serialization for AI context", () => {
+  it("serializes each entity as [id] type (phase): name for compact AI consumption", () => {
     const entities: AnalysisEntity[] = [
       makeEntity({
         id: "e1",
@@ -84,7 +87,7 @@ describe("serializeGraphSummary", () => {
     expect(lines[1]).toBe("[e2] fact (situational-grounding): A key fact");
   });
 
-  it("uses content field when name is absent (e.g. fact entities)", () => {
+  it("falls back to content field for entity types without a name (e.g. facts)", () => {
     const entities: AnalysisEntity[] = [
       makeEntity({
         id: "f1",
@@ -104,7 +107,7 @@ describe("serializeGraphSummary", () => {
     expect(result).toBe("[f1] fact (situational-grounding): Important fact");
   });
 
-  it("falls back to entity id when neither name nor content is present", () => {
+  it("falls back to entity id when neither name nor content exists (e.g. payoff-matrix)", () => {
     const entities: AnalysisEntity[] = [
       makeEntity({
         id: "x1",
@@ -124,21 +127,20 @@ describe("serializeGraphSummary", () => {
     expect(result).toBe("[x1] payoff-matrix (formal-modeling): x1");
   });
 
-  it("returns empty string for empty entity array", () => {
+  it("returns empty string for an empty graph -- nothing to serialize for AI", () => {
     const result = serializeGraphSummary([]);
     expect(result).toBe("");
   });
 });
 
-describe("synthesizeReport", () => {
-  it("returns null when entity graph is empty", async () => {
+describe("report synthesis from entity graph", () => {
+  it("skips synthesis when the entity graph is empty -- no entities means no analysis to summarize", async () => {
     entityGraphService.newAnalysis("test topic");
     const result = await synthesizeReport();
     expect(result).toBeNull();
   });
 
-  it("catches errors and returns null (does not throw)", async () => {
-    // Populate graph with at least one entity so it gets past the empty check
+  it("returns null on AI failure instead of throwing -- synthesis errors must not crash the analysis", async () => {
     entityGraphService.newAnalysis("test topic");
     entityGraphService.createEntity(
       {
@@ -163,15 +165,47 @@ describe("synthesizeReport", () => {
       },
     );
 
-    // The AI call is stubbed and throws — synthesizeReport should catch and return null
+    // No aiCaller provided, so the stub throws -- synthesizeReport should catch and return null
     const result = await synthesizeReport();
     expect(result).toBeNull();
   });
 
-  it("creates relationships for each entity_reference when synthesis succeeds", async () => {
+  it("returns null when aiCaller throws -- any AI transport/parse failure is non-fatal", async () => {
+    entityGraphService.newAnalysis("test topic");
+    entityGraphService.createEntity(
+      {
+        type: "fact",
+        phase: "situational-grounding",
+        data: {
+          type: "fact",
+          date: "2026-03-23",
+          source: "test",
+          content: "A fact",
+          category: "action" as const,
+        },
+        confidence: "high",
+        rationale: "test",
+        revision: 1,
+        stale: false,
+      },
+      {
+        source: "phase-derived",
+        runId: "run-1",
+        phase: "situational-grounding",
+      },
+    );
+
+    const result = await synthesizeReport({
+      aiCaller: async () => {
+        throw new Error("Connection refused");
+      },
+    });
+    expect(result).toBeNull();
+  });
+
+  it("creates the report entity and typed relationship edges for each entity reference", async () => {
     entityGraphService.newAnalysis("test topic");
 
-    // Create entities that will be referenced
     const player = entityGraphService.createEntity(
       {
         type: "player",
@@ -272,7 +306,6 @@ describe("synthesizeReport", () => {
       { source: "phase-derived", runId: "run-1", phase: "formal-modeling" },
     );
 
-    // Call synthesizeReport with a custom AI caller that returns valid data
     const fakeReportData = {
       type: "analysis-report" as const,
       executive_summary: "The situation favors de-escalation.",
@@ -298,42 +331,41 @@ describe("synthesizeReport", () => {
     expect(result).not.toBeNull();
     expect(result!.type).toBe("analysis-report");
 
-    // Check that relationships were created
+    // Verify the report entity was created in the graph
     const analysis = entityGraphService.getAnalysis();
     const reportEntity = analysis.entities.find(
       (e) => e.type === "analysis-report",
     );
     expect(reportEntity).toBeDefined();
 
+    // Verify relationship edges from report to referenced entities
     const reportRelationships = analysis.relationships.filter(
       (r) => r.fromEntityId === reportEntity!.id,
     );
-
-    // Should have 4 relationships (one per entity_reference)
     expect(reportRelationships).toHaveLength(4);
 
-    // player → informed-by
+    // Player references get "informed-by" relationship type
     const playerRel = reportRelationships.find(
       (r) => r.toEntityId === player.id,
     );
     expect(playerRel).toBeDefined();
     expect(playerRel!.type).toBe("informed-by");
 
-    // scenario → derived-from
+    // Scenario references get "derived-from" relationship type
     const scenarioRel = reportRelationships.find(
       (r) => r.toEntityId === scenario.id,
     );
     expect(scenarioRel).toBeDefined();
     expect(scenarioRel!.type).toBe("derived-from");
 
-    // assumption → depends-on
+    // Assumption references get "depends-on" relationship type
     const assumptionRel = reportRelationships.find(
       (r) => r.toEntityId === assumption.id,
     );
     expect(assumptionRel).toBeDefined();
     expect(assumptionRel!.type).toBe("depends-on");
 
-    // equilibrium-result → derived-from
+    // Equilibrium-result references get "derived-from" relationship type
     const equilibriumRel = reportRelationships.find(
       (r) => r.toEntityId === equilibrium.id,
     );
@@ -341,7 +373,7 @@ describe("synthesizeReport", () => {
     expect(equilibriumRel!.type).toBe("derived-from");
   });
 
-  it("skips relationship creation for entity_references with non-existent IDs", async () => {
+  it("gracefully skips deleted entity references instead of crashing -- graph may change between synthesis and commit", async () => {
     entityGraphService.newAnalysis("test topic");
 
     const player = entityGraphService.createEntity(
@@ -396,7 +428,7 @@ describe("synthesizeReport", () => {
       (r) => r.fromEntityId === reportEntity!.id,
     );
 
-    // Only 1 relationship — the non-existent reference is skipped
+    // Only the valid reference creates a relationship; the ghost reference is silently skipped
     expect(reportRelationships).toHaveLength(1);
     expect(reportRelationships[0].toEntityId).toBe(player.id);
   });
