@@ -10,7 +10,7 @@ import {
 // ── Display helpers ──
 
 /** Human-readable label for entity. Uses data.name where available, falls back to type. */
-function entityDisplayName(entity: AnalysisEntity): string {
+export function entityDisplayName(entity: AnalysisEntity): string {
   const d = entity.data;
   if ("name" in d && typeof d.name === "string" && d.name) return d.name;
   if ("gameName" in d && typeof d.gameName === "string" && d.gameName)
@@ -19,6 +19,12 @@ function entityDisplayName(entity: AnalysisEntity): string {
     return d.negotiation;
   if ("content" in d && typeof d.content === "string" && d.content)
     return d.content;
+  if (
+    "executive_summary" in d &&
+    typeof d.executive_summary === "string" &&
+    d.executive_summary
+  )
+    return d.executive_summary;
   if ("description" in d && typeof d.description === "string" && d.description)
     return d.description;
   if ("action" in d && typeof d.action === "string" && d.action)
@@ -89,6 +95,20 @@ function entityMetaLine(entity: AnalysisEntity): string {
       return `thesis`;
     case "meta-check":
       return `meta-check / ${d.questions.filter((q) => q.disruption_trigger_identified).length} triggers`;
+    case "analysis-report": {
+      if (
+        "prediction_verdict" in d &&
+        d.prediction_verdict &&
+        typeof d.prediction_verdict === "object"
+      ) {
+        const v = d.prediction_verdict as {
+          verdict?: string;
+          predicted_probability?: number;
+        };
+        return `report / ${v.verdict ?? "analysis"} · ${v.predicted_probability ?? "?"}%`;
+      }
+      return "report / analysis";
+    }
   }
 }
 

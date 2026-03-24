@@ -49,7 +49,8 @@ export type EntityType =
   | "eliminated-outcome"
   | "scenario"
   | "central-thesis"
-  | "meta-check";
+  | "meta-check"
+  | "analysis-report";
 
 // ── Phase 1: Situational Grounding ──
 
@@ -669,6 +670,38 @@ export const metaCheckDataSchema = z.object({
 });
 export type MetaCheckData = z.infer<typeof metaCheckDataSchema>;
 
+// ── Synthesis: Analysis Report ──
+
+const predictionVerdictSchema = z.object({
+  event_question: z.string().min(1),
+  predicted_probability: z.number().min(0).max(100),
+  market_probability: z.number().min(0).max(100).nullable(),
+  price_as_of: z.string().nullable(),
+  edge: z.number().nullable(),
+  verdict: z.enum(["overpriced", "underpriced", "fair"]).nullable(),
+  bet_direction: z.enum(["yes", "no", "hold"]).nullable(),
+  confidence: z.enum(["high", "medium", "low"]),
+});
+
+const entityReferenceSchema = z.object({
+  entity_id: z.string().min(1),
+  display_name: z.string().min(1),
+});
+
+export const analysisReportDataSchema = z.object({
+  type: z.literal("analysis-report"),
+  executive_summary: z.string().min(1),
+  why: z.string().min(1),
+  key_evidence: z.array(z.string().min(1)).min(1),
+  open_assumptions: z.array(z.string()),
+  entity_references: z.array(entityReferenceSchema),
+  prediction_verdict: predictionVerdictSchema.nullable(),
+  what_would_change: z.array(z.string().min(1)).min(1),
+  source_url: z.string().nullable(),
+  analysis_timestamp: z.string().min(1),
+});
+export type AnalysisReportData = z.infer<typeof analysisReportDataSchema>;
+
 // ── Entity Data Union ──
 
 export type EntityData =
@@ -698,7 +731,8 @@ export type EntityData =
   | EliminatedOutcomeData
   | ScenarioData
   | CentralThesisData
-  | MetaCheckData;
+  | MetaCheckData
+  | AnalysisReportData;
 
 export const entityDataSchema = z.discriminatedUnion("type", [
   factDataSchema,
@@ -728,6 +762,7 @@ export const entityDataSchema = z.discriminatedUnion("type", [
   scenarioDataSchema,
   centralThesisDataSchema,
   metaCheckDataSchema,
+  analysisReportDataSchema,
 ]);
 
 // ── Core Entity ──

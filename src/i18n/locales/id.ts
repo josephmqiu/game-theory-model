@@ -467,6 +467,8 @@ const id: TranslationKeys = {
     "Mencoba ulang fase setelah masalah validasi atau transport.",
   "analysis.activity.default": "Melanjutkan analisis fase.",
   "analysis.activity.usingTool": "Menggunakan {{toolName}}",
+  "analysis.activity.usingWebSearchQuery":
+    "Menggunakan WebSearch: {{query}}",
   "analysis.activity.agentProgress": "Progres agent",
 
   // ── Analysis Progress ──

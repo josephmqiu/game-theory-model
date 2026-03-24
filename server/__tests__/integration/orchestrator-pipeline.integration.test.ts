@@ -2,12 +2,13 @@
  * Integration tests for the analysis orchestrator's end-to-end behavior.
  *
  * Tests that runFull() actually executes multiple phases, populates the entity
- * graph, and manages runtime status correctly.
+ * graph, manages runtime status correctly, and triggers synthesis.
  * Only the AI adapter is mocked — everything else runs real.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunStatus } from "../../../shared/types/api";
+import type { AnalysisProgressEvent } from "../../../shared/types/events";
 import {
   resetAllServices,
   PHASE_FIXTURES,
@@ -17,8 +18,8 @@ import { createMockRunAnalysisPhase } from "../../__test-utils__/mock-adapter";
 // ── Mock ONLY the AI adapters ──
 
 const defaultMock = createMockRunAnalysisPhase();
-const mockRunAnalysisPhase = vi.fn(
-  (...args: unknown[]) => (defaultMock as Function)(...args),
+const mockRunAnalysisPhase = vi.fn((...args: unknown[]) =>
+  (defaultMock as Function)(...args),
 );
 
 vi.mock("../../services/ai/claude-adapter", () => ({
@@ -54,13 +55,75 @@ function flushAsync(ms = 10): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Wait for the orchestrator async execution to finish by polling isRunning(). */
+async function waitForRunComplete(maxWaitMs = 5000): Promise<void> {
+  const start = Date.now();
+  while (orchestrator.isRunning() && Date.now() - start < maxWaitMs) {
+    await flushAsync(5);
+  }
+  // One final flush to let any trailing microtasks settle
+  await flushAsync(10);
+}
+
+/**
+ * Build a mock that handles both phase calls and synthesis calls.
+ * Phase calls use the default fixture mock; synthesis calls return
+ * a valid analysis-report referencing entities currently in the graph.
+ */
+function createSynthesisAwareMock() {
+  return (...args: unknown[]) => {
+    const systemPrompt = args[1] as string;
+
+    // Detect synthesis call by checking if it uses the synthesis system prompt
+    if (
+      systemPrompt &&
+      systemPrompt.includes("game-theory analyst synthesizing")
+    ) {
+      // Read current graph entities to build realistic references
+      const analysis = entityGraph.getAnalysis();
+      const refs = analysis.entities.slice(0, 3).map((e) => ({
+        entity_id: e.id,
+        display_name:
+          "name" in e.data
+            ? (e.data as Record<string, unknown>).name
+            : "content" in e.data
+              ? (e.data as Record<string, unknown>).content
+              : e.id,
+      }));
+
+      return Promise.resolve({
+        type: "analysis-report",
+        executive_summary:
+          "The steel trade war creates a chicken-game dynamic favoring de-escalation.",
+        why: "Both players face domestic economic pressure that makes sustained escalation costly.",
+        key_evidence: [
+          "Country A imposed 25% tariffs",
+          "Country B exports dropped 40%",
+        ],
+        open_assumptions: ["No third-party escalation trigger"],
+        entity_references: refs,
+        prediction_verdict: null,
+        what_would_change: [
+          "Military incident in contested region",
+          "Domestic political crisis forcing escalation",
+        ],
+        source_url: null,
+        analysis_timestamp: new Date().toISOString(),
+      });
+    }
+
+    // Default: delegate to phase fixture mock
+    return (defaultMock as Function)(...args);
+  };
+}
+
 // ── Tests ──
 
 describe("orchestrator pipeline integration", () => {
   beforeEach(() => {
     resetAllServices();
-    mockRunAnalysisPhase.mockImplementation(
-      (...args: unknown[]) => (defaultMock as Function)(...args),
+    mockRunAnalysisPhase.mockImplementation((...args: unknown[]) =>
+      (defaultMock as Function)(...args),
     );
   });
 
@@ -101,12 +164,18 @@ describe("orchestrator pipeline integration", () => {
     // All relationship endpoints are valid entity IDs (no dangling refs)
     const entityIds = new Set(analysis.entities.map((e) => e.id));
     for (const rel of analysis.relationships) {
-      expect(entityIds.has(rel.fromEntityId), `dangling from: ${rel.fromEntityId}`).toBe(true);
-      expect(entityIds.has(rel.toEntityId), `dangling to: ${rel.toEntityId}`).toBe(true);
+      expect(
+        entityIds.has(rel.fromEntityId),
+        `dangling from: ${rel.fromEntityId}`,
+      ).toBe(true);
+      expect(
+        entityIds.has(rel.toEntityId),
+        `dangling to: ${rel.toEntityId}`,
+      ).toBe(true);
     }
 
-    // The adapter was called once per phase (no retries)
-    expect(mockRunAnalysisPhase).toHaveBeenCalledTimes(testPhases.length);
+    // The adapter was called once per phase plus once for synthesis (no retries)
+    expect(mockRunAnalysisPhase).toHaveBeenCalledTimes(testPhases.length + 1);
   });
 
   it("transitions runtime-status through running to idle, with kind=analysis", async () => {
@@ -174,14 +243,191 @@ describe("orchestrator pipeline integration", () => {
 
   it("classifyFailure distinguishes terminal from retryable errors", () => {
     // Terminal — no retry, run fails immediately
-    expect(orchestrator.classifyFailure("schema refused by provider")).toBe("terminal");
-    expect(orchestrator.classifyFailure("not permitted for this model")).toBe("terminal");
-    expect(orchestrator.classifyFailure("invalid_json_schema")).toBe("terminal");
+    expect(orchestrator.classifyFailure("schema refused by provider")).toBe(
+      "terminal",
+    );
+    expect(orchestrator.classifyFailure("not permitted for this model")).toBe(
+      "terminal",
+    );
+    expect(orchestrator.classifyFailure("invalid_json_schema")).toBe(
+      "terminal",
+    );
 
     // Retryable — orchestrator retries up to MAX_RETRIES
     expect(orchestrator.classifyFailure("ECONNREFUSED")).toBe("retryable");
     expect(orchestrator.classifyFailure("empty response")).toBe("retryable");
-    expect(orchestrator.classifyFailure("zod validation failed")).toBe("retryable");
+    expect(orchestrator.classifyFailure("zod validation failed")).toBe(
+      "retryable",
+    );
     expect(orchestrator.classifyFailure("JSON parse error")).toBe("retryable");
+  });
+});
+
+// ── Synthesis integration tests ──
+
+describe("orchestrator synthesis integration", () => {
+  beforeEach(async () => {
+    await resetAllServices();
+    mockRunAnalysisPhase.mockImplementation((...args: unknown[]) =>
+      (defaultMock as Function)(...args),
+    );
+  });
+
+  afterEach(async () => {
+    const p = orchestrator._getRunPromise();
+    if (p) await p;
+    await flushAsync();
+    vi.clearAllMocks();
+  });
+
+  it("creates an analysis-report entity in the graph after all phases complete", async () => {
+    mockRunAnalysisPhase.mockImplementation(createSynthesisAwareMock());
+
+    const testPhases = [
+      "situational-grounding",
+      "player-identification",
+      "baseline-model",
+    ] as const;
+
+    await orchestrator.runFull(
+      "Steel trade war",
+      "anthropic",
+      undefined,
+      undefined,
+      { activePhases: [...testPhases] },
+    );
+    await waitForRunComplete();
+
+    const analysis = entityGraph.getAnalysis();
+    const reportEntity = analysis.entities.find(
+      (e) => e.type === "analysis-report",
+    );
+
+    expect(reportEntity).toBeDefined();
+    expect(reportEntity!.type).toBe("analysis-report");
+
+    // The report entity should have an executive summary in its data
+    const reportData = reportEntity!.data as Record<string, unknown>;
+    expect(typeof reportData.executive_summary).toBe("string");
+    expect((reportData.executive_summary as string).length).toBeGreaterThan(0);
+  });
+
+  it("creates relationship edges from the report to each referenced entity", async () => {
+    mockRunAnalysisPhase.mockImplementation(createSynthesisAwareMock());
+
+    await orchestrator.runFull(
+      "Steel trade war",
+      "anthropic",
+      undefined,
+      undefined,
+      {
+        activePhases: [
+          "situational-grounding",
+          "player-identification",
+          "baseline-model",
+        ],
+      },
+    );
+    await waitForRunComplete();
+
+    const analysis = entityGraph.getAnalysis();
+    const reportEntity = analysis.entities.find(
+      (e) => e.type === "analysis-report",
+    );
+    expect(reportEntity).toBeDefined();
+
+    // Report should have outgoing relationship edges
+    const reportRelationships = analysis.relationships.filter(
+      (r) => r.fromEntityId === reportEntity!.id,
+    );
+    expect(reportRelationships.length).toBeGreaterThan(0);
+
+    // Every relationship target must be a valid entity in the graph
+    const entityIds = new Set(analysis.entities.map((e) => e.id));
+    for (const rel of reportRelationships) {
+      expect(
+        entityIds.has(rel.toEntityId),
+        `report relationship targets non-existent entity: ${rel.toEntityId}`,
+      ).toBe(true);
+    }
+
+    // Relationship types should be semantically appropriate (not all the same generic type)
+    const relTypes = new Set(reportRelationships.map((r) => r.type));
+    // With facts and players referenced, we expect at least "informed-by"
+    expect(relTypes.has("informed-by")).toBe(true);
+  });
+
+  it("emits synthesis_started and synthesis_completed events when synthesis succeeds", async () => {
+    mockRunAnalysisPhase.mockImplementation(createSynthesisAwareMock());
+
+    const events: AnalysisProgressEvent[] = [];
+    const unsub = orchestrator.onProgress((event) => {
+      events.push(event);
+    });
+
+    await orchestrator.runFull(
+      "Steel trade war",
+      "anthropic",
+      undefined,
+      undefined,
+      { activePhases: ["situational-grounding", "player-identification"] },
+    );
+    await waitForRunComplete();
+    unsub();
+
+    const synthStarted = events.find((e) => e.type === "synthesis_started");
+    const synthCompleted = events.find((e) => e.type === "synthesis_completed");
+
+    expect(synthStarted).toBeDefined();
+    expect(synthCompleted).toBeDefined();
+
+    // synthesis_started should come after analysis_completed
+    const analysisCompleted = events.findIndex(
+      (e) => e.type === "analysis_completed",
+    );
+    const synthStartedIdx = events.findIndex(
+      (e) => e.type === "synthesis_started",
+    );
+    expect(synthStartedIdx).toBeGreaterThan(analysisCompleted);
+  });
+
+  it("completes the analysis normally when synthesis fails -- synthesis failure is non-fatal", async () => {
+    // Default mock throws on synthesis prompt (cannot detect phase) -- this is our failure case
+    const testPhases = [
+      "situational-grounding",
+      "player-identification",
+    ] as const;
+
+    const events: AnalysisProgressEvent[] = [];
+    const unsub = orchestrator.onProgress((event) => {
+      events.push(event);
+    });
+
+    await orchestrator.runFull(
+      "Steel trade war",
+      "anthropic",
+      undefined,
+      undefined,
+      { activePhases: [...testPhases] },
+    );
+    await waitForRunComplete();
+    unsub();
+
+    // Analysis completed successfully
+    expect(events.some((e) => e.type === "analysis_completed")).toBe(true);
+    expect(events.some((e) => e.type === "analysis_failed")).toBe(false);
+
+    // Runtime status returns to idle (no stuck state)
+    expect(runtimeStatus.getSnapshot().status).toBe("idle");
+
+    // Phase entities still exist in the graph
+    const analysis = entityGraph.getAnalysis();
+    expect(analysis.entities.length).toBeGreaterThan(0);
+
+    // No analysis-report entity was created (synthesis failed)
+    const reportEntity = analysis.entities.find(
+      (e) => e.type === "analysis-report",
+    );
+    expect(reportEntity).toBeUndefined();
   });
 });

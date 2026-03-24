@@ -471,6 +471,8 @@ const fr: TranslationKeys = {
     "Nouvelle tentative de phase après un problème de validation ou de transport.",
   "analysis.activity.default": "Poursuite de l\u2019analyse de phase.",
   "analysis.activity.usingTool": "Utilisation de {{toolName}}",
+  "analysis.activity.usingWebSearchQuery":
+    "Utilisation de WebSearch : {{query}}",
   "analysis.activity.agentProgress": "Progression de l\u2019agent",
 
   // ── Analysis Progress ──

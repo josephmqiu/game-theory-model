@@ -468,6 +468,8 @@ const de: TranslationKeys = {
     "Phase wird nach Validierungs- oder Transportfehler wiederholt.",
   "analysis.activity.default": "Phasenanalyse wird fortgesetzt.",
   "analysis.activity.usingTool": "Verwende {{toolName}}",
+  "analysis.activity.usingWebSearchQuery":
+    "Verwende WebSearch: {{query}}",
   "analysis.activity.agentProgress": "Agentenfortschritt",
 
   // ── Analysis Progress ──

@@ -4,6 +4,7 @@ export interface AnalysisActivitySignal {
   kind: AnalysisActivityKind;
   message: string;
   toolName?: string;
+  query?: string;
 }
 
 export type AnalysisActivityCallback = (

@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { PHASE_LABELS, PHASE_NUMBERS } from "@/types/methodology";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import * as analysisClient from "@/services/ai/analysis-client";
+import { useCanvasStore } from "@/stores/canvas-store";
+import { AnalysisReportOverlay } from "@/components/panels/analysis-report-overlay";
 import type {
   AnalysisEntity,
   EntityType,
@@ -39,6 +41,7 @@ import type {
   ScenarioData,
   CentralThesisData,
   MetaCheckData,
+  AnalysisReportData,
 } from "@/types/entity";
 
 // ── Props ──
@@ -81,6 +84,7 @@ const ENTITY_TYPE_COLORS: Record<EntityType, string> = {
   scenario: "#22D3EE",
   "central-thesis": "#A78BFA",
   "meta-check": "#F97316",
+  "analysis-report": "#A1A1AA",
 };
 
 const ENTITY_TYPE_I18N_KEYS: Record<EntityType, string> = {
@@ -111,6 +115,7 @@ const ENTITY_TYPE_I18N_KEYS: Record<EntityType, string> = {
   scenario: "analysis.entities.scenario",
   "central-thesis": "analysis.entities.thesis",
   "meta-check": "analysis.entities.metaCheck",
+  "analysis-report": "analysis.entities.analysisReport",
 };
 
 // ── Confidence dot colors ──
@@ -214,6 +219,10 @@ function getEntityName(entity: AnalysisEntity): string {
       return d.thesis.length > 60 ? d.thesis.slice(0, 60) + "\u2026" : d.thesis;
     case "meta-check":
       return `Meta-Check (${d.questions.filter((q) => q.disruption_trigger_identified).length} triggers)`;
+    case "analysis-report":
+      return d.executive_summary.length > 60
+        ? d.executive_summary.slice(0, 60) + "\u2026"
+        : d.executive_summary;
   }
 }
 
@@ -1021,10 +1030,18 @@ function EditableEntityData({
       );
     case "meta-check":
       return null;
+    case "analysis-report":
+      return null; // not implemented — Task 4
   }
 }
 
-function EntityDataSection({ entity }: { entity: AnalysisEntity }) {
+function EntityDataSection({
+  entity,
+  onEntityClick,
+}: {
+  entity: AnalysisEntity;
+  onEntityClick?: (entityId: string) => void;
+}) {
   switch (entity.data.type) {
     case "fact":
       return <FactDetails data={entity.data} />;
@@ -1080,6 +1097,13 @@ function EntityDataSection({ entity }: { entity: AnalysisEntity }) {
       return <CentralThesisDetails data={entity.data} />;
     case "meta-check":
       return <MetaCheckDetails data={entity.data} />;
+    case "analysis-report":
+      return (
+        <AnalysisReportOverlay
+          data={entity.data as AnalysisReportData}
+          onEntityClick={onEntityClick ?? (() => {})}
+        />
+      );
   }
 }
 
@@ -1240,6 +1264,10 @@ export default function EntityOverlayCard({
     setEditing(false);
   }, [entity.data, entity.rationale]);
 
+  const handleEntityNavigation = useCallback((entityId: string) => {
+    useCanvasStore.getState().setFocusedEntityId(entityId);
+  }, []);
+
   // Position: right of node by default, flip left if near right edge
   const viewportWidth =
     typeof window !== "undefined" ? window.innerWidth : 1920;
@@ -1291,7 +1319,10 @@ export default function EntityOverlayCard({
           {editing ? (
             <EditableEntityData data={editData} onChange={setEditData} />
           ) : (
-            <EntityDataSection entity={entity} />
+            <EntityDataSection
+              entity={entity}
+              onEntityClick={handleEntityNavigation}
+            />
           )}
         </div>
 

@@ -45,6 +45,33 @@ export interface AnalysisRunOptions {
 
 type ClaudeAnalysisMode = "structured" | "json-fallback";
 
+function isClaudeWebSearchTool(toolName: unknown): boolean {
+  return toolName === "WebSearch" || toolName === "web_search";
+}
+
+function getClaudeActivityToolLabel(toolName: string): string {
+  return isClaudeWebSearchTool(toolName) ? "WebSearch" : toolName;
+}
+
+function getWebSearchQueryFromToolInput(input: unknown): string | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const query = (input as Record<string, unknown>).query;
+  if (typeof query !== "string") return undefined;
+  const trimmed = query.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function parsePartialJsonRecord(text: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 // Re-export McpSdkServerConfigWithInstance so callers don't import the SDK directly
 export type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
 
@@ -599,6 +626,11 @@ async function runClaudeAnalysisAttempt<T>(
   options?: AnalysisRunOptions,
 ): Promise<T | string> {
   try {
+    const toolInputStates = new Map<
+      number,
+      { toolName: string; partialJson: string; lastQuery?: string }
+    >();
+
     serverLog(options?.runId, "claude-adapter", "analysis-query-start", {
       mode,
       model,
@@ -616,18 +648,66 @@ async function runClaudeAnalysisAttempt<T>(
       if (message.type === "stream_event") {
         const ev = message.event;
         if (
+          ev?.type === "content_block_delta" &&
+          ev.delta?.type === "input_json_delta" &&
+          typeof ev.index === "number"
+        ) {
+          const toolInputState = toolInputStates.get(ev.index);
+          if (
+            toolInputState &&
+            isClaudeWebSearchTool(toolInputState.toolName) &&
+            typeof ev.delta.partial_json === "string"
+          ) {
+            toolInputState.partialJson += ev.delta.partial_json;
+            const parsedInput = parsePartialJsonRecord(
+              toolInputState.partialJson,
+            );
+            const query = getWebSearchQueryFromToolInput(parsedInput);
+            if (query && query !== toolInputState.lastQuery) {
+              toolInputState.lastQuery = query;
+              options?.onActivity?.({
+                kind: "web-search",
+                message: "Using WebSearch",
+                query,
+              });
+              serverLog(options?.runId, "claude-adapter", "analysis-tool-call", {
+                mode,
+                toolName: toolInputState.toolName,
+                query,
+                streamedInput: true,
+              });
+            }
+          }
+        }
+        if (
           ev?.type === "content_block_start" &&
-          (ev.content_block as any)?.type === "tool_use"
+          ((ev.content_block as any)?.type === "tool_use" ||
+            (ev.content_block as any)?.type === "server_tool_use")
         ) {
           const toolName = (ev.content_block as any)?.name ?? "unknown";
+          const input = (ev.content_block as any)?.input;
+          const query = isClaudeWebSearchTool(toolName)
+            ? getWebSearchQueryFromToolInput(input)
+            : undefined;
+          if (typeof ev.index === "number") {
+            toolInputStates.set(ev.index, {
+              toolName,
+              partialJson: "",
+              ...(query ? { lastQuery: query } : {}),
+            });
+          }
           options?.onActivity?.({
-            kind: toolName === "WebSearch" ? "web-search" : "tool",
-            message: `Using ${toolName}`,
-            ...(toolName === "WebSearch" ? {} : { toolName }),
+            kind: isClaudeWebSearchTool(toolName) ? "web-search" : "tool",
+            message: `Using ${getClaudeActivityToolLabel(toolName)}`,
+            ...(isClaudeWebSearchTool(toolName)
+              ? {}
+              : { toolName: getClaudeActivityToolLabel(toolName) }),
+            ...(query ? { query } : {}),
           });
           serverLog(options?.runId, "claude-adapter", "analysis-tool-call", {
             mode,
             toolName,
+            ...(query ? { query } : {}),
           });
         }
       }

@@ -465,6 +465,8 @@ const vi: TranslationKeys = {
     "Đang thử lại giai đoạn sau lỗi xác thực hoặc truyền tải.",
   "analysis.activity.default": "Đang tiếp tục phân tích giai đoạn.",
   "analysis.activity.usingTool": "Đang sử dụng {{toolName}}",
+  "analysis.activity.usingWebSearchQuery":
+    "Đang sử dụng WebSearch: {{query}}",
   "analysis.activity.agentProgress": "Tiến trình agent",
 
   // ── Analysis Progress ──

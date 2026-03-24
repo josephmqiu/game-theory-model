@@ -98,14 +98,14 @@ describe("AnalysisProgressEvent", () => {
       type: "phase_activity",
       phase: "situational-grounding",
       runId: "run-1",
-      kind: "tool",
-      message: "Using query_entities",
-      toolName: "query_entities",
+      kind: "web-search",
+      message: "Using WebSearch",
+      query: "US China tariff history 2025",
     };
     expect(event.type).toBe("phase_activity");
-    expect(event.kind).toBe("tool");
-    expect(event.message).toBe("Using query_entities");
-    expect(event.toolName).toBe("query_entities");
+    expect(event.kind).toBe("web-search");
+    expect(event.message).toBe("Using WebSearch");
+    expect(event.query).toBe("US China tariff history 2025");
   });
 
   it("represents analysis_completed", () => {
@@ -256,6 +256,7 @@ describe("AnalysisEvent union", () => {
         runId: "r",
         kind: "web-search",
         message: "Using WebSearch",
+        query: "US China tariff history 2025",
       },
       { type: "entity_created", entity },
       { type: "entity_deleted", entityId: "e-1" },

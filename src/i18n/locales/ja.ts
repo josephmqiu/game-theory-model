@@ -467,6 +467,8 @@ const ja: TranslationKeys = {
     "検証またはトランスポートの問題後にフェーズを再試行中。",
   "analysis.activity.default": "フェーズ分析を継続中。",
   "analysis.activity.usingTool": "{{toolName}} を使用中",
+  "analysis.activity.usingWebSearchQuery":
+    "WebSearch を使用中: {{query}}",
   "analysis.activity.agentProgress": "エージェントの進捗",
 
   // ── Analysis Progress ──

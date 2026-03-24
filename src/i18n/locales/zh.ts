@@ -448,6 +448,7 @@ const zh: TranslationKeys = {
   "analysis.activity.retrying": "验证或传输问题后正在重试阶段。",
   "analysis.activity.default": "正在继续阶段分析。",
   "analysis.activity.usingTool": "正在使用 {{toolName}}",
+  "analysis.activity.usingWebSearchQuery": "正在使用 WebSearch：{{query}}",
   "analysis.activity.agentProgress": "Agent 进度",
 
   // ── Analysis Progress ──

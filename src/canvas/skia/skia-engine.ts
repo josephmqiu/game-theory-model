@@ -1,4 +1,4 @@
-import type { CanvasKit, Canvas, Surface } from "canvaskit-wasm";
+import type { CanvasKit, Canvas, Surface, Paint } from "canvaskit-wasm";
 import type { PenNode, ContainerProps, EllipseNode } from "@/types/pen";
 import type {
   AnalysisEntity,
@@ -6,6 +6,10 @@ import type {
   EntityType,
   RelationshipType,
 } from "@/types/entity";
+import { RELATIONSHIP_CATEGORY } from "@/types/entity";
+import type { RoutedEdge } from "@/services/entity/edge-routing";
+import type { BundledEdge } from "@/services/entity/edge-bundling";
+import { entityDisplayName } from "@/services/entity/entity-to-pennode";
 import { useCanvasStore } from "@/stores/canvas-store";
 import {
   useDocumentStore,
@@ -31,6 +35,7 @@ import { SpatialIndex } from "./skia-hit-test";
 import { parseColor, wrapLine, cssFontFamily } from "./skia-paint-utils";
 import { viewportMatrix, zoomToPoint as vpZoomToPoint } from "./skia-viewport";
 import { shouldDrawFrameLabel } from "./frame-label-utils";
+import { measureText, drawText2D } from "./skia-overlays";
 import {
   getActiveAgentIndicators,
   getActiveAgentFrames,
@@ -469,6 +474,27 @@ function collectInstanceIds(nodes: PenNode[], result: Set<string>) {
 }
 
 // ---------------------------------------------------------------------------
+// Point-to-line-segment distance (for edge hit testing)
+// ---------------------------------------------------------------------------
+
+function pointToSegmentDist(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+  let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+// ---------------------------------------------------------------------------
 // SkiaEngine — ties rendering, viewport, hit testing together
 // ---------------------------------------------------------------------------
 
@@ -482,6 +508,7 @@ export class SkiaEngine {
   // Entity graph data (set by analysis-canvas, consumed by render loop)
   entityMap = new Map<string, AnalysisEntity>();
   entityRelationships: AnalysisRelationship[] = [];
+  routedEdges: RoutedEdge[] = [];
   searchHighlightIds = new Set<string>();
 
   // Component/instance IDs for colored frame labels
@@ -506,6 +533,10 @@ export class SkiaEngine {
 
   // Interaction state
   hoveredNodeId: string | null = null;
+  hoveredEntityId: string | null = null;
+  hoveredEdgeIndex: number = -1;
+  lastMouseSceneX: number = 0;
+  lastMouseSceneY: number = 0;
   marquee: { x1: number; y1: number; x2: number; y2: number } | null = null;
   previewShape: {
     type: "rectangle" | "ellipse" | "frame" | "line" | "polygon";
@@ -672,24 +703,89 @@ export class SkiaEngine {
     // Pass current zoom to renderer for zoom-aware text rasterization
     this.renderer.zoom = this.zoom;
 
-    // Draw relationship edges (behind entity nodes)
-    if (this.entityMap.size > 0) {
-      const posMap = new Map<string, { cx: number; cy: number }>();
-      for (const rn of this.renderNodes) {
+    // ── Compute focus/hover state for interactive dimming ──
+    const activeEntityId =
+      useCanvasStore.getState().focusedEntityId ?? this.hoveredEntityId;
+    let connectedEntityIds: Set<string> | null = null;
+    let connectedRelIds: Set<string> | null = null;
+    if (activeEntityId && this.entityMap.size > 0) {
+      connectedEntityIds = new Set<string>([activeEntityId]);
+      connectedRelIds = new Set<string>();
+      for (const rel of this.entityRelationships) {
         if (
-          typeof rn.node.role === "string" &&
-          rn.node.role.startsWith("entity-")
+          rel.fromEntityId === activeEntityId ||
+          rel.toEntityId === activeEntityId
         ) {
-          posMap.set(rn.node.id, {
-            cx: rn.absX + rn.absW / 2,
-            cy: rn.absY + rn.absH / 2,
-          });
+          connectedEntityIds.add(rel.fromEntityId);
+          connectedEntityIds.add(rel.toEntityId);
+          connectedRelIds.add(rel.id);
         }
       }
-      for (const rel of this.entityRelationships) {
-        const from = posMap.get(rel.fromEntityId);
-        const to = posMap.get(rel.toEntityId);
-        if (from && to) this.drawRelationshipEdge(canvas, from, to, rel.type);
+    }
+
+    // Draw relationship edges (behind entity nodes)
+    if (this.entityMap.size > 0) {
+      if (this.routedEdges.length > 0) {
+        // ── Draw routed edges in 3 passes: structural (back) → evidence → downstream (front) ──
+        const routedByCategory: Record<string, RoutedEdge[]> = {
+          structural: [],
+          evidence: [],
+          downstream: [],
+        };
+        for (const edge of this.routedEdges) {
+          routedByCategory[edge.category].push(edge);
+        }
+        for (const category of [
+          "structural",
+          "evidence",
+          "downstream",
+        ] as const) {
+          for (const edge of routedByCategory[category]) {
+            let edgeOpacity: number | null = null;
+            if (connectedRelIds) {
+              edgeOpacity = connectedRelIds.has(edge.relationshipId)
+                ? 1.0
+                : 0.08;
+            }
+            this.drawRoutedEdge(canvas, edge, edgeOpacity);
+          }
+        }
+      } else {
+        // Fallback to old center-to-center drawing if no routed edges
+        const posMap = new Map<string, { cx: number; cy: number }>();
+        for (const rn of this.renderNodes) {
+          if (
+            typeof rn.node.role === "string" &&
+            rn.node.role.startsWith("entity-")
+          ) {
+            posMap.set(rn.node.id, {
+              cx: rn.absX + rn.absW / 2,
+              cy: rn.absY + rn.absH / 2,
+            });
+          }
+        }
+        const edgesByCategory: Record<string, typeof this.entityRelationships> =
+          {
+            structural: [],
+            evidence: [],
+            downstream: [],
+          };
+        for (const rel of this.entityRelationships) {
+          const cat = RELATIONSHIP_CATEGORY[rel.type] ?? "structural";
+          edgesByCategory[cat].push(rel);
+        }
+        for (const category of [
+          "structural",
+          "evidence",
+          "downstream",
+        ] as const) {
+          for (const rel of edgesByCategory[category]) {
+            const from = posMap.get(rel.fromEntityId);
+            const to = posMap.get(rel.toEntityId);
+            if (from && to)
+              this.drawRelationshipEdge(canvas, from, to, rel.type);
+          }
+        }
       }
     }
 
@@ -700,7 +796,18 @@ export class SkiaEngine {
         rn.node.role.startsWith("entity-")
       ) {
         const entity = this.entityMap.get(rn.node.id);
-        this.drawEntityNode(canvas, rn, entity);
+        const entityId = rn.node.id;
+        let opacityMul = 1.0;
+        let focusOutline = false;
+        if (connectedEntityIds) {
+          if (connectedEntityIds.has(entityId)) {
+            opacityMul = 1.0;
+            focusOutline = entityId === activeEntityId;
+          } else {
+            opacityMul = 0.4;
+          }
+        }
+        this.drawEntityNode(canvas, rn, entity, opacityMul, focusOutline);
       } else {
         this.renderer.drawNode(canvas, rn, selectedIds);
       }
@@ -737,12 +844,7 @@ export class SkiaEngine {
       const label = rn.node.name;
       if (
         !label ||
-        !shouldDrawFrameLabel(
-          rn.node,
-          rn.clipRect,
-          isReusable,
-          isInstance,
-        )
+        !shouldDrawFrameLabel(rn.node, rn.clipRect, isReusable, isInstance)
       ) {
         continue;
       }
@@ -899,6 +1001,12 @@ export class SkiaEngine {
     }
 
     canvas.restore();
+
+    // ── Edge tooltip (drawn in screen coordinates for consistent size) ──
+    if (this.hoveredEdgeIndex >= 0 && this.canvasEl) {
+      this.drawEdgeTooltip(canvas, dpr);
+    }
+
     this.surface.flush();
 
     // Keep animating while agent overlays are active (spinning dot + node flashes)
@@ -930,27 +1038,95 @@ export class SkiaEngine {
     const entityMap = new Map<string, AnalysisEntity>();
     for (const e of entities) entityMap.set(e.id, e);
 
-    // Build a position lookup for edge drawing
-    const posMap = new Map<string, { cx: number; cy: number }>();
-    for (const rn of entityRenderNodes) {
-      posMap.set(rn.node.id, {
-        cx: rn.absX + rn.absW / 2,
-        cy: rn.absY + rn.absH / 2,
-      });
+    // ── Compute focus/hover state for interactive dimming ──
+    const activeEntityId =
+      useCanvasStore.getState().focusedEntityId ?? this.hoveredEntityId;
+    let connectedEntityIds: Set<string> | null = null;
+    let connectedRelIds: Set<string> | null = null;
+    if (activeEntityId && entityMap.size > 0) {
+      connectedEntityIds = new Set<string>([activeEntityId]);
+      connectedRelIds = new Set<string>();
+      for (const rel of relationships) {
+        if (
+          rel.fromEntityId === activeEntityId ||
+          rel.toEntityId === activeEntityId
+        ) {
+          connectedEntityIds.add(rel.fromEntityId);
+          connectedEntityIds.add(rel.toEntityId);
+          connectedRelIds.add(rel.id);
+        }
+      }
     }
 
-    // ── Draw relationship edges (behind nodes) ──
-    for (const rel of relationships) {
-      const from = posMap.get(rel.fromEntityId);
-      const to = posMap.get(rel.toEntityId);
-      if (!from || !to) continue;
-      this.drawRelationshipEdge(canvas, from, to, rel.type);
+    // ── Draw relationship edges in 3 passes: structural (back) → evidence → downstream (front) ──
+    if (this.routedEdges.length > 0) {
+      const routedByCategory: Record<string, RoutedEdge[]> = {
+        structural: [],
+        evidence: [],
+        downstream: [],
+      };
+      for (const edge of this.routedEdges) {
+        routedByCategory[edge.category].push(edge);
+      }
+      for (const category of [
+        "structural",
+        "evidence",
+        "downstream",
+      ] as const) {
+        for (const edge of routedByCategory[category]) {
+          let edgeOpacity: number | null = null;
+          if (connectedRelIds) {
+            edgeOpacity = connectedRelIds.has(edge.relationshipId) ? 1.0 : 0.08;
+          }
+          this.drawRoutedEdge(canvas, edge, edgeOpacity);
+        }
+      }
+    } else {
+      // Fallback to old center-to-center drawing if no routed edges
+      const posMap = new Map<string, { cx: number; cy: number }>();
+      for (const rn of entityRenderNodes) {
+        posMap.set(rn.node.id, {
+          cx: rn.absX + rn.absW / 2,
+          cy: rn.absY + rn.absH / 2,
+        });
+      }
+      const edgesByCategory: Record<string, typeof relationships> = {
+        structural: [],
+        evidence: [],
+        downstream: [],
+      };
+      for (const rel of relationships) {
+        const cat = RELATIONSHIP_CATEGORY[rel.type] ?? "structural";
+        edgesByCategory[cat].push(rel);
+      }
+      for (const category of [
+        "structural",
+        "evidence",
+        "downstream",
+      ] as const) {
+        for (const rel of edgesByCategory[category]) {
+          const from = posMap.get(rel.fromEntityId);
+          const to = posMap.get(rel.toEntityId);
+          if (from && to) this.drawRelationshipEdge(canvas, from, to, rel.type);
+        }
+      }
     }
 
     // ── Draw entity nodes ──
     for (const rn of entityRenderNodes) {
       const entity = entityMap.get(rn.node.id);
-      this.drawEntityNode(canvas, rn, entity);
+      const entityId = rn.node.id;
+      let opacityMul = 1.0;
+      let focusOutline = false;
+      if (connectedEntityIds) {
+        if (connectedEntityIds.has(entityId)) {
+          opacityMul = 1.0;
+          focusOutline = entityId === activeEntityId;
+        } else {
+          opacityMul = 0.4;
+        }
+      }
+      this.drawEntityNode(canvas, rn, entity, opacityMul, focusOutline);
     }
   }
 
@@ -984,6 +1160,7 @@ export class SkiaEngine {
     scenario: "#22D3EE",
     "central-thesis": "#A78BFA",
     "meta-check": "#F97316",
+    "analysis-report": "#A1A1AA",
   };
 
   /** Resolve entity type color, with player index hue pool support. */
@@ -997,6 +1174,8 @@ export class SkiaEngine {
     canvas: Canvas,
     rn: RenderNode,
     entity: AnalysisEntity | undefined,
+    opacityMultiplier: number = 1.0,
+    showFocusOutline: boolean = false,
   ) {
     const ck = this.ck;
     const { absX, absY, absW, absH } = rn;
@@ -1006,7 +1185,7 @@ export class SkiaEngine {
     const isStale = entity?.stale ?? false;
     const isHumanEdited = entity?.source === "human";
 
-    const nodeOpacity = isStale ? 0.4 : 1.0;
+    const nodeOpacity = (isStale ? 0.4 : 1.0) * opacityMultiplier;
 
     // ── Human-edited glow (subtle shadow in entity color, behind everything) ──
     if (isHumanEdited && !isStale) {
@@ -1151,13 +1330,32 @@ export class SkiaEngine {
             fill: [{ type: "solid", color: color + alpha }],
           } as PenNode;
         }
-        // Adjust text opacity for stale nodes
-        if (isStale) {
-          childRN.node = { ...childRN.node, opacity: 0.4 } as PenNode;
+        // Adjust text opacity for stale/dimmed nodes
+        if (isStale || opacityMultiplier < 1.0) {
+          childRN.node = {
+            ...childRN.node,
+            opacity: Math.min(isStale ? 0.4 : 1.0, opacityMultiplier),
+          } as PenNode;
         }
         this.renderer.drawNode(canvas, childRN, emptySet);
       }
       canvas.restore();
+    }
+
+    // ── Focus outline (selected state on active entity) ──
+    if (showFocusOutline) {
+      const focusPaint = new ck.Paint();
+      focusPaint.setStyle(ck.PaintStyle.Stroke);
+      focusPaint.setAntiAlias(true);
+      focusPaint.setStrokeWidth(2);
+      focusPaint.setColor(parseColor(ck, color));
+      const focusRRect = ck.RRectXY(
+        ck.LTRBRect(absX - 1, absY - 1, absX + absW + 1, absY + absH + 1),
+        7,
+        7,
+      );
+      canvas.drawRRect(focusRRect, focusPaint);
+      focusPaint.delete();
     }
   }
 
@@ -1165,12 +1363,41 @@ export class SkiaEngine {
 
   private static EDGE_STYLE: Record<
     string,
-    { color: string; dash?: number[]; width: number }
+    { color: string; dash?: number[]; width: number; opacity: number }
   > = {
-    "plays-in": { color: "#52525B", width: 1.5 },
-    supports: { color: "#34D399", dash: [6, 4], width: 1.5 },
-    contradicts: { color: "#F87171", dash: [6, 4], width: 1.5 },
-    constrains: { color: "#52525B", dash: [2, 3], width: 1.5 },
+    // Downstream (front, 2px, solid, 40% unfocused)
+    "plays-in": { color: "#60A5FA", width: 2, opacity: 0.4 },
+    "has-objective": { color: "#818CF8", width: 2, opacity: 0.4 },
+    "has-strategy": { color: "#F59E0B", width: 2, opacity: 0.4 },
+    produces: { color: "#FBBF24", width: 2, opacity: 0.4 },
+    "depends-on": { color: "#60A5FA", width: 2, opacity: 0.4 },
+    "derived-from": { color: "#A78BFA", width: 2, opacity: 0.4 },
+    // Evidence (middle, 1.5px, dashed, 25% unfocused)
+    supports: { color: "#34D399", dash: [6, 4], width: 1.5, opacity: 0.25 },
+    contradicts: { color: "#F87171", dash: [6, 4], width: 1.5, opacity: 0.25 },
+    "informed-by": {
+      color: "#94A3B8",
+      dash: [6, 4],
+      width: 1.5,
+      opacity: 0.25,
+    },
+    "invalidated-by": {
+      color: "#EF4444",
+      dash: [6, 4],
+      width: 1.5,
+      opacity: 0.25,
+    },
+    // Structural (back, 1px, dotted, 15% unfocused)
+    constrains: { color: "#52525B", dash: [2, 3], width: 1, opacity: 0.15 },
+    "escalates-to": { color: "#52525B", dash: [2, 3], width: 1, opacity: 0.15 },
+    links: { color: "#52525B", dash: [2, 3], width: 1, opacity: 0.15 },
+    precedes: { color: "#52525B", dash: [2, 3], width: 1, opacity: 0.15 },
+    "conflicts-with": {
+      color: "#71717A",
+      dash: [2, 3],
+      width: 1,
+      opacity: 0.15,
+    },
   };
 
   private drawRelationshipEdge(
@@ -1183,6 +1410,7 @@ export class SkiaEngine {
     const style = SkiaEngine.EDGE_STYLE[relType] ?? {
       color: "#52525B",
       width: 1.5,
+      opacity: 0.15,
     };
 
     const paint = new ck.Paint();
@@ -1190,6 +1418,7 @@ export class SkiaEngine {
     paint.setAntiAlias(true);
     paint.setStrokeWidth(style.width);
     paint.setColor(parseColor(ck, style.color));
+    paint.setAlphaf(style.opacity);
 
     if (style.dash) {
       const effect = ck.PathEffect.MakeDash(style.dash, 0);
@@ -1216,6 +1445,423 @@ export class SkiaEngine {
     canvas.drawPath(path, paint);
     path.delete();
     paint.delete();
+  }
+
+  // ── Category colors for trunk lines (representative color per category) ──
+
+  private static TRUNK_CATEGORY_COLOR: Record<string, string> = {
+    downstream: "#60A5FA",
+    evidence: "#34D399",
+    structural: "#52525B",
+  };
+
+  // ── Draw a routed edge as a smooth cubic Bézier through waypoints ──
+
+  private drawRoutedEdge(
+    canvas: Canvas,
+    edge: RoutedEdge,
+    opacityOverride: number | null = null,
+  ) {
+    // Trunk fan-out: when any edge in a bundle is hovered, show children and hide trunk
+    const bundled = edge as BundledEdge;
+    const hoveredBundleId = this.getHoveredBundleId();
+
+    if (bundled.bundleId && !bundled.isTrunk) {
+      // Show this child edge only if its bundle is in fan-out state
+      if (bundled.bundleId !== hoveredBundleId) return; // bundle not hovered — stay hidden
+      // Bundle IS hovered — draw individual edge at its normal style (fall through)
+    }
+
+    const ck = this.ck;
+
+    // Trunk edges: 3px width, category color at 60% opacity
+    if (bundled.isTrunk) {
+      // Hide trunk when its bundle is in fan-out state
+      if (bundled.bundleId === hoveredBundleId) {
+        return; // Bundle is hovered — hide trunk, children are drawn instead
+      }
+      const trunkColor =
+        SkiaEngine.TRUNK_CATEGORY_COLOR[edge.category] ?? "#52525B";
+      const trunkOpacity = opacityOverride !== null ? opacityOverride : 0.6;
+
+      const paint = new ck.Paint();
+      paint.setStyle(ck.PaintStyle.Stroke);
+      paint.setAntiAlias(true);
+      paint.setStrokeWidth(3);
+      paint.setColor(parseColor(ck, trunkColor));
+      paint.setAlphaf(trunkOpacity);
+      paint.setStrokeCap(ck.StrokeCap.Round);
+
+      this.drawEdgePath(canvas, edge, paint);
+      paint.delete();
+
+      // Arrowhead for downstream trunks
+      if (edge.category === "downstream") {
+        this.drawArrowhead(canvas, edge, trunkColor, trunkOpacity);
+      }
+      return;
+    }
+
+    const style = SkiaEngine.EDGE_STYLE[edge.relType] ?? {
+      color: "#52525B",
+      width: 1.5,
+      opacity: 0.15,
+    };
+    const effectiveOpacity =
+      opacityOverride !== null ? opacityOverride : style.opacity;
+
+    const paint = new ck.Paint();
+    paint.setStyle(ck.PaintStyle.Stroke);
+    paint.setAntiAlias(true);
+    paint.setStrokeWidth(style.width);
+    paint.setColor(parseColor(ck, style.color));
+    paint.setAlphaf(effectiveOpacity);
+
+    if (style.dash) {
+      const effect = ck.PathEffect.MakeDash(style.dash, 0);
+      if (effect) paint.setPathEffect(effect);
+    }
+
+    this.drawEdgePath(canvas, edge, paint);
+    paint.delete();
+
+    // Arrowhead for downstream edges
+    if (edge.category === "downstream") {
+      this.drawArrowhead(canvas, edge, style.color, effectiveOpacity);
+    }
+  }
+
+  // ── Draw the Bézier path for a routed edge (shared by normal + trunk rendering) ──
+
+  private drawEdgePath(canvas: Canvas, edge: RoutedEdge, paint: Paint) {
+    const ck = this.ck;
+
+    // Build the full point sequence: from → waypoints → to
+    const pts = [edge.from, ...edge.waypoints, edge.to];
+
+    const path = new ck.Path();
+    path.moveTo(pts[0].x, pts[0].y);
+
+    if (pts.length === 2) {
+      // Degenerate: just a line
+      path.lineTo(pts[1].x, pts[1].y);
+    } else if (pts.length === 3) {
+      // Single quadratic curve
+      path.quadTo(pts[1].x, pts[1].y, pts[2].x, pts[2].y);
+    } else {
+      // Smooth cubic Bézier through waypoints:
+      // For each segment between consecutive points, use cubic curves
+      // with control points that create smooth transitions.
+      //
+      // Strategy: treat waypoints as defining a polyline, then smooth each
+      // segment using 1/3 rule for control points with direction from
+      // neighboring segments.
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p0 = pts[i];
+        const p1 = pts[i + 1];
+
+        if (i === 0) {
+          // First segment: use the first point as cp1 and midpoint as cp2
+          const cp1x = p0.x + (p1.x - p0.x) * 0.5;
+          const cp1y = p0.y;
+          const cp2x = p1.x;
+          const cp2y = p0.y + (p1.y - p0.y) * 0.5;
+          path.cubicTo(cp1x, cp1y, cp2x, cp2y, p1.x, p1.y);
+        } else if (i === pts.length - 2) {
+          // Last segment: mirror the first segment approach
+          const cp1x = p0.x;
+          const cp1y = p0.y + (p1.y - p0.y) * 0.5;
+          const cp2x = p0.x + (p1.x - p0.x) * 0.5;
+          const cp2y = p1.y;
+          path.cubicTo(cp1x, cp1y, cp2x, cp2y, p1.x, p1.y);
+        } else {
+          // Middle segments: straight line (these are the vertical channel segments)
+          path.lineTo(p1.x, p1.y);
+        }
+      }
+    }
+
+    canvas.drawPath(path, paint);
+    path.delete();
+  }
+
+  // ── Draw an arrowhead triangle at the target port of a downstream edge ──
+
+  private drawArrowhead(
+    canvas: Canvas,
+    edge: RoutedEdge,
+    color: string,
+    opacity: number,
+  ) {
+    const ck = this.ck;
+    const ARROW_SIZE = 6;
+    const { to } = edge;
+
+    const paint = new ck.Paint();
+    paint.setStyle(ck.PaintStyle.Fill);
+    paint.setAntiAlias(true);
+    paint.setColor(parseColor(ck, color));
+    paint.setAlphaf(opacity);
+
+    const path = new ck.Path();
+
+    switch (edge.direction) {
+      case "forward":
+        // Arrow pointing LEFT (into left port) — tip at to.x, spreads right
+        path.moveTo(to.x, to.y);
+        path.lineTo(to.x + ARROW_SIZE, to.y - ARROW_SIZE / 2);
+        path.lineTo(to.x + ARROW_SIZE, to.y + ARROW_SIZE / 2);
+        path.close();
+        break;
+      case "backward":
+        // Arrow pointing RIGHT (into right port) — tip at to.x, spreads left
+        path.moveTo(to.x, to.y);
+        path.lineTo(to.x - ARROW_SIZE, to.y - ARROW_SIZE / 2);
+        path.lineTo(to.x - ARROW_SIZE, to.y + ARROW_SIZE / 2);
+        path.close();
+        break;
+      case "same-phase":
+        // Arrow pointing DOWN (into top port) — tip at to.y, spreads up
+        path.moveTo(to.x, to.y);
+        path.lineTo(to.x - ARROW_SIZE / 2, to.y - ARROW_SIZE);
+        path.lineTo(to.x + ARROW_SIZE / 2, to.y - ARROW_SIZE);
+        path.close();
+        break;
+    }
+
+    canvas.drawPath(path, paint);
+    path.delete();
+    paint.delete();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Edge hit testing
+  // ---------------------------------------------------------------------------
+
+  /** Get the bundleId of the currently hovered edge (if any). */
+  private getHoveredBundleId(): string | undefined {
+    if (
+      this.hoveredEdgeIndex < 0 ||
+      this.hoveredEdgeIndex >= this.routedEdges.length
+    ) {
+      return undefined;
+    }
+    return (this.routedEdges[this.hoveredEdgeIndex] as BundledEdge).bundleId;
+  }
+
+  /**
+   * Test whether a scene-space point is within 4px of any visible edge path.
+   * Returns the edge index in `routedEdges`, or -1 if no hit.
+   */
+  hitTestEdge(sceneX: number, sceneY: number): number {
+    const HIT_TOLERANCE = 4;
+    if (this.routedEdges.length === 0) return -1;
+
+    const hoveredBundleId = this.getHoveredBundleId();
+
+    for (let i = 0; i < this.routedEdges.length; i++) {
+      const edge = this.routedEdges[i];
+      const bundled = edge as BundledEdge;
+
+      // Skip hidden bundled edges (non-trunk with a bundleId)
+      // UNLESS their bundle is in fan-out state
+      if (bundled.bundleId && !bundled.isTrunk) {
+        if (bundled.bundleId !== hoveredBundleId) continue;
+      }
+
+      // Skip trunk edges whose bundle is in fan-out state (trunk is hidden)
+      if (bundled.isTrunk && bundled.bundleId === hoveredBundleId) continue;
+
+      const pts = [edge.from, ...edge.waypoints, edge.to];
+      for (let j = 0; j < pts.length - 1; j++) {
+        const dist = pointToSegmentDist(
+          sceneX,
+          sceneY,
+          pts[j].x,
+          pts[j].y,
+          pts[j + 1].x,
+          pts[j + 1].y,
+        );
+        if (dist <= HIT_TOLERANCE) return i;
+      }
+    }
+
+    return -1;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Edge tooltip rendering
+  // ---------------------------------------------------------------------------
+
+  private drawEdgeTooltip(canvas: Canvas, dpr: number) {
+    const ck = this.ck;
+    const edge = this.routedEdges[this.hoveredEdgeIndex];
+    if (!edge) return;
+
+    const bundled = edge as BundledEdge;
+
+    // For trunk edges, show a summary tooltip
+    let sourceName: string;
+    let relType: string;
+    let targetName: string;
+    let edgeColor: string;
+
+    if (bundled.isTrunk && bundled.trunkChildCount) {
+      // Trunk tooltip: "N relationships (category)"
+      sourceName = `${bundled.trunkChildCount} relationships`;
+      relType = edge.category;
+      targetName = "(hover to expand)";
+      edgeColor = SkiaEngine.TRUNK_CATEGORY_COLOR[edge.category] ?? "#52525B";
+    } else {
+      // Normal edge: find the relationship and entities
+      const rel = this.entityRelationships.find(
+        (r) => r.id === edge.relationshipId,
+      );
+      if (!rel) return;
+
+      const fromEntity = this.entityMap.get(rel.fromEntityId);
+      const toEntity = this.entityMap.get(rel.toEntityId);
+      if (!fromEntity || !toEntity) return;
+
+      const rawSource = entityDisplayName(fromEntity);
+      const rawTarget = entityDisplayName(toEntity);
+      sourceName =
+        rawSource.length > 30 ? rawSource.slice(0, 30) + "\u2026" : rawSource;
+      targetName =
+        rawTarget.length > 30 ? rawTarget.slice(0, 30) + "\u2026" : rawTarget;
+      relType = rel.type;
+
+      const style = SkiaEngine.EDGE_STYLE[rel.type];
+      edgeColor = style?.color ?? "#52525B";
+    }
+
+    // Measure text segments
+    const FONT_SIZE = 12;
+    const FONT_WEIGHT = "500";
+    const PAD_X = 8;
+    const PAD_Y = 6;
+    const ARROW = " \u2192 ";
+
+    const sourceW = measureText(sourceName, FONT_SIZE, FONT_WEIGHT);
+    const arrow1W = measureText(ARROW, FONT_SIZE, FONT_WEIGHT);
+    const relTypeW = measureText(relType, FONT_SIZE, FONT_WEIGHT);
+    const arrow2W = measureText(ARROW, FONT_SIZE, FONT_WEIGHT);
+    const targetW = measureText(targetName, FONT_SIZE, FONT_WEIGHT);
+
+    const textW = sourceW + arrow1W + relTypeW + arrow2W + targetW;
+    const tooltipW = textW + PAD_X * 2;
+    const tooltipH = FONT_SIZE + PAD_Y * 2 + 4; // +4 for text rendering overhead
+
+    // Convert scene mouse position to screen coordinates
+    const screenX = (this.lastMouseSceneX * this.zoom + this.panX) * dpr;
+    const screenY = (this.lastMouseSceneY * this.zoom + this.panY) * dpr;
+
+    // Position tooltip 12px below the cursor in screen space
+    let tooltipX = screenX;
+    let tooltipY = screenY + 12 * dpr;
+
+    // Clamp to viewport bounds
+    const canvasW = this.canvasEl!.width;
+    const canvasH = this.canvasEl!.height;
+    const scaledW = tooltipW * dpr;
+    const scaledH = tooltipH * dpr;
+
+    if (tooltipX + scaledW > canvasW) {
+      tooltipX = canvasW - scaledW;
+    }
+    if (tooltipX < 0) tooltipX = 0;
+    if (tooltipY + scaledH > canvasH) {
+      tooltipY = screenY - scaledH - 4 * dpr; // flip above cursor
+    }
+    if (tooltipY < 0) tooltipY = 0;
+
+    // Draw in screen-pixel coordinates
+    canvas.save();
+    canvas.scale(dpr, dpr);
+
+    // Convert back to CSS-pixel space for drawing
+    const tx = tooltipX / dpr;
+    const ty = tooltipY / dpr;
+
+    // Background
+    const bgPaint = new ck.Paint();
+    bgPaint.setStyle(ck.PaintStyle.Fill);
+    bgPaint.setAntiAlias(true);
+    bgPaint.setColor(parseColor(ck, "#1E1E22"));
+    const rrect = ck.RRectXY(
+      ck.LTRBRect(tx, ty, tx + tooltipW, ty + tooltipH),
+      6,
+      6,
+    );
+    canvas.drawRRect(rrect, bgPaint);
+    bgPaint.delete();
+
+    // Border
+    const borderPaint = new ck.Paint();
+    borderPaint.setStyle(ck.PaintStyle.Stroke);
+    borderPaint.setAntiAlias(true);
+    borderPaint.setStrokeWidth(1);
+    borderPaint.setColor(parseColor(ck, "#27272A"));
+    canvas.drawRRect(rrect, borderPaint);
+    borderPaint.delete();
+
+    // Text segments — draw each part with appropriate color
+    const textY = ty + PAD_Y;
+    let curX = tx + PAD_X;
+    const TEXT_COLOR = "#A1A1AA";
+
+    curX += drawText2D(
+      ck,
+      canvas,
+      sourceName,
+      curX,
+      textY,
+      TEXT_COLOR,
+      FONT_SIZE,
+      FONT_WEIGHT,
+    );
+    curX += drawText2D(
+      ck,
+      canvas,
+      ARROW,
+      curX,
+      textY,
+      TEXT_COLOR,
+      FONT_SIZE,
+      FONT_WEIGHT,
+    );
+    curX += drawText2D(
+      ck,
+      canvas,
+      relType,
+      curX,
+      textY,
+      edgeColor,
+      FONT_SIZE,
+      FONT_WEIGHT,
+    );
+    curX += drawText2D(
+      ck,
+      canvas,
+      ARROW,
+      curX,
+      textY,
+      TEXT_COLOR,
+      FONT_SIZE,
+      FONT_WEIGHT,
+    );
+    drawText2D(
+      ck,
+      canvas,
+      targetName,
+      curX,
+      textY,
+      TEXT_COLOR,
+      FONT_SIZE,
+      FONT_WEIGHT,
+    );
+
+    canvas.restore();
   }
 
   // ---------------------------------------------------------------------------

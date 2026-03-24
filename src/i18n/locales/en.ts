@@ -472,6 +472,7 @@ const en = {
     "Retrying phase after validation or transport issue.",
   "analysis.activity.default": "Continuing phase analysis.",
   "analysis.activity.usingTool": "Using {{toolName}}",
+  "analysis.activity.usingWebSearchQuery": "Using WebSearch: {{query}}",
   "analysis.activity.agentProgress": "Agent progress",
 
   // ── Analysis Progress ──

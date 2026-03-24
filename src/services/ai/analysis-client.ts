@@ -3,6 +3,7 @@
 // NEVER imports Node.js modules or server-side services.
 
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
+import { useCanvasStore } from "@/stores/canvas-store";
 import {
   useRunStatusStore,
   type ConnectionState,
@@ -19,6 +20,7 @@ import type {
 import type { Analysis } from "../../../shared/types/entity";
 import type { AnalysisRuntimeOverrides } from "../../../shared/types/analysis-runtime";
 import i18n from "@/i18n";
+import { getEntityCardMetrics } from "@/services/entity/entity-card-metrics";
 import { formatPhaseActivityNote } from "./phase-activity-format";
 
 export interface AnalysisPhaseActivityEvent {
@@ -28,6 +30,7 @@ export interface AnalysisPhaseActivityEvent {
   kind: string;
   message: string;
   toolName?: string;
+  query?: string;
 }
 
 export type AnalysisProgressStreamEvent =
@@ -123,9 +126,51 @@ function applyProgressEvent(event: AnalysisProgressStreamEvent): void {
     store.clearPhaseActivityText();
   } else if (event.type === "phase_activity") {
     store.setPhaseActivityText(formatPhaseActivityNote(event));
+  } else if (event.type === "synthesis_started") {
+    store.setPhaseActivityText(
+      i18n.t("analysis.activity.synthesizing", "Synthesizing report..."),
+    );
+  } else if (event.type === "synthesis_completed") {
+    store.clearPhaseActivityText();
+    panToReportEntity();
   }
 
   notifyProgress(event);
+}
+
+/**
+ * After synthesis completes, find the analysis-report entity and
+ * pan the canvas viewport to center on it.
+ */
+function panToReportEntity(): void {
+  const graphStore = useEntityGraphStore.getState();
+  const reportEntity = graphStore.analysis.entities.find(
+    (e) => e.type === "analysis-report",
+  );
+  if (!reportEntity) return;
+
+  const layoutEntry = graphStore.layout[reportEntity.id];
+  if (!layoutEntry) return;
+
+  const canvasStore = useCanvasStore.getState();
+  const { zoom } = canvasStore.viewport;
+
+  // Center the viewport on the report entity's position.
+  // setPan expects the negative scene offset (screen = scene * zoom + pan).
+  // We target the center of the card (offset by half-width / half-height).
+  const metrics = getEntityCardMetrics("analysis-report");
+  const cardWidth = metrics.width;
+  const cardHeight = metrics.height;
+  const viewportWidth =
+    typeof window !== "undefined" ? window.innerWidth : 1200;
+  const viewportHeight =
+    typeof window !== "undefined" ? window.innerHeight : 800;
+
+  const targetX = -(layoutEntry.x + cardWidth / 2) * zoom + viewportWidth / 2;
+  const targetY = -(layoutEntry.y + cardHeight / 2) * zoom + viewportHeight / 2;
+
+  canvasStore.setPan(targetX, targetY);
+  canvasStore.setFocusedEntityId(reportEntity.id);
 }
 
 function applyMutationEvent(event: AnalysisMutationEvent): boolean {
@@ -178,8 +223,9 @@ function applySnapshot(state: AnalysisStateResponse): void {
 
 function getRecoveryDelayMs(failureCount: number): number {
   return (
-    RECOVERY_BACKOFF_MS[Math.min(failureCount - 1, RECOVERY_BACKOFF_MS.length - 1)] ??
-    30_000
+    RECOVERY_BACKOFF_MS[
+      Math.min(failureCount - 1, RECOVERY_BACKOFF_MS.length - 1)
+    ] ?? 30_000
   );
 }
 
@@ -226,9 +272,9 @@ class EventStreamManager {
     if (this.disposed || this.getConnectionState() === "RECOVERING") {
       return;
     }
-    void this
-      .recover("eventsource-error", { recycleEventSource: true })
-      .catch(() => {});
+    void this.recover("eventsource-error", { recycleEventSource: true }).catch(
+      () => {},
+    );
   };
 
   constructor() {
@@ -291,10 +337,7 @@ class EventStreamManager {
       }
 
       const connectionState = this.getConnectionState();
-      if (
-        connectionState !== "CONNECTED" &&
-        connectionState !== "CONNECTING"
-      ) {
+      if (connectionState !== "CONNECTED" && connectionState !== "CONNECTING") {
         return;
       }
 
@@ -302,9 +345,9 @@ class EventStreamManager {
         return;
       }
 
-      void this
-        .recover("heartbeat-timeout", { recycleEventSource: true })
-        .catch(() => {});
+      void this.recover("heartbeat-timeout", {
+        recycleEventSource: true,
+      }).catch(() => {});
     }, HEARTBEAT_CHECK_INTERVAL_MS);
   }
 
@@ -341,7 +384,9 @@ class EventStreamManager {
     }, delayMs);
   }
 
-  private openEventSource(options?: { preserveConnectionState?: boolean }): void {
+  private openEventSource(options?: {
+    preserveConnectionState?: boolean;
+  }): void {
     if (this.disposed) {
       return;
     }
@@ -414,7 +459,9 @@ class EventStreamManager {
         return;
 
       case "progress":
-        applyProgressEvent(stripEnvelope(envelope) as AnalysisProgressStreamEvent);
+        applyProgressEvent(
+          stripEnvelope(envelope) as AnalysisProgressStreamEvent,
+        );
         return;
 
       case "mutation": {
@@ -629,9 +676,9 @@ export async function startAnalysis(
       );
     }
 
-    const payload = (await response.json().catch(() => null)) as
-      | { runId?: string }
-      | null;
+    const payload = (await response.json().catch(() => null)) as {
+      runId?: string;
+    } | null;
     const runId = payload?.runId?.trim();
     if (!runId) {
       throw new Error("Analyze kickoff response missing runId");

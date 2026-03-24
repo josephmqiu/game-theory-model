@@ -22,6 +22,7 @@ export type AnalysisProgressEvent =
       kind: AnalysisPhaseActivityKind;
       message: string;
       toolName?: string;
+      query?: string;
     }
   | {
       type: "phase_completed";
@@ -30,7 +31,9 @@ export type AnalysisProgressEvent =
       summary: PhaseSummary;
     }
   | { type: "analysis_completed"; runId: string }
-  | { type: "analysis_failed"; runId: string; error: string };
+  | { type: "analysis_failed"; runId: string; error: string }
+  | { type: "synthesis_started"; runId: string }
+  | { type: "synthesis_completed"; runId: string };
 
 export type AnalysisMutationEvent =
   | { type: "entity_created"; entity: AnalysisEntity }

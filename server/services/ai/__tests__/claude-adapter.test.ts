@@ -735,6 +735,186 @@ describe("claude-adapter", () => {
       });
     });
 
+    it("emits WebSearch query activity when the query is available at tool start", async () => {
+      const { runAnalysisPhase } = await import("../claude-adapter");
+      const onActivity = vi.fn();
+
+      mockQuery.mockImplementation(() => {
+        let index = 0;
+        const values = [
+          {
+            type: "stream_event",
+            event: {
+              type: "content_block_start",
+              index: 0,
+              content_block: {
+                type: "tool_use",
+                name: "WebSearch",
+                input: { query: "US China tariff history 2025" },
+              },
+            },
+          },
+          {
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            result: '{"entities":[],"relationships":[]}',
+            structured_output: { entities: [], relationships: [] },
+          },
+        ];
+
+        return {
+          close: mockQueryClose,
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                if (index < values.length) {
+                  return { done: false, value: values[index++] };
+                }
+                return { done: true, value: undefined };
+              },
+            };
+          },
+        };
+      });
+
+      await runAnalysisPhase("analyze", "sys", "model", { type: "object" }, {
+        onActivity,
+      });
+
+      expect(onActivity).toHaveBeenCalledWith({
+        kind: "web-search",
+        message: "Using WebSearch",
+        query: "US China tariff history 2025",
+      });
+    });
+
+    it("emits WebSearch query activity when the query arrives via streamed input deltas", async () => {
+      const { runAnalysisPhase } = await import("../claude-adapter");
+      const onActivity = vi.fn();
+
+      mockQuery.mockImplementation(() => {
+        let index = 0;
+        const values = [
+          {
+            type: "stream_event",
+            event: {
+              type: "content_block_start",
+              index: 0,
+              content_block: {
+                type: "tool_use",
+                name: "WebSearch",
+                input: {},
+              },
+            },
+          },
+          {
+            type: "stream_event",
+            event: {
+              type: "content_block_delta",
+              index: 0,
+              delta: {
+                type: "input_json_delta",
+                partial_json: '{"query":"US China tariff history 2025"}',
+              },
+            },
+          },
+          {
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            result: '{"entities":[],"relationships":[]}',
+            structured_output: { entities: [], relationships: [] },
+          },
+        ];
+
+        return {
+          close: mockQueryClose,
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                if (index < values.length) {
+                  return { done: false, value: values[index++] };
+                }
+                return { done: true, value: undefined };
+              },
+            };
+          },
+        };
+      });
+
+      await runAnalysisPhase("analyze", "sys", "model", { type: "object" }, {
+        onActivity,
+      });
+
+      expect(onActivity.mock.calls).toContainEqual([
+        {
+          kind: "web-search",
+          message: "Using WebSearch",
+        },
+      ]);
+      expect(onActivity.mock.calls).toContainEqual([
+        {
+          kind: "web-search",
+          message: "Using WebSearch",
+          query: "US China tariff history 2025",
+        },
+      ]);
+    });
+
+    it("falls back to generic WebSearch activity when no query can be parsed", async () => {
+      const { runAnalysisPhase } = await import("../claude-adapter");
+      const onActivity = vi.fn();
+
+      mockQuery.mockImplementation(() => {
+        let index = 0;
+        const values = [
+          {
+            type: "stream_event",
+            event: {
+              type: "content_block_start",
+              index: 0,
+              content_block: {
+                type: "tool_use",
+                name: "WebSearch",
+                input: {},
+              },
+            },
+          },
+          {
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            result: '{"entities":[],"relationships":[]}',
+            structured_output: { entities: [], relationships: [] },
+          },
+        ];
+
+        return {
+          close: mockQueryClose,
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                if (index < values.length) {
+                  return { done: false, value: values[index++] };
+                }
+                return { done: true, value: undefined };
+              },
+            };
+          },
+        };
+      });
+
+      await runAnalysisPhase("analyze", "sys", "model", { type: "object" }, {
+        onActivity,
+      });
+
+      expect(onActivity).toHaveBeenCalledWith({
+        kind: "web-search",
+        message: "Using WebSearch",
+      });
+    });
+
     it("removes WebSearch from analysis allowedTools when webSearch is false", async () => {
       const { runAnalysisPhase, ANALYSIS_TOOL_NAMES } =
         await import("../claude-adapter");
