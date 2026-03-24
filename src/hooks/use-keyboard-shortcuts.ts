@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { saveAnalysis } from "@/services/analysis/analysis-persistence";
+import { downloadCanvasPng } from "@/canvas/skia/canvas-screenshot";
 
 interface KeyboardShortcutOptions {
   onNewAnalysis: () => void | Promise<void>;
@@ -17,6 +18,12 @@ export function useKeyboardShortcuts({
       if (isMod && event.key.toLowerCase() === "n") {
         event.preventDefault();
         void onNewAnalysis();
+        return;
+      }
+
+      if (isMod && event.shiftKey && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        downloadCanvasPng();
         return;
       }
 

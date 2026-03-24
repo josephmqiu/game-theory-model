@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { loadCanvasKit } from "@/canvas/skia/skia-init";
 import { SkiaEngine, screenToScene } from "@/canvas/skia/skia-engine";
+import { setSkiaEngineRef } from "@/canvas/skia-engine-ref";
 import { useCanvasStore } from "@/stores/canvas-store";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { entityToRenderNode } from "@/services/entity/entity-to-pennode";
@@ -83,12 +84,14 @@ export default function AnalysisCanvas({
       const engine = new SkiaEngine(ck);
       engine.init(canvas);
       engineRef.current = engine;
+      setSkiaEngineRef(engine);
       // Trigger initial render
       engine.markDirty();
     });
 
     return () => {
       disposed = true;
+      setSkiaEngineRef(null);
       engineRef.current?.dispose();
       engineRef.current = null;
     };
