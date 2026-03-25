@@ -12,17 +12,37 @@ import { resetAllServices, makeFactOutput } from "../../__test-utils__/fixtures"
 
 // ── Mock the adapter (called by runPhase internally) ──
 
-vi.mock("../../services/ai/claude-adapter", () => ({
-  runAnalysisPhase: vi.fn().mockResolvedValue({
-    entities: [],
-    relationships: [],
-  }),
-}));
-
-vi.mock("../../services/ai/codex-adapter", () => ({
-  runAnalysisPhase: vi.fn().mockResolvedValue({
-    entities: [],
-    relationships: [],
+vi.mock("../../services/ai/adapter-contract", () => ({
+  getRuntimeAdapter: vi.fn(async (providerInput?: string) => {
+    const isCodex = providerInput === "openai" || providerInput === "codex";
+    return {
+      provider: isCodex ? "codex" : "claude",
+      createSession(key: { ownerId: string; runId?: string }) {
+        return {
+          provider: isCodex ? "codex" : "claude",
+          key,
+          streamChatTurn: vi.fn(),
+          runStructuredTurn: vi.fn(async () => ({
+            entities: [],
+            relationships: [],
+          })),
+          getDiagnostics: vi.fn(() => ({
+            provider: isCodex ? "codex" : "claude",
+            sessionId: "revalidation-session",
+            details: { ownerId: key.ownerId },
+          })),
+          dispose: vi.fn(async () => {}),
+        };
+      },
+      listModels: vi.fn(async () => []),
+      checkHealth: vi.fn(async () => ({
+        provider: isCodex ? "codex" : "claude",
+        status: "healthy",
+        reason: null,
+        checkedAt: Date.now(),
+        checks: [],
+      })),
+    };
   }),
 }));
 

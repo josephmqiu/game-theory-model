@@ -9,21 +9,21 @@ describe("analysis-service boundary", () => {
       "utf-8",
     );
 
-    expect(source).not.toContain("analysis-runtime");
     expect(source).not.toContain("analysis-phase-executor");
     expect(source).not.toContain("node:child_process");
     expect(source).not.toContain("node:fs");
   });
 
-  it("owns provider selection directly in analysis-service", () => {
+  it("resolves providers through the runtime adapter contract", () => {
     const source = readFileSync(
       resolve("server/services/analysis-service.ts"),
       "utf-8",
     );
 
-    expect(source).toContain('provider === "openai"');
-    expect(source).toContain("codex-adapter");
-    expect(source).toContain("claude-adapter");
+    expect(source).toContain("getRuntimeAdapter");
+    expect(source).toContain("createSession");
+    expect(source).not.toContain("../ai/claude-adapter");
+    expect(source).not.toContain("../ai/codex-adapter");
   });
 
   it("removes the executor bridge files", () => {

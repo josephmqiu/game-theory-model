@@ -37,12 +37,32 @@ vi.mock("../../../services/entity-graph-service", () => ({
   getAnalysis: (...args: unknown[]) => getAnalysisMock(...args),
 }));
 
-vi.mock("../../../services/ai/claude-adapter", () => ({
-  streamChat: vi.fn(),
-}));
-
-vi.mock("../../../services/ai/codex-adapter", () => ({
-  streamChat: (...args: unknown[]) => codexStreamChatMock(...args),
+vi.mock("../../../services/ai/adapter-contract", () => ({
+  getRuntimeAdapter: vi.fn(async () => ({
+    provider: "codex",
+    createSession(key: { ownerId: string; runId?: string }) {
+      return {
+        provider: "codex",
+        key,
+        streamChatTurn: (...args: unknown[]) =>
+          codexStreamChatMock(...args),
+        runStructuredTurn: vi.fn(),
+        getDiagnostics: vi.fn(() => ({
+          provider: "codex",
+          sessionId: "test-chat-session",
+        })),
+        dispose: vi.fn(async () => {}),
+      };
+    },
+    listModels: vi.fn(async () => []),
+    checkHealth: vi.fn(async () => ({
+      provider: "codex",
+      status: "healthy",
+      reason: null,
+      checkedAt: Date.now(),
+      checks: [],
+    })),
+  })),
 }));
 
 describe("/api/ai/chat", () => {

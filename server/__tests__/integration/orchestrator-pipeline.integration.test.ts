@@ -22,12 +22,59 @@ const mockRunAnalysisPhase = vi.fn((...args: unknown[]) =>
   (defaultMock as Function)(...args),
 );
 
-vi.mock("../../services/ai/claude-adapter", () => ({
-  runAnalysisPhase: (...args: unknown[]) => mockRunAnalysisPhase(...args),
-}));
-
-vi.mock("../../services/ai/codex-adapter", () => ({
-  runAnalysisPhase: (...args: unknown[]) => mockRunAnalysisPhase(...args),
+vi.mock("../../services/ai/adapter-contract", () => ({
+  getRuntimeAdapter: vi.fn(async (providerInput?: string) => {
+    const isCodex = providerInput === "openai" || providerInput === "codex";
+    return {
+      provider: isCodex ? "codex" : "claude",
+      createSession(key: { ownerId: string; runId?: string }) {
+        return {
+          provider: isCodex ? "codex" : "claude",
+          key,
+          streamChatTurn: vi.fn(),
+          runStructuredTurn<T = unknown>(input: {
+            prompt: string;
+            systemPrompt: string;
+            model: string;
+            schema: Record<string, unknown>;
+            signal?: AbortSignal;
+            runId?: string;
+            maxTurns?: number;
+            webSearch?: boolean;
+            onActivity?: unknown;
+          }) {
+            return mockRunAnalysisPhase(
+              input.prompt,
+              input.systemPrompt,
+              input.model,
+              input.schema,
+              {
+                signal: input.signal,
+                runId: input.runId,
+                maxTurns: input.maxTurns,
+                webSearch: input.webSearch,
+                onActivity: input.onActivity,
+              },
+            ) as Promise<T>;
+          },
+          getDiagnostics: vi.fn(() => ({
+            provider: isCodex ? "codex" : "claude",
+            sessionId: "orchestrator-pipeline-session",
+            details: { ownerId: key.ownerId },
+          })),
+          dispose: vi.fn(async () => {}),
+        };
+      },
+      listModels: vi.fn(async () => []),
+      checkHealth: vi.fn(async () => ({
+        provider: isCodex ? "codex" : "claude",
+        status: "healthy",
+        reason: null,
+        checkedAt: Date.now(),
+        checks: [],
+      })),
+    };
+  }),
 }));
 
 vi.mock("../../utils/ai-logger", () => ({
@@ -120,8 +167,8 @@ function createSynthesisAwareMock() {
 // ── Tests ──
 
 describe("orchestrator pipeline integration", () => {
-  beforeEach(() => {
-    resetAllServices();
+  beforeEach(async () => {
+    await resetAllServices();
     mockRunAnalysisPhase.mockImplementation((...args: unknown[]) =>
       (defaultMock as Function)(...args),
     );
@@ -141,20 +188,26 @@ describe("orchestrator pipeline integration", () => {
       "baseline-model",
     ] as const;
 
-    await orchestrator.runFull(
+    const { runId } = await orchestrator.runFull(
       "Steel trade war",
       "anthropic",
       undefined,
       undefined,
       { activePhases: [...testPhases] },
     );
-    await flushAsync();
+    const runPromise = orchestrator._getRunPromise();
+    if (runPromise) {
+      await runPromise;
+    }
+    await waitForRunComplete();
 
-    const analysis = entityGraph.getAnalysis();
+    const result = orchestrator.getResult(runId);
 
-    // Each phase contributed the right number of entities
+    expect(result.entities.length).toBeGreaterThan(0);
+
+    // The run result preserves the full phase-by-phase outputs.
     for (const phase of testPhases) {
-      const phaseEntities = analysis.entities.filter((e) => e.phase === phase);
+      const phaseEntities = result.entities.filter((e) => e.phase === phase);
       const fixture = PHASE_FIXTURES[phase]!;
       expect(phaseEntities.length, `entity count for ${phase}`).toBe(
         fixture.entities.length,
@@ -162,8 +215,8 @@ describe("orchestrator pipeline integration", () => {
     }
 
     // All relationship endpoints are valid entity IDs (no dangling refs)
-    const entityIds = new Set(analysis.entities.map((e) => e.id));
-    for (const rel of analysis.relationships) {
+    const entityIds = new Set(result.entities.map((e) => e.id));
+    for (const rel of result.relationships) {
       expect(
         entityIds.has(rel.fromEntityId),
         `dangling from: ${rel.fromEntityId}`,

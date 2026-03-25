@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const ORIGINAL_ENV = { ...process.env };
 const ENV_PREFIX = "GAME_THEORY_ANALYSIS_RUNTIME_";
@@ -13,9 +13,8 @@ function resetAnalysisRuntimeEnv(): void {
 }
 
 async function importResolver() {
-  return import(
-    `../analysis-runtime-resolver?test=${Date.now()}-${Math.random()}`
-  );
+  vi.resetModules();
+  return import("../analysis-runtime-resolver");
 }
 
 describe("analysis-runtime-resolver", () => {

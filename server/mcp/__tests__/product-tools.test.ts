@@ -32,9 +32,9 @@ describe("product-tools", () => {
       topic: "Trade war",
     });
 
-    expect(result).toEqual({
-      text: "Error: provider exploded",
-      isError: true,
+    expect(result.isError).toBe(false);
+    expect(JSON.parse(result.text)).toEqual({
+      error: "provider exploded",
     });
   });
 

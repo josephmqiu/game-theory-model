@@ -112,16 +112,39 @@ describe("entity route", () => {
 
     const route = (await import("../api/ai/entity.post")).default;
     const result = await route({} as never);
+    const queuedResult = result as {
+      queued: true;
+      status: "accepted";
+      commandId: string;
+      receiptId?: string;
+    };
 
-    expect(result).toEqual({ queued: true });
+    expect(queuedResult).toEqual({
+      queued: true,
+      status: "accepted",
+      commandId: expect.any(String),
+    });
     expect(getAnalysis().entities[0].rationale).toBe("before");
     expect(queued).toHaveLength(1);
+    expect(listCommandReceipts().at(-1)).toEqual(
+      expect.objectContaining({
+        kind: "entity.update",
+        status: "accepted",
+        commandId: queuedResult.commandId,
+      }),
+    );
 
     queued[0]();
     await flushAsync();
     await flushAsync();
 
     expect(getAnalysis().entities[0].rationale).toBe("queued-after");
-    expect(listCommandReceipts().at(-1)?.kind).toBe("entity.update");
+    expect(listCommandReceipts().at(-1)).toEqual(
+      expect.objectContaining({
+        kind: "entity.update",
+        status: "completed",
+        commandId: queuedResult.commandId,
+      }),
+    );
   });
 });

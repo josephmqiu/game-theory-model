@@ -4,7 +4,10 @@ import { z } from "zod";
 import * as entityGraphService from "../../services/entity-graph-service";
 import * as analysisOrchestrator from "../../agents/analysis-agent";
 import {
+  startCommand,
   submitCommand,
+  type CommandReceipt,
+  type SubmitCommand,
   type CommandMetadataInput,
 } from "../../services/command-bus";
 import { serverError } from "../../utils/ai-logger";
@@ -73,15 +76,22 @@ export default defineEventHandler(async (event) => {
 
   // If analysis running and this is a mutation, queue it
   if (analysisOrchestrator.isRunning() && body.action !== "get") {
-    analysisOrchestrator.queueEdit(() => {
-      void executeMutationCommand(body).catch((error) => {
-        serverError(body.command?.runId, "entity-route", "queued-command-failed", {
-          action: body.action,
-          error: error instanceof Error ? error.message : String(error),
+    const started = await startCommand(createMutationCommand(body), {
+      schedule: (run) => {
+        analysisOrchestrator.queueEdit(() => {
+          run();
         });
+      },
+    });
+    void started.completion.catch((error) => {
+      serverError(body.command?.runId, "entity-route", "queued-command-failed", {
+        action: body.action,
+        error: error instanceof Error ? error.message : String(error),
       });
     });
-    return { queued: true };
+    return mapMutationReceipt(body.action, started.receipt, event, {
+      queued: true,
+    });
   }
 
   return executeAction(body, event);
@@ -133,30 +143,68 @@ function buildCommandMetadata(
   };
 }
 
-async function executeMutationCommand(
+function createMutationCommand(
   body: Exclude<EntityActionBody, { action: "get" }>,
-  event?: H3Event,
-) {
+): SubmitCommand {
   switch (body.action) {
-    case "update": {
-      const receipt = await submitCommand({
+    case "update":
+      return {
         kind: "entity.update",
         id: body.id,
         updates: body.updates,
         provenanceSource: "user-edited",
         ...buildCommandMetadata(body.command, "api:ai-entity.update"),
-      });
+      };
+    case "newAnalysis":
+      return {
+        kind: "analysis.reset",
+        topic: body.topic || "",
+        ...buildCommandMetadata(body.command, "api:ai-entity.reset"),
+      };
+  }
+}
 
-      if (receipt.status === "conflicted") {
-        if (event) setResponseStatus(event, 409);
-        return { error: receipt.error?.message ?? "Command receipt conflict" };
-      }
+function hasPendingReceipt(receipt: CommandReceipt): boolean {
+  return (
+    receipt.result === undefined &&
+    !receipt.error &&
+    (receipt.status === "accepted" ||
+      receipt.status === "running" ||
+      receipt.status === "deduplicated")
+  );
+}
 
-      if (receipt.status === "failed") {
-        if (event) setResponseStatus(event, 404);
-        return { error: receipt.error?.message ?? "Entity not found" };
-      }
+function mapMutationReceipt(
+  action: Exclude<EntityActionBody, { action: "get" }>["action"],
+  receipt: CommandReceipt,
+  event?: H3Event,
+  options: { queued?: boolean } = {},
+) {
+  if (receipt.status === "conflicted") {
+    if (event) setResponseStatus(event, 409);
+    return { error: receipt.error?.message ?? "Command receipt conflict" };
+  }
 
+  if (receipt.status === "failed") {
+    if (action === "update") {
+      if (event) setResponseStatus(event, 404);
+      return { error: receipt.error?.message ?? "Entity not found" };
+    }
+    throw new Error(receipt.error?.message ?? "Failed to reset analysis");
+  }
+
+  if (options.queued && hasPendingReceipt(receipt)) {
+    if (event) setResponseStatus(event, 202);
+    return {
+      queued: true,
+      status: receipt.status,
+      commandId: receipt.commandId,
+      ...(receipt.receiptId ? { receiptId: receipt.receiptId } : {}),
+    };
+  }
+
+  switch (action) {
+    case "update": {
       const result = receipt.result as {
         updated: unknown[];
         staleMarked: string[];
@@ -167,25 +215,18 @@ async function executeMutationCommand(
       };
     }
     case "newAnalysis": {
-      const receipt = await submitCommand({
-        kind: "analysis.reset",
-        topic: body.topic || "",
-        ...buildCommandMetadata(body.command, "api:ai-entity.reset"),
-      });
-
-      if (receipt.status === "conflicted") {
-        if (event) setResponseStatus(event, 409);
-        return { error: receipt.error?.message ?? "Command receipt conflict" };
-      }
-
-      if (receipt.status === "failed") {
-        throw new Error(receipt.error?.message ?? "Failed to reset analysis");
-      }
-
       const result = receipt.result as { analysis: Readonly<unknown> };
       return { analysis: result.analysis };
     }
   }
+}
+
+async function executeMutationCommand(
+  body: Exclude<EntityActionBody, { action: "get" }>,
+  event?: H3Event,
+) {
+  const receipt = await submitCommand(createMutationCommand(body));
+  return mapMutationReceipt(body.action, receipt, event);
 }
 
 async function executeAction(body: EntityActionBody, event?: H3Event) {

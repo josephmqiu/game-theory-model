@@ -147,8 +147,9 @@ function makeFailedResult(error: string): PhaseResult {
 
 async function advanceTimersByTimeAsync(ms: number): Promise<void> {
   vi.advanceTimersByTime(ms);
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let i = 0; i < 10; i += 1) {
+    await Promise.resolve();
+  }
 }
 
 // ── Tests ──

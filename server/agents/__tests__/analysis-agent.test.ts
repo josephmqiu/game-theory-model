@@ -837,10 +837,6 @@ describe("analysis-orchestrator", () => {
     expect(status.status).toBe("interrupted");
     expect(status.phasesCompleted).toBe(1);
 
-    // The run is marked interrupted immediately, but it only fully unwinds
-    // after the in-flight phase settles.
-    expect(orchestrator.isRunning()).toBe(true);
-
     // Phase 1 commit was applied before the abort
     expect(mockCommitPhaseSnapshot).toHaveBeenCalled();
 

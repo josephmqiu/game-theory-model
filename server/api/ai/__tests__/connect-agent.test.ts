@@ -42,6 +42,8 @@ vi.mock("node:os", () => ({
 describe("connect-agent codex checks", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.resetModules();
+    vi.doUnmock("../../../services/ai/provider-health");
     vi.useRealTimers();
   });
 
@@ -142,5 +144,107 @@ describe("connect-agent codex checks", () => {
     );
     expect(spawnSyncMock.mock.calls[1][0]).toBe("/resolved/codex");
     expect(spawnMock.mock.calls[0][0]).toBe("/resolved/codex");
+  });
+
+  it("treats a failed Codex version check as disconnected even when models exist", async () => {
+    spawnSyncMock
+      .mockReturnValueOnce({ stdout: "/resolved/codex\n", status: 0 })
+      .mockReturnValueOnce({ stdout: "", stderr: "version failed", status: 1 });
+    readFileMock.mockResolvedValue(
+      JSON.stringify({
+        models: [
+          {
+            slug: "gpt-5.4",
+            display_name: "GPT-5.4",
+            description: "Cached model",
+            visibility: "list",
+            priority: 1,
+          },
+        ],
+      }),
+    );
+
+    spawnMock.mockImplementation((binaryPath: string) => {
+      expect(binaryPath).toBe("/resolved/codex");
+      return new MockChildProcess();
+    });
+
+    const { connectCodexCli } = await import("../connect-agent");
+    const result = await connectCodexCli();
+
+    expect(result.connected).toBe(false);
+    expect(result.models).toEqual([
+      {
+        value: "gpt-5.4",
+        displayName: "GPT-5.4",
+        description: "Cached model",
+        provider: "openai",
+      },
+    ]);
+    expect(result.error).toContain("version failed");
+    expect(result.health).toEqual(
+      expect.objectContaining({
+        provider: "codex",
+        reason: "process",
+      }),
+    );
+  });
+});
+
+describe("connect-agent claude checks", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    vi.useRealTimers();
+  });
+
+  it("keeps Claude fallback-model snapshots connectable when auth is healthy", async () => {
+    vi.doMock("../../../services/ai/provider-health", () => ({
+      getClaudeProviderSnapshot: async () => ({
+        health: {
+          provider: "claude",
+          status: "degraded",
+          reason: "transport",
+          message: "query closed before response",
+          checkedAt: Date.now(),
+          checks: [
+            { name: "binary", status: "pass", observedValue: "/resolved/claude" },
+            { name: "version", status: "pass", observedValue: "claude 1.0.0" },
+            { name: "auth", status: "pass" },
+            { name: "runtime", status: "warn", message: "query closed before response" },
+            { name: "models", status: "warn", message: "Using fallback Claude model catalog" },
+          ],
+        },
+        models: [
+          {
+            value: "claude-sonnet-4-6",
+            displayName: "Claude Sonnet 4.6",
+            description: "",
+          },
+        ],
+      }),
+      getCodexProviderSnapshot: vi.fn(),
+    }));
+
+    const { connectClaudeCode } = await import("../connect-agent");
+    const result = await connectClaudeCode();
+
+    expect(result).toEqual(expect.objectContaining({
+      connected: true,
+      models: [
+        {
+          value: "claude-sonnet-4-6",
+          displayName: "Claude Sonnet 4.6",
+          description: "",
+          provider: "anthropic",
+        },
+      ],
+    }));
+    expect(result.health).toEqual(
+      expect.objectContaining({
+        provider: "claude",
+        reason: "transport",
+      }),
+    );
   });
 });

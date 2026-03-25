@@ -19,15 +19,61 @@ import { createMockRunAnalysisPhase } from "../../__test-utils__/mock-adapter";
 // ── Mock ONLY the AI adapters ──
 
 const mockRunAnalysisPhase = createMockRunAnalysisPhase();
+let activeRunAnalysisPhase = mockRunAnalysisPhase;
 
-vi.mock("../../services/ai/claude-adapter", () => ({
-  runAnalysisPhase: (...args: unknown[]) =>
-    mockRunAnalysisPhase(...(args as [string, string, string, Record<string, unknown>, unknown])),
-}));
-
-vi.mock("../../services/ai/codex-adapter", () => ({
-  runAnalysisPhase: (...args: unknown[]) =>
-    mockRunAnalysisPhase(...(args as [string, string, string, Record<string, unknown>, unknown])),
+vi.mock("../../services/ai/adapter-contract", () => ({
+  getRuntimeAdapter: vi.fn(async (providerInput?: string) => {
+    const isCodex = providerInput === "openai" || providerInput === "codex";
+    return {
+      provider: isCodex ? "codex" : "claude",
+      createSession(key: { ownerId: string; runId?: string }) {
+        return {
+          provider: isCodex ? "codex" : "claude",
+          key,
+          streamChatTurn: vi.fn(),
+          runStructuredTurn<T = unknown>(input: {
+            prompt: string;
+            systemPrompt: string;
+            model: string;
+            schema: Record<string, unknown>;
+            signal?: AbortSignal;
+            runId?: string;
+            maxTurns?: number;
+            webSearch?: boolean;
+            onActivity?: unknown;
+          }) {
+            return activeRunAnalysisPhase(
+              input.prompt,
+              input.systemPrompt,
+              input.model,
+              input.schema,
+              {
+                signal: input.signal,
+                runId: input.runId,
+                maxTurns: input.maxTurns,
+                webSearch: input.webSearch,
+                onActivity: input.onActivity,
+              },
+            ) as Promise<T>;
+          },
+          getDiagnostics: vi.fn(() => ({
+            provider: isCodex ? "codex" : "claude",
+            sessionId: "analysis-pipeline-session",
+            details: { ownerId: key.ownerId },
+          })),
+          dispose: vi.fn(async () => {}),
+        };
+      },
+      listModels: vi.fn(async () => []),
+      checkHealth: vi.fn(async () => ({
+        provider: isCodex ? "codex" : "claude",
+        status: "healthy",
+        reason: null,
+        checkedAt: Date.now(),
+        checks: [],
+      })),
+    };
+  }),
 }));
 
 // Suppress logger output
@@ -55,9 +101,10 @@ const entityGraph = await import("../../services/entity-graph-service");
 // ── Tests ──
 
 describe("analysis pipeline integration", () => {
-  beforeEach(() => {
-    resetAllServices();
+  beforeEach(async () => {
+    await resetAllServices();
     entityGraph.newAnalysis("Integration test topic");
+    activeRunAnalysisPhase = mockRunAnalysisPhase;
   });
 
   afterEach(() => {
@@ -245,12 +292,8 @@ describe("analysis pipeline integration", () => {
       relationships: [],
     });
 
-    // Temporarily override the mock
-    const origModule = await import("../../services/ai/claude-adapter");
-    const origFn = origModule.runAnalysisPhase;
-    (origModule as any).runAnalysisPhase = badMock;
-
     try {
+      activeRunAnalysisPhase = badMock;
       const result = await runPhase(
         "situational-grounding",
         "Bad data test",
@@ -258,7 +301,7 @@ describe("analysis pipeline integration", () => {
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
     } finally {
-      (origModule as any).runAnalysisPhase = origFn;
+      activeRunAnalysisPhase = mockRunAnalysisPhase;
     }
   });
 

@@ -202,7 +202,20 @@ interface CreateCommandBusOptions {
   receiptStore?: CommandReceiptStore;
 }
 
+export interface StartCommandOptions {
+  schedule?: (run: () => void) => void;
+}
+
+export interface StartedCommand {
+  receipt: CommandReceipt;
+  completion: Promise<CommandReceipt>;
+}
+
 interface CommandBus {
+  startCommand(
+    command: SubmitCommand,
+    options?: StartCommandOptions,
+  ): Promise<StartedCommand>;
   submitCommand(command: SubmitCommand): Promise<CommandReceipt>;
   getReceipt(commandId: string): CommandReceipt | undefined;
   getReceiptByReceiptId(receiptId: string): CommandReceipt | undefined;
@@ -331,6 +344,101 @@ function createReceipt<TResult>(
     payloadFingerprint,
     submittedAt: command.submittedAt,
     acceptedAt: Date.now(),
+  };
+}
+
+function createConflictReceipt(
+  command: Command,
+  payloadFingerprint: string,
+  message: string,
+  conflictWithCommandId?: string,
+): CommandReceipt {
+  const conflicted = createReceipt(command, "conflicted", payloadFingerprint);
+  conflicted.finishedAt = Date.now();
+  conflicted.conflictWithCommandId = conflictWithCommandId;
+  conflicted.error = {
+    name: "CommandReceiptConflict",
+    message,
+  };
+  return conflicted;
+}
+
+function createDeduplicatedReceipt(
+  command: Command,
+  payloadFingerprint: string,
+  existing: CommandReceipt,
+): CommandReceipt {
+  const deduplicated = createReceipt(
+    command,
+    "deduplicated",
+    payloadFingerprint,
+  );
+  deduplicated.startedAt = deduplicated.acceptedAt;
+  deduplicated.duplicateOfCommandId = existing.commandId;
+  if (existing.finishedAt !== undefined) {
+    deduplicated.finishedAt = Date.now();
+  }
+  if (existing.result !== undefined) {
+    deduplicated.result = existing.result;
+  }
+  if (existing.error) {
+    deduplicated.error = { ...existing.error };
+  }
+  return deduplicated;
+}
+
+function resolveExistingReceipt(
+  command: Command,
+  receiptStore: CommandReceiptStore,
+  payloadFingerprint: string,
+): {
+  source?: "commandId" | "receiptId" | "both";
+  existing?: CommandReceipt;
+  conflict?: CommandReceipt;
+} {
+  const existingByCommandId = receiptStore.getByCommandId(command.commandId);
+  const existingByReceiptId = command.receiptId
+    ? receiptStore.getByReceiptId(command.receiptId)
+    : undefined;
+
+  if (
+    existingByCommandId &&
+    existingByReceiptId &&
+    existingByCommandId.commandId !== existingByReceiptId.commandId
+  ) {
+    return {
+      source: "both",
+      conflict: createConflictReceipt(
+        command,
+        payloadFingerprint,
+        `commandId "${command.commandId}" and receiptId "${command.receiptId}" refer to different existing commands`,
+        existingByReceiptId.commandId,
+      ),
+    };
+  }
+
+  const existing = existingByCommandId ?? existingByReceiptId;
+  if (!existing) {
+    return {};
+  }
+
+  if (existing.payloadFingerprint !== payloadFingerprint) {
+    return {
+      source: existingByCommandId ? "commandId" : "receiptId",
+      conflict: createConflictReceipt(
+        command,
+        payloadFingerprint,
+        existingByCommandId
+          ? `Command "${command.commandId}" was already used for a different command`
+          : `Receipt "${command.receiptId}" was already used for a different command`,
+        existing.commandId,
+      ),
+    };
+  }
+
+  return {
+    source: existingByCommandId ? "commandId" : "receiptId",
+    existing,
   };
 }
 
@@ -502,59 +610,94 @@ export function createCommandBus(
     return next;
   };
 
+  const scheduleTask = <T>(
+    task: () => Promise<T>,
+    schedule?: (run: () => void) => void,
+  ): Promise<T> => {
+    if (!schedule) {
+      return enqueue(task);
+    }
+
+    return new Promise<T>((resolve, reject) => {
+      try {
+        schedule(() => {
+          void enqueue(task).then(resolve, reject);
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+
   return {
-    async submitCommand(commandInput) {
+    async startCommand(commandInput, options = {}) {
       const command = normalizeCommand(commandInput);
       const payloadFingerprint = fingerprintCommand(command);
-      const existing =
-        command.receiptId && receiptStore.getByReceiptId(command.receiptId);
+      const resolved = resolveExistingReceipt(
+        command,
+        receiptStore,
+        payloadFingerprint,
+      );
 
-      if (existing) {
-        if (existing.payloadFingerprint !== payloadFingerprint) {
-          const conflicted = createReceipt(
-            command,
-            "conflicted",
-            payloadFingerprint,
-          );
-          conflicted.finishedAt = Date.now();
-          conflicted.conflictWithCommandId = existing.commandId;
-          conflicted.error = {
-            name: "CommandReceiptConflict",
-            message: `Receipt "${command.receiptId}" was already used for a different command`,
-          };
-          receiptStore.save(conflicted);
-          logReceiptEvent(command.runId ? "warn" : "error", command, conflicted, "conflicted");
-          return cloneReceipt(conflicted);
+      if (resolved.conflict) {
+        if (resolved.source === "receiptId") {
+          receiptStore.save(resolved.conflict);
         }
-
-        const existingCompletion = completions.get(existing.commandId);
-        const settledExisting = existingCompletion
-          ? await existingCompletion
-          : existing;
-        const deduplicated = createReceipt(
+        logReceiptEvent(
+          command.runId ? "warn" : "error",
           command,
-          "deduplicated",
-          payloadFingerprint,
+          resolved.conflict,
+          "conflicted",
         );
-        deduplicated.startedAt = deduplicated.acceptedAt;
-        deduplicated.finishedAt = Date.now();
-        deduplicated.duplicateOfCommandId = existing.commandId;
-        if (settledExisting.result !== undefined) {
-          deduplicated.result = settledExisting.result;
+        const receipt = cloneReceipt(resolved.conflict);
+        return {
+          receipt,
+          completion: Promise.resolve(receipt),
+        };
+      }
+
+      if (resolved.existing) {
+        const existingCompletion = completions.get(resolved.existing.commandId);
+        if (resolved.source === "commandId") {
+          const receipt = cloneReceipt(resolved.existing);
+          return {
+            receipt,
+            completion: existingCompletion ?? Promise.resolve(receipt),
+          };
         }
-        if (settledExisting.error) {
-          deduplicated.error = { ...settledExisting.error };
-        }
+
+        const deduplicated = createDeduplicatedReceipt(
+          command,
+          payloadFingerprint,
+          resolved.existing,
+        );
         receiptStore.save(deduplicated);
         logReceiptEvent("log", command, deduplicated, "deduplicated");
-        return cloneReceipt(deduplicated);
+        const receipt = cloneReceipt(deduplicated);
+        const completion = existingCompletion
+          ? existingCompletion.then((settledExisting) => {
+              if (settledExisting.result !== undefined) {
+                deduplicated.result = settledExisting.result;
+              }
+              if (settledExisting.error) {
+                deduplicated.error = { ...settledExisting.error };
+              }
+              deduplicated.finishedAt = Date.now();
+              receiptStore.save(deduplicated);
+              return cloneReceipt(deduplicated);
+            })
+          : Promise.resolve(receipt);
+        return {
+          receipt,
+          completion,
+        };
       }
 
       const accepted = createReceipt(command, "accepted", payloadFingerprint);
       receiptStore.save(accepted);
       logReceiptEvent("log", command, accepted, "accepted");
 
-      const completion = enqueue(async () => {
+      const completion = scheduleTask(async () => {
         accepted.status = "running";
         accepted.startedAt = Date.now();
         receiptStore.save(accepted);
@@ -581,14 +724,22 @@ export function createCommandBus(
           });
           return cloneReceipt(accepted);
         }
-      });
+      }, options.schedule);
 
       completions.set(command.commandId, completion);
-      const settled = await completion;
-      if (settled.status !== "accepted" && settled.status !== "running") {
+      void completion.finally(() => {
         completions.delete(command.commandId);
-      }
-      return settled;
+      });
+
+      return {
+        receipt: cloneReceipt(accepted),
+        completion,
+      };
+    },
+
+    async submitCommand(commandInput) {
+      const started = await this.startCommand(commandInput);
+      return started.completion;
     },
 
     getReceipt(commandId) {
@@ -614,6 +765,13 @@ export function createCommandBus(
 }
 
 const commandBus = createCommandBus();
+
+export async function startCommand(
+  command: SubmitCommand,
+  options?: StartCommandOptions,
+): Promise<StartedCommand> {
+  return commandBus.startCommand(command, options);
+}
 
 export async function submitCommand(
   command: SubmitCommand,

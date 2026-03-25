@@ -1,5 +1,9 @@
 import { defineEventHandler, readBody, setResponseHeaders } from 'h3'
 import type { GroupedModel } from '../../../src/types/agent-settings'
+import type {
+  ProviderHealthCheck,
+  ProviderHealthState,
+} from '../../../shared/types/analysis-runtime'
 import {
   getClaudeProviderSnapshot,
   getCodexProviderSnapshot,
@@ -69,10 +73,7 @@ function toConnectResult(
   snapshot: Awaited<ReturnType<typeof getClaudeProviderSnapshot>>,
 ): ConnectResult {
   const models = mapModels(provider, snapshot.models)
-  const connected =
-    models.length > 0
-    && snapshot.health.reason !== 'not-installed'
-    && snapshot.health.reason !== 'unauthenticated'
+  const connected = isProviderConnectable(provider, snapshot.health, models)
 
   return {
     connected,
@@ -83,6 +84,49 @@ function toConnectResult(
       : {}),
     health: snapshot.health,
   }
+}
+
+function getCheckStatus(
+  health: ProviderHealthState,
+  name: ProviderHealthCheck['name'],
+): ProviderHealthCheck['status'] | undefined {
+  return health.checks?.find((check) => check.name === name)?.status
+}
+
+function hasPassingRuntimeProbe(health: ProviderHealthState): boolean {
+  return getCheckStatus(health, 'runtime') === 'pass'
+    || getCheckStatus(health, 'transport') === 'pass'
+}
+
+function isClaudeConnectable(
+  health: ProviderHealthState,
+  models: GroupedModel[],
+): boolean {
+  if (models.length === 0) return false
+  if (getCheckStatus(health, 'binary') === 'fail') return false
+  if (getCheckStatus(health, 'auth') === 'fail') return false
+  return true
+}
+
+function isCodexConnectable(
+  health: ProviderHealthState,
+  models: GroupedModel[],
+): boolean {
+  if (models.length === 0) return false
+  if (getCheckStatus(health, 'binary') !== 'pass') return false
+  if (getCheckStatus(health, 'version') !== 'pass') return false
+  if (!hasPassingRuntimeProbe(health)) return false
+  return true
+}
+
+function isProviderConnectable(
+  provider: 'anthropic' | 'openai',
+  health: ProviderHealthState,
+  models: GroupedModel[],
+): boolean {
+  return provider === 'anthropic'
+    ? isClaudeConnectable(health, models)
+    : isCodexConnectable(health, models)
 }
 
 /** Connect to Claude Code and preserve the existing renderer response shape. */

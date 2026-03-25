@@ -548,12 +548,71 @@ const VALID_PHASE_7_STRUCTURED = {
 const mockClaudeRunAnalysisPhase = vi.fn();
 const mockCodexRunAnalysisPhase = vi.fn();
 
-vi.mock("../ai/claude-adapter", () => ({
-  runAnalysisPhase: (...args: unknown[]) => mockClaudeRunAnalysisPhase(...args),
-}));
-
-vi.mock("../ai/codex-adapter", () => ({
-  runAnalysisPhase: (...args: unknown[]) => mockCodexRunAnalysisPhase(...args),
+vi.mock("../ai/adapter-contract", () => ({
+  getRuntimeAdapter: vi.fn(async (providerInput?: string) => {
+    if (
+      providerInput
+      && providerInput !== "anthropic"
+      && providerInput !== "claude"
+      && providerInput !== "openai"
+      && providerInput !== "codex"
+    ) {
+      throw new Error(`Unknown provider: ${providerInput}`);
+    }
+    const isCodex = providerInput === "openai" || providerInput === "codex";
+    const runStructuredTurn = isCodex
+      ? mockCodexRunAnalysisPhase
+      : mockClaudeRunAnalysisPhase;
+    return {
+      provider: isCodex ? "codex" : "claude",
+      createSession(key: { ownerId: string; runId?: string }) {
+        return {
+          provider: isCodex ? "codex" : "claude",
+          key,
+          streamChatTurn: vi.fn(),
+          runStructuredTurn<T = unknown>(input: {
+            prompt: string;
+            systemPrompt: string;
+            model: string;
+            schema: Record<string, unknown>;
+            maxTurns?: number;
+            runId?: string;
+            signal?: AbortSignal;
+            webSearch?: boolean;
+            onActivity?: unknown;
+          }) {
+            return runStructuredTurn(
+              input.prompt,
+              input.systemPrompt,
+              input.model,
+              input.schema,
+              {
+                signal: input.signal,
+                runId: input.runId,
+                maxTurns: input.maxTurns,
+                webSearch: input.webSearch,
+                onActivity: input.onActivity,
+              },
+            ) as Promise<T>;
+          },
+          getDiagnostics: vi.fn(() => ({
+            provider: isCodex ? "codex" : "claude",
+            sessionId: "test-analysis-service-session",
+            details: { ownerId: key.ownerId },
+          })),
+          dispose: vi.fn(async () => {}),
+        };
+      },
+      listModels: vi.fn(async () => []),
+      checkHealth: vi.fn(async () => ({
+        provider: isCodex ? "codex" : "claude",
+        status: "healthy",
+        reason: null,
+        checkedAt: Date.now(),
+        checks: [],
+      })),
+    };
+  }),
 }));
 
 // ── Tests ──
