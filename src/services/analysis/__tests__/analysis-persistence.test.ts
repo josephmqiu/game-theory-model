@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { saveAnalysis } from "@/services/analysis/analysis-persistence";
+import {
+  createAnalysisSavePayload,
+  loadAnalysisFromText,
+  saveAnalysis,
+} from "@/services/analysis/analysis-persistence";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 
 describe("analysis-persistence", () => {
@@ -21,6 +25,13 @@ describe("analysis-persistence", () => {
       writable: true,
       value: vi.fn(),
     });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+      }),
+    );
   });
 
   afterEach(() => {
@@ -103,5 +114,112 @@ describe("analysis-persistence", () => {
     expect(createObjectURL).not.toHaveBeenCalled();
     expect(alertSpy).not.toHaveBeenCalled();
     expect(useEntityGraphStore.getState().isDirty).toBe(true);
+  });
+
+  it("creates a v4 workspace save payload", () => {
+    const payload = createAnalysisSavePayload();
+    const parsed = JSON.parse(payload.text);
+
+    expect(parsed.type).toBe("game-theory-workspace");
+    expect(parsed.version).toBe(4);
+    expect(parsed.workspace.id).toBeTypeOf("string");
+    expect(parsed.workspace.analysis).toBeDefined();
+    expect(parsed.workspace.layout).toBeDefined();
+  });
+
+  it("loads a legacy v3 file into the current analysis store", async () => {
+    const legacyFile = JSON.stringify({
+      type: "game-theory-analysis",
+      version: 3,
+      analysis: {
+        id: "analysis-1",
+        name: "Trade War Analysis",
+        topic: "US-China trade tensions",
+        entities: [
+          {
+            id: "e1",
+            type: "fact",
+            phase: "situational-grounding",
+            data: {
+              type: "fact",
+              date: "2025-03-01",
+              source: "Reuters",
+              content: "New tariffs announced",
+              category: "action",
+            },
+            confidence: "high",
+            source: "human",
+            rationale: "Directly reported",
+            revision: 1,
+            stale: false,
+          },
+        ],
+        relationships: [],
+        phases: [
+          {
+            phase: "situational-grounding",
+            status: "complete",
+            entityIds: ["e1"],
+          },
+        ],
+      },
+      layout: {
+        e1: { x: 100, y: 200, pinned: true },
+      },
+    });
+
+    await loadAnalysisFromText(legacyFile, {
+      fileName: "trade-war.gta",
+      filePath: "/tmp/trade-war.gta",
+      fileHandle: null,
+    });
+
+    const state = useEntityGraphStore.getState();
+    expect(state.analysis.id).toBe("analysis-1");
+    expect(state.analysis.entities).toHaveLength(1);
+    expect(state.layout.e1).toEqual({ x: 100, y: 200, pinned: true });
+    expect(state.fileName).toBe("trade-war.gta");
+    expect(state.filePath).toBe("/tmp/trade-war.gta");
+  });
+
+  it("preserves loaded workspace metadata across later saves", async () => {
+    await loadAnalysisFromText(
+      JSON.stringify({
+        type: "game-theory-workspace",
+        version: 4,
+        workspace: {
+          id: "workspace-1",
+          name: "Trade War Workspace",
+          analysisType: "game-theory",
+          createdAt: 123,
+          updatedAt: 456,
+          analysis: {
+            id: "analysis-1",
+            name: "Trade War Analysis",
+            topic: "US-China trade tensions",
+            entities: [],
+            relationships: [],
+            phases: [],
+          },
+          layout: {},
+          threads: [],
+          artifacts: [],
+          checkpointHeaders: [],
+          pendingQuestions: [],
+        },
+      }),
+      {
+        fileName: "trade-war.gta",
+        filePath: "/tmp/trade-war.gta",
+        fileHandle: null,
+      },
+    );
+
+    const payload = createAnalysisSavePayload();
+    const parsed = JSON.parse(payload.text);
+
+    expect(parsed.workspace.id).toBe("workspace-1");
+    expect(parsed.workspace.createdAt).toBe(123);
+    expect(parsed.workspace.updatedAt).toBeGreaterThanOrEqual(456);
   });
 });

@@ -7,6 +7,7 @@ export const GAME_THEORY_ANALYZER_USER_DATA_DIR_ENV =
 export const LEGACY_RUNTIME_DIR_NAME = '.game-theory-analyzer'
 export const PORT_FILE_NAME = '.port'
 export const CLAUDE_RUNTIME_DIR_NAME = 'claude-runtime'
+export const WORKSPACE_DATABASE_FILE_NAME = 'workspace-state.sqlite'
 
 type EnvLike = Record<string, string | undefined>
 
@@ -104,6 +105,15 @@ export function getPortFileReadCandidates(
 
 export function getServerLogDir(options?: RuntimeStatePathOptions): string {
   return join(getWritableRuntimeStateDir(options), 'logs')
+}
+
+export function getWorkspaceDatabasePath(
+  options?: RuntimeStatePathOptions,
+): string {
+  return join(
+    getWritableRuntimeStateDir(options),
+    WORKSPACE_DATABASE_FILE_NAME,
+  )
 }
 
 export function getClaudeRuntimeDir(

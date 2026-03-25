@@ -50,7 +50,7 @@ const defaultHandlers: CommandHandlerMap = {
     const now = Date.now();
     getWorkspaceDatabase().workspaces.upsertWorkspace(
       createWorkspaceRecordFromSnapshot({
-        id: analysis.id,
+        id: command.workspaceId ?? analysis.id,
         name: analysis.name,
         analysisType: "game-theory",
         snapshot: {

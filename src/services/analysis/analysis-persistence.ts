@@ -1,11 +1,13 @@
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { layoutEntities } from "@/services/entity/entity-layout";
 import type { Analysis, AnalysisFileReference, LayoutState } from "@/types/entity";
+import type { Workspace } from "@/types/workspace";
 import {
   AnalysisFileError,
+  createWorkspaceFromAnalysis,
   createDefaultAnalysisFileName,
-  parseAnalysisFileText,
-  serializeAnalysisFile,
+  parseWorkspaceFileText,
+  serializeWorkspaceFile,
 } from "./analysis-file";
 
 export type AnalysisPersistenceSource = Partial<AnalysisFileReference>;
@@ -22,6 +24,14 @@ interface PickerWindow extends Window {
 
 const ANALYSIS_FILE_EXTENSION = ".gta";
 const ANALYSIS_FILE_DESCRIPTION = "Game Theory Analyzer Files";
+const WORKSPACE_SYNC_ENDPOINT = "/api/workspace/state";
+
+type WorkspacePersistenceSource = Partial<AnalysisFileReference>;
+
+let currentWorkspace: Pick<
+  Workspace,
+  "id" | "name" | "createdAt" | "updatedAt"
+> | null = null;
 
 function isPickerWindow(windowValue: Window): windowValue is PickerWindow {
   return (
@@ -88,6 +98,68 @@ function getPickerAccept(): Record<string, string[]> {
   return {
     "application/json": [ANALYSIS_FILE_EXTENSION],
   };
+}
+
+function rememberWorkspace(workspace: Workspace): void {
+  currentWorkspace = {
+    id: workspace.id,
+    name: workspace.name,
+    createdAt: workspace.createdAt,
+    updatedAt: workspace.updatedAt,
+  };
+}
+
+function buildWorkspaceSnapshot(
+  state = useEntityGraphStore.getState(),
+  timestamp = Date.now(),
+): Workspace {
+  const fallbackName =
+    state.analysis.name.trim() || state.analysis.topic.trim() || "Untitled Workspace";
+
+  const workspace = createWorkspaceFromAnalysis(state.analysis, state.layout, {
+    id: currentWorkspace?.id ?? state.analysis.id,
+    name: fallbackName,
+    createdAt: currentWorkspace?.createdAt ?? timestamp,
+    updatedAt: timestamp,
+  });
+
+  rememberWorkspace(workspace);
+  return workspace;
+}
+
+async function syncWorkspaceState(
+  workspace: Workspace,
+  source?: WorkspacePersistenceSource,
+): Promise<void> {
+  try {
+    const response = await fetch(WORKSPACE_SYNC_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        workspace: {
+          id: workspace.id,
+          name: workspace.name,
+          analysisType: workspace.analysisType,
+          createdAt: workspace.createdAt,
+          updatedAt: workspace.updatedAt,
+        },
+        snapshot: workspace,
+        fileName: source?.fileName ?? null,
+        filePath: source?.filePath ?? null,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`workspace sync failed with status ${response.status}`);
+    }
+  } catch (error) {
+    console.warn(
+      "[workspace-sync] failed",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
 }
 
 async function confirmDiscardBeforeOpen(): Promise<boolean> {
@@ -209,11 +281,14 @@ export function createAnalysisSavePayload(
 ): {
   text: string;
   fileName: string;
+  workspace: Workspace;
   source: AnalysisFileReference;
 } {
+  const workspace = buildWorkspaceSnapshot(state);
   return {
-    text: serializeAnalysisFile(state.analysis, state.layout),
+    text: serializeWorkspaceFile(workspace),
     fileName: state.fileName ?? createDefaultAnalysisFileName(state.analysis),
+    workspace,
     source: {
       fileName: state.fileName,
       filePath: state.filePath,
@@ -261,6 +336,7 @@ export async function saveAnalysisAs(): Promise<boolean> {
       filePath: source.filePath ?? undefined,
       fileHandle: source.fileHandle ?? undefined,
     });
+    await syncWorkspaceState(payload.workspace, source);
     return true;
   } catch (error) {
     if (isUserAbortError(error)) {
@@ -310,6 +386,7 @@ export async function saveAnalysis(): Promise<boolean> {
         filePath: source.filePath ?? undefined,
         fileHandle: source.fileHandle ?? undefined,
       });
+      await syncWorkspaceState(payload.workspace, source);
       return true;
     }
 
@@ -320,6 +397,10 @@ export async function saveAnalysis(): Promise<boolean> {
       );
 
       useEntityGraphStore.getState().commitSave({
+        fileName: getFileNameFromPath(filePath),
+        filePath,
+      });
+      await syncWorkspaceState(payload.workspace, {
         fileName: getFileNameFromPath(filePath),
         filePath,
       });
@@ -342,11 +423,12 @@ export async function saveAnalysis(): Promise<boolean> {
   }
 }
 
-export function loadAnalysisFromText(
+export async function loadAnalysisFromText(
   text: string,
   source?: AnalysisPersistenceSource,
-): void {
-  const { analysis, layout } = parseAnalysisFileText(text);
+): Promise<void> {
+  const { workspace, analysis, layout } = parseWorkspaceFileText(text);
+  rememberWorkspace(workspace);
   useEntityGraphStore.getState().loadAnalysis(
     analysis,
     buildResolvedLayout(analysis, layout),
@@ -356,6 +438,16 @@ export function loadAnalysisFromText(
       fileHandle: source?.fileHandle ?? undefined,
     },
   );
+  await syncWorkspaceState(workspace, source);
+}
+
+export async function initializeWorkspacePersistence(): Promise<void> {
+  const workspace = buildWorkspaceSnapshot();
+  await syncWorkspaceState(workspace, {
+    fileName: null,
+    filePath: null,
+    fileHandle: null,
+  });
 }
 
 export async function openAnalysisFromPath(filePath: string): Promise<boolean> {
@@ -369,7 +461,7 @@ export async function openAnalysisFromPath(filePath: string): Promise<boolean> {
       return false;
     }
 
-    loadAnalysisFromText(result.content, {
+    await loadAnalysisFromText(result.content, {
       fileName: getFileNameFromPath(result.filePath),
       filePath: result.filePath,
       fileHandle: null,
@@ -402,7 +494,7 @@ export async function openAnalysis(): Promise<boolean> {
         return false;
       }
 
-      loadAnalysisFromText(result.content, {
+      await loadAnalysisFromText(result.content, {
         fileName: getFileNameFromPath(result.filePath),
         filePath: result.filePath,
         fileHandle: null,
@@ -429,7 +521,7 @@ export async function openAnalysis(): Promise<boolean> {
 
       const file = await handle.getFile();
       const text = await file.text();
-      loadAnalysisFromText(text, {
+      await loadAnalysisFromText(text, {
         fileName: file.name,
         fileHandle: handle,
         filePath: null,
@@ -450,7 +542,7 @@ export async function openAnalysis(): Promise<boolean> {
 
         try {
           const text = await file.text();
-          loadAnalysisFromText(text, {
+          await loadAnalysisFromText(text, {
             fileName: file.name,
             filePath: null,
             fileHandle: null,

@@ -5,6 +5,7 @@ import {
   getLegacyPortFilePath,
   getPortFileReadCandidates,
   getServerLogDir,
+  getWorkspaceDatabasePath,
   getWritableRuntimeStateDir,
 } from '../runtime-state-paths'
 
@@ -25,6 +26,9 @@ describe('runtime-state-paths', () => {
   it('falls back to the legacy home-dir location when no packaged dir is configured', () => {
     expect(getWritableRuntimeStateDir({ homeDir: '/Users/tester' })).toBe(
       '/Users/tester/.game-theory-analyzer',
+    )
+    expect(getWorkspaceDatabasePath({ homeDir: '/Users/tester' })).toBe(
+      '/Users/tester/.game-theory-analyzer/workspace-state.sqlite',
     )
   })
 

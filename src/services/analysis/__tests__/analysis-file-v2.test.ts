@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Analysis, LayoutState } from "@/types/entity";
 import type { PhaseState } from "@/types/methodology";
+import type { Workspace } from "@/types/workspace";
 import {
+  createWorkspaceFromAnalysis,
+  parseWorkspaceFileText,
   parseAnalysisFileText,
   serializeAnalysisFile,
+  serializeWorkspaceFile,
   createDefaultAnalysisFileName,
 } from "@/services/analysis/analysis-file";
 
@@ -46,6 +50,15 @@ function createTestLayout(): LayoutState {
   return {
     e1: { x: 100, y: 200, pinned: true },
   };
+}
+
+function createTestWorkspace(): Workspace {
+  return createWorkspaceFromAnalysis(createTestAnalysis(), createTestLayout(), {
+    id: "workspace-1",
+    name: "Trade War Workspace",
+    createdAt: 1_741_000_000_000,
+    updatedAt: 1_741_000_001_000,
+  });
 }
 
 describe("v3 entity analysis file format", () => {
@@ -94,6 +107,67 @@ describe("v3 entity analysis file format", () => {
     expect(parsed.analysis.relationships).toHaveLength(1);
     expect(parsed.analysis.relationships[0]).toEqual(analysis.relationships[0]);
     expect(parsed.layout.e2).toEqual({ x: 300, y: 400, pinned: false });
+  });
+
+  it("loads legacy v3 analysis-root files into a workspace envelope", () => {
+    const analysis = createTestAnalysis();
+    const layout = createTestLayout();
+    const legacyFile = JSON.stringify({
+      type: "game-theory-analysis",
+      version: 3,
+      analysis,
+      layout,
+    });
+
+    const parsed = parseWorkspaceFileText(legacyFile);
+
+    expect(parsed.analysis).toEqual(analysis);
+    expect(parsed.layout).toEqual(layout);
+    expect(parsed.workspace.analysis).toEqual(analysis);
+    expect(parsed.workspace.layout).toEqual(layout);
+    expect(parsed.workspace.analysisType).toBe("game-theory");
+    expect(parsed.workspace.threads).toEqual([]);
+    expect(parsed.workspace.artifacts).toEqual([]);
+    expect(parsed.workspace.checkpointHeaders).toEqual([]);
+    expect(parsed.workspace.pendingQuestions).toEqual([]);
+  });
+
+  it("round-trips a v4 workspace envelope", () => {
+    const workspace = createTestWorkspace();
+
+    const text = serializeWorkspaceFile(workspace);
+    const parsed = parseWorkspaceFileText(text);
+
+    expect(parsed.workspace).toEqual(workspace);
+    expect(parsed.analysis).toEqual(workspace.analysis);
+    expect(parsed.layout).toEqual(workspace.layout);
+  });
+
+  it("always saves analysis files as the workspace envelope format", () => {
+    const text = serializeAnalysisFile(createTestAnalysis(), createTestLayout());
+    const parsed = JSON.parse(text);
+
+    expect(parsed.type).toBe("game-theory-workspace");
+    expect(parsed.version).toBe(4);
+    expect(parsed.workspace.analysis).toBeDefined();
+    expect(parsed.workspace.layout).toBeDefined();
+  });
+
+  it("rejects non-portable runtime fields in workspace files", () => {
+    const workspace = {
+      ...createTestWorkspace(),
+      providerSessionBindings: [{ threadId: "thread-1", sessionId: "sess-1" }],
+    };
+
+    expect(() =>
+      parseWorkspaceFileText(
+        JSON.stringify({
+          type: "game-theory-workspace",
+          version: 4,
+          workspace,
+        }),
+      ),
+    ).toThrow("workspace.providerSessionBindings is not portable");
   });
 
   it("rejects v1 files with an upgrade message", () => {
@@ -189,5 +263,14 @@ describe("v3 entity analysis file format", () => {
     expect(createDefaultAnalysisFileName(analysis)).toBe(
       "untitled-analysis.gta",
     );
+  });
+
+  it("serialized workspaces do not include runtime logs or command receipts", () => {
+    const text = serializeWorkspaceFile(createTestWorkspace());
+
+    expect(text).not.toContain("providerSessionBindings");
+    expect(text).not.toContain("commandReceipts");
+    expect(text).not.toContain("runtimeLogs");
+    expect(text).not.toContain('"logs"');
   });
 });

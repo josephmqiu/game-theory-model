@@ -1,0 +1,122 @@
+import { existsSync, mkdirSync, unlinkSync } from "node:fs";
+import { dirname } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { getWorkspaceDatabasePath } from "./workspace-db-path";
+import { initializeWorkspaceSchema } from "./workspace-schema";
+import { createActivityRepository } from "./activity-repository";
+import { createMessageRepository } from "./message-repository";
+import { createProviderSessionBindingRepository } from "./provider-session-binding-repository";
+import { createRunRepository } from "./run-repository";
+import { createThreadRepository } from "./thread-repository";
+import { createWorkspaceRepository } from "./workspace-repository";
+import { createSqliteCommandReceiptStore } from "./command-receipt-repository";
+import type { ActivityRepository } from "./activity-repository";
+import type { MessageRepository } from "./message-repository";
+import type { ProviderSessionBindingRepository } from "./provider-session-binding-repository";
+import type { RunRepository } from "./run-repository";
+import type { ThreadRepository } from "./thread-repository";
+import type { WorkspaceRepository } from "./workspace-repository";
+import type { CommandReceiptStore } from "../command-bus";
+
+export interface WorkspaceDatabaseOptions {
+  databasePath?: string;
+}
+
+export interface WorkspaceDatabase {
+  databasePath: string;
+  db: DatabaseSync;
+  workspaces: WorkspaceRepository;
+  threads: ThreadRepository;
+  messages: MessageRepository;
+  activities: ActivityRepository;
+  runs: RunRepository;
+  providerSessionBindings: ProviderSessionBindingRepository;
+  commandReceipts: CommandReceiptStore;
+  close(): void;
+  resetForTest(): void;
+}
+
+let sharedWorkspaceDatabase: WorkspaceDatabase | null = null;
+
+function openWorkspaceDatabase(databasePath: string): DatabaseSync {
+  if (databasePath !== ":memory:") {
+    mkdirSync(dirname(databasePath), { recursive: true });
+  }
+
+  return new DatabaseSync(databasePath, {
+    enableForeignKeyConstraints: true,
+    timeout: 5_000,
+  });
+}
+
+export function createWorkspaceDatabase(
+  options: WorkspaceDatabaseOptions = {},
+): WorkspaceDatabase {
+  const databasePath = options.databasePath ?? getWorkspaceDatabasePath();
+  const db = openWorkspaceDatabase(databasePath);
+  initializeWorkspaceSchema(db);
+
+  const workspaces = createWorkspaceRepository(db);
+  const threads = createThreadRepository(db);
+  const messages = createMessageRepository(db);
+  const activities = createActivityRepository(db);
+  const runs = createRunRepository(db);
+  const providerSessionBindings = createProviderSessionBindingRepository(db);
+  const commandReceipts = createSqliteCommandReceiptStore(db);
+
+  return {
+    databasePath,
+    db,
+    workspaces,
+    threads,
+    messages,
+    activities,
+    runs,
+    providerSessionBindings,
+    commandReceipts,
+    close() {
+      if (db.isOpen) {
+        db.close();
+      }
+    },
+    resetForTest() {
+      if (db.isOpen) {
+        db.exec(`
+          DELETE FROM command_receipts;
+          DELETE FROM provider_session_bindings;
+          DELETE FROM activities;
+          DELETE FROM messages;
+          DELETE FROM runs;
+          DELETE FROM threads;
+          DELETE FROM workspaces;
+        `);
+      }
+    },
+  };
+}
+
+export function getWorkspaceDatabase(): WorkspaceDatabase {
+  if (!sharedWorkspaceDatabase) {
+    sharedWorkspaceDatabase = createWorkspaceDatabase();
+  }
+  return sharedWorkspaceDatabase;
+}
+
+export function resetWorkspaceDatabaseForTest(): void {
+  if (!sharedWorkspaceDatabase) {
+    return;
+  }
+
+  const { databasePath, close } = sharedWorkspaceDatabase;
+  close();
+  sharedWorkspaceDatabase = null;
+
+  if (databasePath !== ":memory:" && existsSync(databasePath)) {
+    try {
+      unlinkSync(databasePath);
+    } catch {
+      // Best-effort cleanup for test isolation.
+    }
+  }
+}
+

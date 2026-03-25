@@ -28,6 +28,7 @@ import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { initAppStorage } from "@/utils/app-storage";
 import * as analysisClient from "@/services/ai/analysis-client";
 import {
+  initializeWorkspacePersistence,
   openAnalysis,
   openAnalysisFromPath,
 } from "@/services/analysis/analysis-persistence";
@@ -110,7 +111,7 @@ export default function EditorLayout() {
     [clearEditorChrome],
   );
 
-  const handleNewAnalysis = useCallback(() => {
+  const handleNewAnalysis = useCallback(async () => {
     const state = useEntityGraphStore.getState();
     if (state.isDirty) {
       const confirmed = window.confirm(t("analysis.unsavedChanges"));
@@ -122,6 +123,7 @@ export default function EditorLayout() {
     analysisClient.abort();
     clearEditorChrome();
     useEntityGraphStore.getState().newAnalysis("");
+    await initializeWorkspacePersistence();
   }, [clearEditorChrome, t]);
 
   const startOrchestrator = useCallback(
