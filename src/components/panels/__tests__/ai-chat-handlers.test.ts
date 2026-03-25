@@ -113,11 +113,14 @@ describe("ai-chat tool lifecycle helpers", () => {
     expect(pendingToolMsgIds.size).toBe(0);
   });
 
-  it("uses the canonical thread request path instead of renderer-owned history stuffing", () => {
+  it("does not import renderer-local context optimization or system prompt building", () => {
     const source = readFileSync(aiChatHandlersPath, "utf8");
 
-    expect(source).toContain("useCanonicalThreadRequest: true");
-    expect(source).not.toContain("trimChatHistory(");
-    expect(source).toContain("setWorkspaceThread(identity)");
+    // The renderer should not build system prompts or trim history locally.
+    // These responsibilities moved to the server-owned chat service in Phase 6.
+    expect(source).not.toContain("trimChatHistory");
+    expect(source).not.toContain("buildChatSystemPrompt");
+    expect(source).not.toContain("buildEntityGraphContext");
+    expect(source).not.toContain("BLANK_CANVAS_CHAT_SYSTEM_PROMPT");
   });
 });

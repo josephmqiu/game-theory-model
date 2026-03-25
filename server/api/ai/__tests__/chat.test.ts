@@ -120,9 +120,57 @@ describe("/api/ai/chat", () => {
       "workspace-1:primary-thread",
     );
     expect(storedMessages).toHaveLength(2);
-    expect(storedMessages.map((message) => [message.role, message.content])).toEqual([
+    expect(
+      storedMessages.map((message) => [message.role, message.content]),
+    ).toEqual([
       ["user", "hello"],
       ["assistant", "Hello back"],
+    ]);
+  });
+
+  it("records a failure activity and partial assistant message when streaming throws", async () => {
+    codexStreamChatMock.mockImplementation(async function* () {
+      yield { type: "text_delta", content: "Partial " };
+      yield { type: "text_delta", content: "response" };
+      throw new Error("Connection lost");
+    });
+
+    readBodyMock.mockResolvedValue({
+      workspaceId: "workspace-err",
+      message: { content: "test error path" },
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+
+    const route = (await import("../chat")).default;
+    const response = await route({} as never);
+
+    expect(response).toBeInstanceOf(Response);
+    if (!(response instanceof Response)) {
+      throw new Error("Expected a response");
+    }
+
+    const body = await response.text();
+    expect(body).toContain('"type":"text_delta"');
+    expect(body).toContain('"type":"error"');
+    expect(body).toContain("Connection lost");
+
+    const threadId = response.headers.get("X-Thread-Id")!;
+    const database = getWorkspaceDatabase();
+
+    const storedMessages = database.messages.listMessagesByThreadId(threadId);
+    expect(storedMessages).toHaveLength(2);
+    expect(storedMessages[0].content).toBe("test error path");
+    expect(storedMessages[1].content).toBe("Partial response");
+
+    const activities = database.activities.listActivitiesByThreadId(threadId);
+    expect(activities).toEqual([
+      expect.objectContaining({
+        scope: "chat-turn",
+        kind: "note",
+        status: "failed",
+        message: "Connection lost",
+      }),
     ]);
   });
 
@@ -148,10 +196,10 @@ describe("/api/ai/chat", () => {
     await response.text();
 
     const threadId =
-      response.headers.get("X-Thread-Id") ?? "workspace-local-default:primary-thread";
-    const storedMessages = getWorkspaceDatabase().messages.listMessagesByThreadId(
-      threadId,
-    );
+      response.headers.get("X-Thread-Id") ??
+      "workspace-local-default:primary-thread";
+    const storedMessages =
+      getWorkspaceDatabase().messages.listMessagesByThreadId(threadId);
     expect(storedMessages.map((message) => message.content)).toEqual([
       "Follow up",
       "Hello back",
