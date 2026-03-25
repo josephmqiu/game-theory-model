@@ -19,12 +19,32 @@ export type ProviderHealthReason =
   | "process"
   | "unknown";
 
+export type ProviderHealthCheckName =
+  | "binary"
+  | "version"
+  | "auth"
+  | "transport"
+  | "runtime"
+  | "models";
+
+export type ProviderHealthCheckStatus = "pass" | "warn" | "fail" | "unknown";
+
+export interface ProviderHealthCheck {
+  name: ProviderHealthCheckName;
+  status: ProviderHealthCheckStatus;
+  message?: string;
+  observedValue?: string;
+}
+
 export interface ProviderHealthState {
   provider?: RuntimeProvider;
   status: "unknown" | "healthy" | "degraded" | "unavailable";
   reason: ProviderHealthReason | null;
   message?: string;
   checkedAt: number;
+  binaryPath?: string;
+  version?: string;
+  checks?: ProviderHealthCheck[];
 }
 
 export interface RuntimeModelCapabilities {

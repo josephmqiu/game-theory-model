@@ -19,8 +19,7 @@ import {
 import { serverLog } from "../../utils/ai-logger";
 import { createProcessRuntimeError } from "../../../shared/types/runtime-error";
 import * as entityGraphService from "../../services/entity-graph-service";
-import { streamChat as claudeStreamChat } from "../../services/ai/claude-adapter";
-import { streamChat as codexStreamChat } from "../../services/ai/codex-adapter";
+import { getRuntimeAdapter } from "../../services/ai/adapter-contract";
 
 const ALLOWED_PROVIDERS = ["anthropic", "openai"] as const;
 
@@ -255,27 +254,37 @@ function streamViaCodexAdapter(
         // Inject conversation history into system prompt so multi-turn
         // context survives the single-prompt SDK limitation.
         const effectiveSystemPrompt = buildEffectiveSystemPrompt(body);
+        const adapter = await getRuntimeAdapter("openai");
+        const session = adapter.createSession({
+          ownerId: runId ?? "chat-codex",
+          ...(runId ? { runId } : {}),
+        });
 
-        for await (const ev of codexStreamChat(
-          prompt,
-          effectiveSystemPrompt,
-          model ?? "o3-mini",
-          { runId, signal: abortController.signal },
-        )) {
-          clearInterval(pingTimer);
-          // Emit ChatEvent objects directly — client normalizeChunk() handles them
-          if (
-            ev.type === "text_delta" ||
-            ev.type === "tool_call_start" ||
-            ev.type === "tool_call_result" ||
-            ev.type === "tool_call_error" ||
-            ev.type === "error"
-          ) {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify(ev)}\n\n`),
-            );
+        try {
+          for await (const ev of session.streamChatTurn({
+            prompt,
+            systemPrompt: effectiveSystemPrompt,
+            model: model ?? "o3-mini",
+            runId,
+            signal: abortController.signal,
+          })) {
+            clearInterval(pingTimer);
+            // Emit ChatEvent objects directly — client normalizeChunk() handles them
+            if (
+              ev.type === "text_delta" ||
+              ev.type === "tool_call_start" ||
+              ev.type === "tool_call_result" ||
+              ev.type === "tool_call_error" ||
+              ev.type === "error"
+            ) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(ev)}\n\n`),
+              );
+            }
+            // turn_complete is handled after the loop
           }
-          // turn_complete is handled after the loop
+        } finally {
+          await session.dispose();
         }
 
         serverLog(runId, "chat", "stream-complete");
@@ -380,27 +389,37 @@ function streamViaClaude(
         // Inject conversation history into system prompt so multi-turn
         // context survives the single-prompt SDK limitation.
         const effectiveSystemPrompt = buildEffectiveSystemPrompt(body);
+        const adapter = await getRuntimeAdapter("anthropic");
+        const session = adapter.createSession({
+          ownerId: runId ?? "chat-claude",
+          ...(runId ? { runId } : {}),
+        });
 
-        for await (const ev of claudeStreamChat(
-          prompt,
-          effectiveSystemPrompt,
-          model ?? "claude-sonnet-4-6",
-          { runId, signal: abortController.signal },
-        )) {
-          clearInterval(pingTimer);
-          // Emit ChatEvent objects directly — client normalizeChunk() handles them
-          if (
-            ev.type === "text_delta" ||
-            ev.type === "tool_call_start" ||
-            ev.type === "tool_call_result" ||
-            ev.type === "tool_call_error" ||
-            ev.type === "error"
-          ) {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify(ev)}\n\n`),
-            );
+        try {
+          for await (const ev of session.streamChatTurn({
+            prompt,
+            systemPrompt: effectiveSystemPrompt,
+            model: model ?? "claude-sonnet-4-6",
+            runId,
+            signal: abortController.signal,
+          })) {
+            clearInterval(pingTimer);
+            // Emit ChatEvent objects directly — client normalizeChunk() handles them
+            if (
+              ev.type === "text_delta" ||
+              ev.type === "tool_call_start" ||
+              ev.type === "tool_call_result" ||
+              ev.type === "tool_call_error" ||
+              ev.type === "error"
+            ) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(ev)}\n\n`),
+              );
+            }
+            // turn_complete is handled after the loop
           }
-          // turn_complete is handled after the loop
+        } finally {
+          await session.dispose();
         }
 
         serverLog(runId, "chat", "stream-complete");

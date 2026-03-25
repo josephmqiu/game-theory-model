@@ -58,10 +58,13 @@ import {
 
 let mainWindow: BrowserWindow | null = null;
 let nitroProcess: ChildProcess | null = null;
+let nitroShutdownPromise: Promise<void> | null = null;
+let isShuttingDown = false;
 let serverPort = 0;
 let pendingFilePath: string | null = null;
 const APP_NAME = "Game Theory Analyzer";
 const SMOKE_READY_FILE_NAME = "smoke-ready.json";
+const NITRO_SHUTDOWN_TIMEOUT_MS = 2000;
 const ANALYSIS_FILE_EXTENSION = ".gta";
 const ANALYSIS_FILE_FILTER: OpenDialogOptions["filters"] = [
   {
@@ -261,7 +264,7 @@ async function startNitroServer(): Promise<number> {
 
   return new Promise((resolve, reject) => {
     let settled = false;
-    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+    let readinessTimer: ReturnType<typeof setTimeout> | null = null;
     const child = fork(entry, [], {
       env: buildNitroChildEnv(process.env, {
         host: NITRO_HOST,
@@ -277,15 +280,20 @@ async function startNitroServer(): Promise<number> {
     const settleResolve = () => {
       if (settled) return;
       settled = true;
-      if (fallbackTimer) clearTimeout(fallbackTimer);
+      if (readinessTimer) clearTimeout(readinessTimer);
       resolve(port);
     };
 
     const settleReject = (error: Error) => {
       if (settled) return;
       settled = true;
-      if (fallbackTimer) clearTimeout(fallbackTimer);
+      if (readinessTimer) clearTimeout(readinessTimer);
       reject(error);
+    };
+
+    const shutdownOnFailure = () => {
+      isShuttingDown = true;
+      void stopNitroProcess(child);
     };
 
     child.stdout?.on("data", (data: Buffer) => {
@@ -302,22 +310,34 @@ async function startNitroServer(): Promise<number> {
     });
 
     child.on("error", (error) => {
+      log.error(
+        `[nitro] spawn error: ${error instanceof Error ? error.message : String(error)}`,
+      );
       settleReject(
         error instanceof Error ? error : new Error(String(error)),
       );
+      shutdownOnFailure();
     });
-    child.on("exit", (code) => {
+    child.on("exit", (code, signal) => {
+      log.info(
+        `[nitro] exit code=${code ?? "unknown"} signal=${signal ?? "unknown"}`,
+      );
       if (!settled) {
         settleReject(
-          new Error(`Nitro exited before readiness with code ${code ?? "unknown"}`),
+          new Error(
+            `Nitro exited before readiness with code ${code ?? "unknown"} signal ${signal ?? "unknown"}`,
+          ),
         );
       }
       if (code !== 0 && code !== null) {
-        log.error(`Nitro exited with code ${code}`);
+        log.error(
+          `[nitro] exited with code=${code} signal=${signal ?? "unknown"}`,
+        );
       }
       nitroProcess = null;
       // Auto-restart Nitro server if it crashes while app is running
       if (
+        !isShuttingDown &&
         code !== 0 &&
         code !== null &&
         mainWindow &&
@@ -339,13 +359,20 @@ async function startNitroServer(): Promise<number> {
       }
     });
 
-    // Fallback: if no stdout "ready" message comes, wait then resolve anyway.
+    // Bounded startup timeout: if Nitro never reports readiness, fail fast.
     // Use longer timeout on Windows (slower process creation).
-    const fallbackMs =
+    const readinessTimeoutMs =
       process.platform === "win32"
         ? NITRO_FALLBACK_TIMEOUT_WIN
         : NITRO_FALLBACK_TIMEOUT_DEFAULT;
-    fallbackTimer = setTimeout(() => settleResolve(), fallbackMs);
+    readinessTimer = setTimeout(() => {
+      const error = new Error(
+        `Nitro did not become ready within ${readinessTimeoutMs}ms`,
+      );
+      log.error(`[nitro] ${error.message}`);
+      settleReject(error);
+      shutdownOnFailure();
+    }, readinessTimeoutMs);
   });
 }
 
@@ -376,16 +403,22 @@ function handleStartupFailure(err: unknown, title: string): void {
   const detail = err instanceof Error ? err.message : String(err);
   log.error(`${title}: ${detail}`);
 
-  if (isSmokeTestMode) {
-    app.exit(1);
-    return;
-  }
+  isShuttingDown = true;
 
-  dialog.showErrorBox(
-    APP_NAME,
-    `${title}.\n\n${detail}\n\nThe application will now quit.`,
-  );
-  app.quit();
+  const exit = () => {
+    if (isSmokeTestMode) {
+      app.exit(1);
+      return;
+    }
+
+    dialog.showErrorBox(
+      APP_NAME,
+      `${title}.\n\n${detail}\n\nThe application will now quit.`,
+    );
+    app.quit();
+  };
+
+  void stopNitroProcess().finally(exit);
 }
 
 // ---------------------------------------------------------------------------
@@ -853,35 +886,78 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", async () => {
+  isShuttingDown = true;
   clearUpdateTimer();
   await cleanupSmokeReadyFile();
   await cleanupPortFile();
-  killNitroProcess();
+  void stopNitroProcess();
 });
 
-/** Platform-aware Nitro process termination. */
-function killNitroProcess(): void {
-  if (!nitroProcess) return;
-  if (process.platform === "win32") {
-    // SIGTERM is unreliable on Windows; use taskkill for proper tree-kill
-    try {
-      const pid = nitroProcess.pid;
-      if (pid) {
-        execSync(`taskkill /pid ${pid} /T /F`, { stdio: "ignore" });
-      }
-    } catch {
-      /* process may have already exited */
-    }
-  } else {
-    nitroProcess.kill("SIGTERM");
+async function stopNitroProcess(child = nitroProcess): Promise<void> {
+  if (nitroShutdownPromise) {
+    return nitroShutdownPromise;
   }
+
+  if (!child || child.exitCode !== null) {
+    nitroProcess = null;
+    return;
+  }
+
   nitroProcess = null;
+  const shutdownPromise = new Promise<void>((resolve) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      child.removeListener("close", onClose);
+      resolve();
+    };
+
+    const onClose = () => {
+      finish();
+    };
+
+    child.once("close", onClose);
+
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      // Best-effort shutdown continues below.
+    }
+
+    timer = setTimeout(() => {
+      if (child.exitCode === null) {
+        try {
+          if (process.platform === "win32") {
+            const pid = child.pid;
+            if (pid) {
+              execSync(`taskkill /pid ${pid} /T /F`, { stdio: "ignore" });
+            }
+          } else {
+            child.kill("SIGKILL");
+          }
+        } catch {
+          // The process may already be gone; shutdown remains best-effort.
+        }
+      }
+      finish();
+    }, NITRO_SHUTDOWN_TIMEOUT_MS);
+  }).finally(() => {
+    nitroShutdownPromise = null;
+  });
+
+  nitroShutdownPromise = shutdownPromise;
+  return shutdownPromise;
 }
 
 // Ensure child process cleanup on unexpected termination (Linux/macOS signals)
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
   process.on(signal, () => {
-    killNitroProcess();
+    isShuttingDown = true;
+    void stopNitroProcess();
     Promise.all([cleanupPortFile(), cleanupSmokeReadyFile()]).finally(() =>
       process.exit(0),
     );

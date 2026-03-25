@@ -37,6 +37,11 @@ import { resolveAnalysisRuntime } from "../config/analysis-runtime-resolver";
 import * as runtimeStatus from "../services/runtime-status";
 import { createRunLogger, timer } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
+import type {
+  RuntimeAdapter,
+  RuntimeStructuredTurnInput,
+} from "../services/ai/adapter-contract";
+import { getRuntimeAdapter } from "../services/ai/adapter-contract";
 import {
   synthesizeReport,
   SYNTHESIS_SYSTEM_PROMPT,
@@ -121,30 +126,55 @@ const RUN_TIMEOUT_MS = analysisRuntimeConfig.orchestrator.runTimeoutMs;
 
 // ── Synthesis adapter ──
 
-interface SynthesisAdapter {
-  runAnalysisPhase<T = unknown>(
-    prompt: string,
-    systemPrompt: string,
-    model: string,
-    schema: Record<string, unknown>,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    options?: any,
-  ): Promise<T>;
-}
-
 async function loadSynthesisAdapter(
   provider?: string,
-): Promise<SynthesisAdapter> {
+): Promise<RuntimeAdapter> {
   if (process.env.GAME_THEORY_ANALYSIS_TEST_MODE === "1") {
-    return import("../services/ai/test-adapter");
+    const mod = await import("../services/ai/test-adapter");
+    return {
+      provider: "claude",
+      createSession(key) {
+        return {
+          provider: "claude",
+          key,
+          streamChatTurn: async function* () {
+            throw new Error("Test adapter does not support chat turns");
+          },
+          runStructuredTurn<T = unknown>(input: RuntimeStructuredTurnInput) {
+            return mod.runAnalysisPhase<T>(
+              input.prompt,
+              input.systemPrompt,
+              input.model,
+              input.schema,
+              { signal: input.signal },
+            );
+          },
+          getDiagnostics() {
+            return {
+              provider: "claude",
+              sessionId: "test-synthesis-adapter",
+              details: { ownerId: key.ownerId },
+            };
+          },
+          async dispose() {},
+        };
+      },
+      async listModels() {
+        return [];
+      },
+      async checkHealth() {
+        return {
+          provider: "claude",
+          status: "healthy",
+          reason: null,
+          checkedAt: Date.now(),
+          checks: [],
+        };
+      },
+    };
   }
-  if (provider === "openai") {
-    return import("../services/ai/codex-adapter");
-  }
-  if (provider === "anthropic" || !provider) {
-    return import("../services/ai/claude-adapter");
-  }
-  throw new Error(`Unknown provider for synthesis: ${provider}`);
+
+  return getRuntimeAdapter(provider as "anthropic" | "openai" | undefined);
 }
 
 /** JSON Schema for synthesis structured output — mirrors analysisReportDataSchema */
@@ -988,16 +1018,24 @@ export async function runFull(
           await synthesizeReport({
             runId: run.runId,
             aiCaller: async (graphSummary: string) => {
-              return adapter.runAnalysisPhase(
-                graphSummary,
-                SYNTHESIS_SYSTEM_PROMPT,
-                model,
-                SYNTHESIS_OUTPUT_SCHEMA,
-                {
-                  runId: run.runId,
-                  webSearch: false,
-                },
-              );
+              const session = adapter.createSession({
+                ownerId: run.runId,
+                runId: run.runId,
+              });
+              try {
+                return await session.runStructuredTurn(
+                  {
+                    prompt: graphSummary,
+                    systemPrompt: SYNTHESIS_SYSTEM_PROMPT,
+                    model,
+                    schema: SYNTHESIS_OUTPUT_SCHEMA,
+                    runId: run.runId,
+                    webSearch: false,
+                  },
+                );
+              } finally {
+                await session.dispose();
+              }
             },
           });
           emitProgress({ type: "synthesis_completed", runId: run.runId });

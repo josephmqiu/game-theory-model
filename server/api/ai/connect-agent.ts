@@ -1,11 +1,9 @@
 import { defineEventHandler, readBody, setResponseHeaders } from 'h3'
 import type { GroupedModel } from '../../../src/types/agent-settings'
-import { resolveClaudeCli } from '../../utils/resolve-claude-cli'
-import { filterCodexEnv } from '../../utils/codex-client'
 import {
-  buildClaudeAgentEnv,
-  getClaudeAgentDebugFilePath,
-} from '../../utils/resolve-claude-agent-env'
+  getClaudeProviderSnapshot,
+  getCodexProviderSnapshot,
+} from '../../services/ai/provider-health'
 
 interface ConnectBody {
   agent: 'claude-code' | 'codex-cli' | 'opencode' | 'copilot'
@@ -16,11 +14,8 @@ interface ConnectResult {
   models: GroupedModel[]
   error?: string
   notInstalled?: boolean
+  health?: unknown
 }
-
-const CODEX_CLI_TIMEOUT_MS = 5000
-const CODEX_APP_SERVER_PROBE_TIMEOUT_MS = 1500
-const CODEX_APP_SERVER_SHUTDOWN_TIMEOUT_MS = 1000
 
 /**
  * POST /api/ai/connect-agent
@@ -53,261 +48,52 @@ export default defineEventHandler(async (event) => {
   return { connected: false, models: [], error: `Unknown agent: ${body.agent}` } satisfies ConnectResult
 })
 
-/**
- * Fallback models when supportedModels() fails.
- * Used with third-party API proxies (e.g. Claude Router) that don't support
- * the model-listing endpoint. Covers common model IDs routers typically expose.
- */
-const FALLBACK_CLAUDE_MODELS: GroupedModel[] = [
-  { value: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', description: '', provider: 'anthropic' },
-  { value: 'claude-opus-4-6', displayName: 'Claude Opus 4.6', description: '', provider: 'anthropic' },
-  { value: 'claude-sonnet-4-5-20250514', displayName: 'Claude Sonnet 4.5', description: '', provider: 'anthropic' },
-  { value: 'claude-haiku-4-5-20251001', displayName: 'Claude Haiku 4.5', description: '', provider: 'anthropic' },
-  { value: 'claude-3-7-sonnet-20250219', displayName: 'Claude 3.7 Sonnet', description: '', provider: 'anthropic' },
-  { value: 'claude-3-5-sonnet-20241022', displayName: 'Claude 3.5 Sonnet', description: '', provider: 'anthropic' },
-  { value: 'claude-3-5-haiku-20241022', displayName: 'Claude 3.5 Haiku', description: '', provider: 'anthropic' },
-]
+function mapModels(
+  provider: 'anthropic' | 'openai',
+  models: Array<{
+    value: string
+    displayName: string
+    description: string
+  }>,
+): GroupedModel[] {
+  return models.map((model) => ({
+    value: model.value,
+    displayName: model.displayName,
+    description: model.description,
+    provider,
+  }))
+}
 
-/** Connect to Claude Code via Agent SDK and fetch real supported models */
+function toConnectResult(
+  provider: 'anthropic' | 'openai',
+  snapshot: Awaited<ReturnType<typeof getClaudeProviderSnapshot>>,
+): ConnectResult {
+  const models = mapModels(provider, snapshot.models)
+  const connected =
+    models.length > 0
+    && snapshot.health.reason !== 'not-installed'
+    && snapshot.health.reason !== 'unauthenticated'
+
+  return {
+    connected,
+    models,
+    ...(snapshot.health.reason === 'not-installed' ? { notInstalled: true } : {}),
+    ...(!connected && snapshot.health.message
+      ? { error: snapshot.health.message }
+      : {}),
+    health: snapshot.health,
+  }
+}
+
+/** Connect to Claude Code and preserve the existing renderer response shape. */
 export async function connectClaudeCode(): Promise<ConnectResult> {
-  const claudePath = resolveClaudeCli()
-  if (!claudePath) {
-    return { connected: false, models: [], notInstalled: true, error: 'Claude Code CLI not found' }
-  }
-
-  try {
-    const { query } = await import('@anthropic-ai/claude-agent-sdk')
-
-    const env = buildClaudeAgentEnv()
-    const debugFile = getClaudeAgentDebugFilePath()
-
-    const q = query({
-      prompt: '',
-      options: {
-        maxTurns: 1,
-        tools: [],
-        permissionMode: 'plan',
-        persistSession: false,
-        env,
-        ...(debugFile ? { debugFile } : {}),
-        ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
-      },
-    })
-
-    const raw = await q.supportedModels()
-    q.close()
-
-    const models: GroupedModel[] = raw.map((m) => ({
-      value: m.value,
-      displayName: m.displayName,
-      description: m.description,
-      provider: 'anthropic' as const,
-    }))
-
-    return { connected: true, models }
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Failed to connect'
-    // Third-party API proxies often don't support the supportedModels() call,
-    // causing "query closed before response". Fall back to a default model list
-    // so users can still connect and choose a model.
-    if (/closed before|closed early|query closed/i.test(msg)) {
-      return { connected: true, models: FALLBACK_CLAUDE_MODELS }
-    }
-    return { connected: false, models: [], error: friendlyClaudeError(msg) }
-  }
+  return toConnectResult('anthropic', await getClaudeProviderSnapshot())
 }
 
-/** Map raw Agent SDK errors to user-friendly messages */
-function friendlyClaudeError(raw: string): string {
-  if (/invalid api key|external api key/i.test(raw)) {
-    return 'Claude Code authentication failed. Run "claude login" to refresh the Claude Code session, or remove invalid external auth overrides from Claude settings.'
-  }
-  if (/process exited with code 1|invalid model|unknown model|model.*not/i.test(raw)) {
-    return 'Claude Code exited with code 1. Run "claude login" to refresh the Claude Code session and verify the selected model is available.'
-  }
-  if (/exited with code/i.test(raw)) {
-    return 'Unable to connect. Claude Code process exited unexpectedly.'
-  }
-  if (/not found|ENOENT/i.test(raw)) {
-    return 'Claude Code CLI not found. Please install it first.'
-  }
-  if (/timed?\s*out/i.test(raw)) {
-    return 'Connection timed out. Please try again.'
-  }
-  return raw
-}
-
-async function stopProbeProcess(
-  child: import('node:child_process').ChildProcess,
-): Promise<void> {
-  if (child.exitCode !== null) {
-    return
-  }
-
-  await new Promise<void>((resolve) => {
-    const done = () => {
-      child.removeListener('close', done)
-      resolve()
-    }
-
-    child.once('close', done)
-
-    try {
-      child.kill('SIGTERM')
-    } catch {
-      done()
-      return
-    }
-
-    setTimeout(() => {
-      if (child.exitCode === null) {
-        try {
-          child.kill('SIGKILL')
-        } catch {
-          // best-effort cleanup
-        }
-      }
-      done()
-    }, CODEX_APP_SERVER_SHUTDOWN_TIMEOUT_MS)
-  })
-}
-
-async function canStartCodexAppServer(binaryPath: string): Promise<{
-  ok: boolean
-  error?: string
-}> {
-  const { spawn } = await import('node:child_process')
-
-  return await new Promise((resolve) => {
-    const child = spawn(binaryPath, ['app-server'], {
-      env: filterCodexEnv(process.env as Record<string, string | undefined>),
-      stdio: ['pipe', 'pipe', 'pipe'],
-      ...(process.platform === 'win32' && { shell: true }),
-    })
-
-    let settled = false
-    let stderr = ''
-    let timer: ReturnType<typeof setTimeout> | null = null
-
-    const finish = (ok: boolean, error?: string) => {
-      if (settled) return
-      settled = true
-      if (timer) clearTimeout(timer)
-      child.stdout?.removeAllListeners()
-      child.stderr?.removeAllListeners()
-      child.removeAllListeners()
-      resolve({ ok, ...(error ? { error } : {}) })
-    }
-
-    child.on('error', (error) => {
-      finish(false, error.message)
-    })
-
-    child.stderr?.on('data', (chunk: Buffer | string) => {
-      stderr += chunk.toString()
-    })
-
-    child.on('exit', (code) => {
-      const message = stderr.trim() || `Codex app-server exited with code ${code ?? 'unknown'}`
-      finish(false, message)
-    })
-
-    timer = setTimeout(() => {
-      finish(true)
-      void stopProbeProcess(child)
-    }, CODEX_APP_SERVER_PROBE_TIMEOUT_MS)
-  })
-}
-
-/** Connect to Codex CLI and fetch its supported models from the local cache */
+/** Connect to Codex CLI and preserve the existing renderer response shape. */
 export async function connectCodexCli(): Promise<ConnectResult> {
-  try {
-    const { spawnSync } = await import('node:child_process')
-    const { readFile } = await import('node:fs/promises')
-    const { homedir } = await import('node:os')
-    const { join } = await import('node:path')
-    const env = filterCodexEnv(process.env as Record<string, string | undefined>)
-
-    // Check if codex binary exists
-    const lookup = spawnSync(
-      process.platform === 'win32' ? 'where' : 'which',
-      ['codex'],
-      {
-        encoding: 'utf-8',
-        timeout: CODEX_CLI_TIMEOUT_MS,
-        env,
-        ...(process.platform === 'win32' && { shell: true }),
-      },
-    )
-    const which = `${lookup.stdout ?? ''}`.trim().split(/\r?\n/)[0]?.trim() ?? ''
-
-    if (!which) {
-      return { connected: false, models: [], notInstalled: true, error: 'Codex CLI not found' }
-    }
-
-    // Verify codex is responsive
-    const versionCheck = spawnSync(which, ['--version'], {
-      encoding: 'utf-8',
-      timeout: CODEX_CLI_TIMEOUT_MS,
-      env,
-      ...(process.platform === 'win32' && { shell: true }),
-    })
-    if (versionCheck.status !== 0) {
-      return { connected: false, models: [], error: 'Codex CLI not responding' }
-    }
-
-    const appServerCheck = await canStartCodexAppServer(which)
-    if (!appServerCheck.ok) {
-      return {
-        connected: false,
-        models: [],
-        error: appServerCheck.error ?? 'Codex app-server failed to start',
-      }
-    }
-
-    // Read models from Codex CLI's local models cache
-    let models: GroupedModel[] = []
-    const cachePath = join(homedir(), '.codex', 'models_cache.json')
-
-    try {
-      const raw = await readFile(cachePath, 'utf-8')
-      const cache = JSON.parse(raw) as {
-        models?: Array<{
-          slug: string
-          display_name: string
-          description: string
-          visibility: string
-          priority: number
-        }>
-      }
-
-      if (cache.models && Array.isArray(cache.models)) {
-        models = cache.models
-          .filter((m) => m.visibility === 'list')
-          .sort((a, b) => (a.priority ?? 999) - (b.priority ?? 999))
-          .map((m) => ({
-            value: m.slug,
-            displayName: m.display_name,
-            description: m.description ?? '',
-            provider: 'openai' as const,
-          }))
-      }
-    } catch {
-      // Cache file not found or unreadable
-    }
-
-    if (models.length === 0) {
-      return { connected: false, models: [], error: 'No models found. Try running codex once to populate the model cache.' }
-    }
-
-    return { connected: true, models }
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Failed to connect'
-    return { connected: false, models: [], error: msg }
-  }
+  return toConnectResult('openai', await getCodexProviderSnapshot())
 }
-
-export { canStartCodexAppServer }
 
 /** Resolve the opencode binary path, checking PATH then common install locations. */
 async function resolveOpencodeBinary(): Promise<string | undefined> {

@@ -2,6 +2,15 @@
 // Provides two profiles: streamChat (interactive) and runAnalysisPhase (structured).
 
 import type { ChatEvent } from "../../../shared/types/events";
+import type {
+  RuntimeAdapter,
+  RuntimeAdapterSession,
+  RuntimeAdapterSessionKey,
+  RuntimeChatTurnInput,
+  RuntimeSessionDiagnostics,
+  RuntimeStructuredTurnInput,
+} from "./adapter-contract";
+import { mapRuntimeModels } from "./adapter-contract";
 import {
   createProcessRuntimeError,
   createProviderRuntimeError,
@@ -28,6 +37,7 @@ import {
 } from "../../mcp/product-tools";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 import type { AnalysisActivityCallback } from "./analysis-activity";
+import { getClaudeProviderSnapshot } from "./provider-health";
 
 // ── Types ──
 
@@ -48,6 +58,21 @@ export interface AnalysisRunOptions {
 }
 
 type ClaudeAnalysisMode = "structured" | "json-fallback";
+
+interface ClaudeSessionState {
+  sessionId: string;
+  key: RuntimeAdapterSessionKey;
+  debugFile?: string;
+}
+
+function createClaudeSessionState(
+  key: RuntimeAdapterSessionKey,
+): ClaudeSessionState {
+  return {
+    sessionId: `claude-${key.ownerId}-${Math.random().toString(36).slice(2, 10)}`,
+    key,
+  };
+}
 
 function isClaudeWebSearchTool(toolName: unknown): boolean {
   return toolName === "WebSearch" || toolName === "web_search";
@@ -354,11 +379,9 @@ const CHAT_TIMEOUT_MS = analysisRuntimeConfig.claude.chatTimeoutMs;
  * - includePartialMessages: true
  * - settingSources: []
  */
-export async function* streamChat(
-  prompt: string,
-  systemPrompt: string,
-  model: string,
-  options?: StreamChatOptions,
+async function* streamClaudeChatTurn(
+  input: RuntimeChatTurnInput,
+  session: ClaudeSessionState,
 ): AsyncGenerator<ChatEvent> {
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
   const { buildClaudeAgentEnv, getClaudeAgentDebugFilePath } =
@@ -368,7 +391,8 @@ export async function* streamChat(
   const env = buildClaudeAgentEnv();
   const debugFile = getClaudeAgentDebugFilePath();
   const claudePath = resolveClaudeCli();
-  const timeoutMs = options?.timeoutMs ?? CHAT_TIMEOUT_MS;
+  const timeoutMs = input.timeoutMs ?? CHAT_TIMEOUT_MS;
+  session.debugFile = debugFile ?? undefined;
 
   const chatMcp = await createChatMcpServer();
   const allowedTools = [
@@ -379,10 +403,10 @@ export async function* streamChat(
   ];
 
   const q = query({
-    prompt,
+    prompt: input.prompt,
     options: {
-      systemPrompt,
-      model,
+      systemPrompt: input.systemPrompt,
+      model: input.model,
       maxTurns: 99,
       tools: ["WebSearch"],
       allowedTools,
@@ -409,7 +433,7 @@ export async function* streamChat(
 
   // Abort signal — when the client disconnects, close the SDK query
   let aborted = false;
-  const signal = options?.signal;
+  const signal = input.signal;
   const closeQueryOnAbort = () => {
     // Defer the close slightly so async iterators can install their pending
     // resolution hooks before we tear the query down.
@@ -517,9 +541,9 @@ export async function* streamChat(
       yield {
         type: "error",
         error: createProviderRuntimeError("Chat turn timed out after 5 minutes", {
-          provider: "claude",
-          reason: "unavailable",
-          retryable: true,
+            provider: "claude",
+            reason: "unavailable",
+            retryable: true,
         }),
       };
       return;
@@ -825,12 +849,9 @@ async function runClaudeAnalysisAttempt<T>(
  * - outputFormat: { type: 'json_schema', schema }
  * - settingSources: []
  */
-export async function runAnalysisPhase<T = unknown>(
-  prompt: string,
-  systemPrompt: string,
-  model: string,
-  schema: Record<string, unknown>,
-  options?: AnalysisRunOptions,
+async function runClaudeStructuredTurn<T = unknown>(
+  input: RuntimeStructuredTurnInput,
+  session: ClaudeSessionState,
 ): Promise<T> {
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
   const { buildClaudeAgentEnv, getClaudeAgentDebugFilePath } =
@@ -840,11 +861,12 @@ export async function runAnalysisPhase<T = unknown>(
   const env = buildClaudeAgentEnv();
   const debugFile = getClaudeAgentDebugFilePath();
   const claudePath = resolveClaudeCli();
-  const readOnlyMcp = await createAnalysisMcpServer(options?.runId);
+  session.debugFile = debugFile ?? undefined;
+  const readOnlyMcp = await createAnalysisMcpServer(input.runId);
   const allowedTools = ANALYSIS_TOOL_NAMES.map(
     (toolName) => `mcp__${ANALYSIS_MCP_SERVER_NAME}__${toolName}`,
   );
-  if (options?.webSearch !== false) {
+  if (input.webSearch !== false) {
     allowedTools.push("WebSearch");
   }
 
@@ -854,58 +876,77 @@ export async function runAnalysisPhase<T = unknown>(
   ): Promise<T | string> => {
     const q = buildAnalysisQuery(
       query,
-      prompt,
+      input.prompt,
       attemptSystemPrompt,
-      model,
-      schema,
+      input.model,
+      input.schema,
       allowedTools,
       readOnlyMcp,
       env,
       mode,
-      options,
+      {
+        runId: input.runId,
+        signal: input.signal,
+        maxTurns: input.maxTurns,
+        webSearch: input.webSearch,
+        onActivity: input.onActivity,
+      },
       debugFile,
       claudePath,
     );
 
-    if (!options?.signal) {
-      return runClaudeAnalysisAttempt<T>(q, mode, model, options);
+    if (!input.signal) {
+      return runClaudeAnalysisAttempt<T>(q, mode, input.model, {
+        runId: input.runId,
+        signal: input.signal,
+        webSearch: input.webSearch,
+        onActivity: input.onActivity,
+      });
     }
 
     const onAbort = () => q.close();
-    options.signal.addEventListener("abort", onAbort, { once: true });
+    input.signal.addEventListener("abort", onAbort, { once: true });
     try {
-      return await runClaudeAnalysisAttempt<T>(q, mode, model, options);
+      return await runClaudeAnalysisAttempt<T>(q, mode, input.model, {
+        runId: input.runId,
+        signal: input.signal,
+        webSearch: input.webSearch,
+        onActivity: input.onActivity,
+      });
     } finally {
-      options.signal.removeEventListener("abort", onAbort);
+      input.signal.removeEventListener("abort", onAbort);
     }
   };
 
   try {
-    return (await runAttempt("structured", systemPrompt)) as T;
+    return (await runAttempt("structured", input.systemPrompt)) as T;
   } catch (error) {
     const primaryMessage = error instanceof Error ? error.message : String(error);
-    serverWarn(options?.runId, "claude-adapter", "analysis-query-failed", {
+    serverWarn(input.runId, "claude-adapter", "analysis-query-failed", {
       mode: "structured",
-      model,
+      model: input.model,
       error: primaryMessage,
     });
 
-    if (!shouldAttemptClaudeJsonFallback(model, primaryMessage)) {
+    if (!shouldAttemptClaudeJsonFallback(input.model, primaryMessage)) {
       throw error;
     }
 
-    serverWarn(options?.runId, "claude-adapter", "analysis-fallback-start", {
-      model,
+    serverWarn(input.runId, "claude-adapter", "analysis-fallback-start", {
+      model: input.model,
       reason: primaryMessage,
     });
 
     try {
       const fallbackResult = await runAttempt(
         "json-fallback",
-        buildClaudeJsonFallbackSystemPrompt(systemPrompt, schema),
+        buildClaudeJsonFallbackSystemPrompt(
+          input.systemPrompt,
+          input.schema,
+        ),
       );
-      serverLog(options?.runId, "claude-adapter", "analysis-fallback-success", {
-        model,
+      serverLog(input.runId, "claude-adapter", "analysis-fallback-success", {
+        model: input.model,
       });
       return fallbackResult as T;
     } catch (fallbackError) {
@@ -913,8 +954,8 @@ export async function runAnalysisPhase<T = unknown>(
         fallbackError instanceof Error
           ? fallbackError.message
           : String(fallbackError);
-      serverError(options?.runId, "claude-adapter", "analysis-fallback-failed", {
-        model,
+      serverError(input.runId, "claude-adapter", "analysis-fallback-failed", {
+        model: input.model,
         primaryError: primaryMessage,
         fallbackError: fallbackMessage,
       });
@@ -922,5 +963,110 @@ export async function runAnalysisPhase<T = unknown>(
         `Claude structured-output attempt failed (${primaryMessage}); JSON fallback failed: ${fallbackMessage}`,
       );
     }
+  }
+}
+
+class ClaudeRuntimeSession implements RuntimeAdapterSession {
+  readonly provider = "claude" as const;
+  readonly key: RuntimeAdapterSessionKey;
+  private readonly state: ClaudeSessionState;
+
+  constructor(key: RuntimeAdapterSessionKey) {
+    this.key = key;
+    this.state = createClaudeSessionState(key);
+  }
+
+  streamChatTurn(input: RuntimeChatTurnInput): AsyncGenerator<ChatEvent> {
+    return streamClaudeChatTurn(input, this.state);
+  }
+
+  runStructuredTurn<T = unknown>(input: RuntimeStructuredTurnInput): Promise<T> {
+    return runClaudeStructuredTurn<T>(input, this.state);
+  }
+
+  getDiagnostics(): RuntimeSessionDiagnostics {
+    return {
+      provider: "claude",
+      sessionId: this.state.sessionId,
+      ...(this.key.runId ? { runId: this.key.runId } : {}),
+      ...(this.state.debugFile ? { logPath: this.state.debugFile } : {}),
+      details: {
+        ownerId: this.key.ownerId,
+      },
+    };
+  }
+
+  async dispose(): Promise<void> {
+    // Claude sessions are per-query in this slice, so there is no shared
+    // lifecycle teardown beyond releasing diagnostics metadata.
+  }
+}
+
+export const claudeRuntimeAdapter: RuntimeAdapter = {
+  provider: "claude",
+  createSession(key: RuntimeAdapterSessionKey): RuntimeAdapterSession {
+    return new ClaudeRuntimeSession(key);
+  },
+  async listModels() {
+    const snapshot = await getClaudeProviderSnapshot();
+    return mapRuntimeModels("claude", snapshot.models);
+  },
+  async checkHealth() {
+    return (await getClaudeProviderSnapshot()).health;
+  },
+};
+
+export async function* streamChat(
+  prompt: string,
+  systemPrompt: string,
+  model: string,
+  options?: StreamChatOptions,
+): AsyncGenerator<ChatEvent> {
+  const session = claudeRuntimeAdapter.createSession({
+    ownerId: options?.runId ?? "claude-chat",
+    ...(options?.runId ? { runId: options.runId } : {}),
+  });
+
+  try {
+    yield* session.streamChatTurn({
+      prompt,
+      systemPrompt,
+      model,
+      runId: options?.runId,
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs,
+    });
+  } finally {
+    await session.dispose();
+  }
+}
+
+export async function runAnalysisPhase<T = unknown>(
+  prompt: string,
+  systemPrompt: string,
+  model: string,
+  schema: Record<string, unknown>,
+  options?: AnalysisRunOptions,
+): Promise<T> {
+  const session = claudeRuntimeAdapter.createSession({
+    ownerId: options?.runId ?? "claude-analysis",
+    ...(options?.runId ? { runId: options.runId } : {}),
+  });
+
+  try {
+    return await session.runStructuredTurn<T>({
+      prompt,
+      systemPrompt,
+      model,
+      schema,
+      maxTurns: options?.maxTurns,
+      runId: options?.runId,
+      signal: options?.signal,
+      timeoutMs: undefined,
+      webSearch: options?.webSearch,
+      onActivity: options?.onActivity,
+    });
+  } finally {
+    await session.dispose();
   }
 }

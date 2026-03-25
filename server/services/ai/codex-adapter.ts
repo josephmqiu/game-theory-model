@@ -15,6 +15,16 @@ import {
   createProcessRuntimeError,
   createProviderRuntimeError,
 } from "../../../shared/types/runtime-error";
+import type {
+  RuntimeAdapter,
+  RuntimeAdapterSession,
+  RuntimeAdapterSessionKey,
+  RuntimeChatTurnInput,
+  RuntimeSessionDiagnostics,
+  RuntimeStructuredTurnInput,
+} from "./adapter-contract";
+import { mapRuntimeModels } from "./adapter-contract";
+import { getCodexProviderSnapshot } from "./provider-health";
 
 // ── Types ──
 
@@ -61,10 +71,9 @@ type NotificationCallback = (
   params: Record<string, unknown>,
 ) => void;
 
-let nextRequestId = 1;
-
 interface AppServerConnection {
   process: ChildProcess;
+  nextRequestId: number;
   pendingRequests: Map<
     number,
     {
@@ -73,18 +82,44 @@ interface AppServerConnection {
     }
   >;
   notificationCallbacks: Set<NotificationCallback>;
+  diagnostics: {
+    stdout: string[];
+    stderr: string[];
+  };
+  terminationError: Error | null;
 }
 
 let connection: AppServerConnection | null = null;
 
-// Thread filtering: tracks the active thread so notification handlers
-// only process events for their own session (Issue: cross-session fan-out).
-let currentThreadId: string | null = null;
+const MAX_DIAGNOSTIC_LINES = 25;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object"
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function appendDiagnosticLine(target: string[], line: string): void {
+  if (!line) return;
+  target.push(line);
+  if (target.length > MAX_DIAGNOSTIC_LINES) {
+    target.splice(0, target.length - MAX_DIAGNOSTIC_LINES);
+  }
+}
+
+function captureConnectionOutput(
+  conn: AppServerConnection,
+  stream: "stdout" | "stderr",
+  text: string,
+): void {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  for (const line of lines) {
+    appendDiagnosticLine(conn.diagnostics[stream], line.slice(0, 1000));
+  }
 }
 
 function getWebSearchQuery(value: unknown): string | undefined {
@@ -244,7 +279,11 @@ function sendRequest(
   method: string,
   params?: Record<string, unknown>,
 ): Promise<unknown> {
-  const id = nextRequestId++;
+  if (conn.terminationError) {
+    return Promise.reject(conn.terminationError);
+  }
+
+  const id = conn.nextRequestId++;
   const request: JsonRpcRequest = {
     jsonrpc: "2.0",
     id,
@@ -289,6 +328,7 @@ function handleIncomingLine(conn: AppServerConnection, line: string): void {
   try {
     parsed = JSON.parse(line) as Record<string, unknown>;
   } catch {
+    appendDiagnosticLine(conn.diagnostics.stdout, line.slice(0, 1000));
     return; // Ignore non-JSON lines (e.g. stderr leaking to stdout)
   }
 
@@ -478,7 +518,11 @@ const INITIALIZE_TIMEOUT_MS = analysisRuntimeConfig.codex.initializeTimeoutMs;
 export async function startAppServer(
   runId?: string,
 ): Promise<AppServerConnection> {
-  if (connection && connection.process.exitCode === null) {
+  if (
+    connection &&
+    connection.process.exitCode === null &&
+    !connection.terminationError
+  ) {
     return connection;
   }
 
@@ -492,14 +536,22 @@ export async function startAppServer(
 
   const conn: AppServerConnection = {
     process: child,
+    nextRequestId: 1,
     pendingRequests: new Map(),
     notificationCallbacks: new Set(),
+    diagnostics: {
+      stdout: [],
+      stderr: [],
+    },
+    terminationError: null,
   };
 
   // Wire up stdout line parser
   let stdoutBuffer = "";
   child.stdout?.on("data", (chunk: Buffer) => {
-    stdoutBuffer += chunk.toString("utf-8");
+    const text = chunk.toString("utf-8");
+    captureConnectionOutput(conn, "stdout", text);
+    stdoutBuffer += text;
     let idx = stdoutBuffer.indexOf("\n");
     while (idx >= 0) {
       const line = stdoutBuffer.slice(0, idx).trim();
@@ -511,24 +563,51 @@ export async function startAppServer(
 
   // Log stderr but don't crash
   child.stderr?.on("data", (chunk: Buffer) => {
+    const preview = chunk.toString("utf-8");
+    captureConnectionOutput(conn, "stderr", preview);
     serverWarn(runId, "codex-adapter", "stderr", {
-      preview: chunk.toString("utf-8").trim().slice(0, 500),
+      preview: preview.trim().slice(0, 500),
     });
   });
 
-  // Clean up on exit
-  child.on("close", (code) => {
-    serverLog(runId, "codex-adapter", "close", { exitCode: code ?? "unknown" });
+  const handleTermination = (
+    event: "error" | "exit" | "close",
+    error?: Error,
+    code?: number | null,
+    signal?: NodeJS.Signals | null,
+  ) => {
+    if (conn.terminationError) return;
+    conn.terminationError =
+      error ??
+      new Error(
+        `App-server terminated during ${event} (${code ?? "unknown"}${signal ? `, ${signal}` : ""})`,
+      );
+    serverLog(runId, "codex-adapter", "process-terminated", {
+      event,
+      exitCode: code ?? "unknown",
+      signal: signal ?? null,
+      error: error?.message,
+      stdoutTail: conn.diagnostics.stdout,
+      stderrTail: conn.diagnostics.stderr,
+    });
     // Reject any pending requests
     for (const [, pending] of conn.pendingRequests) {
-      pending.reject(
-        new Error(`App-server exited with code ${code ?? "unknown"}`),
-      );
+      pending.reject(conn.terminationError);
     }
     conn.pendingRequests.clear();
     if (connection === conn) {
       connection = null;
     }
+  };
+
+  child.on("error", (error) => {
+    handleTermination("error", error);
+  });
+  child.on("exit", (code, signal) => {
+    handleTermination("exit", undefined, code, signal);
+  });
+  child.on("close", (code, signal) => {
+    handleTermination("close", undefined, code, signal);
   });
 
   // Initialize handshake with timeout
@@ -551,6 +630,11 @@ export async function startAppServer(
     await Promise.race([initPromise, timeoutPromise]);
   } catch (err) {
     child.kill("SIGTERM");
+    serverWarn(runId, "codex-adapter", "initialize-failed", {
+      error: err instanceof Error ? err.message : String(err),
+      stdoutTail: conn.diagnostics.stdout,
+      stderrTail: conn.diagnostics.stderr,
+    });
     throw err;
   }
 
@@ -580,6 +664,9 @@ export async function stopAppServer(runId?: string): Promise<void> {
   await new Promise<void>((resolve) => {
     const timer = setTimeout(() => {
       if (conn.process.exitCode === null) {
+        serverWarn(runId, "codex-adapter", "force-kill", {
+          pid: conn.process.pid,
+        });
         conn.process.kill("SIGKILL");
       }
       resolve();
@@ -650,7 +737,6 @@ export async function* streamChat(
       model,
     });
     threadId = extractThreadId(threadResult);
-    currentThreadId = threadId;
     serverLog(runId, "codex-adapter", "thread-started", { threadId });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -939,7 +1025,6 @@ export async function* streamChat(
   } finally {
     removeListener();
     if (signal) signal.removeEventListener("abort", onAbort);
-    if (currentThreadId === threadId) currentThreadId = null;
   }
 }
 
@@ -982,7 +1067,6 @@ export async function runAnalysisPhase<T = unknown>(
       },
     });
     threadId = extractThreadId(threadResult);
-    currentThreadId = threadId;
     serverLog(runId, "codex-adapter", "analysis-thread-started", { threadId });
 
     // Collect result from turn/completed
@@ -1295,7 +1379,6 @@ export async function runAnalysisPhase<T = unknown>(
       }
     } finally {
       removeListener();
-      if (currentThreadId === threadId) currentThreadId = null;
     }
   } catch (error) {
     primaryError = normalizeAnalysisError(error);
@@ -1333,6 +1416,76 @@ export async function runAnalysisPhase<T = unknown>(
 
 export { filterCodexEnv };
 
+class CodexRuntimeSession implements RuntimeAdapterSession {
+  readonly provider = "codex" as const;
+  readonly key: RuntimeAdapterSessionKey;
+  private readonly sessionId: string;
+
+  constructor(key: RuntimeAdapterSessionKey) {
+    this.key = key;
+    this.sessionId = `codex-${key.ownerId}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  streamChatTurn(input: RuntimeChatTurnInput): AsyncGenerator<ChatEvent> {
+    return streamChat(input.prompt, input.systemPrompt, input.model, {
+      runId: input.runId,
+      timeoutMs: input.timeoutMs,
+      signal: input.signal,
+    });
+  }
+
+  runStructuredTurn<T = unknown>(input: RuntimeStructuredTurnInput): Promise<T> {
+    return runAnalysisPhase<T>(
+      input.prompt,
+      input.systemPrompt,
+      input.model,
+      input.schema,
+      {
+        runId: input.runId,
+        signal: input.signal,
+        webSearch: input.webSearch,
+        onActivity: input.onActivity,
+      },
+    );
+  }
+
+  getDiagnostics(): RuntimeSessionDiagnostics {
+    const details: Record<string, unknown> = {
+      ownerId: this.key.ownerId,
+    };
+    if (connection) {
+      details.stdoutTail = connection.diagnostics.stdout;
+      details.stderrTail = connection.diagnostics.stderr;
+      details.pid = connection.process.pid;
+    }
+
+    return {
+      provider: "codex",
+      sessionId: this.sessionId,
+      ...(this.key.runId ? { runId: this.key.runId } : {}),
+      details,
+    };
+  }
+
+  async dispose(): Promise<void> {
+    // Session-local state is scoped to the turn methods in this slice.
+  }
+}
+
+export const codexRuntimeAdapter: RuntimeAdapter = {
+  provider: "codex",
+  createSession(key: RuntimeAdapterSessionKey): RuntimeAdapterSession {
+    return new CodexRuntimeSession(key);
+  },
+  async listModels() {
+    const snapshot = await getCodexProviderSnapshot();
+    return mapRuntimeModels("codex", snapshot.models);
+  },
+  async checkHealth() {
+    return (await getCodexProviderSnapshot()).health;
+  },
+};
+
 /** Visible for testing — get the current connection */
 export function _getConnection(): AppServerConnection | null {
   return connection;
@@ -1340,6 +1493,12 @@ export function _getConnection(): AppServerConnection | null {
 
 /** Visible for testing — reset module state */
 export function _resetConnection(): void {
+  if (connection?.process && connection.process.exitCode === null) {
+    try {
+      connection.process.kill("SIGKILL");
+    } catch {
+      // Best-effort for tests.
+    }
+  }
   connection = null;
-  nextRequestId = 1;
 }

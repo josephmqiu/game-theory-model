@@ -51,12 +51,17 @@ describe("connect-agent codex checks", () => {
     const { connectCodexCli } = await import("../connect-agent");
     const result = await connectCodexCli();
 
-    expect(result).toEqual({
+    expect(result).toEqual(expect.objectContaining({
       connected: false,
       models: [],
       notInstalled: true,
       error: "Codex CLI not found",
-    });
+    }));
+    expect(result.health).toEqual(
+      expect.objectContaining({
+        reason: "not-installed",
+      }),
+    );
     expect(spawnSyncMock).toHaveBeenCalledTimes(1);
   });
 
@@ -82,6 +87,11 @@ describe("connect-agent codex checks", () => {
 
     expect(result.connected).toBe(false);
     expect(result.error).toContain("startup boom");
+    expect(result.health).toEqual(
+      expect.objectContaining({
+        provider: "codex",
+      }),
+    );
     expect(spawnSyncMock.mock.calls[1][0]).toBe("/resolved/codex");
     expect(spawnMock.mock.calls[0][0]).toBe("/resolved/codex");
   });
@@ -113,7 +123,7 @@ describe("connect-agent codex checks", () => {
     const { connectCodexCli } = await import("../connect-agent");
     const result = await connectCodexCli();
 
-    expect(result).toEqual({
+    expect(result).toEqual(expect.objectContaining({
       connected: true,
       models: [
         {
@@ -123,7 +133,13 @@ describe("connect-agent codex checks", () => {
           provider: "openai",
         },
       ],
-    });
+    }));
+    expect(result.health).toEqual(
+      expect.objectContaining({
+        provider: "codex",
+        binaryPath: "/resolved/codex",
+      }),
+    );
     expect(spawnSyncMock.mock.calls[1][0]).toBe("/resolved/codex");
     expect(spawnMock.mock.calls[0][0]).toBe("/resolved/codex");
   });

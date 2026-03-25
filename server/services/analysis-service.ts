@@ -41,41 +41,64 @@ import { createRunLogger } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
 import type { AnalysisActivityCallback } from "./ai/analysis-activity";
 import type { AnalysisEffortLevel } from "../../shared/types/analysis-runtime";
-import { normalizeRuntimeProvider } from "../../shared/types/analysis-runtime";
-
-interface AnalysisAdapter {
-  runAnalysisPhase<T = unknown>(
-    prompt: string,
-    systemPrompt: string,
-    model: string,
-    schema: Record<string, unknown>,
-    options?: {
-      signal?: AbortSignal;
-      runId?: string;
-      maxTurns?: number;
-      webSearch?: boolean;
-      onActivity?: AnalysisActivityCallback;
-    },
-  ): Promise<T>;
-}
+import type {
+  RuntimeAdapter,
+  RuntimeStructuredTurnInput,
+} from "./ai/adapter-contract";
+import { getRuntimeAdapter } from "./ai/adapter-contract";
 
 async function loadAnalysisAdapter(
   provider?: string,
-): Promise<AnalysisAdapter> {
+): Promise<RuntimeAdapter> {
   if (process.env.GAME_THEORY_ANALYSIS_TEST_MODE === "1") {
-    return import("./ai/test-adapter");
+    const mod = await import("./ai/test-adapter");
+    return {
+      provider: "claude",
+      createSession(key) {
+        return {
+          provider: "claude",
+          key,
+          streamChatTurn: async function* () {
+            throw new Error("Test adapter does not support chat turns");
+          },
+          runStructuredTurn<T = unknown>(input: RuntimeStructuredTurnInput) {
+            return mod.runAnalysisPhase<T>(
+              input.prompt,
+              input.systemPrompt,
+              input.model,
+              input.schema,
+              {
+                signal: input.signal,
+                onActivity: input.onActivity,
+              },
+            );
+          },
+          getDiagnostics() {
+            return {
+              provider: "claude",
+              sessionId: "test-adapter-session",
+              details: { ownerId: key.ownerId },
+            };
+          },
+          async dispose() {},
+        };
+      },
+      async listModels() {
+        return [];
+      },
+      async checkHealth() {
+        return {
+          provider: "claude",
+          status: "healthy",
+          reason: null,
+          checkedAt: Date.now(),
+          checks: [],
+        };
+      },
+    };
   }
-  if (normalizeRuntimeProvider(provider as "anthropic" | "openai" | undefined) === "codex") {
-    return import("./ai/codex-adapter");
-  }
-  if (
-    normalizeRuntimeProvider(provider as "anthropic" | "openai" | undefined) ===
-      "claude" ||
-    !provider
-  ) {
-    return import("./ai/claude-adapter");
-  }
-  throw new Error(`Unknown provider: ${provider}. Allowed: claude, codex`);
+
+  return getRuntimeAdapter(provider as "anthropic" | "openai" | undefined);
 }
 
 // ── Public types ──
@@ -1935,12 +1958,16 @@ export async function runPhase(
   let adapterResult: unknown;
   try {
     const adapter = await loadAnalysisAdapter(context?.provider);
-    adapterResult = await adapter.runAnalysisPhase(
-      user,
-      system,
-      model,
-      schema,
-      {
+    const session = adapter.createSession({
+      ownerId: context?.runId ?? `phase-${phase}`,
+      ...(context?.runId ? { runId: context.runId } : {}),
+    });
+    try {
+      adapterResult = await session.runStructuredTurn({
+        prompt: user,
+        systemPrompt: system,
+        model,
+        schema,
         signal: context?.signal,
         runId: context?.runId,
         webSearch: context?.runtime?.webSearch,
@@ -1954,8 +1981,10 @@ export async function runPhase(
           }
           context?.onActivity?.(activity);
         },
-      },
-    );
+      });
+    } finally {
+      await session.dispose();
+    }
   } catch (err) {
     return {
       success: false,
