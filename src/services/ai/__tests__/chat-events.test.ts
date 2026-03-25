@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { ChatEvent } from "../chat-events";
 import { isChatEvent, isTerminalEvent } from "../chat-events";
+import { createTransportRuntimeError } from "../../../../shared/types/runtime-error";
 
 describe("ChatEvent", () => {
   it("recognizes text_delta events", () => {
@@ -17,8 +18,11 @@ describe("ChatEvent", () => {
   it("recognizes error as terminal", () => {
     const event: ChatEvent = {
       type: "error",
-      message: "timeout",
-      recoverable: false,
+      error: createTransportRuntimeError("timeout", {
+        provider: "claude",
+        transport: "http",
+        retryable: false,
+      }),
     };
     expect(isTerminalEvent(event)).toBe(true);
   });

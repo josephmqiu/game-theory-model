@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { runEval } from "./eval-runner";
 import type { EvalFixture, PhaseEvalReport } from "./eval-types";
 import type { AnalysisEffortLevel } from "../../shared/types/analysis-runtime";
+import { normalizeRuntimeEffort } from "../../shared/types/analysis-runtime";
 import type { MethodologyPhase } from "../../shared/types/methodology";
 
 const __dirname = new URL(".", import.meta.url).pathname;
@@ -120,8 +121,11 @@ async function main() {
   }
 
   const efforts: AnalysisEffortLevel[] = args.effort
-    ? (args.effort.split(",") as AnalysisEffortLevel[])
-    : ["standard"];
+    ? args.effort
+        .split(",")
+        .map((effort) => normalizeRuntimeEffort(effort as never))
+        .filter((effort): effort is AnalysisEffortLevel => Boolean(effort))
+    : ["medium"];
 
   const phases: MethodologyPhase[] | undefined = args.phase
     ? (args.phase.split(",") as MethodologyPhase[])

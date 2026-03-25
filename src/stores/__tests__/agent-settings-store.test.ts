@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const storageState = vi.hoisted(() => ({
+const storageState = {
   data: {} as Record<string, string>,
-}));
+};
 
 vi.mock("@/utils/app-storage", () => {
   return {
@@ -52,7 +52,7 @@ describe("agent-settings-store", () => {
   it("persists and hydrates canonicalized analysis runtime preferences", () => {
     useAgentSettingsStore.setState({
       analysisWebSearch: false,
-      analysisEffortLevel: "thorough",
+      analysisEffortLevel: "high",
       analysisPhaseMode: "custom",
       analysisCustomPhases: ["scenarios", "situational-grounding"],
     });
@@ -63,7 +63,7 @@ describe("agent-settings-store", () => {
 
     expect(useAgentSettingsStore.getState()).toMatchObject({
       analysisWebSearch: false,
-      analysisEffortLevel: "thorough",
+      analysisEffortLevel: "high",
       analysisPhaseMode: "custom",
       analysisCustomPhases: ["situational-grounding", "scenarios"],
       isHydrated: true,

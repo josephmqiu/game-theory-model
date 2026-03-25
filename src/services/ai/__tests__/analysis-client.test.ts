@@ -7,6 +7,7 @@ import type {
   AnalysisRelationship,
 } from "@/types/entity";
 import type { AnalysisStateResponse, RunStatus } from "../../../../shared/types/api";
+import { createValidationRuntimeError } from "../../../../shared/types/runtime-error";
 
 const originalFetch = globalThis.fetch;
 const originalEventSource = globalThis.EventSource;
@@ -190,6 +191,11 @@ async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
 }
 
+async function advanceTimersByTimeAsync(ms: number): Promise<void> {
+  vi.advanceTimersByTime(ms);
+  await flushMicrotasks();
+}
+
 async function waitFor(assertion: () => void, attempts = 20): Promise<void> {
   let lastError: unknown;
 
@@ -225,12 +231,9 @@ async function loadModules() {
 describe("analysis-client", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.resetModules();
     MockEventSource.reset();
-    vi.stubGlobal(
-      "EventSource",
-      MockEventSource as unknown as typeof globalThis.EventSource,
-    );
+    globalThis.EventSource =
+      MockEventSource as unknown as typeof globalThis.EventSource;
     globalThis.fetch = originalFetch;
   });
 
@@ -244,7 +247,7 @@ describe("analysis-client", () => {
 
     globalThis.fetch = originalFetch;
     if (originalEventSource) {
-      vi.stubGlobal("EventSource", originalEventSource);
+      globalThis.EventSource = originalEventSource;
     } else {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       delete (globalThis as any).EventSource;
@@ -263,7 +266,7 @@ describe("analysis-client", () => {
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client, useEntityGraphStore, useRunStatusStore } =
       await loadModules();
@@ -289,7 +292,7 @@ describe("analysis-client", () => {
       type: "phase_activity",
       phase: "situational-grounding",
       runId: "run-1",
-      kind: "researching",
+      kind: "note",
       message: "Researching evidence.",
     });
 
@@ -326,7 +329,7 @@ describe("analysis-client", () => {
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client, useRunStatusStore } = await loadModules();
     const events: string[] = [];
@@ -361,7 +364,7 @@ describe("analysis-client", () => {
       type: "phase_activity",
       phase: "situational-grounding",
       runId: "run-progress",
-      kind: "researching",
+      kind: "note",
       message: "Researching evidence.",
     });
     source.emitMessage({
@@ -403,7 +406,7 @@ describe("analysis-client", () => {
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client, useRunStatusStore } = await loadModules();
 
@@ -444,7 +447,10 @@ describe("analysis-client", () => {
                   kind: "analysis",
                   runId: "run-2",
                   failedPhase: "situational-grounding",
-                  failureKind: "validation",
+                  failure: createValidationRuntimeError("Validation failed", {
+                    provider: "claude",
+                    retryable: false,
+                  }),
                 }),
                 5,
               ),
@@ -452,7 +458,7 @@ describe("analysis-client", () => {
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client, useEntityGraphStore, useRunStatusStore } =
       await loadModules();
@@ -466,7 +472,7 @@ describe("analysis-client", () => {
       type: "phase_activity",
       phase: "situational-grounding",
       runId: "run-2",
-      kind: "researching",
+      kind: "note",
       message: "Researching evidence.",
     });
     source.emitMessage({
@@ -482,7 +488,7 @@ describe("analysis-client", () => {
     expect(useRunStatusStore.getState().runStatus).toMatchObject({
       status: "failed",
       failedPhase: "situational-grounding",
-      failureKind: "validation",
+      failure: expect.objectContaining({ tag: "validation" }),
     });
     expect(useRunStatusStore.getState().phaseActivityText).toBeNull();
   });
@@ -514,7 +520,7 @@ describe("analysis-client", () => {
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client, useRunStatusStore } = await loadModules();
 
@@ -523,7 +529,7 @@ describe("analysis-client", () => {
     firstSource.emitOpen();
 
     vi.setSystemTime(Date.now() + 31_000);
-    await vi.advanceTimersByTimeAsync(31_000);
+    await advanceTimersByTimeAsync(31_000);
     await vi.runOnlyPendingTimersAsync();
     await waitFor(() => {
       expect(MockEventSource.instances).toHaveLength(2);
@@ -552,7 +558,7 @@ describe("analysis-client", () => {
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client } = await loadModules();
 
@@ -597,7 +603,7 @@ describe("analysis-client", () => {
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client } = await loadModules();
 
@@ -631,7 +637,7 @@ describe("analysis-client", () => {
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client, useRunStatusStore } = await loadModules();
 
@@ -673,7 +679,7 @@ describe("analysis-client", () => {
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client, useRunStatusStore } = await loadModules();
 
@@ -712,7 +718,7 @@ describe("analysis-client", () => {
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client, useEntityGraphStore, useRunStatusStore } =
       await loadModules();
@@ -720,13 +726,13 @@ describe("analysis-client", () => {
     await expect(client.hydrateAnalysisState()).rejects.toThrow("state failed 1");
 
     for (const delayMs of [1_000, 2_000, 4_000, 8_000]) {
-      await vi.advanceTimersByTimeAsync(delayMs);
+      await advanceTimersByTimeAsync(delayMs);
       await flushMicrotasks();
     }
 
     expect(useRunStatusStore.getState().connectionState).toBe("DISCONNECTED");
 
-    await vi.advanceTimersByTimeAsync(16_000);
+    await advanceTimersByTimeAsync(16_000);
     await flushMicrotasks();
 
     await waitFor(() => {

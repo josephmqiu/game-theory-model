@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import * as runtimeStatus from "../runtime-status";
+import { getRuntimeErrorMessage } from "../../../shared/types/runtime-error";
 
 describe("runtime-status", () => {
   beforeEach(() => {
@@ -66,8 +67,9 @@ describe("runtime-status", () => {
         total: 4,
       },
       failedPhase: "baseline-model",
-      failureKind: "validation",
-      failureMessage: "Revision diff validation error: bad schema",
+      failure: runtimeStatus.inferRuntimeError(
+        "Revision diff validation error: bad schema",
+      ),
       deferredRevalidationPending: false,
     });
   });
@@ -145,15 +147,20 @@ describe("runtime-status", () => {
 
   it("classifies provider, connector, and MCP transport failures", () => {
     expect(
-      runtimeStatus.inferFailureKind(
+      runtimeStatus.inferRuntimeError(
         'Failed to start app-server: MCP server "game_theory_analyzer_mcp" is missing tool "get_entity"',
       ),
-    ).toBe("mcp_transport_error");
+    ).toMatchObject({ tag: "transport", transport: "mcp" });
     expect(
-      runtimeStatus.inferFailureKind("Not logged in · Please run /login"),
-    ).toBe("connector_error");
+      runtimeStatus.inferRuntimeError("Not logged in · Please run /login"),
+    ).toMatchObject({ tag: "session", sessionState: "missing" });
     expect(
-      runtimeStatus.inferFailureKind("Provider API returned 401 unauthorized"),
-    ).toBe("provider_api_error");
+      runtimeStatus.inferRuntimeError("Provider API returned 401 unauthorized"),
+    ).toMatchObject({ tag: "provider", reason: "unauthorized" });
+  });
+
+  it("derives a readable failure message from the tagged runtime error", () => {
+    const error = runtimeStatus.inferRuntimeError("timeout exceeded");
+    expect(getRuntimeErrorMessage(error)).toBe("timeout exceeded");
   });
 });

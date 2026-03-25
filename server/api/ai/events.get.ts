@@ -2,10 +2,12 @@ import { randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
 import { defineEventHandler } from "h3";
 import type {
-  AnalysisMutationEvent,
+  AnalysisMutationEnvelope,
+  AnalysisPingEnvelope,
+  AnalysisProgressEnvelope,
   AnalysisProgressEvent,
+  AnalysisStatusEnvelope,
 } from "../../../shared/types/events";
-import type { RunStatus } from "../../../shared/types/api";
 import * as analysisOrchestrator from "../../agents/analysis-agent";
 import * as revalidationService from "../../services/revalidation-service";
 import * as entityGraphService from "../../services/entity-graph-service";
@@ -18,10 +20,10 @@ const HEARTBEAT_INTERVAL_MS =
 function writeEvent(
   res: ServerResponse,
   payload:
-    | ({ channel: "mutation" } & AnalysisMutationEvent & { revision: number })
-    | ({ channel: "status" } & RunStatus & { revision: number })
-    | ({ channel: "progress" } & AnalysisProgressEvent & { revision: number })
-    | { channel: "ping"; revision: number },
+    | AnalysisMutationEnvelope
+    | AnalysisStatusEnvelope
+    | AnalysisProgressEnvelope
+    | AnalysisPingEnvelope,
 ): void {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }

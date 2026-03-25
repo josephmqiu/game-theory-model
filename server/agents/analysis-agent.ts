@@ -11,6 +11,7 @@ import type {
   AnalysisProgressEvent,
   PhaseSummary,
 } from "../../shared/types/events";
+import { getRuntimeErrorMessage } from "../../shared/types/runtime-error";
 import type {
   AnalysisRuntimeOverrides,
   ResolvedAnalysisRuntime,
@@ -848,6 +849,7 @@ export async function runFull(
               runtimeStatus.releaseRun(run.runId, "failed", {
                 failedPhase: phase,
                 failureMessage: run.error,
+                provider: run.provider as "anthropic" | "openai" | undefined,
               });
               run.logger.error("orchestrator", "run-timeout", {
                 elapsedMs: analysisTimer.elapsed(),
@@ -856,7 +858,10 @@ export async function runFull(
               emitProgress({
                 type: "analysis_failed",
                 runId: run.runId,
-                error: "Run-level timeout exceeded",
+                error: runtimeStatus.inferRuntimeError(
+                  "Run-level timeout exceeded",
+                  run.provider as "anthropic" | "openai" | undefined,
+                ),
               });
             } else {
               run.status = "interrupted";
@@ -872,11 +877,15 @@ export async function runFull(
             runtimeStatus.releaseRun(run.runId, "failed", {
               failedPhase: phase,
               failureMessage: run.error,
+              provider: run.provider as "anthropic" | "openai" | undefined,
             });
             emitProgress({
               type: "analysis_failed",
               runId: run.runId,
-              error: result.error ?? "Unknown error",
+              error: runtimeStatus.inferRuntimeError(
+                result.error ?? "Unknown error",
+                run.provider as "anthropic" | "openai" | undefined,
+              ),
             });
           }
           break;
@@ -914,11 +923,15 @@ export async function runFull(
               runtimeStatus.releaseRun(run.runId, "failed", {
                 failedPhase: phase,
                 failureMessage: run.error,
+                provider: run.provider as "anthropic" | "openai" | undefined,
               });
               emitProgress({
                 type: "analysis_failed",
                 runId: run.runId,
-                error: run.error,
+                error: runtimeStatus.inferRuntimeError(
+                  run.error,
+                  run.provider as "anthropic" | "openai" | undefined,
+                ),
               });
               break;
             }
@@ -1050,7 +1063,7 @@ function getTerminalRuntimeStatus(runId: string): RunStatus | null {
     activePhase: snapshot.activePhase,
     phasesCompleted: snapshot.progress.completed,
     totalPhases: snapshot.progress.total,
-    error: snapshot.failureMessage,
+    error: getRuntimeErrorMessage(snapshot.failure),
   };
 }
 
@@ -1155,6 +1168,7 @@ export function markOrphanedRunsFailed(): void {
     activeRun.activePhase = null;
     runtimeStatus.releaseRun(runId, "failed", {
       failureMessage: activeRun.error,
+      provider: activeRun.provider as "anthropic" | "openai" | undefined,
     });
     activeRun = null;
     runPromise = null;

@@ -145,6 +145,12 @@ function makeFailedResult(error: string): PhaseResult {
   return { success: false, entities: [], relationships: [], error };
 }
 
+async function advanceTimersByTimeAsync(ms: number): Promise<void> {
+  vi.advanceTimersByTime(ms);
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 // ── Tests ──
 
 describe("revalidation-service", () => {
@@ -185,7 +191,7 @@ describe("revalidation-service", () => {
     expect(mockRunPhase).not.toHaveBeenCalled();
 
     // Advance past the 2s debounce
-    await vi.advanceTimersByTimeAsync(2000);
+    await advanceTimersByTimeAsync(2000);
 
     // Now revalidation should have triggered
     expect(mockRunPhase).toHaveBeenCalled();
@@ -214,14 +220,14 @@ describe("revalidation-service", () => {
     revalidation.scheduleRevalidation(["e1"]);
 
     // Wait 1s, then second call (still within 2s debounce)
-    await vi.advanceTimersByTimeAsync(1000);
+    await advanceTimersByTimeAsync(1000);
     revalidation.scheduleRevalidation(["e2"]);
 
     // At 1s mark, no calls yet
     expect(mockRunPhase).not.toHaveBeenCalled();
 
     // Advance the remaining 2s from the reset
-    await vi.advanceTimersByTimeAsync(2000);
+    await advanceTimersByTimeAsync(2000);
 
     // Single revalidation that covers both IDs
     // It should find earliest stale phase (situational-grounding) and run from there
@@ -237,7 +243,7 @@ describe("revalidation-service", () => {
     revalidation.scheduleRevalidation(["e1", "e2"]);
 
     // Advance well past debounce
-    await vi.advanceTimersByTimeAsync(5000);
+    await advanceTimersByTimeAsync(5000);
 
     // No revalidation triggered
     expect(mockRunPhase).not.toHaveBeenCalled();
@@ -267,13 +273,13 @@ describe("revalidation-service", () => {
 
     revalidation.scheduleRevalidation(["e1"]);
 
-    await vi.advanceTimersByTimeAsync(2000);
+    await advanceTimersByTimeAsync(2000);
 
     expect(mockRunPhase).not.toHaveBeenCalled();
     expect(revalidation._getPendingStaleIds()).toEqual(new Set(["e1"]));
 
     runtimeStatus.releaseRun("existing-reval", "completed");
-    await vi.advanceTimersByTimeAsync(2000);
+    await advanceTimersByTimeAsync(2000);
 
     expect(mockRunPhase).toHaveBeenCalled();
     expect(revalidation._getPendingStaleIds().size).toBe(0);
@@ -287,13 +293,13 @@ describe("revalidation-service", () => {
     // Schedule while running — gets deferred
     revalidation.scheduleRevalidation(["e1"]);
 
-    await vi.advanceTimersByTimeAsync(5000);
+    await advanceTimersByTimeAsync(5000);
     expect(mockRunPhase).not.toHaveBeenCalled();
 
     // Run completes
     mockIsRunning.mockReturnValue(false);
     revalidation.onRunComplete();
-    await vi.advanceTimersByTimeAsync(0);
+    await advanceTimersByTimeAsync(0);
 
     expect(mockRunPhase).not.toHaveBeenCalled();
     expect(revalidation._getDeferredStaleIds()).toEqual(new Set(["e1"]));
@@ -303,7 +309,7 @@ describe("revalidation-service", () => {
     mockIsRunning.mockReturnValue(true);
 
     revalidation.scheduleRevalidation(["e1", "e2"]);
-    await vi.advanceTimersByTimeAsync(5000);
+    await advanceTimersByTimeAsync(5000);
 
     expect(revalidation._getDeferredStaleIds().size).toBe(2);
     expect(revalidation._getPendingStaleIds().size).toBe(0);
@@ -312,11 +318,11 @@ describe("revalidation-service", () => {
     revalidation.onRunComplete(
       "openai",
       "gpt-5.4",
-      { webSearch: false, effortLevel: "thorough" },
+      { webSearch: false, effortLevel: "high" },
       false,
     );
 
-    await vi.advanceTimersByTimeAsync(0);
+    await advanceTimersByTimeAsync(0);
 
     expect(mockRunPhase).not.toHaveBeenCalled();
     expect(revalidation._getDeferredStaleIds().size).toBe(2);
@@ -348,7 +354,7 @@ describe("revalidation-service", () => {
     expect(result.runId).toMatch(/^reval-/);
 
     // Flush microtasks to let async execution complete
-    await vi.advanceTimersByTimeAsync(0);
+    await advanceTimersByTimeAsync(0);
 
     // Should run from player-identification (earliest) through assumptions
     expect(mockRunPhase).toHaveBeenCalledTimes(5);
@@ -381,7 +387,7 @@ describe("revalidation-service", () => {
     expect(result.runId).toMatch(/^reval-/);
 
     // Flush microtasks to let async execution complete
-    await vi.advanceTimersByTimeAsync(0);
+    await advanceTimersByTimeAsync(0);
 
     // Should run baseline-model through assumptions (4 phases in V2)
     expect(mockRunPhase).toHaveBeenCalledTimes(4);
@@ -423,7 +429,7 @@ describe("revalidation-service", () => {
     revalidation.revalidate(["e1"]);
 
     // Flush microtasks to let async execution complete
-    await vi.advanceTimersByTimeAsync(0);
+    await advanceTimersByTimeAsync(0);
 
     unsubscribe();
 
@@ -458,7 +464,7 @@ describe("revalidation-service", () => {
     revalidation.revalidate(["e1"]);
 
     // Flush microtasks to let async execution complete
-    await vi.advanceTimersByTimeAsync(0);
+    await advanceTimersByTimeAsync(0);
 
     unsubscribe();
 
@@ -466,7 +472,7 @@ describe("revalidation-service", () => {
     expect(failEvents).toHaveLength(1);
     expect(failEvents[0]).toMatchObject({
       type: "analysis_failed",
-      error: "API error",
+      error: expect.objectContaining({ message: "API error" }),
     });
 
     // Should not continue to subsequent phases
@@ -507,18 +513,18 @@ describe("revalidation-service", () => {
     revalidation.scheduleRevalidation(["e1"]);
 
     // Advance 1.5s (within 2s window)
-    await vi.advanceTimersByTimeAsync(1500);
+    await advanceTimersByTimeAsync(1500);
     expect(mockRunPhase).not.toHaveBeenCalled();
 
     // Second call resets the timer
     revalidation.scheduleRevalidation(["e1"]);
 
     // Advance another 1.5s — total 3s from first, but only 1.5s from reset
-    await vi.advanceTimersByTimeAsync(1500);
+    await advanceTimersByTimeAsync(1500);
     expect(mockRunPhase).not.toHaveBeenCalled();
 
     // Advance remaining 0.5s to hit 2s from reset
-    await vi.advanceTimersByTimeAsync(500);
+    await advanceTimersByTimeAsync(500);
     expect(mockRunPhase).toHaveBeenCalled();
   });
 
@@ -532,7 +538,7 @@ describe("revalidation-service", () => {
   it("reuses the last resolved runtime for revalidation phase reruns", async () => {
     revalidation.onRunComplete("openai", "gpt-5.4", {
       webSearch: false,
-      effortLevel: "thorough",
+      effortLevel: "high",
     });
     mockEntityGraph.getAnalysis.mockReturnValue({
       id: "test",
@@ -545,12 +551,12 @@ describe("revalidation-service", () => {
     mockRunPhase.mockResolvedValue(makePhaseResult("situational-grounding"));
 
     revalidation.revalidate(["e1"]);
-    await vi.advanceTimersByTimeAsync(0);
+    await advanceTimersByTimeAsync(0);
 
     expect(mockRunPhase.mock.calls[0][2]).toMatchObject({
       provider: "openai",
       model: "gpt-5.4",
-      runtime: { webSearch: false, effortLevel: "thorough" },
+      runtime: { webSearch: false, effortLevel: "high" },
     });
   });
 
@@ -570,7 +576,7 @@ describe("revalidation-service", () => {
     const result = revalidation.revalidate();
 
     // Flush microtasks
-    await vi.advanceTimersByTimeAsync(0);
+    await advanceTimersByTimeAsync(0);
 
     expect(result.runId).toMatch(/^reval-/);
     expect(mockRunPhase).not.toHaveBeenCalled();
@@ -603,7 +609,7 @@ describe("revalidation-service", () => {
     revalidation.revalidate(["e1"]);
 
     // Flush microtasks to let async execution complete
-    await vi.advanceTimersByTimeAsync(0);
+    await advanceTimersByTimeAsync(0);
 
     expect(mockEntityGraph.removePhaseEntities).not.toHaveBeenCalled();
     expect(mockCommitPhaseSnapshot).toHaveBeenCalledTimes(6);
@@ -635,7 +641,7 @@ describe("revalidation-service", () => {
     expect(statusBefore!.status).toBe("running");
 
     // Flush microtasks
-    await vi.advanceTimersByTimeAsync(0);
+    await advanceTimersByTimeAsync(0);
 
     // After completion, status should be "completed"
     const statusAfter = revalidation.getRevalStatus(runId);
@@ -698,7 +704,7 @@ describe("revalidation-service", () => {
       .mockResolvedValueOnce(makePhaseResult("assumptions"));
 
     revalidation.revalidate(["e1"]);
-    await vi.advanceTimersByTimeAsync(0);
+    await advanceTimersByTimeAsync(0);
 
     expect(mockEntityGraph.clearStale).toHaveBeenCalledWith([
       "phase-entity-1",

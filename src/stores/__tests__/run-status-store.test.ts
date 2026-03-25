@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useRunStatusStore } from "@/stores/run-status-store";
+import { createSessionRuntimeError } from "../../../shared/types/runtime-error";
 
 describe("run-status-store", () => {
   beforeEach(() => {
@@ -62,8 +63,11 @@ describe("run-status-store", () => {
         total: 9,
       },
       failedPhase: "player-identification",
-      failureKind: "connector_error",
-      failureMessage: "Codex runtime disconnected",
+      failure: createSessionRuntimeError("Codex runtime disconnected", {
+        provider: "codex",
+        sessionState: "missing",
+        retryable: false,
+      }),
       deferredRevalidationPending: false,
     });
 
@@ -72,8 +76,11 @@ describe("run-status-store", () => {
       kind: "analysis",
       runId: "run-2",
       failedPhase: "player-identification",
-      failureKind: "connector_error",
-      failureMessage: "Codex runtime disconnected",
+      failure: createSessionRuntimeError("Codex runtime disconnected", {
+        provider: "codex",
+        sessionState: "missing",
+        retryable: false,
+      }),
     });
   });
 });

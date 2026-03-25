@@ -40,6 +40,8 @@ import { PHASE_PROMPTS } from "../agents/phase-prompts";
 import { createRunLogger } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
 import type { AnalysisActivityCallback } from "./ai/analysis-activity";
+import type { AnalysisEffortLevel } from "../../shared/types/analysis-runtime";
+import { normalizeRuntimeProvider } from "../../shared/types/analysis-runtime";
 
 interface AnalysisAdapter {
   runAnalysisPhase<T = unknown>(
@@ -63,13 +65,17 @@ async function loadAnalysisAdapter(
   if (process.env.GAME_THEORY_ANALYSIS_TEST_MODE === "1") {
     return import("./ai/test-adapter");
   }
-  if (provider === "openai") {
+  if (normalizeRuntimeProvider(provider as "anthropic" | "openai" | undefined) === "codex") {
     return import("./ai/codex-adapter");
   }
-  if (provider === "anthropic" || !provider) {
+  if (
+    normalizeRuntimeProvider(provider as "anthropic" | "openai" | undefined) ===
+      "claude" ||
+    !provider
+  ) {
     return import("./ai/claude-adapter");
   }
-  throw new Error(`Unknown provider: ${provider}. Allowed: anthropic, openai`);
+  throw new Error(`Unknown provider: ${provider}. Allowed: claude, codex`);
 }
 
 // ── Public types ──
@@ -81,11 +87,9 @@ export interface PhaseResult {
   error?: string;
 }
 
-type PhaseEffortLevel = "quick" | "standard" | "thorough";
-
 interface PhaseRuntimeContext {
   webSearch: boolean;
-  effortLevel: PhaseEffortLevel;
+  effortLevel: AnalysisEffortLevel;
 }
 
 export interface PhaseContext {
@@ -538,7 +542,7 @@ function buildPrompt(
 ): { system: string; user: string } {
   const systemPrompt = revisionSystemPrompt ?? PHASE_PROMPTS[phase];
   const effortGuidance = buildAnalysisEffortGuidance(
-    runtime?.effortLevel ?? "standard",
+    runtime?.effortLevel ?? "medium",
   );
   const parts = [
     `Analyze the following topic:\n\n${topic}`,
@@ -563,29 +567,36 @@ function buildPrompt(
 }
 
 function buildAnalysisEffortGuidance(
-  effortLevel: PhaseEffortLevel,
+  effortLevel: AnalysisEffortLevel,
 ): string {
-  const guidanceByEffort: Record<PhaseEffortLevel, string[]> = {
-    quick: [
+  const guidanceByEffort: Record<AnalysisEffortLevel, string[]> = {
+    low: [
       "Analysis effort guidance:",
-      '- Effort level: "quick".',
+      '- Effort level: "low".',
       "- Prioritize core players, objectives, strategic structure, and the minimum research needed for a useful answer.",
       "- Avoid unnecessary branching or long-tail possibilities.",
       "- Prefer concise outputs when uncertainty is high.",
     ],
-    standard: [
+    medium: [
       "Analysis effort guidance:",
-      '- Effort level: "standard".',
+      '- Effort level: "medium".',
       "- Preserve the current expected level of depth and research coverage.",
       "- Focus on the main strategic structure without expanding scope unnecessarily.",
       "- Keep uncertainty visible, but do not add extra alternatives unless they materially help the analysis.",
     ],
-    thorough: [
+    high: [
       "Analysis effort guidance:",
-      '- Effort level: "thorough".',
+      '- Effort level: "high".',
       "- Allow broader research and comparison when it materially improves the analysis.",
       "- Surface more alternatives, assumptions, and uncertainty explicitly.",
       "- Spend more attention on edge cases and competing explanations.",
+    ],
+    max: [
+      "Analysis effort guidance:",
+      '- Effort level: "max".',
+      "- Use the broadest research and comparison budget available when it materially improves the analysis.",
+      "- Surface alternatives, uncertainty, and edge cases explicitly.",
+      "- Prefer completeness over brevity when the evidence supports it.",
     ],
   };
 

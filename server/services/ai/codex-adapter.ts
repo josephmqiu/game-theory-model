@@ -11,6 +11,10 @@ import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 import { CODEX_MCP_SERVER_NAME, installMcpServer } from "./codex-config";
 import { ANALYSIS_TOOL_NAMES, CHAT_TOOL_NAMES } from "./tool-surfaces";
 import type { AnalysisActivityCallback } from "./analysis-activity";
+import {
+  createProcessRuntimeError,
+  createProviderRuntimeError,
+} from "../../../shared/types/runtime-error";
 
 // ── Types ──
 
@@ -628,8 +632,11 @@ export async function* streamChat(
     const msg = err instanceof Error ? err.message : String(err);
     yield {
       type: "error",
-      message: `Failed to start app-server: ${msg}`,
-      recoverable: false,
+      error: createProcessRuntimeError(`Failed to start app-server: ${msg}`, {
+        provider: "codex",
+        processState: "failed-to-start",
+        retryable: false,
+      }),
     };
     return;
   }
@@ -649,8 +656,11 @@ export async function* streamChat(
     const msg = err instanceof Error ? err.message : String(err);
     yield {
       type: "error",
-      message: `Failed to create thread: ${msg}`,
-      recoverable: false,
+      error: createProviderRuntimeError(`Failed to create thread: ${msg}`, {
+        provider: "codex",
+        reason: "unknown",
+        retryable: false,
+      }),
     };
     return;
   }
@@ -813,8 +823,11 @@ export async function* streamChat(
     const msg = err instanceof Error ? err.message : String(err);
     yield {
       type: "error",
-      message: `Failed to start turn: ${msg}`,
-      recoverable: false,
+      error: createProviderRuntimeError(`Failed to start turn: ${msg}`, {
+        provider: "codex",
+        reason: "unknown",
+        retryable: false,
+      }),
     };
     return;
   }
@@ -879,8 +892,14 @@ export async function* streamChat(
         }
         yield {
           type: "error",
-          message: `Turn timed out after ${Math.round(timeoutMs / 1000)}s`,
-          recoverable: false,
+          error: createProviderRuntimeError(
+            `Turn timed out after ${Math.round(timeoutMs / 1000)}s`,
+            {
+              provider: "codex",
+              reason: "unavailable",
+              retryable: true,
+            },
+          ),
         };
         return;
       }
@@ -892,7 +911,14 @@ export async function* streamChat(
 
       // Check tool call error (after draining so queued events are yielded first)
       if (turnError) {
-        yield { type: "error", message: turnError, recoverable: false };
+        yield {
+          type: "error",
+          error: createProviderRuntimeError(turnError, {
+            provider: "codex",
+            reason: "unknown",
+            retryable: false,
+          }),
+        };
         return;
       }
 

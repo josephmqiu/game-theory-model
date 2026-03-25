@@ -389,8 +389,10 @@ describe("claude-adapter", () => {
 
       expect(events).toContainEqual({
         type: "error",
-        message: "API rate limit",
-        recoverable: false,
+        error: expect.objectContaining({
+          message: "API rate limit",
+          tag: "provider",
+        }),
       });
     });
 
@@ -429,8 +431,10 @@ describe("claude-adapter", () => {
       // Should get an error, NOT turn_complete
       expect(events).toContainEqual({
         type: "error",
-        message: "Chat turn timed out after 5 minutes",
-        recoverable: false,
+        error: expect.objectContaining({
+          message: "Chat turn timed out after 5 minutes",
+          tag: "provider",
+        }),
       });
       expect(events).not.toContainEqual({ type: "turn_complete" });
     });

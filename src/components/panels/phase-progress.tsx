@@ -63,8 +63,8 @@ export function PhaseProgress({ className }: PhaseProgressProps) {
     : null;
 
   if (runStatus.status === "failed" && failedPhase) {
-    const failureLabel = runStatus.failureKind
-      ? getRunFailureLabel(runStatus.failureKind, t)
+    const failureLabel = runStatus.failure
+      ? getRunFailureLabel(runStatus.failure, t)
       : t("analysis.failure.providerError", {
           defaultValue: "provider error",
         });

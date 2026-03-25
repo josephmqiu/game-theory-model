@@ -220,7 +220,7 @@ async function canStartCodexAppServer(binaryPath: string): Promise<{
 }
 
 /** Connect to Codex CLI and fetch its supported models from the local cache */
-async function connectCodexCli(): Promise<ConnectResult> {
+export async function connectCodexCli(): Promise<ConnectResult> {
   try {
     const { spawnSync } = await import('node:child_process')
     const { readFile } = await import('node:fs/promises')
@@ -307,7 +307,7 @@ async function connectCodexCli(): Promise<ConnectResult> {
   }
 }
 
-export { canStartCodexAppServer, connectCodexCli }
+export { canStartCodexAppServer }
 
 /** Resolve the opencode binary path, checking PATH then common install locations. */
 async function resolveOpencodeBinary(): Promise<string | undefined> {

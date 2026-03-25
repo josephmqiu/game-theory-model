@@ -17,6 +17,7 @@ import {
   getClaudeAgentDebugFilePath,
 } from "../../utils/resolve-claude-agent-env";
 import { serverLog } from "../../utils/ai-logger";
+import { createProcessRuntimeError } from "../../../shared/types/runtime-error";
 import * as entityGraphService from "../../services/entity-graph-service";
 import { streamChat as claudeStreamChat } from "../../services/ai/claude-adapter";
 import { streamChat as codexStreamChat } from "../../services/ai/codex-adapter";
@@ -297,7 +298,14 @@ function streamViaCodexAdapter(
         serverLog(runId, "chat", "stream-error", { error: message });
         controller.enqueue(
           encoder.encode(
-            `data: ${JSON.stringify({ type: "error", message, recoverable: false })}\n\n`,
+            `data: ${JSON.stringify({
+              type: "error",
+              error: createProcessRuntimeError(message, {
+                provider: "codex",
+                processState: "failed-to-start",
+                retryable: false,
+              }),
+            })}\n\n`,
           ),
         );
       } finally {
@@ -415,7 +423,14 @@ function streamViaClaude(
         serverLog(runId, "chat", "stream-error", { error: message });
         controller.enqueue(
           encoder.encode(
-            `data: ${JSON.stringify({ type: "error", message, recoverable: false })}\n\n`,
+            `data: ${JSON.stringify({
+              type: "error",
+              error: createProcessRuntimeError(message, {
+                provider: "claude",
+                processState: "failed-to-start",
+                retryable: false,
+              }),
+            })}\n\n`,
           ),
         );
       } finally {

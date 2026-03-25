@@ -195,7 +195,6 @@ describe("codex-adapter", () => {
   beforeEach(async () => {
     process.env = { ...ORIGINAL_ENV };
     vi.clearAllMocks();
-    vi.resetModules();
     stdinHandler = null;
     const mod = await import("../codex-adapter");
     mod._resetConnection();
@@ -495,9 +494,9 @@ describe("codex-adapter", () => {
 
       expect(events.filter((event) => event.type === "tool_call_start")).toHaveLength(50);
       const errorEvent = events.find((event) => event.type === "error") as
-        | { type: "error"; message: string }
+        | { type: "error"; error: { message: string } }
         | undefined;
-      expect(errorEvent?.message).toContain("exceeded 50 tool calls");
+      expect(errorEvent?.error.message).toContain("exceeded 50 tool calls");
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
       const interruptReq = JSON.parse(
@@ -545,9 +544,9 @@ describe("codex-adapter", () => {
       await consumePromise;
 
       const errorEvent = events.find((event) => event.type === "error") as
-        | { type: "error"; message: string }
+        | { type: "error"; error: { message: string } }
         | undefined;
-      expect(errorEvent?.message).toContain("timed out");
+      expect(errorEvent?.error.message).toContain("timed out");
     });
 
     it("ignores notifications with a different threadId", async () => {

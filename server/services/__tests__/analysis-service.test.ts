@@ -1135,7 +1135,7 @@ describe("analysis-service", () => {
       );
       expect(user).toContain("request_loopback");
       expect(user).toContain("Return only the final JSON object");
-      expect(user).toContain('Effort level: "standard"');
+      expect(user).toContain('Effort level: "medium"');
       expect(user).toContain("Preserve the current expected level of depth");
       expect(user).not.toContain("Prior phase");
     });
@@ -1152,7 +1152,7 @@ describe("analysis-service", () => {
       expect(user).toContain('{"entities":[]}');
     });
 
-    it("builds prompt with quick effort guidance", async () => {
+    it("builds prompt with low effort guidance", async () => {
       const { _buildPrompt } = await importService();
       const { user } = _buildPrompt(
         "situational-grounding",
@@ -1160,10 +1160,10 @@ describe("analysis-service", () => {
         undefined,
         undefined,
         undefined,
-        { webSearch: true, effortLevel: "quick" },
+        { webSearch: true, effortLevel: "low" },
       );
 
-      expect(user).toContain('Effort level: "quick"');
+      expect(user).toContain('Effort level: "low"');
       expect(user).toContain(
         "Prioritize core players, objectives, strategic structure, and the minimum research needed for a useful answer.",
       );
@@ -1173,7 +1173,7 @@ describe("analysis-service", () => {
       expect(user).toContain("Prefer concise outputs when uncertainty is high.");
     });
 
-    it("builds prompt with thorough effort guidance", async () => {
+    it("builds prompt with high effort guidance", async () => {
       const { _buildPrompt } = await importService();
       const { user } = _buildPrompt(
         "situational-grounding",
@@ -1181,10 +1181,10 @@ describe("analysis-service", () => {
         undefined,
         undefined,
         undefined,
-        { webSearch: true, effortLevel: "thorough" },
+        { webSearch: true, effortLevel: "high" },
       );
 
-      expect(user).toContain('Effort level: "thorough"');
+      expect(user).toContain('Effort level: "high"');
       expect(user).toContain(
         "Allow broader research and comparison when it materially improves the analysis.",
       );

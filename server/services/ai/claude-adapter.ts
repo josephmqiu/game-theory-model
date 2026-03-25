@@ -2,6 +2,10 @@
 // Provides two profiles: streamChat (interactive) and runAnalysisPhase (structured).
 
 import type { ChatEvent } from "../../../shared/types/events";
+import {
+  createProcessRuntimeError,
+  createProviderRuntimeError,
+} from "../../../shared/types/runtime-error";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import {
   getEntity,
@@ -491,7 +495,14 @@ export async function* streamChat(
             errors.join("; ") ||
             resultText ||
             `Query ended with: ${message.subtype}`;
-          yield { type: "error", message: msg, recoverable: false };
+          yield {
+            type: "error",
+            error: createProviderRuntimeError(msg, {
+              provider: "claude",
+              reason: "unknown",
+              retryable: false,
+            }),
+          };
         }
       }
     }
@@ -505,8 +516,11 @@ export async function* streamChat(
     if (timedOut) {
       yield {
         type: "error",
-        message: "Chat turn timed out after 5 minutes",
-        recoverable: false,
+        error: createProviderRuntimeError("Chat turn timed out after 5 minutes", {
+          provider: "claude",
+          reason: "unavailable",
+          retryable: true,
+        }),
       };
       return;
     }
@@ -522,7 +536,14 @@ export async function* streamChat(
     // Suppress errors caused by abort (client disconnect)
     if (aborted) return;
     const msg = err instanceof Error ? err.message : String(err);
-    yield { type: "error", message: msg, recoverable: false };
+    yield {
+      type: "error",
+      error: createProcessRuntimeError(msg, {
+        provider: "claude",
+        processState: "failed-to-start",
+        retryable: false,
+      }),
+    };
   } finally {
     clearTimeout(timeoutId);
     if (signal) signal.removeEventListener("abort", onAbort);

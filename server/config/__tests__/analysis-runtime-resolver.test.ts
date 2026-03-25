@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 const ORIGINAL_ENV = { ...process.env };
 const ENV_PREFIX = "GAME_THEORY_ANALYSIS_RUNTIME_";
@@ -13,24 +13,24 @@ function resetAnalysisRuntimeEnv(): void {
 }
 
 async function importResolver() {
-  vi.resetModules();
-  return import("../analysis-runtime-resolver");
+  return import(
+    `../analysis-runtime-resolver?test=${Date.now()}-${Math.random()}`
+  );
 }
 
 describe("analysis-runtime-resolver", () => {
   afterEach(() => {
     resetAnalysisRuntimeEnv();
-    vi.resetModules();
   });
 
-  it("defaults webSearch to enabled and effortLevel to standard when overrides are omitted", async () => {
+  it("defaults webSearch to enabled and effortLevel to medium when overrides are omitted", async () => {
     resetAnalysisRuntimeEnv();
 
     const { resolveAnalysisRuntime } = await importResolver();
 
     expect(resolveAnalysisRuntime()).toEqual({
       webSearch: true,
-      effortLevel: "standard",
+      effortLevel: "medium",
     });
   });
 
@@ -41,7 +41,7 @@ describe("analysis-runtime-resolver", () => {
 
     expect(resolveAnalysisRuntime({ webSearch: false })).toEqual({
       webSearch: false,
-      effortLevel: "standard",
+      effortLevel: "medium",
     });
   });
 
@@ -54,29 +54,29 @@ describe("analysis-runtime-resolver", () => {
 
     expect(resolveAnalysisRuntime({ webSearch: true })).toEqual({
       webSearch: true,
-      effortLevel: "standard",
+      effortLevel: "medium",
     });
   });
 
-  it("uses the explicit effortLevel=quick override", async () => {
+  it("normalizes the legacy effortLevel=quick override", async () => {
     resetAnalysisRuntimeEnv();
 
     const { resolveAnalysisRuntime } = await importResolver();
 
     expect(resolveAnalysisRuntime({ effortLevel: "quick" })).toEqual({
       webSearch: true,
-      effortLevel: "quick",
+      effortLevel: "low",
     });
   });
 
-  it("uses the explicit effortLevel=thorough override", async () => {
+  it("normalizes the legacy effortLevel=thorough override", async () => {
     resetAnalysisRuntimeEnv();
 
     const { resolveAnalysisRuntime } = await importResolver();
 
     expect(resolveAnalysisRuntime({ effortLevel: "thorough" })).toEqual({
       webSearch: true,
-      effortLevel: "thorough",
+      effortLevel: "high",
     });
   });
 });

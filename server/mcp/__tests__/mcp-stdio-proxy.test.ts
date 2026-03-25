@@ -24,7 +24,7 @@ describe("mcp-stdio-proxy", () => {
         stderr,
         fetchImpl: vi
           .fn()
-          .mockRejectedValue(new Error("connect ECONNREFUSED")) as typeof fetch,
+          .mockRejectedValue(new Error("connect ECONNREFUSED")) as unknown as typeof fetch,
       }),
     ).rejects.toThrow("Nitro MCP endpoint is unreachable");
 
@@ -40,7 +40,7 @@ describe("mcp-stdio-proxy", () => {
     });
 
     await forwardJsonRpcMessage('{"jsonrpc":"2.0","id":1,"method":"tools/list"}', {
-      fetchImpl: fetchImpl as typeof fetch,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
     });
 
     expect(fetchImpl).toHaveBeenCalledWith(
@@ -94,7 +94,7 @@ describe("mcp-stdio-proxy", () => {
       stdout,
       stderr,
       port: 3100,
-      fetchImpl: fetchImpl as typeof fetch,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
     });
 
     stdin.write('{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n');
@@ -150,7 +150,7 @@ describe("mcp-stdio-proxy", () => {
       stdout,
       stderr,
       port: 3100,
-      fetchImpl: fetchImpl as typeof fetch,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
     });
 
     const message = JSON.stringify({
@@ -202,7 +202,7 @@ describe("mcp-stdio-proxy", () => {
       stdout,
       stderr,
       port: 3100,
-      fetchImpl: fetchImpl as typeof fetch,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
     });
 
     const message = JSON.stringify({

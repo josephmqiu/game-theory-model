@@ -15,7 +15,9 @@ import type {
 } from "../../../shared/types/api";
 import type {
   AnalysisMutationEvent,
+  AnalysisPhaseActivityKind,
   AnalysisProgressEvent,
+  AnalysisStreamEnvelope,
 } from "../../../shared/types/events";
 import type { Analysis } from "../../../shared/types/entity";
 import type { AnalysisRuntimeOverrides } from "../../../shared/types/analysis-runtime";
@@ -27,7 +29,7 @@ export interface AnalysisPhaseActivityEvent {
   type: "phase_activity";
   phase: string;
   runId: string;
-  kind: string;
+  kind: AnalysisPhaseActivityKind;
   message: string;
   toolName?: string;
   query?: string;
@@ -39,31 +41,7 @@ export type AnalysisProgressStreamEvent =
 
 type ProgressCallback = (event: AnalysisProgressStreamEvent) => void;
 
-type MutationEnvelope = {
-  channel: "mutation";
-  revision?: number;
-} & AnalysisMutationEvent;
-
-type ProgressEnvelope = {
-  channel: "progress";
-  revision?: number;
-} & AnalysisProgressEvent;
-
-type StatusEnvelope = {
-  channel: "status";
-  revision?: number;
-} & RunStatus;
-
-type PingEnvelope = {
-  channel: "ping";
-  revision?: number;
-};
-
-type StreamEnvelope =
-  | MutationEnvelope
-  | ProgressEnvelope
-  | StatusEnvelope
-  | PingEnvelope;
+type StreamEnvelope = AnalysisStreamEnvelope;
 
 type EventStreamManagerWindow = Window & {
   __eventStreamManager?: EventStreamManager;
@@ -204,7 +182,7 @@ function applyMutationEvent(event: AnalysisMutationEvent): boolean {
 }
 
 function stripEnvelope(
-  envelope: ProgressEnvelope | MutationEnvelope | StatusEnvelope,
+  envelope: Exclude<StreamEnvelope, { channel: "ping" }>,
 ): AnalysisProgressStreamEvent | AnalysisMutationEvent | RunStatus {
   const { channel: _channel, revision: _revision, ...payload } = envelope;
   return payload;

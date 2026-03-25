@@ -25,7 +25,7 @@ export async function runEval(
   const {
     fixtures,
     trials = 3,
-    efforts = ["standard"],
+    efforts = ["medium"],
     provider,
     model,
     fast = false,

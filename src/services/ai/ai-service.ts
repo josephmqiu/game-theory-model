@@ -265,7 +265,8 @@ export async function* streamChat(
             if (chunk.type === "error") {
               const normalized: AIStreamChunk = {
                 type: "error",
-                content: chunk.content || chunk.message || "Unknown error",
+                content:
+                  chunk.content || chunk.error?.message || "Unknown error",
               };
               yield normalized;
               clearTimeout(hardTimeout);
@@ -315,7 +316,8 @@ export async function* streamChat(
           if (chunk.type === "error") {
             yield {
               type: "error",
-              content: chunk.content || chunk.message || "Unknown error",
+              content:
+                chunk.content || chunk.error?.message || "Unknown error",
             } as AIStreamChunk;
             return;
           }

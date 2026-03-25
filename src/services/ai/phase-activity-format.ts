@@ -20,18 +20,5 @@ export function formatPhaseActivityNote(
     return i18n.t("analysis.activity.usingTool", { toolName: event.toolName });
   }
 
-  switch (event.kind) {
-    case "preparing":
-      return i18n.t("analysis.activity.preparing");
-    case "researching":
-      return i18n.t("analysis.activity.researching");
-    case "synthesizing":
-      return i18n.t("analysis.activity.synthesizing");
-    case "validating":
-      return i18n.t("analysis.activity.validating");
-    case "retrying":
-      return i18n.t("analysis.activity.retrying");
-    default:
-      return i18n.t("analysis.activity.default");
-  }
+  return i18n.t("analysis.activity.default");
 }

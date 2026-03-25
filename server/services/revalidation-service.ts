@@ -331,11 +331,15 @@ async function executeRevalidation(
             runtimeStatus.releaseRun(runId, "failed", {
               failedPhase: p,
               failureMessage: error,
+              provider: lastRunProvider as "anthropic" | "openai" | undefined,
             });
             emitProgress({
               type: "analysis_failed",
               runId,
-              error,
+              error: runtimeStatus.inferRuntimeError(
+                error,
+                lastRunProvider as "anthropic" | "openai" | undefined,
+              ),
             });
             return;
           }
@@ -392,11 +396,15 @@ async function executeRevalidation(
         runtimeStatus.releaseRun(runId, "failed", {
           failedPhase: p,
           failureMessage: error,
+          provider: lastRunProvider as "anthropic" | "openai" | undefined,
         });
         emitProgress({
           type: "analysis_failed",
           runId,
-          error,
+          error: runtimeStatus.inferRuntimeError(
+            error,
+            lastRunProvider as "anthropic" | "openai" | undefined,
+          ),
         });
         return;
       }
@@ -411,11 +419,15 @@ async function executeRevalidation(
       runtimeStatus.releaseRun(runId, "failed", {
         failedPhase: p,
         failureMessage: error,
+        provider: lastRunProvider as "anthropic" | "openai" | undefined,
       });
       emitProgress({
         type: "analysis_failed",
         runId,
-        error,
+        error: runtimeStatus.inferRuntimeError(
+          error,
+          lastRunProvider as "anthropic" | "openai" | undefined,
+        ),
       });
       return;
     }

@@ -75,8 +75,8 @@ function normalizeChunk(
   // error — legacy uses `content`, ChatEvent uses `message`
   if (t === "error") {
     const content =
-      "message" in raw
-        ? (raw as ChatEvent & { type: "error" }).message
+      "error" in raw
+        ? (raw as ChatEvent & { type: "error" }).error.message
         : "content" in raw
           ? (raw as AIStreamChunk).content
           : "Unknown error";

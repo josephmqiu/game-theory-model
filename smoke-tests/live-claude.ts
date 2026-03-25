@@ -19,7 +19,7 @@ async function collectProbeResult(model: string): Promise<void> {
     { timeoutMs: 30_000 },
   )) {
     if (event.type === "error") {
-      throw new Error(`Claude live probe failed: ${event.message}`);
+      throw new Error(`Claude live probe failed: ${event.error.message}`);
     }
     if (event.type === "text_delta" && event.content.trim().length > 0) {
       sawText = true;

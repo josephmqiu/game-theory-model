@@ -3,6 +3,8 @@ import type {
   AnalysisRelationship,
   EntityProvenance,
 } from "./entity";
+import type { RunStatus } from "./api";
+import type { RuntimeError } from "./runtime-error";
 
 export interface PhaseSummary {
   entitiesCreated: number;
@@ -13,27 +15,58 @@ export interface PhaseSummary {
 
 export type AnalysisPhaseActivityKind = "note" | "tool" | "web-search";
 
+export interface PhaseStartedEvent {
+  type: "phase_started";
+  phase: string;
+  runId: string;
+}
+
+export interface PhaseActivityEvent {
+  type: "phase_activity";
+  phase: string;
+  runId: string;
+  kind: AnalysisPhaseActivityKind;
+  message: string;
+  toolName?: string;
+  query?: string;
+}
+
+export interface PhaseCompletedEvent {
+  type: "phase_completed";
+  phase: string;
+  runId: string;
+  summary: PhaseSummary;
+}
+
+export interface AnalysisCompletedEvent {
+  type: "analysis_completed";
+  runId: string;
+}
+
+export interface AnalysisFailedEvent {
+  type: "analysis_failed";
+  runId: string;
+  error: RuntimeError;
+}
+
+export interface SynthesisStartedEvent {
+  type: "synthesis_started";
+  runId: string;
+}
+
+export interface SynthesisCompletedEvent {
+  type: "synthesis_completed";
+  runId: string;
+}
+
 export type AnalysisProgressEvent =
-  | { type: "phase_started"; phase: string; runId: string }
-  | {
-      type: "phase_activity";
-      phase: string;
-      runId: string;
-      kind: AnalysisPhaseActivityKind;
-      message: string;
-      toolName?: string;
-      query?: string;
-    }
-  | {
-      type: "phase_completed";
-      phase: string;
-      runId: string;
-      summary: PhaseSummary;
-    }
-  | { type: "analysis_completed"; runId: string }
-  | { type: "analysis_failed"; runId: string; error: string }
-  | { type: "synthesis_started"; runId: string }
-  | { type: "synthesis_completed"; runId: string };
+  | PhaseStartedEvent
+  | PhaseActivityEvent
+  | PhaseCompletedEvent
+  | AnalysisCompletedEvent
+  | AnalysisFailedEvent
+  | SynthesisStartedEvent
+  | SynthesisCompletedEvent;
 
 export type AnalysisMutationEvent =
   | { type: "entity_created"; entity: AnalysisEntity }
@@ -51,10 +84,90 @@ export type AnalysisMutationEvent =
 
 export type AnalysisEvent = AnalysisProgressEvent | AnalysisMutationEvent;
 
+export interface ChatTextDeltaEvent {
+  type: "text_delta";
+  content: string;
+}
+
+export interface ChatToolCallStartEvent {
+  type: "tool_call_start";
+  toolName: string;
+  input: unknown;
+}
+
+export interface ChatToolCallResultEvent {
+  type: "tool_call_result";
+  toolName: string;
+  output: unknown;
+}
+
+export interface ChatToolCallErrorEvent {
+  type: "tool_call_error";
+  toolName: string;
+  error: string;
+}
+
+export interface ChatTurnCompleteEvent {
+  type: "turn_complete";
+}
+
+export interface ChatErrorEvent {
+  type: "error";
+  error: RuntimeError;
+}
+
 export type ChatEvent =
-  | { type: "text_delta"; content: string }
-  | { type: "tool_call_start"; toolName: string; input: unknown }
-  | { type: "tool_call_result"; toolName: string; output: unknown }
-  | { type: "tool_call_error"; toolName: string; error: string }
-  | { type: "turn_complete" }
-  | { type: "error"; message: string; recoverable: boolean };
+  | ChatTextDeltaEvent
+  | ChatToolCallStartEvent
+  | ChatToolCallResultEvent
+  | ChatToolCallErrorEvent
+  | ChatTurnCompleteEvent
+  | ChatErrorEvent;
+
+export type AnalysisMutationEnvelope = {
+  channel: "mutation";
+  revision: number;
+} & AnalysisMutationEvent;
+
+export type AnalysisProgressEnvelope = {
+  channel: "progress";
+  revision: number;
+} & AnalysisProgressEvent;
+
+export type AnalysisStatusEnvelope = {
+  channel: "status";
+  revision: number;
+} & RunStatus;
+
+export interface AnalysisPingEnvelope {
+  channel: "ping";
+  revision: number;
+}
+
+export type AnalysisStreamEnvelope =
+  | AnalysisMutationEnvelope
+  | AnalysisProgressEnvelope
+  | AnalysisStatusEnvelope
+  | AnalysisPingEnvelope;
+
+const CHAT_EVENT_TYPES = new Set([
+  "text_delta",
+  "tool_call_start",
+  "tool_call_result",
+  "tool_call_error",
+  "turn_complete",
+  "error",
+]);
+
+export function isChatEvent(event: unknown): event is ChatEvent {
+  return (
+    typeof event === "object" &&
+    event !== null &&
+    "type" in event &&
+    CHAT_EVENT_TYPES.has((event as { type: string }).type)
+  );
+}
+
+export function isTerminalChatEvent(event: ChatEvent): boolean {
+  return event.type === "turn_complete" || event.type === "error";
+}

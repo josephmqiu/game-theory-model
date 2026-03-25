@@ -1,9 +1,18 @@
+import type { RunKind, RunStatus } from "../../shared/types/api";
 import type {
-  RunFailureKind,
-  RunKind,
-  RunStatus,
-} from "../../shared/types/api";
+  LegacyRuntimeProvider,
+  RuntimeProvider,
+} from "../../shared/types/analysis-runtime";
 import type { MethodologyPhase } from "../../shared/types/methodology";
+import type { RuntimeError } from "../../shared/types/runtime-error";
+import {
+  createProcessRuntimeError,
+  createProviderRuntimeError,
+  createSessionRuntimeError,
+  createTransportRuntimeError,
+  createValidationRuntimeError,
+} from "../../shared/types/runtime-error";
+import { normalizeRuntimeProvider } from "../../shared/types/analysis-runtime";
 import { serverLog, serverWarn } from "../utils/ai-logger";
 
 export type ReleaseRunOutcome = "completed" | "failed" | "cancelled";
@@ -19,8 +28,9 @@ interface AcquireRunOptions {
 
 interface ReleaseRunOptions {
   failedPhase?: MethodologyPhase;
-  failureKind?: RunFailureKind;
+  failure?: RuntimeError;
   failureMessage?: string;
+  provider?: LegacyRuntimeProvider;
 }
 
 type StatusChangeListener = (status: RunStatus) => void;
@@ -67,10 +77,7 @@ function emitStatusChange(
     progress: snapshot.progress,
     deferredRevalidationPending: snapshot.deferredRevalidationPending,
     ...(snapshot.failedPhase ? { failedPhase: snapshot.failedPhase } : {}),
-    ...(snapshot.failureKind ? { failureKind: snapshot.failureKind } : {}),
-    ...(snapshot.failureMessage
-      ? { failureMessage: snapshot.failureMessage }
-      : {}),
+    ...(snapshot.failure ? { failure: snapshot.failure } : {}),
     ...(data ?? {}),
   });
 
@@ -88,8 +95,7 @@ function clearFailureFields(status: RunStatus): RunStatus {
   return {
     ...status,
     failedPhase: undefined,
-    failureKind: undefined,
-    failureMessage: undefined,
+    failure: undefined,
   };
 }
 
@@ -97,33 +103,87 @@ function isActiveRun(runId: string): boolean {
   return activeRun !== null && activeRun.runId === runId;
 }
 
-export function inferFailureKind(error?: string): RunFailureKind {
-  if (!error) return "unknown";
-  if (/rate.?limit|429/i.test(error)) return "rate_limit";
+export function inferRuntimeError(
+  error?: string,
+  providerInput?: LegacyRuntimeProvider,
+): RuntimeError {
+  const provider = normalizeRuntimeProvider(providerInput);
+  if (!error) {
+    return createProviderRuntimeError("Unknown error", {
+      ...(provider ? { provider } : {}),
+      reason: "unknown",
+      retryable: false,
+    });
+  }
+  if (/rate.?limit|429/i.test(error)) {
+    return createProviderRuntimeError(error, {
+      ...(provider ? { provider } : {}),
+      reason: "rate_limit",
+      retryable: true,
+    });
+  }
   if (
     /mcp server|missing tool|mcp transport|nitro mcp endpoint|failed to restore .*mcp|tool list|tools:\s*\{\}/i.test(
       error,
     )
   ) {
-    return "mcp_transport_error";
+    return createTransportRuntimeError(error, {
+      ...(provider ? { provider } : {}),
+      transport: "mcp",
+      retryable: true,
+    });
   }
   if (
     /invalid api key|unauthorized|forbidden|provider api|upstream api|status code 40[13]|status code 5\d\d/i.test(
       error,
     )
   ) {
-    return "provider_api_error";
+    return createProviderRuntimeError(error, {
+      ...(provider ? { provider } : {}),
+      reason: /401|403|unauthorized|forbidden/i.test(error)
+        ? "unauthorized"
+        : "unavailable",
+      retryable: /5\d\d|unavailable/i.test(error),
+    });
   }
   if (
     /not logged in|please run \/login|could not resolve authentication method|auth(?:entication)? failed|session|failed to start app-server/i.test(
       error,
     )
   ) {
-    return "connector_error";
+    return createSessionRuntimeError(error, {
+      ...(provider ? { provider } : {}),
+      sessionState: /aborted/i.test(error) ? "aborted" : "missing",
+      retryable: false,
+    });
   }
-  if (/timeout/i.test(error)) return "timeout";
-  if (/parse|json|syntax|zod|validation/i.test(error)) return "validation";
-  return "unknown";
+  if (/timeout/i.test(error)) {
+    return createTransportRuntimeError(error, {
+      ...(provider ? { provider } : {}),
+      transport: "unknown",
+      retryable: true,
+    });
+  }
+  if (/parse|json|syntax|zod|validation/i.test(error)) {
+    return createValidationRuntimeError(error, {
+      ...(provider ? { provider } : {}),
+      retryable: false,
+    });
+  }
+  if (/not found|enoent|exit(?:ed)? with code|spawn/i.test(error)) {
+    return createProcessRuntimeError(error, {
+      ...(provider ? { provider } : {}),
+      processState: /not found|enoent/i.test(error)
+        ? "not-installed"
+        : "failed-to-start",
+      retryable: false,
+    });
+  }
+  return createProviderRuntimeError(error, {
+    ...(provider ? { provider } : {}),
+    reason: "unknown",
+    retryable: false,
+  });
 }
 
 export function getSnapshot(): RunStatus {
@@ -275,7 +335,9 @@ export function releaseRun(
   const completedProgress = { ...snapshot.progress };
   const failedPhase = options.failedPhase ?? snapshot.activePhase ?? undefined;
   const failureMessage = options.failureMessage;
-  const failureKind = options.failureKind ?? inferFailureKind(failureMessage);
+  const failure =
+    options.failure ??
+    inferRuntimeError(failureMessage, options.provider as RuntimeProvider);
   activeRun = null;
 
   if (outcome === "completed") {
@@ -290,8 +352,7 @@ export function releaseRun(
       activePhase: null,
       progress: completedProgress,
       failedPhase,
-      failureKind,
-      failureMessage,
+      failure,
       deferredRevalidationPending: false,
     };
   } else {

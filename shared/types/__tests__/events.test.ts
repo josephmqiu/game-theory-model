@@ -11,6 +11,7 @@ import type {
   AnalysisRelationship,
   EntityProvenance,
 } from "../entity";
+import { createTransportRuntimeError } from "../runtime-error";
 
 // ── Fixtures ──
 
@@ -46,6 +47,12 @@ const relationship: AnalysisRelationship = {
   fromEntityId: "e-1",
   toEntityId: "e-2",
 };
+
+const runtimeError = createTransportRuntimeError("timeout after 30s", {
+  provider: "claude",
+  transport: "http",
+  retryable: true,
+});
 
 // ── Tests ──
 
@@ -121,10 +128,12 @@ describe("AnalysisProgressEvent", () => {
     const event: AnalysisProgressEvent = {
       type: "analysis_failed",
       runId: "run-4",
-      error: "timeout after 30s",
+      error: runtimeError,
     };
     expect(event.type).toBe("analysis_failed");
-    expect(event.error).toBe("timeout after 30s");
+    if (event.type === "analysis_failed") {
+      expect(event.error.message).toBe("timeout after 30s");
+    }
   });
 });
 
@@ -233,7 +242,15 @@ describe("AnalysisEvent union", () => {
       },
     },
     { type: "analysis_completed", runId: "r" },
-    { type: "analysis_failed", runId: "r", error: "fail" },
+    {
+      type: "analysis_failed",
+      runId: "r",
+      error: createTransportRuntimeError("fail", {
+        provider: "codex",
+        transport: "http",
+        retryable: true,
+      }),
+    },
   ];
 
   const mutationEvents: AnalysisEvent[] = [
@@ -280,7 +297,14 @@ describe("ChatEvent", () => {
       { type: "tool_call_result", toolName: "get_entities", output: [] },
       { type: "tool_call_error", toolName: "get_entities", error: "failed" },
       { type: "turn_complete" },
-      { type: "error", message: "timeout", recoverable: false },
+      {
+        type: "error",
+        error: createTransportRuntimeError("timeout", {
+          provider: "claude",
+          transport: "http",
+          retryable: false,
+        }),
+      },
     ];
 
     expect(events).toHaveLength(6);

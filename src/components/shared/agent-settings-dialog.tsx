@@ -77,15 +77,16 @@ const PROVIDER_META: Record<
 };
 
 const ANALYSIS_EFFORT_OPTIONS: AnalysisEffortLevel[] = [
-  "quick",
-  "standard",
-  "thorough",
+  "low",
+  "medium",
+  "high",
 ];
 
 const ANALYSIS_EFFORT_LABEL_KEYS: Record<AnalysisEffortLevel, string> = {
-  quick: "agents.analysisEffortQuick",
-  standard: "agents.analysisEffortStandard",
-  thorough: "agents.analysisEffortThorough",
+  low: "agents.analysisEffortQuick",
+  medium: "agents.analysisEffortStandard",
+  high: "agents.analysisEffortThorough",
+  max: "agents.analysisEffortThorough",
 };
 
 async function connectAgent(

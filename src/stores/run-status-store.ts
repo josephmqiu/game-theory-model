@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import type { TFunction } from "i18next";
-import type { RunFailureKind, RunStatus } from "../../shared/types/api";
+import type { RunStatus } from "../../shared/types/api";
+import type {
+  RuntimeError,
+  RuntimeErrorTag,
+} from "../../shared/types/runtime-error";
 import { V3_PHASES } from "@/types/methodology";
 
 export type ConnectionState =
@@ -66,31 +70,27 @@ export const useRunStatusStore = create<RunStatusStoreState>((set) => ({
   resetForTest: () => set(createInitialState()),
 }));
 
-const FAILURE_I18N_KEYS: Record<RunFailureKind, string> = {
-  rate_limit: "analysis.failure.rateLimit",
-  provider_api_error: "analysis.failure.providerApiError",
-  connector_error: "analysis.failure.connectorError",
-  mcp_transport_error: "analysis.failure.mcpTransportError",
+const FAILURE_I18N_KEYS: Record<RuntimeErrorTag, string> = {
   validation: "analysis.failure.validation",
-  timeout: "analysis.failure.timeout",
-  unknown: "analysis.failure.unknown",
+  transport: "analysis.failure.timeout",
+  provider: "analysis.failure.providerApiError",
+  session: "analysis.failure.connectorError",
+  process: "analysis.failure.connectorError",
 };
 
-const FAILURE_DEFAULT_LABELS: Record<RunFailureKind, string> = {
-  rate_limit: "rate limited",
-  provider_api_error: "provider API error",
-  connector_error: "connector error",
-  mcp_transport_error: "MCP transport error",
+const FAILURE_DEFAULT_LABELS: Record<RuntimeErrorTag, string> = {
   validation: "validation error",
-  timeout: "timeout",
-  unknown: "unknown error",
+  transport: "transport error",
+  provider: "provider error",
+  session: "session error",
+  process: "process error",
 };
 
 export function getRunFailureLabel(
-  kind: RunFailureKind,
+  failure: RuntimeError,
   t: TFunction,
 ): string {
-  return t(FAILURE_I18N_KEYS[kind], {
-    defaultValue: FAILURE_DEFAULT_LABELS[kind],
+  return t(FAILURE_I18N_KEYS[failure.tag], {
+    defaultValue: FAILURE_DEFAULT_LABELS[failure.tag],
   });
 }

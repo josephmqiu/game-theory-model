@@ -760,8 +760,10 @@ describe("analysis-orchestrator", () => {
     expect(failEvents).toHaveLength(1);
     expect(failEvents[0]).toMatchObject({
       type: "analysis_failed",
-      error:
-        "Codex turn failed: invalid_json_schema: outputSchema rejected for model gpt-5.4",
+      error: expect.objectContaining({
+        message:
+          "Codex turn failed: invalid_json_schema: outputSchema rejected for model gpt-5.4",
+      }),
     });
   });
 
@@ -1002,7 +1004,9 @@ describe("analysis-orchestrator", () => {
     expect(failEvents).toHaveLength(1);
     expect(failEvents[0]).toMatchObject({
       type: "analysis_failed",
-      error: expect.stringContaining("Unauthorized"),
+      error: expect.objectContaining({
+        message: expect.stringContaining("Unauthorized"),
+      }),
     });
   });
 
@@ -1055,7 +1059,9 @@ describe("analysis-orchestrator", () => {
     expect(failEvents[0]).toMatchObject({
       type: "analysis_failed",
       runId,
-      error: expect.stringContaining("timeout"),
+      error: expect.objectContaining({
+        message: expect.stringContaining("timeout"),
+      }),
     });
 
     // In-flight work was cancelled — phase 2 did not complete
@@ -1330,7 +1336,7 @@ describe("analysis-orchestrator", () => {
         expect(context?.model).toBe("gpt-4o");
         expect(context?.runtime).toEqual({
           webSearch: false,
-          effortLevel: "standard",
+          effortLevel: "medium",
         });
       }
     });
@@ -1497,7 +1503,7 @@ describe("analysis-orchestrator", () => {
       expect(mockRevalidation.onRunComplete).toHaveBeenCalledWith(
         undefined,
         undefined,
-        { webSearch: true, effortLevel: "standard" },
+        { webSearch: true, effortLevel: "medium" },
         true,
       );
     });
@@ -1513,7 +1519,7 @@ describe("analysis-orchestrator", () => {
       expect(mockRevalidation.onRunComplete).toHaveBeenCalledWith(
         undefined,
         undefined,
-        { webSearch: true, effortLevel: "standard" },
+        { webSearch: true, effortLevel: "medium" },
         true,
       );
     });
@@ -1531,7 +1537,7 @@ describe("analysis-orchestrator", () => {
       expect(mockRevalidation.onRunComplete).toHaveBeenCalledWith(
         undefined,
         undefined,
-        { webSearch: true, effortLevel: "standard" },
+        { webSearch: true, effortLevel: "medium" },
         false,
       );
     });

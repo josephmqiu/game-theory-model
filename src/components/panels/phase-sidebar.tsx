@@ -91,8 +91,8 @@ export function PhaseSidebar({
               status === "failed" &&
               runStatus.status === "failed" &&
               runStatus.failedPhase === phase &&
-              runStatus.failureKind
-                ? getRunFailureLabel(runStatus.failureKind, t)
+              runStatus.failure
+                ? getRunFailureLabel(runStatus.failure, t)
                 : null;
             const phaseNumber = getRunnablePhaseNumber(phase);
 

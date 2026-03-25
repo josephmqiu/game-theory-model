@@ -16,7 +16,9 @@ import { isAllowedProvider } from "@/services/ai/allowed-providers";
 import type {
   AnalysisEffortLevel,
   AnalysisRuntimeOverrides,
+  LegacyRuntimeEffort,
 } from "../../shared/types/analysis-runtime";
+import { normalizeRuntimeEffort } from "../../shared/types/analysis-runtime";
 
 const STORAGE_KEY = "game-theory-analyzer-agent-settings";
 
@@ -60,10 +62,13 @@ interface AgentSettingsState extends PersistedState {
 const DEFAULT_ANALYSIS_PHASE_MODE: AnalysisPhaseMode = "all";
 const DEFAULT_ANALYSIS_CUSTOM_PHASES = [...V3_PHASES];
 
-function isAnalysisEffortLevel(
+function parseAnalysisEffortLevel(
   value: unknown,
-): value is AnalysisEffortLevel {
-  return value === "quick" || value === "standard" || value === "thorough";
+): AnalysisEffortLevel | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  return normalizeRuntimeEffort(value as LegacyRuntimeEffort);
 }
 
 function isAnalysisPhaseMode(value: unknown): value is AnalysisPhaseMode {
@@ -368,9 +373,7 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => ({
           typeof data.analysisWebSearch === "boolean"
             ? data.analysisWebSearch
             : undefined,
-        analysisEffortLevel: isAnalysisEffortLevel(data.analysisEffortLevel)
-          ? data.analysisEffortLevel
-          : undefined,
+        analysisEffortLevel: parseAnalysisEffortLevel(data.analysisEffortLevel),
         analysisPhaseMode,
         analysisCustomPhases: normalizeAnalysisCustomPhases(
           data.analysisCustomPhases,

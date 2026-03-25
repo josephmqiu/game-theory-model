@@ -48,6 +48,12 @@ const runtimeStatus = await import("../../services/runtime-status");
 const revalidationService = await import("../../services/revalidation-service");
 const { commitPhaseSnapshot } = await import("../../services/revision-diff");
 
+async function advanceTimersByTimeAsync(ms: number): Promise<void> {
+  vi.advanceTimersByTime(ms);
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 describe("revalidation integration", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -181,7 +187,7 @@ describe("revalidation integration", () => {
     revalidationService.scheduleRevalidation([entities[0].id]);
 
     // Advance 1 second — still within 2s debounce
-    await vi.advanceTimersByTimeAsync(1000);
+    await advanceTimersByTimeAsync(1000);
     expect(revalTriggered).toBe(false);
 
     unsub();
@@ -200,7 +206,7 @@ describe("revalidation integration", () => {
     revalidationService.scheduleRevalidation([entities[0].id]);
 
     // Advance past 2s debounce
-    await vi.advanceTimersByTimeAsync(2500);
+    await advanceTimersByTimeAsync(2500);
 
     // After debounce, pending stale IDs should be consumed (set cleared)
     expect(revalidationService._getPendingStaleIds().size).toBe(0);
@@ -251,7 +257,7 @@ describe("revalidation integration", () => {
     });
 
     expect(runtimeStatus.getSnapshot().status).toBe("failed");
-    expect(runtimeStatus.getSnapshot().failureMessage).toBe("Test failure");
+    expect(runtimeStatus.getSnapshot().failure?.message).toBe("Test failure");
 
     const result = runtimeStatus.dismiss("run-1");
     expect(result).toEqual(expect.objectContaining({ dismissed: true }));
