@@ -3,13 +3,13 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const appMenuPath = fileURLToPath(
-  new URL("../../../../electron/app-menu.ts", import.meta.url),
+  new URL("../../../../../../legacy/electron/app-menu.ts", import.meta.url),
 );
 const electronMainPath = fileURLToPath(
-  new URL("../../../../electron/main.ts", import.meta.url),
+  new URL("../../../../../../legacy/electron/main.ts", import.meta.url),
 );
 const electronBuilderPath = fileURLToPath(
-  new URL("../../../../electron-builder.yml", import.meta.url),
+  new URL("../../../../../../legacy/electron-builder.yml", import.meta.url),
 );
 
 describe("Phase 03 shell persistence wiring", () => {

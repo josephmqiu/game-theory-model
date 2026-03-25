@@ -11,12 +11,12 @@ import type {
   AnalysisRelationship,
   Analysis,
   LayoutState,
-} from "../../shared/types/entity";
+} from "@/types/entity";
 import { RELATIONSHIP_CATEGORY } from "@/types/entity";
 import type {
   MethodologyPhase,
   PhaseStatus,
-} from "../../shared/types/methodology";
+} from "@/types/methodology";
 import { normalizePhaseStates, upsertPhaseStatus } from "@/types/methodology";
 
 // ── State shape ──

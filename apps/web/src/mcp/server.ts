@@ -14,25 +14,10 @@ import {
 
 import pkg from "../../package.json";
 import {
-  ANALYSIS_MODE_TOOL_DEFINITIONS,
-  CHAT_MODE_TOOL_DEFINITIONS,
-  handleAbortAnalysis,
-  handleCreateEntity,
-  handleCreateRelationship,
-  handleDeleteEntity,
-  handleDeleteRelationship,
-  handleGetAnalysisStatus,
-  handleGetEntity,
-  handleQueryEntities,
-  handleQueryRelationships,
-  handleRequestLoopback,
-  handleRerunPhases,
-  handleStartAnalysis,
+  getAnalysisModeTools,
+  getChatModeTools,
   handleToolCall as handleProductToolCall,
-  handleUpdateEntity,
-  registerAnalysisTools as registerProductAnalysisTools,
-  registerChatTools as registerProductChatTools,
-} from "../../server/mcp/product-tools";
+} from "../../../server/src/domain/mcp-tools";
 import { handleOpenDocument } from "./tools/open-document";
 import { handleBatchGet } from "./tools/batch-get";
 import {
@@ -72,24 +57,10 @@ import { handleGetSelection } from "./tools/get-selection";
 import { LAYERED_DESIGN_TOOLS } from "./tools/layered-design-defs";
 import { MCP_DEFAULT_PORT } from "@/constants/app";
 
+const ANALYSIS_MODE_TOOL_DEFINITIONS = getAnalysisModeTools();
+const CHAT_MODE_TOOL_DEFINITIONS = getChatModeTools();
+
 export const MCP_HTTP_HOST = "127.0.0.1";
-export {
-  ANALYSIS_MODE_TOOL_DEFINITIONS,
-  CHAT_MODE_TOOL_DEFINITIONS,
-  handleAbortAnalysis,
-  handleCreateEntity,
-  handleCreateRelationship,
-  handleDeleteEntity,
-  handleDeleteRelationship,
-  handleGetAnalysisStatus,
-  handleGetEntity,
-  handleQueryEntities,
-  handleQueryRelationships,
-  handleRequestLoopback,
-  handleRerunPhases,
-  handleStartAnalysis,
-  handleUpdateEntity,
-};
 
 // --- Tool definitions (shared across all Server instances) ---
 
@@ -889,14 +860,13 @@ async function handleToolCall(
       return JSON.stringify(await handleDesignRefine(a), null, 2);
 
     // Product tools
-    default:
-      {
-        const result = await handleProductToolCall(name, args);
-        if (result.isError) {
-          throw new Error(result.text.replace(/^Error:\s*/, ""));
-        }
-        return result.text;
+    default: {
+      const result = await handleProductToolCall(name, args);
+      if (result.isError) {
+        throw new Error(result.text.replace(/^Error:\s*/, ""));
       }
+      return result.text;
+    }
   }
 }
 
@@ -933,11 +903,17 @@ function registerTools(server: Server): void {
 }
 
 export function registerAnalysisTools(server: Server): void {
-  registerProductAnalysisTools(server);
+  registerToolSet(
+    server,
+    ANALYSIS_MODE_TOOL_DEFINITIONS as readonly ToolDefinition[],
+  );
 }
 
 export function registerChatTools(server: Server): void {
-  registerProductChatTools(server);
+  registerToolSet(
+    server,
+    CHAT_MODE_TOOL_DEFINITIONS as readonly ToolDefinition[],
+  );
 }
 
 function createMcpServer(): Server {

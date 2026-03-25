@@ -1,0 +1,21 @@
+$ tsdown
+ℹ tsdown v0.20.3 powered by rolldown v1.0.0-rc.3
+ℹ config file: /Users/joe/Developer/game-theory-model/apps/desktop/tsdown.config.ts 
+(node:87969) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/joe/Developer/game-theory-model/apps/desktop/tsdown.config.ts?no-cache=e6919802-733f-41a5-b9bc-7e390f59183c is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/joe/Developer/game-theory-model/apps/desktop/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ℹ entry: src/main.ts
+ℹ tsconfig: tsconfig.json
+ℹ entry: src/preload.ts
+ℹ tsconfig: tsconfig.json
+ℹ Build start
+ℹ Cleaning 4 files
+ℹ dist-electron/preload.js      2.08 kB │ gzip: 0.71 kB
+ℹ dist-electron/preload.js.map  3.28 kB │ gzip: 1.17 kB
+ℹ 2 files, total: 5.36 kB
+✔ Build complete in 12ms
+ℹ dist-electron/main.js      51.01 kB │ gzip: 13.27 kB
+ℹ dist-electron/main.js.map  93.91 kB │ gzip: 24.18 kB
+ℹ 2 files, total: 144.92 kB
+✔ Build complete in 18ms

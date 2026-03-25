@@ -1,0 +1,19 @@
+$ node scripts/cli.ts build
+[00:02:27.495] INFO (#1): [cli] Running tsdown...
+src/domain/entity-graph-persistence.ts (42:30) [33m[UNRESOLVED_IMPORT] Warning:[0m Could not resolve 'bun:sqlite' in src/domain/entity-graph-persistence.ts
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m src/domain/entity-graph-persistence.ts:42:31 [38;5;246m][0m
+    [38;5;246m│[0m
+ [38;5;246m42 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mB[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mS[0m[38;5;249mq[0m[38;5;249ml[0m[38;5;249mi[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[38;5;249mr[0m[38;5;249me[0m[38;5;249mq[0m[38;5;249mu[0m[38;5;249mi[0m[38;5;249mr[0m[38;5;249me[0m[38;5;249m([0m"bun:sqlite"[38;5;249m)[0m[38;5;249m [0m[38;5;249ma[0m[38;5;249ms[0m[38;5;249m [0m[38;5;249ma[0m[38;5;249mn[0m[38;5;249my[0m[38;5;249m;[0m
+ [38;5;240m   │[0m                               ──────┬─────  
+ [38;5;240m   │[0m                                     ╰─────── Module not found, treating it as an external dependency
+[38;5;246m────╯[0m
+
+src/domain/entity-graph-persistence.ts (42:30) [33m[UNRESOLVED_IMPORT] Warning:[0m Could not resolve 'bun:sqlite' in src/domain/entity-graph-persistence.ts
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m src/domain/entity-graph-persistence.ts:42:31 [38;5;246m][0m
+    [38;5;246m│[0m
+ [38;5;246m42 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mB[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mS[0m[38;5;249mq[0m[38;5;249ml[0m[38;5;249mi[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[38;5;249mr[0m[38;5;249me[0m[38;5;249mq[0m[38;5;249mu[0m[38;5;249mi[0m[38;5;249mr[0m[38;5;249me[0m[38;5;249m([0m"bun:sqlite"[38;5;249m)[0m[38;5;249m [0m[38;5;249ma[0m[38;5;249ms[0m[38;5;249m [0m[38;5;249ma[0m[38;5;249mn[0m[38;5;249my[0m[38;5;249m;[0m
+ [38;5;240m   │[0m                               ──────┬─────  
+ [38;5;240m   │[0m                                     ╰─────── Module not found, treating it as an external dependency
+[38;5;246m────╯[0m
+
+[00:02:27.698] WARN (#1): [cli] Web dist not found — skipping client bundle.

@@ -1,3 +1,5 @@
+// DEPRECATED: Being replaced by WebSocket transport in transport/
+//
 // Normalized event schema consumed by the chat panel.
 // Both Claude and Codex adapters emit these; the UI never sees provider internals.
 

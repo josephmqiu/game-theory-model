@@ -27,7 +27,7 @@ import {
   PROVIDER_LABELS,
   isAllowedProvider,
 } from "@/services/ai/allowed-providers";
-import * as analysisClient from "@/services/ai/analysis-client";
+import { isAnalysisRunning, abortAnalysis } from "@/transport";
 import ClaudeLogo from "@/components/icons/claude-logo";
 import OpenAILogo from "@/components/icons/openai-logo";
 import OpenCodeLogo from "@/components/icons/opencode-logo";
@@ -238,7 +238,7 @@ export default function AIChatPanel({
   // Poll analysis orchestrator running state
   useEffect(() => {
     const interval = setInterval(() => {
-      const running = analysisClient.isRunning();
+      const running = isAnalysisRunning();
       setAnalysisRunning((prev) => (prev !== running ? running : prev));
     }, 500);
     return () => clearInterval(interval);
@@ -247,8 +247,8 @@ export default function AIChatPanel({
   // Enhanced stop handler: aborts analysis orchestrator if running,
   // otherwise falls through to regular chat stream abort
   const handleStop = useCallback(() => {
-    if (analysisClient.isRunning()) {
-      analysisClient.abort();
+    if (isAnalysisRunning()) {
+      abortAnalysis();
     }
     stopStreaming();
   }, [stopStreaming]);

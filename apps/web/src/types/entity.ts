@@ -1,65 +1,76 @@
+/**
+ * Entity types and zod schemas for the game-theory analysis domain.
+ *
+ * Types are re-exported from @t3tools/contracts (canonical source).
+ * Zod schemas remain here for client-side runtime validation.
+ */
 import { z } from "zod/v4";
-import type { MethodologyPhase, PhaseState } from "./methodology";
 
-// ── Confidence & Source ──
+// ── Re-export all canonical types from contracts ──
 
-export type EntityConfidence = "high" | "medium" | "low";
-export type EntitySource = "ai" | "human" | "computed";
+export type {
+  EntityConfidence,
+  EntitySource,
+  EntityProvenance,
+  EntityType,
+  FactCategory,
+  FactData,
+  PlayerType,
+  PlayerData,
+  ObjectivePriority,
+  ObjectiveData,
+  GameType,
+  GameTiming,
+  GameData,
+  StrategyFeasibility,
+  StrategyData,
+  PayoffData,
+  InstitutionalRuleData,
+  EscalationRungData,
+  InteractionHistoryData,
+  RepeatedGamePatternData,
+  TrustAssessmentData,
+  DynamicInconsistencyData,
+  SignalingEffectData,
+  PayoffEstimate,
+  PayoffMatrixData,
+  GameTreeData,
+  EquilibriumType,
+  SelectionFactor,
+  EquilibriumResultData,
+  CrossGameConstraintTableData,
+  CrossGameEffectType,
+  CrossGameEffectData,
+  SignalClassificationData,
+  BargainingDynamicsData,
+  OptionValueFlexibilityType,
+  OptionValueAssessmentData,
+  BehavioralOverlayType,
+  BehavioralOverlayData,
+  AssumptionData,
+  EliminatedOutcomeData,
+  ScenarioData,
+  CentralThesisData,
+  MetaCheckData,
+  EntityData,
+  AnalysisEntity,
+  RelationshipType,
+  AnalysisRelationship,
+  Analysis,
+  LayoutState,
+  AnalysisFileV3,
+  AnalysisFileReference,
+  ParseResult,
+} from "@t3tools/contracts";
+
+export { RELATIONSHIP_CATEGORY } from "@t3tools/contracts";
+
+// ── Zod schemas (runtime validation, kept local) ──
 
 export const entityConfidenceSchema = z.enum(["high", "medium", "low"]);
 export const entitySourceSchema = z.enum(["ai", "human", "computed"]);
 
-// ── Entity Provenance ──
-
-export interface EntityProvenance {
-  source: "phase-derived" | "ai-edited" | "user-edited";
-  runId?: string;
-  phase?: string;
-  timestamp: number;
-  webSearchAvailable?: boolean;
-  previousOrigin?: EntityProvenance;
-}
-
-// ── Entity Type Enum ──
-
-export type EntityType =
-  | "fact"
-  | "player"
-  | "objective"
-  | "game"
-  | "strategy"
-  | "payoff"
-  | "institutional-rule"
-  | "escalation-rung"
-  | "interaction-history"
-  | "repeated-game-pattern"
-  | "trust-assessment"
-  | "dynamic-inconsistency"
-  | "signaling-effect"
-  | "payoff-matrix"
-  | "game-tree"
-  | "equilibrium-result"
-  | "cross-game-constraint-table"
-  | "cross-game-effect"
-  | "signal-classification"
-  | "bargaining-dynamics"
-  | "option-value-assessment"
-  | "behavioral-overlay"
-  | "assumption"
-  | "eliminated-outcome"
-  | "scenario"
-  | "central-thesis"
-  | "meta-check";
-
 // ── Phase 1: Situational Grounding ──
-
-export type FactCategory =
-  | "capability"
-  | "economic"
-  | "position"
-  | "impact"
-  | "action"
-  | "rule";
 
 export const factDataSchema = z.object({
   type: z.literal("fact"),
@@ -75,16 +86,8 @@ export const factDataSchema = z.object({
     "rule",
   ]),
 });
-export type FactData = z.infer<typeof factDataSchema>;
 
 // ── Phase 2: Player Identification ──
-
-export type PlayerType =
-  | "primary"
-  | "involuntary"
-  | "background"
-  | "internal"
-  | "gatekeeper";
 
 export const playerDataSchema = z.object({
   type: z.literal("player"),
@@ -98,9 +101,6 @@ export const playerDataSchema = z.object({
   ]),
   knowledge: z.array(z.string()).default([]),
 });
-export type PlayerData = z.infer<typeof playerDataSchema>;
-
-export type ObjectivePriority = "lexicographic" | "high" | "tradable";
 
 export const objectiveDataSchema = z.object({
   type: z.literal("objective"),
@@ -108,27 +108,8 @@ export const objectiveDataSchema = z.object({
   priority: z.enum(["lexicographic", "high", "tradable"]),
   stability: z.enum(["stable", "shifting", "unknown"]).default("unknown"),
 });
-export type ObjectiveData = z.infer<typeof objectiveDataSchema>;
 
 // ── Phase 3: Baseline Model ──
-
-export type GameType =
-  | "chicken"
-  | "prisoners-dilemma"
-  | "coordination"
-  | "war-of-attrition"
-  | "bargaining"
-  | "signaling"
-  | "bayesian"
-  | "coalition"
-  | "domestic-political"
-  | "economic-hostage"
-  | "bertrand"
-  | "hotelling"
-  | "entry-deterrence"
-  | "network-effects";
-
-export type GameTiming = "simultaneous" | "sequential" | "repeated";
 
 export const gameDataSchema = z.object({
   type: z.literal("game"),
@@ -152,13 +133,6 @@ export const gameDataSchema = z.object({
   timing: z.enum(["simultaneous", "sequential", "repeated"]),
   description: z.string().default(""),
 });
-export type GameData = z.infer<typeof gameDataSchema>;
-
-export type StrategyFeasibility =
-  | "actual"
-  | "requires-new-capability"
-  | "rhetoric-only"
-  | "dominated";
 
 export const strategyDataSchema = z.object({
   type: z.literal("strategy"),
@@ -171,7 +145,6 @@ export const strategyDataSchema = z.object({
   ]),
   description: z.string().default(""),
 });
-export type StrategyData = z.infer<typeof strategyDataSchema>;
 
 export const payoffDataSchema = z.object({
   type: z.literal("payoff"),
@@ -179,7 +152,6 @@ export const payoffDataSchema = z.object({
   value: z.number().nullable(),
   rationale: z.string().default(""),
 });
-export type PayoffData = z.infer<typeof payoffDataSchema>;
 
 export const institutionalRuleDataSchema = z.object({
   type: z.literal("institutional-rule"),
@@ -193,7 +165,6 @@ export const institutionalRuleDataSchema = z.object({
   ]),
   effectOnStrategies: z.string(),
 });
-export type InstitutionalRuleData = z.infer<typeof institutionalRuleDataSchema>;
 
 export const escalationRungDataSchema = z.object({
   type: z.literal("escalation-rung"),
@@ -202,7 +173,6 @@ export const escalationRungDataSchema = z.object({
   climbed: z.boolean(),
   order: z.number(),
 });
-export type EscalationRungData = z.infer<typeof escalationRungDataSchema>;
 
 // ── Phase 4: Historical Repeated Game ──
 
@@ -228,9 +198,6 @@ export const interactionHistoryDataSchema = z.object({
   ),
   timespan: z.string(),
 });
-export type InteractionHistoryData = z.infer<
-  typeof interactionHistoryDataSchema
->;
 
 export const repeatedGamePatternDataSchema = z.object({
   type: z.literal("repeated-game-pattern"),
@@ -246,9 +213,6 @@ export const repeatedGamePatternDataSchema = z.object({
   evidence: z.string(),
   frequency: z.string(),
 });
-export type RepeatedGamePatternData = z.infer<
-  typeof repeatedGamePatternDataSchema
->;
 
 export const trustAssessmentDataSchema = z.object({
   type: z.literal("trust-assessment"),
@@ -258,7 +222,6 @@ export const trustAssessmentDataSchema = z.object({
   evidence: z.string(),
   implication: z.string(),
 });
-export type TrustAssessmentData = z.infer<typeof trustAssessmentDataSchema>;
 
 export const dynamicInconsistencyDataSchema = z.object({
   type: z.literal("dynamic-inconsistency"),
@@ -275,9 +238,6 @@ export const dynamicInconsistencyDataSchema = z.object({
   transitionRisk: z.string(),
   timeHorizon: z.string(),
 });
-export type DynamicInconsistencyData = z.infer<
-  typeof dynamicInconsistencyDataSchema
->;
 
 export const signalingEffectDataSchema = z.object({
   type: z.literal("signaling-effect"),
@@ -286,7 +246,6 @@ export const signalingEffectDataSchema = z.object({
   lesson: z.string(),
   reputationEffect: z.string(),
 });
-export type SignalingEffectData = z.infer<typeof signalingEffectDataSchema>;
 
 // ── Phase 6: Full Formal Modeling ──
 
@@ -300,7 +259,6 @@ export const payoffEstimateSchema = z.object({
   rationale: z.string().min(1),
   dependencies: z.array(z.string()).min(1),
 });
-export type PayoffEstimate = z.infer<typeof payoffEstimateSchema>;
 
 export const payoffMatrixDataSchema = z.object({
   type: z.literal("payoff-matrix"),
@@ -318,7 +276,6 @@ export const payoffMatrixDataSchema = z.object({
     }),
   ),
 });
-export type PayoffMatrixData = z.infer<typeof payoffMatrixDataSchema>;
 
 export const gameTreeDataSchema = z.object({
   type: z.literal("game-tree"),
@@ -354,24 +311,6 @@ export const gameTreeDataSchema = z.object({
     }),
   ),
 });
-export type GameTreeData = z.infer<typeof gameTreeDataSchema>;
-
-export type EquilibriumType =
-  | "dominant-strategy"
-  | "nash"
-  | "subgame-perfect"
-  | "bayesian-nash"
-  | "separating"
-  | "pooling"
-  | "semi-separating";
-
-export type SelectionFactor =
-  | "path-dependence"
-  | "focal-points"
-  | "commitment-devices"
-  | "institutional-rules"
-  | "salient-narratives"
-  | "relative-cost-of-swerving";
 
 const selectionFactorSchema = z.object({
   factor: z.enum([
@@ -407,7 +346,6 @@ export const equilibriumResultDataSchema = z.object({
   ),
   selectionFactors: z.array(selectionFactorSchema).min(1),
 });
-export type EquilibriumResultData = z.infer<typeof equilibriumResultDataSchema>;
 
 export const crossGameConstraintTableDataSchema = z.object({
   type: z.literal("cross-game-constraint-table"),
@@ -422,20 +360,6 @@ export const crossGameConstraintTableDataSchema = z.object({
     }),
   ),
 });
-export type CrossGameConstraintTableData = z.infer<
-  typeof crossGameConstraintTableDataSchema
->;
-
-export type CrossGameEffectType =
-  | "payoff-shift"
-  | "belief-update"
-  | "strategy-unlock"
-  | "strategy-elimination"
-  | "player-entry"
-  | "player-exit"
-  | "commitment-change"
-  | "resource-transfer"
-  | "timing-change";
 
 export const crossGameEffectDataSchema = z.object({
   type: z.literal("cross-game-effect"),
@@ -457,7 +381,6 @@ export const crossGameEffectDataSchema = z.object({
   direction: z.string(),
   cascade: z.boolean(),
 });
-export type CrossGameEffectData = z.infer<typeof crossGameEffectDataSchema>;
 
 export const signalClassificationDataSchema = z.object({
   type: z.literal("signal-classification"),
@@ -474,9 +397,6 @@ export const signalClassificationDataSchema = z.object({
     .nullable(),
   credibility: z.enum(["high", "medium", "low"]),
 });
-export type SignalClassificationData = z.infer<
-  typeof signalClassificationDataSchema
->;
 
 export const bargainingDynamicsDataSchema = z.object({
   type: z.literal("bargaining-dynamics"),
@@ -511,15 +431,6 @@ export const bargainingDynamicsDataSchema = z.object({
     }),
   ),
 });
-export type BargainingDynamicsData = z.infer<
-  typeof bargainingDynamicsDataSchema
->;
-
-export type OptionValueFlexibilityType =
-  | "escalation-flexibility"
-  | "avoiding-irreversible-commitment"
-  | "waiting-for-information"
-  | "letting-constraints-tighten";
 
 export const optionValueAssessmentDataSchema = z.object({
   type: z.literal("option-value-assessment"),
@@ -538,20 +449,6 @@ export const optionValueAssessmentDataSchema = z.object({
   ),
   uncertaintyLevel: z.enum(["high", "medium", "low"]),
 });
-export type OptionValueAssessmentData = z.infer<
-  typeof optionValueAssessmentDataSchema
->;
-
-export type BehavioralOverlayType =
-  | "prospect-theory"
-  | "overconfidence"
-  | "sunk-cost"
-  | "groupthink"
-  | "anchoring"
-  | "honor-based-escalation"
-  | "reference-dependence"
-  | "scenario-planning"
-  | "red-teaming";
 
 export const behavioralOverlayDataSchema = z.object({
   type: z.literal("behavioral-overlay"),
@@ -572,7 +469,6 @@ export const behavioralOverlayDataSchema = z.object({
   referencePoint: z.string().nullable(),
   predictionModification: z.string(),
 });
-export type BehavioralOverlayData = z.infer<typeof behavioralOverlayDataSchema>;
 
 // ── Phase 7: Assumption Extraction ──
 
@@ -593,7 +489,6 @@ export const assumptionDataSchema = z.object({
   rationale: z.string().min(1),
   dependencies: z.array(z.string()),
 });
-export type AssumptionData = z.infer<typeof assumptionDataSchema>;
 
 // ── Phase 8: Elimination ──
 
@@ -617,7 +512,6 @@ export const eliminatedOutcomeDataSchema = z.object({
   source_phase: methodologyPhaseEnum,
   source_entity_ids: z.array(z.string().min(1)).min(1),
 });
-export type EliminatedOutcomeData = z.infer<typeof eliminatedOutcomeDataSchema>;
 
 // ── Phase 9: Scenario Generation ──
 
@@ -645,7 +539,6 @@ export const scenarioDataSchema = z.object({
   consequences: z.string().nullable(),
   drift_trajectory: z.string().nullable(),
 });
-export type ScenarioData = z.infer<typeof scenarioDataSchema>;
 
 export const centralThesisDataSchema = z.object({
   type: z.literal("central-thesis"),
@@ -653,7 +546,6 @@ export const centralThesisDataSchema = z.object({
   falsification_conditions: z.string().min(1),
   supporting_scenarios: z.array(z.string().min(1)).min(1),
 });
-export type CentralThesisData = z.infer<typeof centralThesisDataSchema>;
 
 // ── Phase 10: Meta-Check ──
 
@@ -667,38 +559,8 @@ export const metaCheckDataSchema = z.object({
   type: z.literal("meta-check"),
   questions: z.array(metaCheckQuestionSchema).length(10),
 });
-export type MetaCheckData = z.infer<typeof metaCheckDataSchema>;
 
-// ── Entity Data Union ──
-
-export type EntityData =
-  | FactData
-  | PlayerData
-  | ObjectiveData
-  | GameData
-  | StrategyData
-  | PayoffData
-  | InstitutionalRuleData
-  | EscalationRungData
-  | InteractionHistoryData
-  | RepeatedGamePatternData
-  | TrustAssessmentData
-  | DynamicInconsistencyData
-  | SignalingEffectData
-  | PayoffMatrixData
-  | GameTreeData
-  | EquilibriumResultData
-  | CrossGameConstraintTableData
-  | CrossGameEffectData
-  | SignalClassificationData
-  | BargainingDynamicsData
-  | OptionValueAssessmentData
-  | BehavioralOverlayData
-  | AssumptionData
-  | EliminatedOutcomeData
-  | ScenarioData
-  | CentralThesisData
-  | MetaCheckData;
+// ── Entity Data Schema (discriminated union) ──
 
 export const entityDataSchema = z.discriminatedUnion("type", [
   factDataSchema,
@@ -729,113 +591,3 @@ export const entityDataSchema = z.discriminatedUnion("type", [
   centralThesisDataSchema,
   metaCheckDataSchema,
 ]);
-
-// ── Core Entity ──
-
-export interface AnalysisEntity {
-  id: string;
-  type: EntityType;
-  phase: MethodologyPhase;
-  data: EntityData;
-  confidence: EntityConfidence;
-  /** @deprecated Use provenance.source instead */
-  source: EntitySource;
-  provenance?: EntityProvenance;
-  rationale: string;
-  revision: number;
-  stale: boolean; // true when downstream of a human edit, pending revalidation
-  group?: string; // analytical group label assigned by canvas-service grouping
-}
-
-// ── Relationships ──
-
-export type RelationshipType =
-  | "plays-in"
-  | "has-objective"
-  | "conflicts-with"
-  | "has-strategy"
-  | "supports"
-  | "contradicts"
-  | "produces"
-  | "depends-on"
-  | "invalidated-by"
-  | "constrains"
-  | "escalates-to"
-  | "links"
-  | "precedes"
-  | "informed-by"
-  | "derived-from";
-
-/** Relationship traversal categories for invalidation (Issue #4 from eng review):
- * - downstream: dependency edges — invalidation propagates along these
- * - evidence: evidentiary links — flag for review but don't auto-stale
- * - structural: symmetric or temporal — never traversed for invalidation
- */
-export const RELATIONSHIP_CATEGORY: Record<
-  RelationshipType,
-  "downstream" | "evidence" | "structural"
-> = {
-  "plays-in": "downstream",
-  "has-objective": "downstream",
-  "has-strategy": "downstream",
-  produces: "downstream",
-  "depends-on": "downstream",
-  "derived-from": "downstream",
-  supports: "evidence",
-  contradicts: "evidence",
-  "informed-by": "evidence",
-  constrains: "structural",
-  "escalates-to": "structural",
-  links: "structural",
-  precedes: "structural",
-  "conflicts-with": "structural",
-  "invalidated-by": "evidence",
-};
-
-export interface AnalysisRelationship {
-  id: string;
-  type: RelationshipType;
-  fromEntityId: string;
-  toEntityId: string;
-  metadata?: Record<string, unknown>;
-  source?: EntitySource;
-  provenance?: EntityProvenance;
-}
-
-// ── Full Analysis ──
-
-export interface Analysis {
-  id: string;
-  name: string;
-  topic: string;
-  entities: AnalysisEntity[];
-  relationships: AnalysisRelationship[];
-  phases: PhaseState[];
-  centralThesis?: string;
-}
-
-// ── File Format ──
-
-export type LayoutState = Record<
-  string,
-  { x: number; y: number; pinned: boolean }
->;
-
-export interface AnalysisFileV3 {
-  type: "game-theory-analysis";
-  version: 3;
-  analysis: Analysis;
-  layout: LayoutState;
-}
-
-/** File reference for persistence (shared across v1 and v2 formats). */
-export interface AnalysisFileReference {
-  fileName: string | null;
-  filePath: string | null;
-  fileHandle: FileSystemFileHandle | null;
-}
-
-/** Result type for phase worker parsing */
-export type ParseResult<T> =
-  | { success: true; data: T }
-  | { success: false; error: string };

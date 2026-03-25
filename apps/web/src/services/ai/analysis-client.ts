@@ -1,3 +1,5 @@
+// DEPRECATED: Being replaced by WebSocket transport in transport/
+//
 // src/services/ai/analysis-client.ts
 // Renderer-side analysis client. Communicates with server via HTTP/SSE ONLY.
 // NEVER imports Node.js modules or server-side services.
@@ -11,13 +13,13 @@ import type {
   AbortAnalysisResponse,
   AnalysisStateResponse,
   RunStatus,
-} from "../../../shared/types/api";
+} from "@/types/api";
 import type {
   AnalysisMutationEvent,
   AnalysisProgressEvent,
-} from "../../../shared/types/events";
-import type { Analysis } from "../../../shared/types/entity";
-import type { AnalysisRuntimeOverrides } from "../../../shared/types/analysis-runtime";
+} from "@/types/events";
+import type { Analysis } from "@/types/entity";
+import type { AnalysisRuntimeOverrides } from "@/types/analysis-runtime";
 import i18n from "@/i18n";
 import { formatPhaseActivityNote } from "./phase-activity-format";
 
@@ -178,8 +180,9 @@ function applySnapshot(state: AnalysisStateResponse): void {
 
 function getRecoveryDelayMs(failureCount: number): number {
   return (
-    RECOVERY_BACKOFF_MS[Math.min(failureCount - 1, RECOVERY_BACKOFF_MS.length - 1)] ??
-    30_000
+    RECOVERY_BACKOFF_MS[
+      Math.min(failureCount - 1, RECOVERY_BACKOFF_MS.length - 1)
+    ] ?? 30_000
   );
 }
 
@@ -226,9 +229,9 @@ class EventStreamManager {
     if (this.disposed || this.getConnectionState() === "RECOVERING") {
       return;
     }
-    void this
-      .recover("eventsource-error", { recycleEventSource: true })
-      .catch(() => {});
+    void this.recover("eventsource-error", { recycleEventSource: true }).catch(
+      () => {},
+    );
   };
 
   constructor() {
@@ -291,10 +294,7 @@ class EventStreamManager {
       }
 
       const connectionState = this.getConnectionState();
-      if (
-        connectionState !== "CONNECTED" &&
-        connectionState !== "CONNECTING"
-      ) {
+      if (connectionState !== "CONNECTED" && connectionState !== "CONNECTING") {
         return;
       }
 
@@ -302,9 +302,9 @@ class EventStreamManager {
         return;
       }
 
-      void this
-        .recover("heartbeat-timeout", { recycleEventSource: true })
-        .catch(() => {});
+      void this.recover("heartbeat-timeout", {
+        recycleEventSource: true,
+      }).catch(() => {});
     }, HEARTBEAT_CHECK_INTERVAL_MS);
   }
 
@@ -341,7 +341,9 @@ class EventStreamManager {
     }, delayMs);
   }
 
-  private openEventSource(options?: { preserveConnectionState?: boolean }): void {
+  private openEventSource(options?: {
+    preserveConnectionState?: boolean;
+  }): void {
     if (this.disposed) {
       return;
     }
@@ -414,7 +416,9 @@ class EventStreamManager {
         return;
 
       case "progress":
-        applyProgressEvent(stripEnvelope(envelope) as AnalysisProgressStreamEvent);
+        applyProgressEvent(
+          stripEnvelope(envelope) as AnalysisProgressStreamEvent,
+        );
         return;
 
       case "mutation": {
@@ -629,9 +633,9 @@ export async function startAnalysis(
       );
     }
 
-    const payload = (await response.json().catch(() => null)) as
-      | { runId?: string }
-      | null;
+    const payload = (await response.json().catch(() => null)) as {
+      runId?: string;
+    } | null;
     const runId = payload?.runId?.trim();
     if (!runId) {
       throw new Error("Analyze kickoff response missing runId");

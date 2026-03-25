@@ -3,7 +3,6 @@ import { nanoid } from "nanoid";
 import { useAIStore } from "@/stores/ai-store";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { streamChat } from "@/services/ai/ai-service";
-import { trimChatHistory } from "@/services/ai/context-optimizer";
 import type { ChatMessage as ChatMessageType } from "@/services/ai/ai-types";
 import type { AIStreamChunk } from "@/services/ai/ai-types";
 import { CHAT_STREAM_THINKING_CONFIG } from "@/services/ai/ai-runtime-config";
@@ -271,12 +270,11 @@ export function useChatHandlers() {
           content: messageText,
         });
 
-        const trimmedHistory = trimChatHistory(chatHistory);
         let chatThinking = "";
 
         for await (const rawChunk of streamChat(
           systemPrompt,
-          trimmedHistory,
+          chatHistory,
           model,
           CHAT_STREAM_THINKING_CONFIG,
           currentProvider,

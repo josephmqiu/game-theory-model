@@ -16,7 +16,7 @@ import { isAllowedProvider } from "@/services/ai/allowed-providers";
 import type {
   AnalysisEffortLevel,
   AnalysisRuntimeOverrides,
-} from "../../shared/types/analysis-runtime";
+} from "@/types/analysis-runtime";
 
 const STORAGE_KEY = "game-theory-analyzer-agent-settings";
 

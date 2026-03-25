@@ -6,7 +6,7 @@ import type {
   AnalysisEntity,
   AnalysisRelationship,
 } from "@/types/entity";
-import type { AnalysisStateResponse, RunStatus } from "../../../../shared/types/api";
+import type { AnalysisStateResponse, RunStatus } from "@/types/api";
 
 const originalFetch = globalThis.fetch;
 const originalEventSource = globalThis.EventSource;
@@ -263,7 +263,7 @@ describe("analysis-client", () => {
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client, useEntityGraphStore, useRunStatusStore } =
       await loadModules();
@@ -326,7 +326,7 @@ describe("analysis-client", () => {
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client, useRunStatusStore } = await loadModules();
     const events: string[] = [];
@@ -419,7 +419,7 @@ describe("analysis-client", () => {
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client, useEntityGraphStore, useRunStatusStore } =
       await loadModules();
@@ -443,7 +443,9 @@ describe("analysis-client", () => {
     });
 
     await waitFor(() => {
-      expect(useEntityGraphStore.getState().analysis.entities).toEqual([entity]);
+      expect(useEntityGraphStore.getState().analysis.entities).toEqual([
+        entity,
+      ]);
     });
 
     expect(useRunStatusStore.getState().runStatus).toMatchObject({
@@ -481,7 +483,7 @@ describe("analysis-client", () => {
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client, useRunStatusStore } = await loadModules();
 
@@ -515,11 +517,13 @@ describe("analysis-client", () => {
         );
       }
       if (input === "/api/ai/state") {
-        return Promise.resolve(stateResponse(makeAnalysis(), makeRunStatus(), 1));
+        return Promise.resolve(
+          stateResponse(makeAnalysis(), makeRunStatus(), 1),
+        );
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client } = await loadModules();
 
@@ -560,11 +564,13 @@ describe("analysis-client", () => {
         );
       }
       if (input === "/api/ai/state") {
-        return Promise.resolve(stateResponse(makeAnalysis(), makeRunStatus(), 1));
+        return Promise.resolve(
+          stateResponse(makeAnalysis(), makeRunStatus(), 1),
+        );
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client } = await loadModules();
 
@@ -598,7 +604,7 @@ describe("analysis-client", () => {
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client, useRunStatusStore } = await loadModules();
 
@@ -640,7 +646,7 @@ describe("analysis-client", () => {
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client, useRunStatusStore } = await loadModules();
 
@@ -679,12 +685,14 @@ describe("analysis-client", () => {
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client, useEntityGraphStore, useRunStatusStore } =
       await loadModules();
 
-    await expect(client.hydrateAnalysisState()).rejects.toThrow("state failed 1");
+    await expect(client.hydrateAnalysisState()).rejects.toThrow(
+      "state failed 1",
+    );
 
     for (const delayMs of [1_000, 2_000, 4_000, 8_000]) {
       await vi.advanceTimersByTimeAsync(delayMs);

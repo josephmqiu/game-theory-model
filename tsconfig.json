@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "isolatedModules": true
+  },
+  "references": [
+    { "path": "packages/contracts" },
+    { "path": "packages/shared" },
+    { "path": "apps/server" },
+    { "path": "apps/web" }
+  ],
+  "include": []
+}

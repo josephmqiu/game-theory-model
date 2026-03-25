@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { TFunction } from "i18next";
-import type { RunFailureKind, RunStatus } from "../../shared/types/api";
+import type { RunFailureKind, RunStatus } from "@/types/api";
 import { V3_PHASES } from "@/types/methodology";
 
 export type ConnectionState =

@@ -1,0 +1,47 @@
+name: Game Theory Analysis
+version: 1.0.0
+description: Multi-phase game-theoretic analysis of strategic situations
+phases:
+  - id: situational-grounding
+    name: Situational Grounding
+    number: 1
+    prompt: prompts/phase-1.md
+  - id: player-identification
+    name: Player Identification
+    number: 2
+    prompt: prompts/phase-2.md
+  - id: baseline-model
+    name: Baseline Strategic Model
+    number: 3
+    prompt: prompts/phase-3.md
+  - id: solution-concepts
+    name: Solution Concepts
+    number: 4
+    prompt: prompts/phase-4.md
+  # Phase 5 is the revalidation loopback mechanism, not a runnable phase.
+  # It triggers re-evaluation of earlier phases when new evidence arrives,
+  # and is handled orthogonally by the pipeline rather than executed in sequence.
+  - id: revalidation
+    name: Revalidation
+    number: 5
+    runnable: false
+  - id: behavioral-overlay
+    name: Behavioral Overlay
+    number: 6
+    prompt: prompts/phase-6.md
+  - id: sensitivity
+    name: Sensitivity Analysis
+    number: 7
+    prompt: prompts/phase-7.md
+  - id: elimination
+    name: Elimination & Dominance
+    number: 8
+    prompt: prompts/phase-8.md
+  - id: scenarios
+    name: Scenarios & Equilibria
+    number: 9
+    prompt: prompts/phase-9.md
+  - id: meta-check
+    name: Meta-Check
+    number: 10
+    prompt: prompts/phase-10.md

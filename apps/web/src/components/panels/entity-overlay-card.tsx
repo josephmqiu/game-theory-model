@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { PHASE_LABELS, PHASE_NUMBERS } from "@/types/methodology";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
-import * as analysisClient from "@/services/ai/analysis-client";
+import { isAnalysisRunning, updateEntity as wsUpdateEntity } from "@/transport";
 import type {
   AnalysisEntity,
   EntityType,
@@ -1221,10 +1221,10 @@ export default function EntityOverlayCard({
       revision: entity.revision + 1,
     };
 
-    if (analysisClient.isRunning()) {
+    if (isAnalysisRunning()) {
       // During active analysis, route edit through the server endpoint
       // which handles queueing and stale propagation server-side.
-      void analysisClient.updateEntity(entity.id, updates);
+      void wsUpdateEntity(entity.id, updates);
     } else {
       // No analysis running — apply locally
       useEntityGraphStore.getState().updateEntity(entity.id, updates);

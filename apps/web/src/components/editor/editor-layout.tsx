@@ -26,7 +26,11 @@ import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useElectronMenu } from "@/hooks/use-electron-menu";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { initAppStorage } from "@/utils/app-storage";
-import * as analysisClient from "@/services/ai/analysis-client";
+import {
+  startAnalysis as transportStartAnalysis,
+  abortAnalysis as transportAbortAnalysis,
+  hydrateAnalysisState as transportHydrateAnalysisState,
+} from "@/transport";
 import {
   openAnalysis,
   openAnalysisFromPath,
@@ -96,7 +100,7 @@ export default function EditorLayout() {
 
   const handleOpenAnalysis = useCallback(
     async (filePath?: string) => {
-      analysisClient.abort();
+      transportAbortAnalysis();
       const opened = filePath
         ? await openAnalysisFromPath(filePath)
         : await openAnalysis();
@@ -119,7 +123,7 @@ export default function EditorLayout() {
       }
     }
 
-    analysisClient.abort();
+    transportAbortAnalysis();
     clearEditorChrome();
     useEntityGraphStore.getState().newAnalysis("");
   }, [clearEditorChrome, t]);
@@ -128,14 +132,14 @@ export default function EditorLayout() {
     (topic: string, provider?: string, model?: string) => {
       void (async () => {
         // Abort any existing run via the client (manages its own AbortController)
-        analysisClient.abort();
+        transportAbortAnalysis();
         clearEditorChrome();
         const runtime = buildAnalysisRuntimeOverrides(
           useAgentSettingsStore.getState(),
         );
 
         try {
-          await analysisClient.startAnalysis(topic, provider, model, runtime);
+          await transportStartAnalysis(topic, provider, model, runtime);
         } catch (err) {
           console.error(
             "[editor] analysis-start-failed",
@@ -149,7 +153,7 @@ export default function EditorLayout() {
 
   useEffect(() => {
     return () => {
-      analysisClient.abort();
+      transportAbortAnalysis();
     };
   }, []);
 
@@ -179,14 +183,14 @@ export default function EditorLayout() {
   useEffect(() => {
     void initAppStorage().then(() => {
       useAgentSettingsStore.getState().hydrate();
-      void analysisClient.hydrateAnalysisState();
+      void transportHydrateAnalysisState();
     });
   }, []);
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       // Abort any running analysis on page unload
-      analysisClient.abort();
+      transportAbortAnalysis();
 
       if (!isDirty) {
         return;

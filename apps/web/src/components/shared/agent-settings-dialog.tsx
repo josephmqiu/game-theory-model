@@ -29,7 +29,7 @@ import {
   PROVIDER_LABELS,
 } from "@/services/ai/allowed-providers";
 import { PHASE_LABELS, V3_PHASES } from "@/types/methodology";
-import type { AnalysisEffortLevel } from "../../../shared/types/analysis-runtime";
+import type { AnalysisEffortLevel } from "@/types/analysis-runtime";
 import ClaudeLogo from "@/components/icons/claude-logo";
 import OpenAILogo from "@/components/icons/openai-logo";
 import OpenCodeLogo from "@/components/icons/opencode-logo";
