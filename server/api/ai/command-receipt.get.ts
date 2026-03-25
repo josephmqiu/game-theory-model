@@ -7,7 +7,7 @@ import {
 import {
   getCommandReceipt,
   getCommandReceiptByReceiptId,
-} from "../../services/command-bus";
+} from "../../services/command-handlers";
 
 export default defineEventHandler((event) => {
   setResponseHeaders(event, { "Content-Type": "application/json" });
@@ -34,7 +34,11 @@ export default defineEventHandler((event) => {
     ? getCommandReceiptByReceiptId(normalizedReceiptId)
     : undefined;
 
-  if (byCommandId && byReceiptId && byCommandId.commandId !== byReceiptId.commandId) {
+  if (
+    byCommandId &&
+    byReceiptId &&
+    byCommandId.commandId !== byReceiptId.commandId
+  ) {
     setResponseStatus(event, 409);
     return {
       error: "commandId and receiptId refer to different command receipts",

@@ -43,7 +43,7 @@ describe("connect-agent codex checks", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
-    vi.doUnmock("../../../services/ai/provider-health");
+    vi.doUnmock("../../../services/ai/codex-health");
     vi.useRealTimers();
   });
 
@@ -53,12 +53,14 @@ describe("connect-agent codex checks", () => {
     const { connectCodexCli } = await import("../connect-agent");
     const result = await connectCodexCli();
 
-    expect(result).toEqual(expect.objectContaining({
-      connected: false,
-      models: [],
-      notInstalled: true,
-      error: "Codex CLI not found",
-    }));
+    expect(result).toEqual(
+      expect.objectContaining({
+        connected: false,
+        models: [],
+        notInstalled: true,
+        error: "Codex CLI not found",
+      }),
+    );
     expect(result.health).toEqual(
       expect.objectContaining({
         reason: "not-installed",
@@ -72,17 +74,19 @@ describe("connect-agent codex checks", () => {
       .mockReturnValueOnce({ stdout: "/resolved/codex\n", status: 0 })
       .mockReturnValueOnce({ stdout: "codex-cli 0.116.0\n", status: 0 });
 
-    spawnMock.mockImplementation((binaryPath: string, _args: string[], options: { stdio?: string[] }) => {
-      const child = new MockChildProcess();
-      queueMicrotask(() => {
-        child.stderr.emit("data", Buffer.from("startup boom"));
-        child.exitCode = 1;
-        child.emit("exit", 1);
-      });
-      expect(binaryPath).toBe("/resolved/codex");
-      expect(options.stdio).toEqual(["pipe", "pipe", "pipe"]);
-      return child;
-    });
+    spawnMock.mockImplementation(
+      (binaryPath: string, _args: string[], options: { stdio?: string[] }) => {
+        const child = new MockChildProcess();
+        queueMicrotask(() => {
+          child.stderr.emit("data", Buffer.from("startup boom"));
+          child.exitCode = 1;
+          child.emit("exit", 1);
+        });
+        expect(binaryPath).toBe("/resolved/codex");
+        expect(options.stdio).toEqual(["pipe", "pipe", "pipe"]);
+        return child;
+      },
+    );
 
     const { connectCodexCli } = await import("../connect-agent");
     const result = await connectCodexCli();
@@ -116,26 +120,30 @@ describe("connect-agent codex checks", () => {
       }),
     );
 
-    spawnMock.mockImplementation((binaryPath: string, _args: string[], options: { stdio?: string[] }) => {
-      expect(binaryPath).toBe("/resolved/codex");
-      expect(options.stdio).toEqual(["pipe", "pipe", "pipe"]);
-      return new MockChildProcess();
-    });
+    spawnMock.mockImplementation(
+      (binaryPath: string, _args: string[], options: { stdio?: string[] }) => {
+        expect(binaryPath).toBe("/resolved/codex");
+        expect(options.stdio).toEqual(["pipe", "pipe", "pipe"]);
+        return new MockChildProcess();
+      },
+    );
 
     const { connectCodexCli } = await import("../connect-agent");
     const result = await connectCodexCli();
 
-    expect(result).toEqual(expect.objectContaining({
-      connected: true,
-      models: [
-        {
-          value: "gpt-5.4",
-          displayName: "GPT-5.4",
-          description: "Test model",
-          provider: "openai",
-        },
-      ],
-    }));
+    expect(result).toEqual(
+      expect.objectContaining({
+        connected: true,
+        models: [
+          {
+            value: "gpt-5.4",
+            displayName: "GPT-5.4",
+            description: "Test model",
+            provider: "openai",
+          },
+        ],
+      }),
+    );
     expect(result.health).toEqual(
       expect.objectContaining({
         provider: "codex",
@@ -199,7 +207,7 @@ describe("connect-agent claude checks", () => {
   });
 
   it("keeps Claude fallback-model snapshots connectable when auth is healthy", async () => {
-    vi.doMock("../../../services/ai/provider-health", () => ({
+    vi.doMock("../../../services/ai/claude-health", () => ({
       getClaudeProviderSnapshot: async () => ({
         health: {
           provider: "claude",
@@ -208,11 +216,23 @@ describe("connect-agent claude checks", () => {
           message: "query closed before response",
           checkedAt: Date.now(),
           checks: [
-            { name: "binary", status: "pass", observedValue: "/resolved/claude" },
+            {
+              name: "binary",
+              status: "pass",
+              observedValue: "/resolved/claude",
+            },
             { name: "version", status: "pass", observedValue: "claude 1.0.0" },
             { name: "auth", status: "pass" },
-            { name: "runtime", status: "warn", message: "query closed before response" },
-            { name: "models", status: "warn", message: "Using fallback Claude model catalog" },
+            {
+              name: "runtime",
+              status: "warn",
+              message: "query closed before response",
+            },
+            {
+              name: "models",
+              status: "warn",
+              message: "Using fallback Claude model catalog",
+            },
           ],
         },
         models: [
@@ -223,23 +243,24 @@ describe("connect-agent claude checks", () => {
           },
         ],
       }),
-      getCodexProviderSnapshot: vi.fn(),
     }));
 
     const { connectClaudeCode } = await import("../connect-agent");
     const result = await connectClaudeCode();
 
-    expect(result).toEqual(expect.objectContaining({
-      connected: true,
-      models: [
-        {
-          value: "claude-sonnet-4-6",
-          displayName: "Claude Sonnet 4.6",
-          description: "",
-          provider: "anthropic",
-        },
-      ],
-    }));
+    expect(result).toEqual(
+      expect.objectContaining({
+        connected: true,
+        models: [
+          {
+            value: "claude-sonnet-4-6",
+            displayName: "Claude Sonnet 4.6",
+            description: "",
+            provider: "anthropic",
+          },
+        ],
+      }),
+    );
     expect(result.health).toEqual(
       expect.objectContaining({
         provider: "claude",

@@ -18,8 +18,8 @@ vi.mock("../agents/analysis-agent", () => ({
 describe("analyze route", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    const commandBus = await import("../services/command-bus");
-    commandBus._resetForTest();
+    const commandHandlers = await import("../services/command-handlers");
+    commandHandlers._resetForTest();
   });
 
   it("starts analysis through the command bus and returns the run id", async () => {

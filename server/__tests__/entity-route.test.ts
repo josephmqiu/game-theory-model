@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   _resetForTest as resetCommandBus,
   listCommandReceipts,
-} from "../services/command-bus";
+} from "../services/command-handlers";
 import {
   _resetForTest as resetEntityGraph,
   createEntity,
@@ -57,7 +57,11 @@ describe("entity route", () => {
         revision: 1,
         stale: false,
       },
-      { source: "phase-derived", runId: "run-1", phase: "situational-grounding" },
+      {
+        source: "phase-derived",
+        runId: "run-1",
+        phase: "situational-grounding",
+      },
     );
 
     mocks.readBody.mockResolvedValue({
@@ -100,7 +104,11 @@ describe("entity route", () => {
         revision: 1,
         stale: false,
       },
-      { source: "phase-derived", runId: "run-1", phase: "situational-grounding" },
+      {
+        source: "phase-derived",
+        runId: "run-1",
+        phase: "situational-grounding",
+      },
     );
 
     mocks.readBody.mockResolvedValue({

@@ -14,7 +14,7 @@ import type { RelationshipType } from "../../shared/types/entity";
 import * as analysisOrchestrator from "../agents/analysis-agent";
 import * as revalidationService from "../services/revalidation-service";
 import { ALL_PHASES, V1_PHASES } from "../../src/types/methodology";
-import { submitCommand } from "../services/command-bus";
+import { submitCommand } from "../services/command-handlers";
 
 export interface ToolDefinition {
   name: string;
@@ -541,7 +541,10 @@ export async function handleToolCall(
   try {
     switch (name) {
       case "start_analysis":
-        return { text: await handleStartAnalysis(toolArgs as never), isError: false };
+        return {
+          text: await handleStartAnalysis(toolArgs as never),
+          isError: false,
+        };
       case "get_analysis_status":
         return { text: handleGetAnalysisStatus(), isError: false };
       case "get_entity":
@@ -549,19 +552,40 @@ export async function handleToolCall(
       case "query_entities":
         return { text: handleQueryEntities(toolArgs as never), isError: false };
       case "query_relationships":
-        return { text: handleQueryRelationships(toolArgs as never), isError: false };
+        return {
+          text: handleQueryRelationships(toolArgs as never),
+          isError: false,
+        };
       case "request_loopback":
-        return { text: handleRequestLoopback(toolArgs as never), isError: false };
+        return {
+          text: handleRequestLoopback(toolArgs as never),
+          isError: false,
+        };
       case "create_entity":
-        return { text: await handleCreateEntity(toolArgs as never), isError: false };
+        return {
+          text: await handleCreateEntity(toolArgs as never),
+          isError: false,
+        };
       case "update_entity":
-        return { text: await handleUpdateEntity(toolArgs as never), isError: false };
+        return {
+          text: await handleUpdateEntity(toolArgs as never),
+          isError: false,
+        };
       case "delete_entity":
-        return { text: await handleDeleteEntity(toolArgs as never), isError: false };
+        return {
+          text: await handleDeleteEntity(toolArgs as never),
+          isError: false,
+        };
       case "create_relationship":
-        return { text: await handleCreateRelationship(toolArgs as never), isError: false };
+        return {
+          text: await handleCreateRelationship(toolArgs as never),
+          isError: false,
+        };
       case "delete_relationship":
-        return { text: await handleDeleteRelationship(toolArgs as never), isError: false };
+        return {
+          text: await handleDeleteRelationship(toolArgs as never),
+          isError: false,
+        };
       case "rerun_phases":
         return { text: handleRerunPhases(toolArgs as never), isError: false };
       case "abort_analysis":

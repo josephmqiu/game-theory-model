@@ -23,7 +23,7 @@ vi.mock("../../../agents/analysis-agent", () => ({
   queueEdit: (...args: unknown[]) => queueEditMock(...args),
 }));
 
-vi.mock("../../../services/command-bus", () => ({
+vi.mock("../../../services/command-handlers", () => ({
   submitCommand: (...args: unknown[]) => submitCommandMock(...args),
   startCommand: (...args: unknown[]) => startCommandMock(...args),
 }));

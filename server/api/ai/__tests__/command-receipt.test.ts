@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   _resetForTest as resetCommandBus,
   startCommand,
-} from "../../../services/command-bus";
+} from "../../../services/command-handlers";
 
 const getQueryMock = vi.fn();
 const setResponseHeadersMock = vi.fn();

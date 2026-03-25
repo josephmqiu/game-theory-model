@@ -30,7 +30,11 @@ describe("analysis-runtime", () => {
       binaryPath: "/usr/local/bin/claude",
       version: "1.2.3",
       checks: [
-        { name: "binary", status: "pass", observedValue: "/usr/local/bin/claude" },
+        {
+          name: "binary",
+          status: "pass",
+          observedValue: "/usr/local/bin/claude",
+        },
         { name: "version", status: "pass", observedValue: "1.2.3" },
         { name: "auth", status: "pass" },
         { name: "runtime", status: "pass" },
@@ -39,7 +43,7 @@ describe("analysis-runtime", () => {
 
     expect(health.status).toBe("healthy");
     expect(health.reason).toBeNull();
-    expect(health.checks?.[0]?.name).toBe("binary");
+    expect(health.checks[0]?.name).toBe("binary");
   });
 
   it("represents canonical model capability metadata", () => {

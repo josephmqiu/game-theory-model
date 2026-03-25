@@ -3,12 +3,14 @@
 
 import type { ChatEvent } from "../../../shared/types/events";
 import type {
+  AnalysisRunOptions,
   RuntimeAdapter,
   RuntimeAdapterSession,
   RuntimeAdapterSessionKey,
   RuntimeChatTurnInput,
   RuntimeSessionDiagnostics,
   RuntimeStructuredTurnInput,
+  StreamChatOptions,
 } from "./adapter-contract";
 import { mapRuntimeModels } from "./adapter-contract";
 import {
@@ -36,26 +38,7 @@ import {
   handleAbortAnalysis,
 } from "../../mcp/product-tools";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
-import type { AnalysisActivityCallback } from "./analysis-activity";
-import { getClaudeProviderSnapshot } from "./provider-health";
-
-// ── Types ──
-
-export interface StreamChatOptions {
-  runId?: string;
-  /** Wall-clock timeout per chat turn in ms (default: 5 min) */
-  timeoutMs?: number;
-  /** Abort signal — when aborted, closes the SDK query and ends the stream */
-  signal?: AbortSignal;
-}
-
-export interface AnalysisRunOptions {
-  runId?: string;
-  maxTurns?: number;
-  signal?: AbortSignal;
-  webSearch?: boolean;
-  onActivity?: AnalysisActivityCallback;
-}
+import { getClaudeProviderSnapshot } from "./claude-health";
 
 type ClaudeAnalysisMode = "structured" | "json-fallback";
 
@@ -277,9 +260,7 @@ export async function createChatMcpServer() {
       }),
     ),
     tool("abort_analysis", "Abort the active analysis", {}, async () => ({
-      content: [
-        { type: "text" as const, text: await handleAbortAnalysis() },
-      ],
+      content: [{ type: "text" as const, text: await handleAbortAnalysis() }],
     })),
   ];
 
@@ -553,11 +534,14 @@ async function* streamClaudeChatTurn(
     if (timedOut) {
       yield {
         type: "error",
-        error: createProviderRuntimeError("Chat turn timed out after 5 minutes", {
+        error: createProviderRuntimeError(
+          "Chat turn timed out after 5 minutes",
+          {
             provider: "claude",
             reason: "unavailable",
             retryable: true,
-        }),
+          },
+        ),
       };
       return;
     }
@@ -728,12 +712,17 @@ async function runClaudeAnalysisAttempt<T>(
                 message: "Using WebSearch",
                 query,
               });
-              serverLog(options?.runId, "claude-adapter", "analysis-tool-call", {
-                mode,
-                toolName: toolInputState.toolName,
-                query,
-                streamedInput: true,
-              });
+              serverLog(
+                options?.runId,
+                "claude-adapter",
+                "analysis-tool-call",
+                {
+                  mode,
+                  toolName: toolInputState.toolName,
+                  query,
+                  streamedInput: true,
+                },
+              );
             }
           }
         }
@@ -934,7 +923,8 @@ async function runClaudeStructuredTurn<T = unknown>(
   try {
     return (await runAttempt("structured", input.systemPrompt)) as T;
   } catch (error) {
-    const primaryMessage = error instanceof Error ? error.message : String(error);
+    const primaryMessage =
+      error instanceof Error ? error.message : String(error);
     serverWarn(input.runId, "claude-adapter", "analysis-query-failed", {
       mode: "structured",
       model: input.model,
@@ -953,10 +943,7 @@ async function runClaudeStructuredTurn<T = unknown>(
     try {
       const fallbackResult = await runAttempt(
         "json-fallback",
-        buildClaudeJsonFallbackSystemPrompt(
-          input.systemPrompt,
-          input.schema,
-        ),
+        buildClaudeJsonFallbackSystemPrompt(input.systemPrompt, input.schema),
       );
       serverLog(input.runId, "claude-adapter", "analysis-fallback-success", {
         model: input.model,
@@ -993,7 +980,9 @@ class ClaudeRuntimeSession implements RuntimeAdapterSession {
     return streamClaudeChatTurn(input, this.state);
   }
 
-  runStructuredTurn<T = unknown>(input: RuntimeStructuredTurnInput): Promise<T> {
+  runStructuredTurn<T = unknown>(
+    input: RuntimeStructuredTurnInput,
+  ): Promise<T> {
     return runClaudeStructuredTurn<T>(input, this.state);
   }
 

@@ -1,10 +1,8 @@
 import { defineEventHandler, readBody, setResponseStatus } from "h3";
 import type { AnalysisRuntimeOverrides } from "../../../shared/types/analysis-runtime";
 import { normalizeRequestedActivePhases } from "../../services/analysis-phase-selection";
-import {
-  submitCommand,
-  type CommandMetadataInput,
-} from "../../services/command-bus";
+import { submitCommand } from "../../services/command-handlers";
+import type { CommandMetadataInput } from "../../services/command-bus";
 
 interface AnalyzeBody {
   topic: string;

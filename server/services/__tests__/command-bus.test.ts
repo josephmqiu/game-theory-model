@@ -206,7 +206,9 @@ describe("command-bus", () => {
     });
 
     expect(conflict.status).toBe("conflicted");
-    expect(conflict.error?.message).toContain("refer to different existing commands");
+    expect(conflict.error?.message).toContain(
+      "refer to different existing commands",
+    );
   });
 
   it("returns an accepted receipt before scheduled execution starts", async () => {
@@ -272,5 +274,35 @@ describe("command-bus", () => {
     expect(receipt.causationId).toBe("cause-1");
     expect(receipt.error?.message).toBe("boom");
     expect(receipt.finishedAt).toBeTypeOf("number");
+  });
+
+  it("does not block subsequent commands when a handler fails", async () => {
+    let callCount = 0;
+    const bus = createCommandBus({
+      handlers: {
+        "analysis.reset": async (command) => {
+          callCount++;
+          if (command.topic === "fail") {
+            throw new Error("handler-error");
+          }
+          return { analysis: {} as never, revision: callCount };
+        },
+      },
+    });
+
+    const first = await bus.submitCommand({
+      kind: "analysis.reset",
+      topic: "fail",
+      requestedBy: "test",
+    });
+    const second = await bus.submitCommand({
+      kind: "analysis.reset",
+      topic: "succeed",
+      requestedBy: "test",
+    });
+
+    expect(first.status).toBe("failed");
+    expect(second.status).toBe("completed");
+    expect(callCount).toBe(2);
   });
 });

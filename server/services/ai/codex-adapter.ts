@@ -10,39 +10,24 @@ import type { ChatEvent } from "../../../shared/types/events";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 import { CODEX_MCP_SERVER_NAME, installMcpServer } from "./codex-config";
 import { ANALYSIS_TOOL_NAMES, CHAT_TOOL_NAMES } from "./tool-surfaces";
-import type { AnalysisActivityCallback } from "./analysis-activity";
 import {
   createProcessRuntimeError,
   createProviderRuntimeError,
 } from "../../../shared/types/runtime-error";
 import type {
+  AnalysisRunOptions,
   RuntimeAdapter,
   RuntimeAdapterSession,
   RuntimeAdapterSessionKey,
   RuntimeChatTurnInput,
   RuntimeSessionDiagnostics,
   RuntimeStructuredTurnInput,
+  StreamChatOptions,
 } from "./adapter-contract";
 import { mapRuntimeModels } from "./adapter-contract";
-import { getCodexProviderSnapshot } from "./provider-health";
+import { getCodexProviderSnapshot } from "./codex-health";
 
 // ── Types ──
-
-export interface StreamChatOptions {
-  runId?: string;
-  /** Wall-clock timeout per chat turn in ms (default: 5 min) */
-  timeoutMs?: number;
-  /** Abort signal — when aborted, sends turn/interrupt and ends the stream */
-  signal?: AbortSignal;
-}
-
-export interface AnalysisRunOptions {
-  runId?: string;
-  maxTurns?: number;
-  signal?: AbortSignal;
-  webSearch?: boolean;
-  onActivity?: AnalysisActivityCallback;
-}
 
 interface JsonRpcRequest {
   jsonrpc: "2.0";
@@ -1434,7 +1419,9 @@ class CodexRuntimeSession implements RuntimeAdapterSession {
     });
   }
 
-  runStructuredTurn<T = unknown>(input: RuntimeStructuredTurnInput): Promise<T> {
+  runStructuredTurn<T = unknown>(
+    input: RuntimeStructuredTurnInput,
+  ): Promise<T> {
     return runAnalysisPhase<T>(
       input.prompt,
       input.systemPrompt,

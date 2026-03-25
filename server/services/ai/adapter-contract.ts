@@ -11,8 +11,25 @@ import {
   createProcessRuntimeError,
   createProviderRuntimeError,
 } from "../../../shared/types/runtime-error";
+import type { AnalysisActivityCallback } from "./analysis-activity";
 
 export type { RuntimeProvider } from "../../../shared/types/analysis-runtime";
+
+export interface StreamChatOptions {
+  runId?: string;
+  /** Wall-clock timeout per chat turn in ms (default: 5 min) */
+  timeoutMs?: number;
+  /** Abort signal — when aborted, closes the provider session and ends the stream */
+  signal?: AbortSignal;
+}
+
+export interface AnalysisRunOptions {
+  runId?: string;
+  maxTurns?: number;
+  signal?: AbortSignal;
+  webSearch?: boolean;
+  onActivity?: AnalysisActivityCallback;
+}
 
 export interface RuntimeAdapterSessionKey {
   ownerId: string;
@@ -131,9 +148,7 @@ export async function getRuntimeAdapter(
     return mod.claudeRuntimeAdapter;
   }
 
-  throw new Error(
-    `Unknown provider: ${providerInput}. Allowed: claude, codex`,
-  );
+  throw new Error(`Unknown provider: ${providerInput}. Allowed: claude, codex`);
 }
 
 export async function listRuntimeModels(
@@ -184,8 +199,7 @@ export function runtimeErrorFromHealth(
     health.message ?? "Provider health check failed",
     {
       provider: health.provider,
-      reason:
-        health.reason === "unauthenticated" ? "unauthorized" : "unknown",
+      reason: health.reason === "unauthenticated" ? "unauthorized" : "unknown",
       retryable: health.reason === "transport",
     },
   );

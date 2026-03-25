@@ -44,7 +44,7 @@ export interface ProviderHealthState {
   checkedAt: number;
   binaryPath?: string;
   version?: string;
-  checks?: ProviderHealthCheck[];
+  checks: ProviderHealthCheck[];
 }
 
 export interface RuntimeModelCapabilities {

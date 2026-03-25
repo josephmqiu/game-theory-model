@@ -6,8 +6,6 @@ import type {
   EntityProvenance,
 } from "../../shared/types/entity";
 import type { AnalysisRuntimeOverrides } from "../../shared/types/analysis-runtime";
-import * as analysisOrchestrator from "../agents/analysis-agent";
-import * as entityGraphService from "./entity-graph-service";
 import { serverError, serverLog, serverWarn } from "../utils/ai-logger";
 
 export type CommandReceiptStatus =
@@ -30,7 +28,10 @@ export interface CommandMetadataInput {
   submittedAt?: number;
 }
 
-interface ResolvedCommandMetadata extends Omit<CommandMetadataInput, "commandId"> {
+export interface ResolvedCommandMetadata extends Omit<
+  CommandMetadataInput,
+  "commandId"
+> {
   commandId: string;
   requestedBy: string;
   submittedAt: number;
@@ -94,23 +95,7 @@ export type SubmitCommand =
   | RelationshipCreateCommandInput
   | RelationshipDeleteCommandInput;
 
-export type Command =
-  | (Omit<AnalysisStartCommandInput, keyof CommandMetadataInput> &
-      ResolvedCommandMetadata)
-  | (Omit<AnalysisAbortCommandInput, keyof CommandMetadataInput> &
-      ResolvedCommandMetadata)
-  | (Omit<AnalysisResetCommandInput, keyof CommandMetadataInput> &
-      ResolvedCommandMetadata)
-  | (Omit<EntityCreateCommandInput, keyof CommandMetadataInput> &
-      ResolvedCommandMetadata)
-  | (Omit<EntityUpdateCommandInput, keyof CommandMetadataInput> &
-      ResolvedCommandMetadata)
-  | (Omit<EntityDeleteCommandInput, keyof CommandMetadataInput> &
-      ResolvedCommandMetadata)
-  | (Omit<RelationshipCreateCommandInput, keyof CommandMetadataInput> &
-      ResolvedCommandMetadata)
-  | (Omit<RelationshipDeleteCommandInput, keyof CommandMetadataInput> &
-      ResolvedCommandMetadata);
+export type Command = SubmitCommand & ResolvedCommandMetadata;
 
 export interface AnalysisStartResult {
   runId: string;
@@ -133,7 +118,6 @@ export interface EntityMutationResult {
   created: AnalysisEntity[];
   updated: AnalysisEntity[];
   staleMarked: string[];
-  grouped: never[];
   revision: number;
 }
 
@@ -191,7 +175,7 @@ export interface CommandReceiptStore {
 }
 
 type CommandKind = Command["kind"];
-type CommandHandlerMap = {
+export type CommandHandlerMap = {
   [K in CommandKind]: (
     command: Extract<Command, { kind: K }>,
   ) => Promise<CommandResultMap[K]>;
@@ -211,7 +195,7 @@ export interface StartedCommand {
   completion: Promise<CommandReceipt>;
 }
 
-interface CommandBus {
+export interface CommandBus {
   startCommand(
     command: SubmitCommand,
     options?: StartCommandOptions,
@@ -222,8 +206,6 @@ interface CommandBus {
   listReceipts(): CommandReceipt[];
   resetForTest(): void;
 }
-
-const DEFAULT_ESTIMATED_PHASES = 3;
 
 function createInMemoryReceiptStore(): CommandReceiptStore {
   const receiptsByCommandId = new Map<string, CommandReceipt>();
@@ -273,7 +255,7 @@ function normalizeCommand(command: SubmitCommand): Command {
   return {
     ...command,
     ...normalizeMetadata(command),
-  } as Command;
+  };
 }
 
 function normalizeForFingerprint(value: unknown): unknown {
@@ -490,114 +472,11 @@ function logReceiptEvent(
   serverLog(runId, "command-bus", event, payload);
 }
 
-const defaultHandlers: CommandHandlerMap = {
-  async "analysis.start"(command) {
-    const { runId } = await analysisOrchestrator.runFull(
-      command.topic,
-      command.provider,
-      command.model,
-      undefined,
-      command.runtime,
-    );
-    return {
-      runId,
-      status: "started",
-      estimatedPhases: DEFAULT_ESTIMATED_PHASES,
-    };
-  },
-  async "analysis.abort"() {
-    const activeStatus = analysisOrchestrator.getActiveStatus();
-    if (!activeStatus) {
-      return { aborted: false, status: "idle" };
-    }
-
-    analysisOrchestrator.abort();
-    return { aborted: true, runId: activeStatus.runId };
-  },
-  async "analysis.reset"(command) {
-    entityGraphService.newAnalysis(command.topic);
-    return {
-      analysis: entityGraphService.getAnalysis(),
-      revision: entityGraphService.getRevision(),
-    };
-  },
-  async "entity.create"(command) {
-    const created = entityGraphService.createEntity(command.entity, {
-      source: command.provenanceSource,
-      ...(command.runId ? { runId: command.runId } : {}),
-      ...(command.provenancePhase ? { phase: command.provenancePhase } : {}),
-    });
-    return {
-      created: [created],
-      updated: [],
-      staleMarked: [],
-      grouped: [],
-      revision: entityGraphService.getRevision(),
-    };
-  },
-  async "entity.update"(command) {
-    const staleBefore = new Set(entityGraphService.getStaleEntityIds());
-    const updated = entityGraphService.updateEntity(command.id, command.updates, {
-      source: command.provenanceSource,
-      ...(command.runId ? { runId: command.runId } : {}),
-    });
-
-    if (!updated) {
-      throw new Error(`Entity "${command.id}" not found`);
-    }
-
-    const staleMarked = entityGraphService
-      .getStaleEntityIds()
-      .filter((id) => !staleBefore.has(id));
-
-    return {
-      created: [],
-      updated: [updated],
-      staleMarked,
-      grouped: [],
-      revision: entityGraphService.getRevision(),
-    };
-  },
-  async "entity.delete"(command) {
-    const deleted = entityGraphService.removeEntity(command.id);
-    if (!deleted) {
-      throw new Error(`Entity "${command.id}" not found`);
-    }
-    return {
-      deleted: true,
-      id: command.id,
-      revision: entityGraphService.getRevision(),
-    };
-  },
-  async "relationship.create"(command) {
-    return entityGraphService.createRelationship(command.relationship, {
-      source: command.provenanceSource ?? "ai-edited",
-      ...(command.runId ? { runId: command.runId } : {}),
-      ...(command.provenancePhase ? { phase: command.provenancePhase } : {}),
-    });
-  },
-  async "relationship.delete"(command) {
-    const deleted = entityGraphService.removeRelationship(command.id);
-    if (!deleted) {
-      throw new Error(`Relationship "${command.id}" not found`);
-    }
-    return {
-      deleted: true,
-      id: command.id,
-      revision: entityGraphService.getRevision(),
-    };
-  },
-};
-
 export function createCommandBus(
   options: CreateCommandBusOptions = {},
 ): CommandBus {
-  const receiptStore =
-    options.receiptStore ?? createInMemoryReceiptStore();
-  const handlers = {
-    ...defaultHandlers,
-    ...(options.handlers ?? {}),
-  } as CommandHandlerMap;
+  const receiptStore = options.receiptStore ?? createInMemoryReceiptStore();
+  const handlers = (options.handlers ?? {}) as CommandHandlerMap;
   const completions = new Map<string, Promise<CommandReceipt>>();
   let queueTail: Promise<void> = Promise.resolve();
 
@@ -762,39 +641,4 @@ export function createCommandBus(
       queueTail = Promise.resolve();
     },
   };
-}
-
-const commandBus = createCommandBus();
-
-export async function startCommand(
-  command: SubmitCommand,
-  options?: StartCommandOptions,
-): Promise<StartedCommand> {
-  return commandBus.startCommand(command, options);
-}
-
-export async function submitCommand(
-  command: SubmitCommand,
-): Promise<CommandReceipt> {
-  return commandBus.submitCommand(command);
-}
-
-export function getCommandReceipt(
-  commandId: string,
-): CommandReceipt | undefined {
-  return commandBus.getReceipt(commandId);
-}
-
-export function getCommandReceiptByReceiptId(
-  receiptId: string,
-): CommandReceipt | undefined {
-  return commandBus.getReceiptByReceiptId(receiptId);
-}
-
-export function listCommandReceipts(): CommandReceipt[] {
-  return commandBus.listReceipts();
-}
-
-export function _resetForTest(): void {
-  commandBus.resetForTest();
 }

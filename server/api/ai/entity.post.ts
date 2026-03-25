@@ -3,12 +3,11 @@ import type { H3Event } from "h3";
 import { z } from "zod";
 import * as entityGraphService from "../../services/entity-graph-service";
 import * as analysisOrchestrator from "../../agents/analysis-agent";
-import {
-  startCommand,
-  submitCommand,
-  type CommandReceipt,
-  type SubmitCommand,
-  type CommandMetadataInput,
+import { startCommand, submitCommand } from "../../services/command-handlers";
+import type {
+  CommandReceipt,
+  SubmitCommand,
+  CommandMetadataInput,
 } from "../../services/command-bus";
 import { serverError } from "../../utils/ai-logger";
 
@@ -84,10 +83,15 @@ export default defineEventHandler(async (event) => {
       },
     });
     void started.completion.catch((error) => {
-      serverError(body.command?.runId, "entity-route", "queued-command-failed", {
-        action: body.action,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      serverError(
+        body.command?.runId,
+        "entity-route",
+        "queued-command-failed",
+        {
+          action: body.action,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
     });
     return mapMutationReceipt(body.action, started.receipt, event, {
       queued: true,

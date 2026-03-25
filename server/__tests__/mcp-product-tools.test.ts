@@ -6,7 +6,7 @@ import {
   getAnalysis,
   _resetForTest,
 } from "../services/entity-graph-service";
-import { _resetForTest as resetCommandBus } from "../services/command-bus";
+import { _resetForTest as resetCommandBus } from "../services/command-handlers";
 import {
   handleStartAnalysis,
   handleGetAnalysisStatus,
@@ -98,7 +98,8 @@ beforeEach(async () => {
   newAnalysis("US-China trade war");
   vi.clearAllMocks();
   const { getActiveStatus } = await import("../agents/analysis-agent");
-  const { getActiveRevalStatus } = await import("../services/revalidation-service");
+  const { getActiveRevalStatus } =
+    await import("../services/revalidation-service");
   vi.mocked(getActiveStatus).mockReturnValue(null);
   vi.mocked(getActiveRevalStatus).mockReturnValue(null);
 });
@@ -167,7 +168,8 @@ describe("handleGetAnalysisStatus", () => {
 
   it("falls back to active revalidation status when no analysis run is active", async () => {
     const { getActiveStatus } = await import("../agents/analysis-agent");
-    const { getActiveRevalStatus } = await import("../services/revalidation-service");
+    const { getActiveRevalStatus } =
+      await import("../services/revalidation-service");
     vi.mocked(getActiveStatus).mockReturnValue(null);
     vi.mocked(getActiveRevalStatus).mockReturnValue({
       runId: "reval-active",
@@ -185,7 +187,8 @@ describe("handleGetAnalysisStatus", () => {
 
   it("returns idle when nothing is currently running", async () => {
     const { getActiveStatus } = await import("../agents/analysis-agent");
-    const { getActiveRevalStatus } = await import("../services/revalidation-service");
+    const { getActiveRevalStatus } =
+      await import("../services/revalidation-service");
     vi.mocked(getActiveStatus).mockReturnValue(null);
     vi.mocked(getActiveRevalStatus).mockReturnValue(null);
     expect(JSON.parse(handleGetAnalysisStatus())).toEqual({ status: "idle" });
