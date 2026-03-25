@@ -104,9 +104,7 @@ export function normalizeChatRequest(raw: unknown): CanonicalChatRequest {
 
   const legacy = legacyChatRequestSchema.safeParse(raw);
   if (!legacy.success) {
-    throw new Error(
-      "Missing or invalid required fields for chat request.",
-    );
+    throw new Error("Missing or invalid required fields for chat request.");
   }
 
   const lastUserMessage = [...legacy.data.messages]
@@ -169,7 +167,11 @@ Be concise, practical, and collaborative.`;
     .map((entity) => {
       const data = entity.data;
       const label =
-        "name" in data ? data.name : "content" in data ? data.content : entity.type;
+        "name" in data
+          ? data.name
+          : "content" in data
+            ? data.content
+            : entity.type;
       return `- [${entity.type}] ${label} (${entity.confidence} confidence, phase: ${entity.phase})`;
     })
     .join("\n");
@@ -181,9 +183,7 @@ Be concise, practical, and collaborative.`;
     `Entities: ${analysis.entities.length}`,
     `Phases: ${phaseStatuses}`,
     analysis.entities.length > 0 ? `\nEntities:\n${entitySummary}` : "",
-    analysis.centralThesis
-      ? `\nCentral Thesis: ${analysis.centralThesis}`
-      : "",
+    analysis.centralThesis ? `\nCentral Thesis: ${analysis.centralThesis}` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -191,6 +191,12 @@ Be concise, practical, and collaborative.`;
   return `${basePrompt}\n\n${context}`;
 }
 
+/**
+ * TRANSITIONAL: Stuffs bounded conversation history into the system prompt.
+ * This will be replaced by native multi-turn message arrays once the
+ * renderer stops sending compatibility.messages and the server thread
+ * owns the full conversation context.
+ */
 function buildEffectiveSystemPrompt(input: {
   systemPrompt: string;
   history: Array<{ role: "user" | "assistant"; content: string }>;
@@ -289,7 +295,9 @@ export async function createChatResponse(
     producer: "chat-service",
     occurredAt,
   });
-  const priorMessages = threadService.listMessagesByThreadId(threadContext.threadId);
+  const priorMessages = threadService.listMessagesByThreadId(
+    threadContext.threadId,
+  );
   const fallbackHistory = request.compatibility?.messages ?? [];
   const historySource =
     priorMessages.length > 0
@@ -301,10 +309,16 @@ export async function createChatResponse(
           role: message.role,
           content: message.content,
         }));
-  const boundedHistory = trimChatHistory(historySource);
+  const systemPromptBase =
+    request.compatibility?.system?.trim() || buildServerChatSystemPrompt();
+  const boundedHistory = trimChatHistory(
+    historySource,
+    undefined,
+    undefined,
+    systemPromptBase.length,
+  );
   const systemPrompt = buildEffectiveSystemPrompt({
-    systemPrompt:
-      request.compatibility?.system?.trim() || buildServerChatSystemPrompt(),
+    systemPrompt: systemPromptBase,
     history: boundedHistory,
   });
 
@@ -319,10 +333,7 @@ export async function createChatResponse(
   });
 
   const abortController = new AbortController();
-  const pendingToolMetadata = new Map<
-    string,
-    Array<{ query?: string }>
-  >();
+  const pendingToolMetadata = new Map<string, Array<{ query?: string }>>();
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -430,7 +441,9 @@ export async function createChatResponse(
                     ? `Tool ${eventChunk.toolName} failed: ${eventChunk.error}`
                     : `Used ${eventChunk.toolName}`,
                 status:
-                  eventChunk.type === "tool_call_error" ? "failed" : "completed",
+                  eventChunk.type === "tool_call_error"
+                    ? "failed"
+                    : "completed",
                 toolName: eventChunk.toolName,
                 query,
                 producer: "chat-service",
@@ -512,7 +525,9 @@ export async function createChatResponse(
       } finally {
         clearInterval(pingTimer);
         if (attachmentTempDir) {
-          rm(attachmentTempDir, { recursive: true, force: true }).catch(() => {});
+          rm(attachmentTempDir, { recursive: true, force: true }).catch(
+            () => {},
+          );
         }
         controller.close();
       }

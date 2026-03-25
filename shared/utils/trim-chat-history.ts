@@ -10,12 +10,15 @@ export function trimChatHistory<T extends { role: string; content: string }>(
   messages: T[],
   maxMessages: number = DEFAULT_MAX_MESSAGES,
   maxChars: number = DEFAULT_MAX_CHARS,
+  reservedChars: number = 0,
 ): T[] {
+  const effectiveMaxChars = Math.max(0, maxChars - reservedChars);
+
   if (messages.length <= maxMessages) {
     const totalChars = messages.reduce((sum, message) => {
       return sum + message.content.length;
     }, 0);
-    if (totalChars <= maxChars) {
+    if (totalChars <= effectiveMaxChars) {
       return messages;
     }
   }
@@ -33,8 +36,8 @@ export function trimChatHistory<T extends { role: string; content: string }>(
 
   for (const message of recentMessages) {
     const messageChars = message.content.length;
-    if (charCount + messageChars > maxChars) {
-      const remaining = maxChars - charCount;
+    if (charCount + messageChars > effectiveMaxChars) {
+      const remaining = effectiveMaxChars - charCount;
       if (remaining > 200) {
         window.push({
           ...message,
