@@ -295,6 +295,11 @@ export async function createChatResponse(
     producer: "chat-service",
     occurredAt,
   });
+  // Durable thread messages take precedence over legacy compatibility history.
+  // If a thread was established by a prior canonical request, legacy fallback
+  // history from compatibility.messages is intentionally ignored — the durable
+  // store is the source of truth. This means a mid-session upgrade from legacy
+  // to canonical requests will lose the pre-upgrade history that wasn't persisted.
   const priorMessages = threadService.listMessagesByThreadId(
     threadContext.threadId,
   );

@@ -5,14 +5,9 @@ import {
   setResponseStatus,
 } from "h3";
 import {
-  ALLOWED_MEDIA_TYPES,
-  SENSITIVE_LOG_PATTERN,
   createChatResponse,
   normalizeChatRequest,
-  resolveMediaExtension,
 } from "../../services/ai/chat-service";
-
-export { ALLOWED_MEDIA_TYPES, resolveMediaExtension, SENSITIVE_LOG_PATTERN };
 
 export function formatOpenCodeError(error: unknown): string {
   if (typeof error === "string") {
