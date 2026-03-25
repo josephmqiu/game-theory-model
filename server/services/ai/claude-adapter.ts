@@ -201,7 +201,10 @@ export async function createChatMcpServer() {
       },
       async (args) => ({
         content: [
-          { type: "text" as const, text: handleCreateEntity(args as any) },
+          {
+            type: "text" as const,
+            text: await handleCreateEntity(args as any),
+          },
         ], // eslint-disable-line @typescript-eslint/no-explicit-any
       }),
     ),
@@ -214,7 +217,10 @@ export async function createChatMcpServer() {
       },
       async (args) => ({
         content: [
-          { type: "text" as const, text: handleUpdateEntity(args as any) },
+          {
+            type: "text" as const,
+            text: await handleUpdateEntity(args as any),
+          },
         ], // eslint-disable-line @typescript-eslint/no-explicit-any
       }),
     ),
@@ -223,7 +229,12 @@ export async function createChatMcpServer() {
       "Delete an analysis entity",
       { id: z.string() },
       async (args) => ({
-        content: [{ type: "text" as const, text: handleDeleteEntity(args) }],
+        content: [
+          {
+            type: "text" as const,
+            text: await handleDeleteEntity(args),
+          },
+        ],
       }),
     ),
     tool(
@@ -239,7 +250,7 @@ export async function createChatMcpServer() {
         content: [
           {
             type: "text" as const,
-            text: handleCreateRelationship(args as any),
+            text: await handleCreateRelationship(args as any),
           },
         ], // eslint-disable-line @typescript-eslint/no-explicit-any
       }),
@@ -252,7 +263,7 @@ export async function createChatMcpServer() {
         content: [
           {
             type: "text" as const,
-            text: handleDeleteRelationship(args as any),
+            text: await handleDeleteRelationship(args as any),
           },
         ], // eslint-disable-line @typescript-eslint/no-explicit-any
       }),
@@ -266,7 +277,9 @@ export async function createChatMcpServer() {
       }),
     ),
     tool("abort_analysis", "Abort the active analysis", {}, async () => ({
-      content: [{ type: "text" as const, text: handleAbortAnalysis() }],
+      content: [
+        { type: "text" as const, text: await handleAbortAnalysis() },
+      ],
     })),
   ];
 

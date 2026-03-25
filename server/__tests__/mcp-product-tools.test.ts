@@ -6,6 +6,7 @@ import {
   getAnalysis,
   _resetForTest,
 } from "../services/entity-graph-service";
+import { _resetForTest as resetCommandBus } from "../services/command-bus";
 import {
   handleStartAnalysis,
   handleGetAnalysisStatus,
@@ -92,6 +93,7 @@ const defaultProvenance = {
 
 beforeEach(async () => {
   _resetForTest();
+  resetCommandBus();
   _resetLoopbackTriggersForTest();
   newAnalysis("US-China trade war");
   vi.clearAllMocks();
@@ -111,6 +113,8 @@ describe("handleStartAnalysis", () => {
 
     expect(runFull).toHaveBeenCalledWith(
       "US-China semiconductor trade war",
+      undefined,
+      undefined,
       undefined,
       undefined,
     );
@@ -134,6 +138,8 @@ describe("handleStartAnalysis", () => {
       "US-China semiconductor trade war",
       "anthropic",
       "claude-sonnet-4-20250514",
+      undefined,
+      undefined,
     );
   });
 });
@@ -254,7 +260,7 @@ describe("entity CRUD tools", () => {
     });
 
     const result = JSON.parse(
-      handleCreateEntity({
+      await handleCreateEntity({
         type: "fact",
         phase: "situational-grounding",
         data: {
@@ -274,11 +280,11 @@ describe("entity CRUD tools", () => {
     expect(result.created[0].provenance.runId).toBe("run-active");
   });
 
-  it("updates entities using the nested updates payload", () => {
+  it("updates entities using the nested updates payload", async () => {
     const entity = createEntity(makeFactData(), defaultProvenance);
 
     const result = JSON.parse(
-      handleUpdateEntity({
+      await handleUpdateEntity({
         id: entity.id,
         updates: { rationale: "updated rationale" },
       }),
@@ -289,18 +295,20 @@ describe("entity CRUD tools", () => {
     expect(result.updated[0].provenance.source).toBe("ai-edited");
   });
 
-  it("deletes entities by id", () => {
+  it("deletes entities by id", async () => {
     const entity = createEntity(makeFactData(), defaultProvenance);
 
-    const result = JSON.parse(handleDeleteEntity({ id: entity.id }));
+    const result = JSON.parse(await handleDeleteEntity({ id: entity.id }));
 
-    expect(result).toEqual({ deleted: true, id: entity.id });
+    expect(result).toEqual(
+      expect.objectContaining({ deleted: true, id: entity.id }),
+    );
     expect(getAnalysis().entities).toHaveLength(0);
   });
 });
 
 describe("relationship CRUD tools", () => {
-  it("creates relationships with contract-aligned input names", () => {
+  it("creates relationships with contract-aligned input names", async () => {
     const e1 = createEntity(makeFactData(), defaultProvenance);
     const e2 = createEntity(makePlayerData(), {
       source: "phase-derived",
@@ -309,7 +317,7 @@ describe("relationship CRUD tools", () => {
     });
 
     const result = JSON.parse(
-      handleCreateRelationship({
+      await handleCreateRelationship({
         type: "supports",
         fromId: e1.id,
         toId: e2.id,
@@ -323,7 +331,7 @@ describe("relationship CRUD tools", () => {
     expect(result.metadata).toEqual({ strength: "strong" });
   });
 
-  it("deletes relationships by id", () => {
+  it("deletes relationships by id", async () => {
     const e1 = createEntity(makeFactData(), defaultProvenance);
     const e2 = createEntity(makeFactData(), defaultProvenance);
     const relationship = createRelationship({
@@ -333,10 +341,12 @@ describe("relationship CRUD tools", () => {
     });
 
     const result = JSON.parse(
-      handleDeleteRelationship({ id: relationship.id }),
+      await handleDeleteRelationship({ id: relationship.id }),
     );
 
-    expect(result).toEqual({ deleted: true, id: relationship.id });
+    expect(result).toEqual(
+      expect.objectContaining({ deleted: true, id: relationship.id }),
+    );
     expect(getAnalysis().relationships).toHaveLength(0);
   });
 });
@@ -377,7 +387,7 @@ describe("analysis control tools", () => {
       totalPhases: 3,
     });
 
-    const result = JSON.parse(handleAbortAnalysis());
+    const result = JSON.parse(await handleAbortAnalysis());
 
     expect(abort).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ aborted: true, runId: "run-active" });
@@ -386,7 +396,7 @@ describe("analysis control tools", () => {
   it("returns idle when abort_analysis is called with no active run", async () => {
     const { getActiveStatus } = await import("../agents/analysis-agent");
     vi.mocked(getActiveStatus).mockReturnValue(null);
-    expect(JSON.parse(handleAbortAnalysis())).toEqual({
+    expect(JSON.parse(await handleAbortAnalysis())).toEqual({
       aborted: false,
       status: "idle",
     });

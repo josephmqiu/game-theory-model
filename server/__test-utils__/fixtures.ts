@@ -8,17 +8,19 @@ import type { MethodologyPhase } from "../../shared/types/methodology";
 // ── Service reset ──
 
 export async function resetAllServices(): Promise<void> {
-  const [entityGraph, runtimeStatus, revalidation, orchestrator] =
+  const [entityGraph, runtimeStatus, revalidation, orchestrator, commandBus] =
     await Promise.all([
       import("../services/entity-graph-service"),
       import("../services/runtime-status"),
       import("../services/revalidation-service"),
       import("../agents/analysis-agent"),
+      import("../services/command-bus"),
     ]);
   entityGraph._resetForTest();
   runtimeStatus._resetForTest();
   revalidation._resetForTest();
   orchestrator._resetForTest();
+  commandBus._resetForTest();
 }
 
 // ── Provenance helpers ──

@@ -3,20 +3,41 @@ import type { H3Event } from "h3";
 import { z } from "zod";
 import * as entityGraphService from "../../services/entity-graph-service";
 import * as analysisOrchestrator from "../../agents/analysis-agent";
+import {
+  submitCommand,
+  type CommandMetadataInput,
+} from "../../services/command-bus";
+import { serverError } from "../../utils/ai-logger";
 
 const baseActionSchema = z.object({
   action: z.string().min(1),
 });
 
+const commandMetadataSchema = z
+  .object({
+    commandId: z.string().optional(),
+    receiptId: z.string().optional(),
+    correlationId: z.string().optional(),
+    causationId: z.string().optional(),
+    runId: z.string().optional(),
+    workspaceId: z.string().optional(),
+    threadId: z.string().optional(),
+    requestedBy: z.string().optional(),
+    submittedAt: z.number().optional(),
+  })
+  .optional();
+
 const updateActionSchema = z.object({
   action: z.literal("update"),
   id: z.string().min(1),
   updates: z.record(z.string(), z.unknown()),
+  command: commandMetadataSchema,
 });
 
 const newAnalysisActionSchema = z.object({
   action: z.literal("newAnalysis"),
   topic: z.string().optional(),
+  command: commandMetadataSchema,
 });
 
 const getActionSchema = z.object({
@@ -52,7 +73,14 @@ export default defineEventHandler(async (event) => {
 
   // If analysis running and this is a mutation, queue it
   if (analysisOrchestrator.isRunning() && body.action !== "get") {
-    analysisOrchestrator.queueEdit(() => executeAction(body));
+    analysisOrchestrator.queueEdit(() => {
+      void executeMutationCommand(body).catch((error) => {
+        serverError(body.command?.runId, "entity-route", "queued-command-failed", {
+          action: body.action,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    });
     return { queued: true };
   }
 
@@ -95,22 +123,77 @@ function parseEntityAction(
   }
 }
 
-function executeAction(body: EntityActionBody, event?: H3Event) {
+function buildCommandMetadata(
+  command: CommandMetadataInput | undefined,
+  requestedBy: string,
+): CommandMetadataInput {
+  return {
+    requestedBy,
+    ...(command ?? {}),
+  };
+}
+
+async function executeMutationCommand(
+  body: Exclude<EntityActionBody, { action: "get" }>,
+  event?: H3Event,
+) {
   switch (body.action) {
     case "update": {
-      const updated = entityGraphService.updateEntity(body.id, body.updates, {
-        source: "user-edited",
+      const receipt = await submitCommand({
+        kind: "entity.update",
+        id: body.id,
+        updates: body.updates,
+        provenanceSource: "user-edited",
+        ...buildCommandMetadata(body.command, "api:ai-entity.update"),
       });
-      if (updated === null) {
-        if (event) setResponseStatus(event, 404);
-        return { error: "Entity not found" };
+
+      if (receipt.status === "conflicted") {
+        if (event) setResponseStatus(event, 409);
+        return { error: receipt.error?.message ?? "Command receipt conflict" };
       }
-      return { updated, staleMarked: entityGraphService.getStaleEntityIds() };
+
+      if (receipt.status === "failed") {
+        if (event) setResponseStatus(event, 404);
+        return { error: receipt.error?.message ?? "Entity not found" };
+      }
+
+      const result = receipt.result as {
+        updated: unknown[];
+        staleMarked: string[];
+      };
+      return {
+        updated: result.updated[0],
+        staleMarked: result.staleMarked,
+      };
     }
+    case "newAnalysis": {
+      const receipt = await submitCommand({
+        kind: "analysis.reset",
+        topic: body.topic || "",
+        ...buildCommandMetadata(body.command, "api:ai-entity.reset"),
+      });
+
+      if (receipt.status === "conflicted") {
+        if (event) setResponseStatus(event, 409);
+        return { error: receipt.error?.message ?? "Command receipt conflict" };
+      }
+
+      if (receipt.status === "failed") {
+        throw new Error(receipt.error?.message ?? "Failed to reset analysis");
+      }
+
+      const result = receipt.result as { analysis: Readonly<unknown> };
+      return { analysis: result.analysis };
+    }
+  }
+}
+
+async function executeAction(body: EntityActionBody, event?: H3Event) {
+  switch (body.action) {
     case "get":
       return { analysis: entityGraphService.getAnalysis() };
+    case "update":
     case "newAnalysis":
-      entityGraphService.newAnalysis(body.topic || "");
-      return { analysis: entityGraphService.getAnalysis() };
+      return executeMutationCommand(body, event);
   }
 }

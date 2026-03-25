@@ -45,8 +45,8 @@ const productTools = await import("../../mcp/product-tools");
 const entityGraph = await import("../../services/entity-graph-service");
 
 describe("MCP product tools integration", () => {
-  beforeEach(() => {
-    resetAllServices();
+  beforeEach(async () => {
+    await resetAllServices();
     entityGraph.newAnalysis("Integration test");
   });
 
@@ -54,8 +54,8 @@ describe("MCP product tools integration", () => {
     vi.clearAllMocks();
   });
 
-  it("create_entity + get_entity round-trip", () => {
-    const result = productTools.handleCreateEntity({
+  it("create_entity + get_entity round-trip", async () => {
+    const result = await productTools.handleCreateEntity({
       type: "fact",
       phase: "situational-grounding",
       data: {
@@ -83,9 +83,9 @@ describe("MCP product tools integration", () => {
     expect(retrieved.data.content).toBe("A test fact");
   });
 
-  it("query_entities filters by phase", () => {
+  it("query_entities filters by phase", async () => {
     // Create entities for two phases
-    productTools.handleCreateEntity({
+    await productTools.handleCreateEntity({
       type: "fact",
       phase: "situational-grounding",
       data: {
@@ -99,7 +99,7 @@ describe("MCP product tools integration", () => {
       rationale: "test",
     });
 
-    productTools.handleCreateEntity({
+    await productTools.handleCreateEntity({
       type: "player",
       phase: "player-identification",
       data: {
@@ -129,8 +129,8 @@ describe("MCP product tools integration", () => {
     expect(parsed2[0].type).toBe("player");
   });
 
-  it("delete_entity removes from graph", () => {
-    const createResult = productTools.handleCreateEntity({
+  it("delete_entity removes from graph", async () => {
+    const createResult = await productTools.handleCreateEntity({
       type: "fact",
       phase: "situational-grounding",
       data: {
@@ -147,7 +147,7 @@ describe("MCP product tools integration", () => {
     const id = created[0].id;
 
     // Delete it
-    const deleteResult = productTools.handleDeleteEntity({ id });
+    const deleteResult = await productTools.handleDeleteEntity({ id });
     const deleted = JSON.parse(deleteResult);
     expect(deleted.deleted).toBe(true);
 
@@ -165,10 +165,10 @@ describe("MCP product tools integration", () => {
     expect(result.text).toContain("Unknown tool");
   });
 
-  it("create_relationship + query_relationships round-trip", () => {
+  it("create_relationship + query_relationships round-trip", async () => {
     // Create two entities first
     const e1 = JSON.parse(
-      productTools.handleCreateEntity({
+      await productTools.handleCreateEntity({
         type: "fact",
         phase: "situational-grounding",
         data: {
@@ -184,7 +184,7 @@ describe("MCP product tools integration", () => {
     );
 
     const e2 = JSON.parse(
-      productTools.handleCreateEntity({
+      await productTools.handleCreateEntity({
         type: "fact",
         phase: "situational-grounding",
         data: {
@@ -203,7 +203,7 @@ describe("MCP product tools integration", () => {
     const entity2Id = e2.created[0].id;
 
     // Create relationship (handler uses fromId/toId, not fromEntityId/toEntityId)
-    const relResult = productTools.handleCreateRelationship({
+    const relResult = await productTools.handleCreateRelationship({
       type: "precedes",
       fromId: entity1Id,
       toId: entity2Id,

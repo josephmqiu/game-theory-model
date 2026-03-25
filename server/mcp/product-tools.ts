@@ -4,14 +4,6 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import {
-  createEntity,
-  updateEntity,
-  createRelationship,
-  getStaleEntityIds,
-  removeEntity,
-  removeRelationship,
-} from "../services/entity-graph-service";
-import {
   getEntity,
   queryEntities,
   queryRelationships,
@@ -22,6 +14,7 @@ import type { RelationshipType } from "../../shared/types/entity";
 import * as analysisOrchestrator from "../agents/analysis-agent";
 import * as revalidationService from "../services/revalidation-service";
 import { ALL_PHASES, V1_PHASES } from "../../src/types/methodology";
+import { submitCommand } from "../services/command-bus";
 
 export interface ToolDefinition {
   name: string;
@@ -270,12 +263,21 @@ export async function handleStartAnalysis(args: {
   provider?: string;
   model?: string;
 }): Promise<string> {
-  const { runId } = await analysisOrchestrator.runFull(
-    args.topic,
-    args.provider,
-    args.model,
-  );
-  return JSON.stringify({ runId, status: "started", estimatedPhases: 3 });
+  const receipt = await submitCommand({
+    kind: "analysis.start",
+    topic: args.topic,
+    provider: args.provider,
+    model: args.model,
+    requestedBy: "mcp:start_analysis",
+  });
+
+  if (receipt.status === "conflicted" || receipt.status === "failed") {
+    return JSON.stringify({
+      error: receipt.error?.message ?? "Failed to start analysis",
+    });
+  }
+
+  return JSON.stringify(receipt.result);
 }
 
 function resolveToolRunId(): string | undefined {
@@ -378,17 +380,18 @@ export function handleRequestLoopback(args: {
   return JSON.stringify(requestLoopback(args));
 }
 
-export function handleCreateEntity(args: {
+export async function handleCreateEntity(args: {
   type: string;
   phase: string;
   data: Record<string, unknown>;
   confidence?: string;
   rationale?: string;
   revision?: number;
-}): string {
+}): Promise<string> {
   const runId = resolveToolRunId();
-  const entity = createEntity(
-    {
+  const receipt = await submitCommand({
+    kind: "entity.create",
+    entity: {
       type: args.type as never,
       phase: args.phase as MethodologyPhase,
       data: args.data as never,
@@ -397,86 +400,106 @@ export function handleCreateEntity(args: {
       revision: args.revision ?? 1,
       stale: false,
     },
-    { source: "ai-edited", ...(runId ? { runId } : {}) },
-  );
-  return JSON.stringify({
-    created: [entity],
-    updated: [],
-    staleMarked: [],
-    grouped: [],
-  });
-}
-
-export function handleUpdateEntity(args: {
-  id: string;
-  updates: Record<string, unknown>;
-}): string {
-  const runId = resolveToolRunId();
-  const staleBefore = new Set(getStaleEntityIds());
-  const result = updateEntity(args.id, args.updates as never, {
-    source: "ai-edited",
+    provenanceSource: "ai-edited",
+    requestedBy: "mcp:create_entity",
     ...(runId ? { runId } : {}),
   });
 
-  if (!result) {
-    return JSON.stringify({ error: `Entity "${args.id}" not found` });
+  if (receipt.status === "conflicted" || receipt.status === "failed") {
+    return JSON.stringify({
+      error: receipt.error?.message ?? "Failed to create entity",
+    });
   }
 
-  const staleAfter = getStaleEntityIds();
-  const newlyStale = staleAfter.filter((id) => !staleBefore.has(id));
+  return JSON.stringify(receipt.result);
+}
 
-  return JSON.stringify({
-    created: [],
-    updated: [result],
-    staleMarked: newlyStale,
-    grouped: [],
+export async function handleUpdateEntity(args: {
+  id: string;
+  updates: Record<string, unknown>;
+}): Promise<string> {
+  const runId = resolveToolRunId();
+  const receipt = await submitCommand({
+    kind: "entity.update",
+    id: args.id,
+    updates: args.updates as never,
+    provenanceSource: "ai-edited",
+    requestedBy: "mcp:update_entity",
+    ...(runId ? { runId } : {}),
   });
-}
 
-export function handleDeleteEntity(args: { id: string }): string {
-  const deleted = removeEntity(args.id);
-  if (!deleted) {
-    return JSON.stringify({ error: `Entity "${args.id}" not found` });
+  if (receipt.status === "conflicted" || receipt.status === "failed") {
+    return JSON.stringify({
+      error: receipt.error?.message ?? `Entity "${args.id}" not found`,
+    });
   }
 
-  return JSON.stringify({ deleted: true, id: args.id });
+  return JSON.stringify(receipt.result);
 }
 
-export function handleCreateRelationship(args: {
+export async function handleDeleteEntity(args: {
+  id: string;
+}): Promise<string> {
+  const receipt = await submitCommand({
+    kind: "entity.delete",
+    id: args.id,
+    requestedBy: "mcp:delete_entity",
+  });
+
+  if (receipt.status === "conflicted" || receipt.status === "failed") {
+    return JSON.stringify({
+      error: receipt.error?.message ?? `Entity "${args.id}" not found`,
+    });
+  }
+
+  return JSON.stringify(receipt.result);
+}
+
+export async function handleCreateRelationship(args: {
   type: string;
   fromId: string;
   toId: string;
   metadata?: Record<string, unknown>;
-}): string {
-  try {
-    const runId = resolveToolRunId();
-    const result = createRelationship(
-      {
-        type: args.type as RelationshipType,
-        fromEntityId: args.fromId,
-        toEntityId: args.toId,
-        metadata: args.metadata,
-      },
-      {
-        source: "ai-edited",
-        ...(runId ? { runId } : {}),
-      },
-    );
-    return JSON.stringify(result);
-  } catch (error) {
+}): Promise<string> {
+  const runId = resolveToolRunId();
+  const receipt = await submitCommand({
+    kind: "relationship.create",
+    relationship: {
+      type: args.type as RelationshipType,
+      fromEntityId: args.fromId,
+      toEntityId: args.toId,
+      metadata: args.metadata,
+    },
+    provenanceSource: "ai-edited",
+    requestedBy: "mcp:create_relationship",
+    ...(runId ? { runId } : {}),
+  });
+
+  if (receipt.status === "conflicted" || receipt.status === "failed") {
     return JSON.stringify({
-      error: error instanceof Error ? error.message : String(error),
+      error: receipt.error?.message ?? "Failed to create relationship",
     });
   }
+
+  return JSON.stringify(receipt.result);
 }
 
-export function handleDeleteRelationship(args: { id: string }): string {
-  const deleted = removeRelationship(args.id);
-  if (!deleted) {
-    return JSON.stringify({ error: `Relationship "${args.id}" not found` });
+export async function handleDeleteRelationship(args: {
+  id: string;
+}): Promise<string> {
+  const receipt = await submitCommand({
+    kind: "relationship.delete",
+    id: args.id,
+    requestedBy: "mcp:delete_relationship",
+  });
+
+  if (receipt.status === "conflicted" || receipt.status === "failed") {
+    return JSON.stringify({
+      error: receipt.error?.message ?? `Relationship "${args.id}" not found`,
+    });
   }
 
-  return JSON.stringify({ deleted: true, id: args.id });
+  return JSON.stringify(receipt.result);
 }
 
 export function handleRerunPhases(args: { phases: string[] }): string {
@@ -494,14 +517,19 @@ export function handleRerunPhases(args: { phases: string[] }): string {
   });
 }
 
-export function handleAbortAnalysis(): string {
-  const activeStatus = analysisOrchestrator.getActiveStatus();
-  if (!activeStatus) {
-    return JSON.stringify({ aborted: false, status: "idle" });
+export async function handleAbortAnalysis(): Promise<string> {
+  const receipt = await submitCommand({
+    kind: "analysis.abort",
+    requestedBy: "mcp:abort_analysis",
+  });
+
+  if (receipt.status === "conflicted" || receipt.status === "failed") {
+    return JSON.stringify({
+      error: receipt.error?.message ?? "Failed to abort analysis",
+    });
   }
 
-  analysisOrchestrator.abort();
-  return JSON.stringify({ aborted: true, runId: activeStatus.runId });
+  return JSON.stringify(receipt.result);
 }
 
 export async function handleToolCall(
@@ -525,19 +553,19 @@ export async function handleToolCall(
       case "request_loopback":
         return { text: handleRequestLoopback(toolArgs as never), isError: false };
       case "create_entity":
-        return { text: handleCreateEntity(toolArgs as never), isError: false };
+        return { text: await handleCreateEntity(toolArgs as never), isError: false };
       case "update_entity":
-        return { text: handleUpdateEntity(toolArgs as never), isError: false };
+        return { text: await handleUpdateEntity(toolArgs as never), isError: false };
       case "delete_entity":
-        return { text: handleDeleteEntity(toolArgs as never), isError: false };
+        return { text: await handleDeleteEntity(toolArgs as never), isError: false };
       case "create_relationship":
-        return { text: handleCreateRelationship(toolArgs as never), isError: false };
+        return { text: await handleCreateRelationship(toolArgs as never), isError: false };
       case "delete_relationship":
-        return { text: handleDeleteRelationship(toolArgs as never), isError: false };
+        return { text: await handleDeleteRelationship(toolArgs as never), isError: false };
       case "rerun_phases":
         return { text: handleRerunPhases(toolArgs as never), isError: false };
       case "abort_analysis":
-        return { text: handleAbortAnalysis(), isError: false };
+        return { text: await handleAbortAnalysis(), isError: false };
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
