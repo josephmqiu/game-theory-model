@@ -54,4 +54,17 @@ describe("ai-store", () => {
       },
     ]);
   });
+
+  it("stores resolved workspace and thread identity without clearing prior values", () => {
+    useAIStore.getState().setWorkspaceThread({
+      workspaceId: "workspace-1",
+      threadId: "thread-1",
+    });
+    useAIStore.getState().setWorkspaceThread({
+      threadId: "thread-2",
+    });
+
+    expect(useAIStore.getState().workspaceId).toBe("workspace-1");
+    expect(useAIStore.getState().threadId).toBe("thread-2");
+  });
 });

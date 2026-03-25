@@ -6,6 +6,11 @@ import type {
 } from "../../../shared/types/events";
 import type { MethodologyPhase } from "../../../shared/types/methodology";
 import type { RuntimeError } from "../../../shared/types/runtime-error";
+import type {
+  ActivityScope,
+  ActivityStatus,
+  DurableMessageRole,
+} from "../../../shared/types/workspace-state";
 
 export const DOMAIN_EVENT_SCHEMA_VERSION = 1;
 
@@ -16,6 +21,8 @@ export const DOMAIN_EVENT_TYPES = [
   "phase.started",
   "phase.completed",
   "phase.activity.recorded",
+  "message.recorded",
+  "thread.activity.recorded",
   "run.completed",
   "run.failed",
   "run.cancelled",
@@ -67,6 +74,30 @@ export interface PhaseActivityRecordedEventPayload {
   query?: string;
 }
 
+export interface MessageRecordedEventPayload {
+  messageId: string;
+  role: DurableMessageRole;
+  content: string;
+  attachments?: Array<{
+    name: string;
+    mediaType: string;
+    data: string;
+  }>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ThreadActivityRecordedEventPayload {
+  activityId: string;
+  scope: ActivityScope;
+  kind: AnalysisPhaseActivityKind;
+  message: string;
+  status?: ActivityStatus;
+  toolName?: string;
+  query?: string;
+  occurredAt: number;
+}
+
 export interface RunCompletedEventPayload {
   finishedAt: number;
 }
@@ -90,6 +121,8 @@ export interface DomainEventPayloadMap {
   "phase.started": PhaseStartedEventPayload;
   "phase.completed": PhaseCompletedEventPayload;
   "phase.activity.recorded": PhaseActivityRecordedEventPayload;
+  "message.recorded": MessageRecordedEventPayload;
+  "thread.activity.recorded": ThreadActivityRecordedEventPayload;
   "run.completed": RunCompletedEventPayload;
   "run.failed": RunFailedEventPayload;
   "run.cancelled": RunCancelledEventPayload;

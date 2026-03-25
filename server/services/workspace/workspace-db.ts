@@ -77,6 +77,7 @@ export function createWorkspaceDatabase(
     db,
     workspaces,
     threads,
+    messages,
     runs,
     activities,
     phaseTurnSummaries,

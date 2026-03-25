@@ -113,16 +113,11 @@ describe("ai-chat tool lifecycle helpers", () => {
     expect(pendingToolMsgIds.size).toBe(0);
   });
 
-  it("adapts the system prompt for blank-canvas scoping before analysis starts", () => {
+  it("uses the canonical thread request path instead of renderer-owned history stuffing", () => {
     const source = readFileSync(aiChatHandlersPath, "utf8");
 
-    expect(source).toContain("BLANK_CANVAS_CHAT_SYSTEM_PROMPT");
-    expect(source).toContain(
-      "Help the user figure out what they want to analyze.",
-    );
-    expect(source).toContain(
-      "Do not start or rerun analysis unless the user explicitly asks you to do so or clearly confirms they are ready to run it.",
-    );
-    expect(source).toContain("buildChatSystemPrompt()");
+    expect(source).toContain("useCanonicalThreadRequest: true");
+    expect(source).not.toContain("trimChatHistory(");
+    expect(source).toContain("setWorkspaceThread(identity)");
   });
 });

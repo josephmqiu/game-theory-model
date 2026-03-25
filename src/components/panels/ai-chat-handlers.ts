@@ -1,9 +1,7 @@
 import { useState, useCallback } from "react";
 import { nanoid } from "nanoid";
 import { useAIStore } from "@/stores/ai-store";
-import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { streamChat } from "@/services/ai/ai-service";
-import { trimChatHistory } from "@/services/ai/context-optimizer";
 import type { ChatMessage as ChatMessageType } from "@/services/ai/ai-types";
 import type { AIStreamChunk } from "@/services/ai/ai-types";
 import { CHAT_STREAM_THINKING_CONFIG } from "@/services/ai/ai-runtime-config";
@@ -135,63 +133,11 @@ export function updateToolStatusMessage(
   );
 }
 
-const BLANK_CANVAS_CHAT_SYSTEM_PROMPT = `You are a game theory analyst assistant. The canvas is currently blank.
-
-Help the user figure out what they want to analyze. Clarify the situation, identify the likely actors, decisions, incentives, and strategic conflict, and suggest concise next questions when useful.
-
-Do not start or rerun analysis unless the user explicitly asks you to do so or clearly confirms they are ready to run it.
-
-Be concise, practical, and collaborative.`;
-
-const ENTITY_GRAPH_CHAT_SYSTEM_PROMPT = `You are a game theory analyst assistant. You help the user understand the entity graph analysis displayed on the canvas.
-
-You have access to the current analysis context including entities (facts, players, objectives, games, strategies, payoffs, institutional rules, escalation rungs), their relationships, and which methodology phases are complete.
-
-Answer questions about the analysis, explain game-theoretic concepts, and help the user interpret the results. Do not start or rerun analysis unless the user explicitly asks you to do so or clearly confirms they are ready. Be concise and precise.`;
-
-function buildChatSystemPrompt(): string {
-  const analysis = useEntityGraphStore.getState().analysis;
-  const hasCanvasAnalysis =
-    analysis.topic.trim().length > 0 || analysis.entities.length > 0;
-
-  return hasCanvasAnalysis
-    ? ENTITY_GRAPH_CHAT_SYSTEM_PROMPT
-    : BLANK_CANVAS_CHAT_SYSTEM_PROMPT;
-}
-
-function buildEntityGraphContext(): string {
-  const state = useEntityGraphStore.getState();
-  const { analysis } = state;
-  const entityCount = analysis.entities.length;
-  const phaseStatuses = analysis.phases
-    .map((ps) => `${ps.phase}: ${ps.status}`)
-    .join(", ");
-
-  const entitySummary = analysis.entities
-    .slice(0, 30) // Cap at 30 to avoid huge prompts
-    .map((e) => {
-      const d = e.data;
-      const label = "name" in d ? d.name : "content" in d ? d.content : e.type;
-      return `- [${e.type}] ${label} (${e.confidence} confidence, phase: ${e.phase})`;
-    })
-    .join("\n");
-
-  return [
-    `ANALYSIS CONTEXT:`,
-    `Topic: ${analysis.topic || "(no topic)"}`,
-    `Name: ${analysis.name || "(unnamed)"}`,
-    `Entities: ${entityCount}`,
-    `Phases: ${phaseStatuses}`,
-    entityCount > 0 ? `\nEntities:\n${entitySummary}` : "",
-    analysis.centralThesis ? `\nCentral Thesis: ${analysis.centralThesis}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
 export function useChatHandlers() {
   const [input, setInput] = useState("");
   const messages = useAIStore((s) => s.messages);
+  const workspaceId = useAIStore((s) => s.workspaceId);
+  const threadId = useAIStore((s) => s.threadId);
   const isStreaming = useAIStore((s) => s.isStreaming);
   const model = useAIStore((s) => s.model);
   const availableModels = useAIStore((s) => s.availableModels);
@@ -256,31 +202,33 @@ export function useChatHandlers() {
       const pendingToolMsgIds: PendingToolMsgIds = new Map();
 
       try {
-        const context = buildEntityGraphContext();
-        const systemPrompt = `${buildChatSystemPrompt()}\n\n${context}`;
-
-        const chatHistory = messages.map((message) => ({
-          role: message.role,
-          content: message.content,
-          ...(message.attachments?.length
-            ? { attachments: message.attachments }
-            : {}),
-        }));
-        chatHistory.push({
-          role: "user",
-          content: messageText,
-        });
-
-        const trimmedHistory = trimChatHistory(chatHistory);
         let chatThinking = "";
 
         for await (const rawChunk of streamChat(
-          systemPrompt,
-          trimmedHistory,
+          "",
+          [
+            {
+              role: "user",
+              content: messageText,
+            },
+          ],
           model,
           CHAT_STREAM_THINKING_CONFIG,
           currentProvider,
           abortController.signal,
+          undefined,
+          {
+            workspaceId,
+            threadId,
+            threadTitle:
+              messages.length === 0
+                ? useAIStore.getState().chatTitle || "Analysis Chat"
+                : undefined,
+            useCanonicalThreadRequest: true,
+            onResolvedThread: (identity) => {
+              useAIStore.getState().setWorkspaceThread(identity);
+            },
+          },
         )) {
           const chunk = normalizeChunk(rawChunk);
           if (!chunk) continue;
@@ -420,6 +368,8 @@ export function useChatHandlers() {
       isLoadingModels,
       isStreaming,
       messages,
+      threadId,
+      workspaceId,
       model,
       addMessage,
       updateLastMessage,

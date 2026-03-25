@@ -105,6 +105,8 @@ export interface AIModelInfo {
 
 interface AIState {
   messages: ChatMessage[];
+  workspaceId?: string;
+  threadId?: string;
   isStreaming: boolean;
   isPanelOpen: boolean;
   activeTab: "chat" | "code";
@@ -124,6 +126,10 @@ interface AIState {
   abortController: AbortController | null;
 
   setConcurrency: (n: number) => void;
+  setWorkspaceThread: (identity: {
+    workspaceId?: string;
+    threadId?: string;
+  }) => void;
   setChatTitle: (title: string) => void;
   setGenerationProgress: (
     progress: { current: number; total: number } | null,
@@ -158,6 +164,8 @@ interface AIState {
 
 export const useAIStore = create<AIState>((set, get) => ({
   messages: [],
+  workspaceId: undefined,
+  threadId: undefined,
   isStreaming: false,
   isPanelOpen: true,
   activeTab: "chat",
@@ -181,6 +189,11 @@ export const useAIStore = create<AIState>((set, get) => ({
     writeStoredConcurrency(clamped);
     set({ concurrency: clamped });
   },
+  setWorkspaceThread: ({ workspaceId, threadId }) =>
+    set((state) => ({
+      workspaceId: workspaceId ?? state.workspaceId,
+      threadId: threadId ?? state.threadId,
+    })),
   setChatTitle: (chatTitle) => set({ chatTitle }),
   setGenerationProgress: (generationProgress) => set({ generationProgress }),
 

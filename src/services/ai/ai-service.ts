@@ -58,6 +58,17 @@ export interface StreamChatOptions {
   effort?: "low" | "medium" | "high" | "max";
 }
 
+export interface StreamChatThreadContext {
+  workspaceId?: string;
+  threadId?: string;
+  threadTitle?: string;
+  useCanonicalThreadRequest?: boolean;
+  onResolvedThread?: (identity: {
+    workspaceId?: string;
+    threadId?: string;
+  }) => void;
+}
+
 /**
  * Streams a chat response from the server-side AI endpoint.
  * The server routes to the appropriate provider SDK (no client-side key needed).
@@ -74,6 +85,7 @@ export async function* streamChat(
   provider?: string,
   abortSignal?: AbortSignal,
   runId?: string,
+  threadContext?: StreamChatThreadContext,
 ): AsyncGenerator<AIStreamChunk> {
   const hardTimeoutMs = Math.max(
     STREAM_TIMEOUT_MIN_MS,
@@ -147,20 +159,43 @@ export async function* streamChat(
         "Content-Type": "application/json",
         ...(runId ? { "X-Run-Id": runId } : {}),
       },
-      body: JSON.stringify({
-        system: systemPrompt,
-        messages: messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-          ...(m.attachments?.length ? { attachments: m.attachments } : {}),
-        })),
-        model,
-        provider,
-        thinkingMode: options?.thinkingMode,
-        thinkingBudgetTokens: options?.thinkingBudgetTokens,
-        effort: options?.effort,
-      }),
+      body: JSON.stringify(
+        threadContext?.useCanonicalThreadRequest
+          ? {
+              workspaceId: threadContext.workspaceId,
+              threadId: threadContext.threadId,
+              threadTitle: threadContext.threadTitle,
+              message: {
+                content: messages[messages.length - 1]?.content ?? "",
+                attachments: messages[messages.length - 1]?.attachments,
+              },
+              model,
+              provider,
+              thinkingMode: options?.thinkingMode,
+              thinkingBudgetTokens: options?.thinkingBudgetTokens,
+              effort: options?.effort,
+            }
+          : {
+              system: systemPrompt,
+              messages: messages.map((m) => ({
+                role: m.role,
+                content: m.content,
+                ...(m.attachments?.length ? { attachments: m.attachments } : {}),
+              })),
+              model,
+              provider,
+              thinkingMode: options?.thinkingMode,
+              thinkingBudgetTokens: options?.thinkingBudgetTokens,
+              effort: options?.effort,
+            },
+      ),
       signal: fetchSignal,
+    });
+
+    threadContext?.onResolvedThread?.({
+      workspaceId:
+        response.headers.get("X-Workspace-Id") ?? threadContext.workspaceId,
+      threadId: response.headers.get("X-Thread-Id") ?? threadContext.threadId,
     });
 
     if (!response.ok) {

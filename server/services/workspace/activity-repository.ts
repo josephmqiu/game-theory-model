@@ -6,6 +6,7 @@ export interface ActivityRepository {
   upsertActivityEntry(activity: ActivityEntry): ActivityEntry;
   getActivityEntry(id: string): ActivityEntry | undefined;
   listActivitiesByRunId(runId: string): ActivityEntry[];
+  listActivitiesByThreadId(threadId: string): ActivityEntry[];
   clear(): void;
 }
 
@@ -28,6 +29,12 @@ export function createActivityRepository(db: DatabaseSync): ActivityRepository {
      FROM activities
      WHERE run_id = $runId
      ORDER BY event_sequence ASC, id ASC`,
+  );
+  const listByThreadStatement = db.prepare(
+    `SELECT activity_json
+     FROM activities
+     WHERE thread_id = $threadId
+     ORDER BY occurred_at ASC, event_sequence ASC, id ASC`,
   );
   const upsertStatement = db.prepare(
     `INSERT INTO activities (
@@ -77,8 +84,8 @@ export function createActivityRepository(db: DatabaseSync): ActivityRepository {
         $id: activity.id,
         $workspaceId: activity.workspaceId,
         $threadId: activity.threadId,
-        $runId: activity.runId,
-        $phase: activity.phase,
+        $runId: activity.runId ?? null,
+        $phase: activity.phase ?? null,
         $kind: activity.kind,
         $eventSequence: activity.sequence,
         $causedByEventId: activity.causedByEventId ?? null,
@@ -101,6 +108,11 @@ export function createActivityRepository(db: DatabaseSync): ActivityRepository {
     listActivitiesByRunId(runId) {
       return listStatement
         .all({ $runId: runId })
+        .map((row) => mapActivityRow(row));
+    },
+    listActivitiesByThreadId(threadId) {
+      return listByThreadStatement
+        .all({ $threadId: threadId })
         .map((row) => mapActivityRow(row));
     },
     clear() {

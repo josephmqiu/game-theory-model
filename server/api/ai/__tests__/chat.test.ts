@@ -1,36 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  getWorkspaceDatabase,
+  resetWorkspaceDatabaseForTest,
+} from "../../../services/workspace";
 
 const readBodyMock = vi.fn();
 const getRequestHeaderMock = vi.fn();
-const setResponseHeadersMock = vi.fn();
 const setResponseStatusMock = vi.fn();
-const serverLogMock = vi.fn();
 const getAnalysisMock = vi.fn();
 const codexStreamChatMock = vi.fn();
+let lastSessionKey: { ownerId: string; runId?: string } | undefined;
 
 vi.mock("h3", () => ({
   defineEventHandler: (handler: unknown) => handler,
   getRequestHeader: (...args: unknown[]) => getRequestHeaderMock(...args),
   readBody: (...args: unknown[]) => readBodyMock(...args),
-  setResponseHeaders: (...args: unknown[]) => setResponseHeadersMock(...args),
   setResponseStatus: (...args: unknown[]) => setResponseStatusMock(...args),
-}));
-
-vi.mock("../../../utils/resolve-claude-cli", () => ({
-  resolveClaudeCli: () => "/mock/claude",
-}));
-
-vi.mock("../../../utils/codex-client", () => ({
-  runCodexExec: vi.fn(),
-}));
-
-vi.mock("../../../utils/resolve-claude-agent-env", () => ({
-  buildClaudeAgentEnv: () => ({}),
-  getClaudeAgentDebugFilePath: () => undefined,
-}));
-
-vi.mock("../../../utils/ai-logger", () => ({
-  serverLog: (...args: unknown[]) => serverLogMock(...args),
 }));
 
 vi.mock("../../../services/entity-graph-service", () => ({
@@ -41,11 +26,11 @@ vi.mock("../../../services/ai/adapter-contract", () => ({
   getRuntimeAdapter: vi.fn(async () => ({
     provider: "codex",
     createSession(key: { ownerId: string; runId?: string }) {
+      lastSessionKey = key;
       return {
         provider: "codex",
         key,
-        streamChatTurn: (...args: unknown[]) =>
-          codexStreamChatMock(...args),
+        streamChatTurn: (...args: unknown[]) => codexStreamChatMock(...args),
         runStructuredTurn: vi.fn(),
         getDiagnostics: vi.fn(() => ({
           provider: "codex",
@@ -77,48 +62,36 @@ describe("/api/ai/chat", () => {
       name: "analysis-1",
       topic: "topic",
     });
-    codexStreamChatMock.mockImplementation(async function* () {});
+    codexStreamChatMock.mockImplementation(async function* () {
+      yield { type: "text_delta", content: "Hello back" };
+    });
+    lastSessionKey = undefined;
   });
 
-  it("returns 400 when messages is not an array", async () => {
+  afterEach(() => {
+    resetWorkspaceDatabaseForTest();
+  });
+
+  it("returns 400 when the request body shape is invalid", async () => {
     readBodyMock.mockResolvedValue({
-      system: "system",
-      messages: "bad-shape",
       provider: "openai",
       model: "gpt-5.4",
+      message: "bad-shape",
     });
 
     const route = (await import("../chat")).default;
     const result = await route({} as never);
 
     expect(result).toEqual({
-      error:
-        "Missing or invalid required fields: system, messages, provider, model",
+      error: "Missing or invalid required fields for chat request.",
     });
     expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 400);
   });
 
-  it("returns 400 for an unsupported provider", async () => {
+  it("creates a durable thread and persists canonical messages for canonical requests", async () => {
     readBodyMock.mockResolvedValue({
-      system: "system",
-      messages: [],
-      provider: "opencode",
-      model: "gpt-5.4",
-    });
-
-    const route = (await import("../chat")).default;
-    const result = await route({} as never);
-
-    expect(result).toEqual({
-      error: "Missing or unsupported provider. Provider fallback is disabled.",
-    });
-    expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 400);
-  });
-
-  it("returns an SSE response for a valid request", async () => {
-    readBodyMock.mockResolvedValue({
-      system: "system",
-      messages: [{ role: "user", content: "hello" }],
+      workspaceId: "workspace-1",
+      message: { content: "hello" },
       provider: "openai",
       model: "gpt-5.4",
     });
@@ -128,14 +101,60 @@ describe("/api/ai/chat", () => {
 
     expect(response).toBeInstanceOf(Response);
     if (!(response instanceof Response)) {
-      throw new Error("Expected an SSE response");
+      throw new Error("Expected a response");
     }
-    expect(setResponseHeadersMock).toHaveBeenCalledWith(expect.anything(), {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
+
+    const body = await response.text();
+    expect(body).toContain('"type":"text_delta"');
+    expect(body).toContain('"type":"done"');
+    expect(response.headers.get("X-Workspace-Id")).toBe("workspace-1");
+    expect(response.headers.get("X-Thread-Id")).toBe(
+      "workspace-1:primary-thread",
+    );
+    expect(lastSessionKey).toEqual({
+      ownerId: "workspace-1:primary-thread",
     });
-    expect(await response.text()).toContain('"type":"done"');
-    expect(codexStreamChatMock).toHaveBeenCalled();
+
+    const database = getWorkspaceDatabase();
+    const storedMessages = database.messages.listMessagesByThreadId(
+      "workspace-1:primary-thread",
+    );
+    expect(storedMessages).toHaveLength(2);
+    expect(storedMessages.map((message) => [message.role, message.content])).toEqual([
+      ["user", "hello"],
+      ["assistant", "Hello back"],
+    ]);
+  });
+
+  it("accepts legacy payloads and writes to the resolved thread", async () => {
+    readBodyMock.mockResolvedValue({
+      system: "legacy-system",
+      messages: [
+        { role: "user", content: "First question" },
+        { role: "assistant", content: "First answer" },
+        { role: "user", content: "Follow up" },
+      ],
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+
+    const route = (await import("../chat")).default;
+    const response = await route({} as never);
+
+    expect(response).toBeInstanceOf(Response);
+    if (!(response instanceof Response)) {
+      throw new Error("Expected a response");
+    }
+    await response.text();
+
+    const threadId =
+      response.headers.get("X-Thread-Id") ?? "workspace-local-default:primary-thread";
+    const storedMessages = getWorkspaceDatabase().messages.listMessagesByThreadId(
+      threadId,
+    );
+    expect(storedMessages.map((message) => message.content)).toEqual([
+      "Follow up",
+      "Hello back",
+    ]);
   });
 });

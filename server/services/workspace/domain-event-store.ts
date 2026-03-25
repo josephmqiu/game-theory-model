@@ -4,6 +4,7 @@ import type {
   ActivityEntry,
   PhaseTurnSummaryState,
   RunState,
+  ThreadMessageState,
   ThreadState,
 } from "../../../shared/types/workspace-state";
 import {
@@ -21,6 +22,7 @@ import type { PhaseTurnSummaryRepository } from "./phase-turn-summary-repository
 import type { RunRepository } from "./run-repository";
 import type { ThreadRepository } from "./thread-repository";
 import type { WorkspaceRepository } from "./workspace-repository";
+import type { MessageRepository } from "./message-repository";
 import {
   PRIMARY_THREAD_TITLE,
   resolveThreadContext,
@@ -28,6 +30,7 @@ import {
 
 interface DomainProjectorDependencies {
   threads: ThreadRepository;
+  messages: MessageRepository;
   runs: RunRepository;
   activities: ActivityRepository;
   phaseTurnSummaries: PhaseTurnSummaryRepository;
@@ -103,6 +106,36 @@ function projectEvent(
         summary: existing?.summary,
       };
       repositories.threads.upsertThreadState(next);
+      return;
+    }
+    case "message.recorded": {
+      const message: ThreadMessageState = {
+        id: event.payload.messageId,
+        workspaceId: event.workspaceId,
+        threadId: event.threadId,
+        role: event.payload.role,
+        content: event.payload.content,
+        attachments: event.payload.attachments,
+        createdAt: event.payload.createdAt,
+        updatedAt: event.payload.updatedAt,
+      };
+      repositories.messages.upsertMessage({
+        id: message.id,
+        workspaceId: message.workspaceId,
+        threadId: message.threadId,
+        role: message.role,
+        content: message.content,
+        messageJson: stringifyJson(message),
+        createdAt: message.createdAt,
+        updatedAt: message.updatedAt,
+      });
+
+      const thread = repositories.threads.getThreadState(event.threadId);
+      if (thread) {
+        repositories.threads.upsertThreadState(
+          updateThreadActivity(thread, event.occurredAt),
+        );
+      }
       return;
     }
     case "run.created": {
@@ -239,6 +272,7 @@ function projectEvent(
         threadId: event.threadId,
         runId: event.runId!,
         phase: event.payload.phase,
+        scope: "analysis-phase",
         kind: event.payload.kind,
         message: event.payload.message,
         toolName: event.payload.toolName,
@@ -265,6 +299,32 @@ function projectEvent(
       if (thread) {
         repositories.threads.upsertThreadState(
           updateThreadActivity(thread, event.occurredAt),
+        );
+      }
+      return;
+    }
+    case "thread.activity.recorded": {
+      const activity: ActivityEntry = {
+        id: event.payload.activityId,
+        eventId: event.id,
+        sequence: event.sequence,
+        workspaceId: event.workspaceId,
+        threadId: event.threadId,
+        scope: event.payload.scope,
+        kind: event.payload.kind,
+        message: event.payload.message,
+        status: event.payload.status,
+        toolName: event.payload.toolName,
+        query: event.payload.query,
+        occurredAt: event.payload.occurredAt,
+        causedByEventId: event.causedByEventId,
+      };
+      repositories.activities.upsertActivityEntry(activity);
+
+      const thread = repositories.threads.getThreadState(event.threadId);
+      if (thread) {
+        repositories.threads.upsertThreadState(
+          updateThreadActivity(thread, event.payload.occurredAt),
         );
       }
       return;
@@ -355,6 +415,7 @@ export function createDomainEventStore(input: {
   db: DatabaseSync;
   workspaces: WorkspaceRepository;
   threads: ThreadRepository;
+  messages: MessageRepository;
   runs: RunRepository;
   activities: ActivityRepository;
   phaseTurnSummaries: PhaseTurnSummaryRepository;
@@ -362,6 +423,7 @@ export function createDomainEventStore(input: {
 }): DomainEventStore {
   const repositories: DomainProjectorDependencies = {
     threads: input.threads,
+    messages: input.messages,
     runs: input.runs,
     activities: input.activities,
     phaseTurnSummaries: input.phaseTurnSummaries,

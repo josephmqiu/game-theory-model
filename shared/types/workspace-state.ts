@@ -7,6 +7,9 @@ import type { MethodologyPhase } from "./methodology";
 import type { RuntimeError } from "./runtime-error";
 
 export type ThreadTerminalStatus = "completed" | "failed" | "cancelled";
+export type DurableMessageRole = "user" | "assistant";
+export type ActivityScope = "analysis-phase" | "chat-turn";
+export type ActivityStatus = "completed" | "failed";
 
 export interface ThreadState {
   id: string;
@@ -19,6 +22,21 @@ export interface ThreadState {
   latestActivityAt?: number;
   latestTerminalStatus?: ThreadTerminalStatus;
   summary?: string;
+}
+
+export interface ThreadMessageState {
+  id: string;
+  workspaceId: string;
+  threadId: string;
+  role: DurableMessageRole;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+  attachments?: Array<{
+    name: string;
+    mediaType: string;
+    data: string;
+  }>;
 }
 
 export type DurableRunStatus =
@@ -62,10 +80,12 @@ export interface ActivityEntry {
   sequence: number;
   workspaceId: string;
   threadId: string;
-  runId: string;
-  phase: MethodologyPhase;
+  runId?: string;
+  phase?: MethodologyPhase;
+  scope: ActivityScope;
   kind: AnalysisPhaseActivityKind;
   message: string;
+  status?: ActivityStatus;
   toolName?: string;
   query?: string;
   occurredAt: number;

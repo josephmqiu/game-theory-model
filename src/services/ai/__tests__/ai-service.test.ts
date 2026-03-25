@@ -96,4 +96,64 @@ describe("ai-service streamChat", () => {
     await expect(consume).resolves.toEqual([]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("sends canonical thread requests and captures resolved thread headers", async () => {
+    const onResolvedThread = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({
+        "X-Workspace-Id": "workspace-1",
+        "X-Thread-Id": "thread-1",
+      }),
+      body: {
+        getReader: () => ({
+          read: vi
+            .fn()
+            .mockResolvedValueOnce({
+              done: false,
+              value: encodeSseEvent({ type: "done", content: "" }),
+            })
+            .mockResolvedValueOnce({ done: true, value: undefined }),
+          cancel: vi.fn(),
+        }),
+      },
+    } as unknown as Response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await collectChunks(
+      streamChat(
+        "",
+        [{ role: "user", content: "hello" }],
+        "claude-sonnet-4-5-20250929",
+        undefined,
+        "anthropic",
+        undefined,
+        undefined,
+        {
+          workspaceId: "workspace-1",
+          threadId: "thread-0",
+          threadTitle: "Trade war",
+          useCanonicalThreadRequest: true,
+          onResolvedThread,
+        },
+      ),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0] as [RequestInfo | URL, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      workspaceId: "workspace-1",
+      threadId: "thread-0",
+      threadTitle: "Trade war",
+      message: {
+        content: "hello",
+      },
+      model: "claude-sonnet-4-5-20250929",
+      provider: "anthropic",
+    });
+    expect(onResolvedThread).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      threadId: "thread-1",
+    });
+  });
 });

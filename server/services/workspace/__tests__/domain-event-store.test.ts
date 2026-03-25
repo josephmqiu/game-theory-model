@@ -373,4 +373,90 @@ describe("domain-event-store", () => {
 
     database.close();
   });
+
+  it("projects canonical chat messages and thread-scoped activities separately", () => {
+    const database = createDatabase();
+    const context = database.eventStore.resolveThreadContext({
+      workspaceId: "workspace-1",
+      threadTitle: "Chat thread",
+      producer: "test",
+      occurredAt: 600,
+    });
+
+    database.eventStore.appendEvents([
+      ...(context.createdThreadEvent ? [context.createdThreadEvent] : []),
+      {
+        type: "message.recorded",
+        workspaceId: context.workspaceId,
+        threadId: context.threadId,
+        payload: {
+          messageId: "msg-1",
+          role: "user",
+          content: "Walk me through the players.",
+          createdAt: 601,
+          updatedAt: 601,
+        },
+        occurredAt: 601,
+        producer: "test",
+      },
+      {
+        type: "thread.activity.recorded",
+        workspaceId: context.workspaceId,
+        threadId: context.threadId,
+        payload: {
+          activityId: "activity-1",
+          scope: "chat-turn",
+          kind: "web-search",
+          message: "Used WebSearch",
+          status: "completed",
+          toolName: "WebSearch",
+          query: "trade war players",
+          occurredAt: 602,
+        },
+        occurredAt: 602,
+        producer: "test",
+      },
+      {
+        type: "message.recorded",
+        workspaceId: context.workspaceId,
+        threadId: context.threadId,
+        payload: {
+          messageId: "msg-2",
+          role: "assistant",
+          content: "The core players are the US, China, and allied blocs.",
+          createdAt: 603,
+          updatedAt: 603,
+        },
+        occurredAt: 603,
+        producer: "test",
+      },
+    ]);
+
+    const messages = database.messages.listMessagesByThreadId(context.threadId);
+    expect(messages.map((message) => [message.role, message.content])).toEqual([
+      ["user", "Walk me through the players."],
+      ["assistant", "The core players are the US, China, and allied blocs."],
+    ]);
+
+    const activities = database.activities.listActivitiesByThreadId(
+      context.threadId,
+    );
+    expect(activities).toEqual([
+      expect.objectContaining({
+        id: "activity-1",
+        scope: "chat-turn",
+        kind: "web-search",
+        status: "completed",
+        toolName: "WebSearch",
+        query: "trade war players",
+      }),
+    ]);
+
+    const thread = database.threads.getThreadState(context.threadId);
+    expect(thread).toMatchObject({
+      latestActivityAt: 603,
+    });
+
+    database.close();
+  });
 });
