@@ -257,6 +257,8 @@ function ensureProjectionColumns(db: DatabaseSync): void {
     "caused_by_event_id TEXT",
   );
   ensureColumn(db, "activities", "occurred_at", "occurred_at INTEGER");
+  ensureColumn(db, "activities", "scope", "scope TEXT");
+  ensureColumn(db, "activities", "status", "status TEXT");
 }
 
 export function initializeWorkspaceSchema(db: DatabaseSync): void {
