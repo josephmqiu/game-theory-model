@@ -8,6 +8,11 @@ import tailwindcss from "@tailwindcss/vite";
 import { nitro } from "nitro/vite";
 
 const isElectronBuild = process.env.BUILD_TARGET === "electron";
+const tanstackDevtoolsEventBusEnabled =
+  process.env.TANSTACK_DEVTOOLS_EVENT_BUS === "true";
+const tanstackDevtoolsEventBusPort = process.env.TANSTACK_DEVTOOLS_EVENT_BUS_PORT
+  ? Number.parseInt(process.env.TANSTACK_DEVTOOLS_EVENT_BUS_PORT, 10)
+  : undefined;
 
 const config = defineConfig({
   test: {
@@ -34,8 +39,16 @@ const config = defineConfig({
   },
   assetsInclude: ["**/*.wasm"],
   plugins: [
-    devtools(),
+    devtools({
+      eventBusConfig: {
+        enabled: tanstackDevtoolsEventBusEnabled,
+        ...(Number.isFinite(tanstackDevtoolsEventBusPort)
+          ? { port: tanstackDevtoolsEventBusPort }
+          : {}),
+      },
+    }),
     nitro({
+      node: true,
       rollupConfig: {
         external: [
           /^@sentry\//,

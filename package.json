@@ -16,9 +16,9 @@
   "type": "module",
   "main": "electron-dist/main.cjs",
   "scripts": {
-    "dev": "bun --bun vite dev --port 3000",
-    "build": "bun --bun vite build",
-    "preview": "bun --bun vite preview",
+    "dev": "vite dev --port 3000",
+    "build": "vite build",
+    "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
     "test:integration": "vitest run server/__tests__/integration/ --passWithNoTests",
     "test:unit": "vitest run --passWithNoTests --exclude 'server/__tests__/integration/**'",
