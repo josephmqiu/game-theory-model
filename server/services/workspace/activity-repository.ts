@@ -1,66 +1,91 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { ActivityRecord } from "./workspace-types";
+import type { ActivityEntry } from "../../../shared/types/workspace-state";
+import { parseJsonColumn, stringifyJson } from "./sqlite-json";
 
 export interface ActivityRepository {
-  upsertActivity(activity: ActivityRecord): ActivityRecord;
-  getActivity(id: string): ActivityRecord | undefined;
-  listActivitiesByRunId(runId: string): ActivityRecord[];
+  upsertActivityEntry(activity: ActivityEntry): ActivityEntry;
+  getActivityEntry(id: string): ActivityEntry | undefined;
+  listActivitiesByRunId(runId: string): ActivityEntry[];
   clear(): void;
 }
 
-function mapActivityRow(row: Record<string, unknown>): ActivityRecord {
-  return {
-    id: String(row.id),
-    workspaceId: String(row.workspace_id),
-    threadId: String(row.thread_id),
-    runId: row.run_id === null ? null : String(row.run_id),
-    kind: String(row.kind),
-    activityJson: String(row.activity_json),
-    createdAt: Number(row.created_at),
-    updatedAt: Number(row.updated_at),
-  };
+function mapActivityRow(row: Record<string, unknown>): ActivityEntry {
+  return parseJsonColumn<ActivityEntry>(
+    row.activity_json,
+    "activities.activity_json",
+  );
 }
 
 export function createActivityRepository(db: DatabaseSync): ActivityRepository {
   const getStatement = db.prepare(
-    `SELECT id, workspace_id, thread_id, run_id, kind, activity_json, created_at, updated_at
+    `SELECT activity_json
      FROM activities
      WHERE id = $id
      LIMIT 1`,
   );
   const listStatement = db.prepare(
-    `SELECT id, workspace_id, thread_id, run_id, kind, activity_json, created_at, updated_at
+    `SELECT activity_json
      FROM activities
      WHERE run_id = $runId
-     ORDER BY created_at ASC, id ASC`,
+     ORDER BY event_sequence ASC, id ASC`,
   );
   const upsertStatement = db.prepare(
     `INSERT INTO activities (
-       id, workspace_id, thread_id, run_id, kind, activity_json, created_at, updated_at
+       id,
+       workspace_id,
+       thread_id,
+       run_id,
+       phase,
+       kind,
+       event_sequence,
+       caused_by_event_id,
+       occurred_at,
+       activity_json,
+       created_at,
+       updated_at
      ) VALUES (
-       $id, $workspaceId, $threadId, $runId, $kind, $activityJson, $createdAt, $updatedAt
+       $id,
+       $workspaceId,
+       $threadId,
+       $runId,
+       $phase,
+       $kind,
+       $eventSequence,
+       $causedByEventId,
+       $occurredAt,
+       $activityJson,
+       $createdAt,
+       $updatedAt
      )
      ON CONFLICT(id) DO UPDATE SET
        workspace_id = excluded.workspace_id,
        thread_id = excluded.thread_id,
        run_id = excluded.run_id,
+       phase = excluded.phase,
        kind = excluded.kind,
+       event_sequence = excluded.event_sequence,
+       caused_by_event_id = excluded.caused_by_event_id,
+       occurred_at = excluded.occurred_at,
        activity_json = excluded.activity_json,
        updated_at = excluded.updated_at`,
   );
   const clearStatement = db.prepare(`DELETE FROM activities`);
 
   return {
-    upsertActivity(activity) {
+    upsertActivityEntry(activity) {
       upsertStatement.run({
         $id: activity.id,
         $workspaceId: activity.workspaceId,
         $threadId: activity.threadId,
         $runId: activity.runId,
+        $phase: activity.phase,
         $kind: activity.kind,
-        $activityJson: activity.activityJson,
-        $createdAt: activity.createdAt,
-        $updatedAt: activity.updatedAt,
+        $eventSequence: activity.sequence,
+        $causedByEventId: activity.causedByEventId ?? null,
+        $occurredAt: activity.occurredAt,
+        $activityJson: stringifyJson(activity),
+        $createdAt: activity.occurredAt,
+        $updatedAt: activity.occurredAt,
       });
 
       const stored = getStatement.get({ $id: activity.id });
@@ -69,7 +94,7 @@ export function createActivityRepository(db: DatabaseSync): ActivityRepository {
       }
       return mapActivityRow(stored);
     },
-    getActivity(id) {
+    getActivityEntry(id) {
       const row = getStatement.get({ $id: id });
       return row ? mapActivityRow(row) : undefined;
     },

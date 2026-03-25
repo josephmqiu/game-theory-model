@@ -11,9 +11,14 @@ import { analysisRuntimeConfig } from "../config/analysis-runtime";
 import * as entityGraphService from "./entity-graph-service";
 import * as orchestrator from "../agents/analysis-agent";
 import * as runtimeStatus from "./runtime-status";
+import { getWorkspaceDatabase } from "./workspace";
 import { runPhase } from "./analysis-service";
 import { commitPhaseSnapshot } from "./revision-diff";
 import { createRunLogger, serverWarn, timer } from "../utils/ai-logger";
+import type {
+  AnyDomainEventInput,
+  DomainEventInput,
+} from "./workspace/domain-event-types";
 
 // ── Constants ──
 
@@ -78,6 +83,22 @@ function emitProgress(event: AnalysisProgressEvent): void {
       // Listener errors must not break revalidation flow
     }
   }
+}
+
+function appendRevalidationEvents(
+  runId: string,
+  events: DomainEventInput[],
+): void {
+  getWorkspaceDatabase().eventStore.appendEvents(
+    events.map(
+      (event) =>
+        ({
+          ...event,
+          runId,
+          producer: "revalidation-service",
+        }) as AnyDomainEventInput,
+    ),
+  );
 }
 
 // ── Phase resolution ──
@@ -162,6 +183,7 @@ export function revalidate(
   phase?: string,
 ): { runId: string } {
   const runId = `reval-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const occurredAt = Date.now();
 
   // Concurrency guard: if an analysis run is active, defer for later
   if (orchestrator.isRunning()) {
@@ -226,6 +248,47 @@ export function revalidate(
 
   // Register as running before async work begins
   revalRunStatuses.set(runId, { runId, status: "running", phasesCompleted: 0 });
+  const workspaceDatabase = getWorkspaceDatabase();
+  const threadContext = workspaceDatabase.eventStore.resolveThreadContext({
+    producer: "revalidation-service",
+    occurredAt,
+  });
+  workspaceDatabase.eventStore.appendEvents([
+    ...(threadContext.createdThreadEvent ? [threadContext.createdThreadEvent] : []),
+    {
+      type: "run.created",
+      workspaceId: threadContext.workspaceId,
+      threadId: threadContext.threadId,
+      runId,
+      payload: {
+        kind: "revalidation",
+        provider: lastRunProvider ?? null,
+        model: lastRunModel ?? null,
+        effort: lastRunRuntime?.effortLevel ?? null,
+        status: "running",
+        startedAt: occurredAt,
+        totalPhases: phases.length,
+      },
+      occurredAt,
+      producer: "revalidation-service",
+    },
+    {
+      type: "run.status.changed",
+      workspaceId: threadContext.workspaceId,
+      threadId: threadContext.threadId,
+      runId,
+      payload: {
+        status: "running",
+        activePhase: null,
+        progress: {
+          completed: 0,
+          total: phases.length,
+        },
+      },
+      occurredAt,
+      producer: "revalidation-service",
+    },
+  ]);
 
   // Execute phase re-runs asynchronously
   const capturedStartPhase = startPhase;
@@ -260,6 +323,25 @@ async function executeRevalidation(
 
   for (const p of phases) {
     runtimeStatus.setActivePhase(runId, p);
+    appendRevalidationEvents(runId, [
+      {
+        type: "phase.started",
+        payload: { phase: p },
+        occurredAt: Date.now(),
+      },
+      {
+        type: "run.status.changed",
+        payload: {
+          status: "running",
+          activePhase: p,
+          progress: {
+            completed: phasesCompleted,
+            total: phases.length,
+          },
+        },
+        occurredAt: Date.now(),
+      },
+    ]);
     emitProgress({ type: "phase_started", phase: p, runId });
     logger.log("revalidation", "phase-rerun", { phase: p, runId });
 
@@ -292,6 +374,21 @@ async function executeRevalidation(
       priorEntities: priorContext,
       logger,
       runId,
+      onActivity: (activity) => {
+        appendRevalidationEvents(runId, [
+          {
+            type: "phase.activity.recorded",
+            payload: {
+              phase: p,
+              kind: activity.kind,
+              message: activity.message,
+              ...(activity.toolName ? { toolName: activity.toolName } : {}),
+              ...(activity.query ? { query: activity.query } : {}),
+            },
+            occurredAt: Date.now(),
+          },
+        ]);
+      },
     });
 
     if (result.success) {
@@ -318,10 +415,58 @@ async function executeRevalidation(
             revisionRetryInstruction: commitResult.retryMessage,
             logger,
             runId,
+            onActivity: (activity) => {
+              appendRevalidationEvents(runId, [
+                {
+                  type: "phase.activity.recorded",
+                  payload: {
+                    phase: p,
+                    kind: activity.kind,
+                    message: activity.message,
+                    ...(activity.toolName
+                      ? { toolName: activity.toolName }
+                      : {}),
+                    ...(activity.query ? { query: activity.query } : {}),
+                  },
+                  occurredAt: Date.now(),
+                },
+              ]);
+            },
           });
 
           if (!result.success) {
             const error = result.error ?? "Revalidation phase failed";
+            const failure = runtimeStatus.inferRuntimeError(
+              error,
+              lastRunProvider as "anthropic" | "openai" | undefined,
+            );
+            appendRevalidationEvents(runId, [
+              {
+                type: "run.failed",
+                payload: {
+                  activePhase: p,
+                  failedPhase: p,
+                  error: failure,
+                  finishedAt: Date.now(),
+                },
+                occurredAt: Date.now(),
+              },
+              {
+                type: "run.status.changed",
+                payload: {
+                  status: "failed",
+                  activePhase: p,
+                  progress: {
+                    completed: phasesCompleted,
+                    total: phases.length,
+                  },
+                  failedPhase: p,
+                  failure,
+                  finishedAt: Date.now(),
+                },
+                occurredAt: Date.now(),
+              },
+            ]);
             revalRunStatuses.set(runId, {
               runId,
               status: "failed",
@@ -336,10 +481,7 @@ async function executeRevalidation(
             emitProgress({
               type: "analysis_failed",
               runId,
-              error: runtimeStatus.inferRuntimeError(
-                error,
-                lastRunProvider as "anthropic" | "openai" | undefined,
-              ),
+              error: failure,
             });
             return;
           }
@@ -370,23 +512,77 @@ async function executeRevalidation(
           phasesCompleted,
         });
         runtimeStatus.completePhase(runId);
+        const phaseSummary = {
+          entitiesCreated: commitResult.summary.entitiesCreated,
+          relationshipsCreated: commitResult.summary.relationshipsCreated,
+          entitiesUpdated: commitResult.summary.entitiesUpdated,
+          durationMs: Date.now() - phaseStart,
+        };
+        appendRevalidationEvents(runId, [
+          {
+            type: "phase.completed",
+            payload: {
+              phase: p,
+              summary: phaseSummary,
+            },
+            occurredAt: Date.now(),
+          },
+          {
+            type: "run.status.changed",
+            payload: {
+              status: "running",
+              activePhase: null,
+              progress: {
+                completed: phasesCompleted,
+                total: phases.length,
+              },
+            },
+            occurredAt: Date.now(),
+          },
+        ]);
 
         emitProgress({
           type: "phase_completed",
           phase: p,
           runId,
-          summary: {
-            entitiesCreated: commitResult.summary.entitiesCreated,
-            relationshipsCreated: commitResult.summary.relationshipsCreated,
-            entitiesUpdated: commitResult.summary.entitiesUpdated,
-            durationMs: Date.now() - phaseStart,
-          },
+          summary: phaseSummary,
         });
       } catch (err) {
         const error =
           err instanceof Error
             ? `Revision diff validation error: ${err.message}`
             : `Revision diff validation error: ${String(err)}`;
+        const failure = runtimeStatus.inferRuntimeError(
+          error,
+          lastRunProvider as "anthropic" | "openai" | undefined,
+        );
+        appendRevalidationEvents(runId, [
+          {
+            type: "run.failed",
+            payload: {
+              activePhase: p,
+              failedPhase: p,
+              error: failure,
+              finishedAt: Date.now(),
+            },
+            occurredAt: Date.now(),
+          },
+          {
+            type: "run.status.changed",
+            payload: {
+              status: "failed",
+              activePhase: p,
+              progress: {
+                completed: phasesCompleted,
+                total: phases.length,
+              },
+              failedPhase: p,
+              failure,
+              finishedAt: Date.now(),
+            },
+            occurredAt: Date.now(),
+          },
+        ]);
         revalRunStatuses.set(runId, {
           runId,
           status: "failed",
@@ -401,15 +597,43 @@ async function executeRevalidation(
         emitProgress({
           type: "analysis_failed",
           runId,
-          error: runtimeStatus.inferRuntimeError(
-            error,
-            lastRunProvider as "anthropic" | "openai" | undefined,
-          ),
+          error: failure,
         });
         return;
       }
     } else {
       const error = result.error ?? "Revalidation phase failed";
+      const failure = runtimeStatus.inferRuntimeError(
+        error,
+        lastRunProvider as "anthropic" | "openai" | undefined,
+      );
+      appendRevalidationEvents(runId, [
+        {
+          type: "run.failed",
+          payload: {
+            activePhase: p,
+            failedPhase: p,
+            error: failure,
+            finishedAt: Date.now(),
+          },
+          occurredAt: Date.now(),
+        },
+        {
+          type: "run.status.changed",
+          payload: {
+            status: "failed",
+            activePhase: p,
+            progress: {
+              completed: phasesCompleted,
+              total: phases.length,
+            },
+            failedPhase: p,
+            failure,
+            finishedAt: Date.now(),
+          },
+          occurredAt: Date.now(),
+        },
+      ]);
       revalRunStatuses.set(runId, {
         runId,
         status: "failed",
@@ -424,16 +648,35 @@ async function executeRevalidation(
       emitProgress({
         type: "analysis_failed",
         runId,
-        error: runtimeStatus.inferRuntimeError(
-          error,
-          lastRunProvider as "anthropic" | "openai" | undefined,
-        ),
+        error: failure,
       });
       return;
     }
   }
 
   revalRunStatuses.set(runId, { runId, status: "completed", phasesCompleted });
+  appendRevalidationEvents(runId, [
+    {
+      type: "run.completed",
+      payload: {
+        finishedAt: Date.now(),
+      },
+      occurredAt: Date.now(),
+    },
+    {
+      type: "run.status.changed",
+      payload: {
+        status: "completed",
+        activePhase: null,
+        progress: {
+          completed: phasesCompleted,
+          total: phases.length,
+        },
+        finishedAt: Date.now(),
+      },
+      occurredAt: Date.now(),
+    },
+  ]);
   runtimeStatus.releaseRun(runId, "completed");
 
   const totalEntities = entityGraphService.getAnalysis().entities.length;

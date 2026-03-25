@@ -45,7 +45,9 @@ describe("workspace database", () => {
       expect.arrayContaining([
         "activities",
         "command_receipts",
+        "domain_events",
         "messages",
+        "phase_turn_summaries",
         "provider_session_bindings",
         "runs",
         "schema_migrations",

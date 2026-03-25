@@ -1,53 +1,72 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { ThreadRecord } from "./workspace-types";
+import type { ThreadState } from "../../../shared/types/workspace-state";
+import { parseJsonColumn, stringifyJson } from "./sqlite-json";
 
 export interface ThreadRepository {
-  getThread(id: string): ThreadRecord | undefined;
-  listThreadsByWorkspaceId(workspaceId: string): ThreadRecord[];
-  upsertThread(thread: ThreadRecord): ThreadRecord;
+  getThreadState(id: string): ThreadState | undefined;
+  listThreadsByWorkspaceId(workspaceId: string): ThreadState[];
+  upsertThreadState(thread: ThreadState): ThreadState;
   clear(): void;
 }
 
-function mapThreadRow(row: Record<string, unknown>): ThreadRecord {
-  return {
-    id: String(row.id),
-    workspaceId: String(row.workspace_id),
-    title: String(row.title),
-    threadJson: String(row.thread_json),
-    createdAt: Number(row.created_at),
-    updatedAt: Number(row.updated_at),
-  };
+function mapThreadRow(row: Record<string, unknown>): ThreadState {
+  return parseJsonColumn<ThreadState>(row.thread_json, "threads.thread_json");
 }
 
 export function createThreadRepository(db: DatabaseSync): ThreadRepository {
   const getStatement = db.prepare(
-    `SELECT id, workspace_id, title, thread_json, created_at, updated_at
+    `SELECT thread_json
      FROM threads
      WHERE id = $id
      LIMIT 1`,
   );
   const listStatement = db.prepare(
-    `SELECT id, workspace_id, title, thread_json, created_at, updated_at
+    `SELECT thread_json
      FROM threads
      WHERE workspace_id = $workspaceId
      ORDER BY updated_at DESC, id ASC`,
   );
   const upsertStatement = db.prepare(
     `INSERT INTO threads (
-       id, workspace_id, title, thread_json, created_at, updated_at
+       id,
+       workspace_id,
+       title,
+       is_primary,
+       latest_run_id,
+       latest_activity_at,
+       latest_terminal_status,
+       summary,
+       thread_json,
+       created_at,
+       updated_at
      ) VALUES (
-       $id, $workspaceId, $title, $threadJson, $createdAt, $updatedAt
+       $id,
+       $workspaceId,
+       $title,
+       $isPrimary,
+       $latestRunId,
+       $latestActivityAt,
+       $latestTerminalStatus,
+       $summary,
+       $threadJson,
+       $createdAt,
+       $updatedAt
      )
      ON CONFLICT(id) DO UPDATE SET
        workspace_id = excluded.workspace_id,
        title = excluded.title,
+       is_primary = excluded.is_primary,
+       latest_run_id = excluded.latest_run_id,
+       latest_activity_at = excluded.latest_activity_at,
+       latest_terminal_status = excluded.latest_terminal_status,
+       summary = excluded.summary,
        thread_json = excluded.thread_json,
        updated_at = excluded.updated_at`,
   );
   const clearStatement = db.prepare(`DELETE FROM threads`);
 
   return {
-    getThread(id) {
+    getThreadState(id) {
       const row = getStatement.get({ $id: id });
       return row ? mapThreadRow(row) : undefined;
     },
@@ -56,12 +75,17 @@ export function createThreadRepository(db: DatabaseSync): ThreadRepository {
         .all({ $workspaceId: workspaceId })
         .map((row) => mapThreadRow(row));
     },
-    upsertThread(thread) {
+    upsertThreadState(thread) {
       upsertStatement.run({
         $id: thread.id,
         $workspaceId: thread.workspaceId,
         $title: thread.title,
-        $threadJson: thread.threadJson,
+        $isPrimary: thread.isPrimary ? 1 : 0,
+        $latestRunId: thread.latestRunId ?? null,
+        $latestActivityAt: thread.latestActivityAt ?? null,
+        $latestTerminalStatus: thread.latestTerminalStatus ?? null,
+        $summary: thread.summary ?? null,
+        $threadJson: stringifyJson(thread),
         $createdAt: thread.createdAt,
         $updatedAt: thread.updatedAt,
       });

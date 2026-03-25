@@ -35,6 +35,7 @@ import type { LoopbackTriggerType } from "../services/analysis-tools";
 import { analysisRuntimeConfig } from "../config/analysis-runtime";
 import { resolveAnalysisRuntime } from "../config/analysis-runtime-resolver";
 import * as runtimeStatus from "../services/runtime-status";
+import { getWorkspaceDatabase } from "../services/workspace";
 import { createRunLogger, timer } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
 import type {
@@ -46,6 +47,10 @@ import {
   synthesizeReport,
   SYNTHESIS_SYSTEM_PROMPT,
 } from "../services/synthesis-service";
+import type {
+  AnyDomainEventInput,
+  DomainEventInput,
+} from "../services/workspace/domain-event-types";
 
 // ── Types ──
 
@@ -73,6 +78,16 @@ export interface AnalysisResult {
   relationships: AnalysisRelationship[];
 }
 
+export interface RunPersistenceContext {
+  workspaceId?: string;
+  threadId?: string;
+  commandId?: string;
+  receiptId?: string;
+  correlationId?: string;
+  causationId?: string;
+  producer?: string;
+}
+
 interface CommitSummary {
   entitiesCreated: number;
   entitiesUpdated: number;
@@ -81,6 +96,8 @@ interface CommitSummary {
 
 interface ActiveRun {
   runId: string;
+  workspaceId: string;
+  threadId: string;
   status: RunStatusValue;
   activePhase: MethodologyPhase | null;
   provider?: string;
@@ -305,6 +322,25 @@ function emitPhaseActivity(
   });
 }
 
+function appendRunLifecycleEvents(
+  run: Pick<ActiveRun, "runId" | "workspaceId" | "threadId">,
+  producer: string,
+  events: DomainEventInput[],
+): void {
+  getWorkspaceDatabase().eventStore.appendEvents(
+    events.map(
+      (event) =>
+        ({
+          ...event,
+          workspaceId: run.workspaceId,
+          threadId: run.threadId,
+          runId: run.runId,
+          producer,
+        }) as AnyDomainEventInput,
+    ),
+  );
+}
+
 // ── Retry classification ──
 
 export function classifyFailure(error: string): FailureClass {
@@ -469,6 +505,25 @@ async function executeSinglePhase(
   run.activePhase = phase;
   runtimeStatus.setActivePhase(run.runId, phase);
   entityGraphService.setPhaseStatus(phase, "running");
+  appendRunLifecycleEvents(run, "analysis-agent", [
+    {
+      type: "phase.started",
+      payload: { phase },
+      occurredAt: phaseStart,
+    },
+    {
+      type: "run.status.changed",
+      payload: {
+        status: "running",
+        activePhase: phase,
+        progress: {
+          completed: run.phasesCompleted.length,
+          total: run.activePhases.length,
+        },
+      },
+      occurredAt: phaseStart,
+    },
+  ]);
   emitProgress({ type: "phase_started", phase, runId: run.runId });
   run.logger.log("orchestrator", "phase-start", { phase });
 
@@ -529,6 +584,19 @@ async function executeSinglePhase(
           signal: phaseAbort.signal,
           logger: run.logger,
           onActivity: (activity) => {
+            appendRunLifecycleEvents(run, "analysis-agent", [
+              {
+                type: "phase.activity.recorded",
+                payload: {
+                  phase,
+                  kind: activity.kind,
+                  message: activity.message,
+                  ...(activity.toolName ? { toolName: activity.toolName } : {}),
+                  ...(activity.query ? { query: activity.query } : {}),
+                },
+                occurredAt: Date.now(),
+              },
+            ]);
             emitPhaseActivity(run.runId, phase, activity.message, {
               kind: activity.kind,
               toolName: activity.toolName,
@@ -612,6 +680,21 @@ async function executeSinglePhase(
               signal: phaseAbort.signal,
               logger: run.logger,
               onActivity: (activity) => {
+                appendRunLifecycleEvents(run, "analysis-agent", [
+                  {
+                    type: "phase.activity.recorded",
+                    payload: {
+                      phase,
+                      kind: activity.kind,
+                      message: activity.message,
+                      ...(activity.toolName
+                        ? { toolName: activity.toolName }
+                        : {}),
+                      ...(activity.query ? { query: activity.query } : {}),
+                    },
+                    occurredAt: Date.now(),
+                  },
+                ]);
                 emitPhaseActivity(run.runId, phase, activity.message, {
                   kind: activity.kind,
                   toolName: activity.toolName,
@@ -708,6 +791,28 @@ async function executeSinglePhase(
         entitiesUpdated: commitSummary!.entitiesUpdated,
         durationMs: Date.now() - phaseStart,
       };
+      appendRunLifecycleEvents(run, "analysis-agent", [
+        {
+          type: "phase.completed",
+          payload: {
+            phase,
+            summary,
+          },
+          occurredAt: Date.now(),
+        },
+        {
+          type: "run.status.changed",
+          payload: {
+            status: "running",
+            activePhase: null,
+            progress: {
+              completed: run.phasesCompleted.length + 1,
+              total: run.activePhases.length,
+            },
+          },
+          occurredAt: Date.now(),
+        },
+      ]);
       emitProgress({
         type: "phase_completed",
         phase,
@@ -770,7 +875,8 @@ export async function runFull(
   model?: string,
   signal?: AbortSignal,
   runtimeOverrides?: AnalysisRuntimeOverrides,
-): Promise<{ runId: string }> {
+  persistenceContext: RunPersistenceContext = {},
+): Promise<{ runId: string; workspaceId: string; threadId: string }> {
   // Guard: check both status AND whether the async execution is still unwinding
   if (activeRun && activeRun.status === "running") {
     throw new Error("A run is already active");
@@ -789,6 +895,20 @@ export async function runFull(
   );
   const autoRevalidationEnabled =
     activePhases.length === SUPPORTED_PHASES.length;
+  const workspaceDatabase = getWorkspaceDatabase();
+  const runOccurredAt = Date.now();
+  const resolvedThreadContext = workspaceDatabase.eventStore.resolveThreadContext(
+    {
+      workspaceId: persistenceContext.workspaceId,
+      threadId: persistenceContext.threadId,
+      producer: persistenceContext.producer ?? "analysis-agent",
+      commandId: persistenceContext.commandId,
+      receiptId: persistenceContext.receiptId,
+      correlationId: persistenceContext.correlationId,
+      causationId: persistenceContext.causationId,
+      occurredAt: runOccurredAt,
+    },
+  );
 
   if (
     !runtimeStatus.acquireRun("analysis", runId, {
@@ -822,6 +942,8 @@ export async function runFull(
 
   activeRun = {
     runId,
+    workspaceId: resolvedThreadContext.workspaceId,
+    threadId: resolvedThreadContext.threadId,
     status: "running",
     activePhase: null,
     provider,
@@ -835,6 +957,64 @@ export async function runFull(
     abortController,
     logger,
   };
+
+  try {
+    workspaceDatabase.eventStore.appendEvents([
+      ...(resolvedThreadContext.createdThreadEvent
+        ? [resolvedThreadContext.createdThreadEvent]
+        : []),
+      {
+        type: "run.created",
+        workspaceId: resolvedThreadContext.workspaceId,
+        threadId: resolvedThreadContext.threadId,
+        runId,
+        payload: {
+          kind: "analysis",
+          provider: provider ?? null,
+          model: model ?? null,
+          effort: runtime.effortLevel,
+          status: "running",
+          startedAt: runOccurredAt,
+          totalPhases: activePhases.length,
+        },
+        commandId: persistenceContext.commandId,
+        receiptId: persistenceContext.receiptId,
+        correlationId: persistenceContext.correlationId,
+        causationId: persistenceContext.causationId,
+        occurredAt: runOccurredAt,
+        producer: persistenceContext.producer ?? "analysis-agent",
+      },
+      {
+        type: "run.status.changed",
+        workspaceId: resolvedThreadContext.workspaceId,
+        threadId: resolvedThreadContext.threadId,
+        runId,
+        payload: {
+          status: "running",
+          activePhase: null,
+          progress: {
+            completed: 0,
+            total: activePhases.length,
+          },
+        },
+        commandId: persistenceContext.commandId,
+        receiptId: persistenceContext.receiptId,
+        correlationId: persistenceContext.correlationId,
+        causationId: persistenceContext.causationId,
+        occurredAt: runOccurredAt,
+        producer: persistenceContext.producer ?? "analysis-agent",
+      },
+    ]);
+  } catch (error) {
+    activeRun = null;
+    clearTimeout(runTimeoutHandle);
+    runtimeStatus.releaseRun(runId, "failed", {
+      failureMessage:
+        error instanceof Error ? error.message : "Failed to persist run start",
+      provider: provider as "anthropic" | "openai" | undefined,
+    });
+    throw error;
+  }
 
   // Reset the graph only after the run lock is held so losing concurrent
   // requests cannot wipe the canvas before acquireRun rejects them.
@@ -876,6 +1056,37 @@ export async function runFull(
             if (runTimeoutSignal.aborted && !signal?.aborted) {
               run.status = "failed";
               run.error = "Run-level timeout exceeded";
+              const failure = runtimeStatus.inferRuntimeError(
+                "Run-level timeout exceeded",
+                run.provider as "anthropic" | "openai" | undefined,
+              );
+              appendRunLifecycleEvents(run, "analysis-agent", [
+                {
+                  type: "run.failed",
+                  payload: {
+                    activePhase: phase,
+                    failedPhase: phase,
+                    error: failure,
+                    finishedAt: Date.now(),
+                  },
+                  occurredAt: Date.now(),
+                },
+                {
+                  type: "run.status.changed",
+                  payload: {
+                    status: "failed",
+                    activePhase: phase,
+                    progress: {
+                      completed: run.phasesCompleted.length,
+                      total: run.activePhases.length,
+                    },
+                    failedPhase: phase,
+                    failure,
+                    finishedAt: Date.now(),
+                  },
+                  occurredAt: Date.now(),
+                },
+              ]);
               runtimeStatus.releaseRun(run.runId, "failed", {
                 failedPhase: phase,
                 failureMessage: run.error,
@@ -888,14 +1099,34 @@ export async function runFull(
               emitProgress({
                 type: "analysis_failed",
                 runId: run.runId,
-                error: runtimeStatus.inferRuntimeError(
-                  "Run-level timeout exceeded",
-                  run.provider as "anthropic" | "openai" | undefined,
-                ),
+                error: failure,
               });
             } else {
               run.status = "interrupted";
               run.error = "Run was aborted";
+              appendRunLifecycleEvents(run, "analysis-agent", [
+                {
+                  type: "run.cancelled",
+                  payload: {
+                    activePhase: phase,
+                    finishedAt: Date.now(),
+                  },
+                  occurredAt: Date.now(),
+                },
+                {
+                  type: "run.status.changed",
+                  payload: {
+                    status: "cancelled",
+                    activePhase: phase,
+                    progress: {
+                      completed: run.phasesCompleted.length,
+                      total: run.activePhases.length,
+                    },
+                    finishedAt: Date.now(),
+                  },
+                  occurredAt: Date.now(),
+                },
+              ]);
               runtimeStatus.releaseRun(run.runId, "cancelled");
               run.logger.warn("orchestrator", "analysis-aborted", {
                 phasesCompleted: run.phasesCompleted.length,
@@ -904,6 +1135,37 @@ export async function runFull(
           } else {
             run.status = "failed";
             run.error = result.error;
+            const failure = runtimeStatus.inferRuntimeError(
+              result.error ?? "Unknown error",
+              run.provider as "anthropic" | "openai" | undefined,
+            );
+            appendRunLifecycleEvents(run, "analysis-agent", [
+              {
+                type: "run.failed",
+                payload: {
+                  activePhase: phase,
+                  failedPhase: phase,
+                  error: failure,
+                  finishedAt: Date.now(),
+                },
+                occurredAt: Date.now(),
+              },
+              {
+                type: "run.status.changed",
+                payload: {
+                  status: "failed",
+                  activePhase: phase,
+                  progress: {
+                    completed: run.phasesCompleted.length,
+                    total: run.activePhases.length,
+                  },
+                  failedPhase: phase,
+                  failure,
+                  finishedAt: Date.now(),
+                },
+                occurredAt: Date.now(),
+              },
+            ]);
             runtimeStatus.releaseRun(run.runId, "failed", {
               failedPhase: phase,
               failureMessage: run.error,
@@ -912,10 +1174,7 @@ export async function runFull(
             emitProgress({
               type: "analysis_failed",
               runId: run.runId,
-              error: runtimeStatus.inferRuntimeError(
-                result.error ?? "Unknown error",
-                run.provider as "anthropic" | "openai" | undefined,
-              ),
+              error: failure,
             });
           }
           break;
@@ -950,6 +1209,37 @@ export async function runFull(
               });
               run.status = "failed";
               run.error = `Loopback convergence failed after ${passCount} passes`;
+              const failure = runtimeStatus.inferRuntimeError(
+                run.error,
+                run.provider as "anthropic" | "openai" | undefined,
+              );
+              appendRunLifecycleEvents(run, "analysis-agent", [
+                {
+                  type: "run.failed",
+                  payload: {
+                    activePhase: phase,
+                    failedPhase: phase,
+                    error: failure,
+                    finishedAt: Date.now(),
+                  },
+                  occurredAt: Date.now(),
+                },
+                {
+                  type: "run.status.changed",
+                  payload: {
+                    status: "failed",
+                    activePhase: phase,
+                    progress: {
+                      completed: run.phasesCompleted.length,
+                      total: run.activePhases.length,
+                    },
+                    failedPhase: phase,
+                    failure,
+                    finishedAt: Date.now(),
+                  },
+                  occurredAt: Date.now(),
+                },
+              ]);
               runtimeStatus.releaseRun(run.runId, "failed", {
                 failedPhase: phase,
                 failureMessage: run.error,
@@ -958,10 +1248,7 @@ export async function runFull(
               emitProgress({
                 type: "analysis_failed",
                 runId: run.runId,
-                error: runtimeStatus.inferRuntimeError(
-                  run.error,
-                  run.provider as "anthropic" | "openai" | undefined,
-                ),
+                error: failure,
               });
               break;
             }
@@ -987,6 +1274,28 @@ export async function runFull(
       if (run.status === "running") {
         run.status = "completed";
         run.activePhase = null;
+        appendRunLifecycleEvents(run, "analysis-agent", [
+          {
+            type: "run.completed",
+            payload: {
+              finishedAt: Date.now(),
+            },
+            occurredAt: Date.now(),
+          },
+          {
+            type: "run.status.changed",
+            payload: {
+              status: "completed",
+              activePhase: null,
+              progress: {
+                completed: run.phasesCompleted.length,
+                total: run.activePhases.length,
+              },
+              finishedAt: Date.now(),
+            },
+            occurredAt: Date.now(),
+          },
+        ]);
 
         const snapshot2 = entityGraphService.getAnalysis();
         run.logger.log("orchestrator", "analysis-finished", {
@@ -1082,7 +1391,11 @@ export async function runFull(
   // Track the async execution so concurrent run guard works
   runPromise = executeAsync();
 
-  return { runId };
+  return {
+    runId,
+    workspaceId: resolvedThreadContext.workspaceId,
+    threadId: resolvedThreadContext.threadId,
+  };
 }
 
 function getTerminalRuntimeStatus(runId: string): RunStatus | null {

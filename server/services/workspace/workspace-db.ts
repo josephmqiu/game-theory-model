@@ -4,14 +4,20 @@ import { DatabaseSync } from "node:sqlite";
 import { getWorkspaceDatabasePath } from "./workspace-db-path";
 import { initializeWorkspaceSchema } from "./workspace-schema";
 import { createActivityRepository } from "./activity-repository";
+import { createDomainEventRepository } from "./domain-event-repository";
+import { createDomainEventStore } from "./domain-event-store";
 import { createMessageRepository } from "./message-repository";
+import { createPhaseTurnSummaryRepository } from "./phase-turn-summary-repository";
 import { createProviderSessionBindingRepository } from "./provider-session-binding-repository";
 import { createRunRepository } from "./run-repository";
 import { createThreadRepository } from "./thread-repository";
 import { createWorkspaceRepository } from "./workspace-repository";
 import { createSqliteCommandReceiptStore } from "./command-receipt-repository";
 import type { ActivityRepository } from "./activity-repository";
+import type { DomainEventRepository } from "./domain-event-repository";
+import type { DomainEventStore } from "./domain-event-store";
 import type { MessageRepository } from "./message-repository";
+import type { PhaseTurnSummaryRepository } from "./phase-turn-summary-repository";
 import type { ProviderSessionBindingRepository } from "./provider-session-binding-repository";
 import type { RunRepository } from "./run-repository";
 import type { ThreadRepository } from "./thread-repository";
@@ -30,6 +36,9 @@ export interface WorkspaceDatabase {
   messages: MessageRepository;
   activities: ActivityRepository;
   runs: RunRepository;
+  phaseTurnSummaries: PhaseTurnSummaryRepository;
+  domainEvents: DomainEventRepository;
+  eventStore: DomainEventStore;
   providerSessionBindings: ProviderSessionBindingRepository;
   commandReceipts: CommandReceiptStore;
   close(): void;
@@ -60,8 +69,19 @@ export function createWorkspaceDatabase(
   const messages = createMessageRepository(db);
   const activities = createActivityRepository(db);
   const runs = createRunRepository(db);
+  const phaseTurnSummaries = createPhaseTurnSummaryRepository(db);
+  const domainEvents = createDomainEventRepository(db);
   const providerSessionBindings = createProviderSessionBindingRepository(db);
   const commandReceipts = createSqliteCommandReceiptStore(db);
+  const eventStore = createDomainEventStore({
+    db,
+    workspaces,
+    threads,
+    runs,
+    activities,
+    phaseTurnSummaries,
+    domainEvents,
+  });
 
   return {
     databasePath,
@@ -71,6 +91,9 @@ export function createWorkspaceDatabase(
     messages,
     activities,
     runs,
+    phaseTurnSummaries,
+    domainEvents,
+    eventStore,
     providerSessionBindings,
     commandReceipts,
     close() {

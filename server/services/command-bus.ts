@@ -99,6 +99,8 @@ export type Command = SubmitCommand & ResolvedCommandMetadata;
 
 export interface AnalysisStartResult {
   runId: string;
+  workspaceId: string;
+  threadId: string;
   status: "started";
   estimatedPhases: number;
 }
@@ -440,6 +442,27 @@ function resolveLogRunId(
   return command.runId;
 }
 
+function hydrateReceiptFromResult(
+  command: Command,
+  receipt: CommandReceipt,
+  result: unknown,
+): void {
+  if (command.kind === "analysis.start" && result) {
+    const analysisStart = result as AnalysisStartResult;
+    receipt.runId = analysisStart.runId;
+    receipt.workspaceId = analysisStart.workspaceId;
+    receipt.threadId = analysisStart.threadId;
+    return;
+  }
+
+  if (command.kind === "analysis.abort" && result) {
+    const abortResult = result as AnalysisAbortResult;
+    if (abortResult.runId) {
+      receipt.runId = abortResult.runId;
+    }
+  }
+}
+
 function logReceiptEvent(
   level: "log" | "warn" | "error",
   command: Command,
@@ -587,6 +610,7 @@ export function createCommandBus(
             current: Command,
           ) => Promise<unknown>;
           const result = await handler(command);
+          hydrateReceiptFromResult(command, accepted, result);
           accepted.status = "completed";
           accepted.finishedAt = Date.now();
           accepted.result = result;

@@ -29,7 +29,11 @@ describe("analyze route", () => {
     });
 
     const { runFull } = await import("../agents/analysis-agent");
-    vi.mocked(runFull).mockResolvedValue({ runId: "run-123" });
+    vi.mocked(runFull).mockResolvedValue({
+      runId: "run-123",
+      workspaceId: "workspace-local-default",
+      threadId: "workspace-local-default:primary-thread",
+    });
 
     const route = (await import("../api/ai/analyze")).default;
     const result = await route(event);
@@ -40,6 +44,15 @@ describe("analyze route", () => {
       undefined,
       undefined,
       undefined,
+      {
+        workspaceId: undefined,
+        threadId: undefined,
+        commandId: expect.any(String),
+        receiptId: undefined,
+        correlationId: undefined,
+        causationId: undefined,
+        producer: "command-handlers",
+      },
     );
     expect(setResponseStatus).toHaveBeenCalledWith(event, 202);
     expect(result).toEqual({ runId: "run-123" });

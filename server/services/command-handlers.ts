@@ -1,5 +1,6 @@
 import * as analysisOrchestrator from "../agents/analysis-agent";
 import * as entityGraphService from "./entity-graph-service";
+import { normalizeRequestedActivePhases } from "./analysis-phase-selection";
 import {
   createCommandBus,
   type CommandHandlerMap,
@@ -15,24 +16,38 @@ import {
   resetWorkspaceDatabaseForTest,
 } from "./workspace";
 
-const DEFAULT_ESTIMATED_PHASES = 3;
 const workspaceReceiptStore = createCommandReceiptStoreProxy(
   () => getWorkspaceDatabase().commandReceipts,
 );
 
 const defaultHandlers: CommandHandlerMap = {
   async "analysis.start"(command) {
-    const { runId } = await analysisOrchestrator.runFull(
+    const { runId, workspaceId, threadId } = await analysisOrchestrator.runFull(
       command.topic,
       command.provider,
       command.model,
       undefined,
       command.runtime,
+      {
+        workspaceId: command.workspaceId,
+        threadId: command.threadId,
+        commandId: command.commandId,
+        receiptId: command.receiptId,
+        correlationId: command.correlationId,
+        causationId: command.causationId,
+        producer: "command-handlers",
+      },
     );
+    const estimatedPhases = normalizeRequestedActivePhases(
+      command.runtime?.activePhases,
+    ).length;
+
     return {
       runId,
+      workspaceId,
+      threadId,
       status: "started",
-      estimatedPhases: DEFAULT_ESTIMATED_PHASES,
+      estimatedPhases,
     };
   },
   async "analysis.abort"() {
