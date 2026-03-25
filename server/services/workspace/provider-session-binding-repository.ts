@@ -1,11 +1,14 @@
 import type { DatabaseSync } from "node:sqlite";
-import { stringifyJson } from "./sqlite-json";
 import type { ProviderSessionBindingRecord } from "./workspace-types";
 
 export interface ProviderSessionBindingRepository {
   getBinding(threadId: string): ProviderSessionBindingRecord | undefined;
-  listBindingsByWorkspaceId(workspaceId: string): ProviderSessionBindingRecord[];
-  upsertBinding(binding: ProviderSessionBindingRecord): ProviderSessionBindingRecord;
+  listBindingsByWorkspaceId(
+    workspaceId: string,
+  ): ProviderSessionBindingRecord[];
+  upsertBinding(
+    binding: ProviderSessionBindingRecord,
+  ): ProviderSessionBindingRecord;
   deleteBinding(threadId: string): void;
   clear(): void;
 }
@@ -64,7 +67,9 @@ export function createProviderSessionBindingRepository(
       return row ? mapBindingRow(row) : undefined;
     },
     listBindingsByWorkspaceId(workspaceId) {
-      return listStatement.all({ $workspaceId: workspaceId }).map((row) => mapBindingRow(row));
+      return listStatement
+        .all({ $workspaceId: workspaceId })
+        .map((row) => mapBindingRow(row));
     },
     upsertBinding(binding) {
       upsertStatement.run({
@@ -93,8 +98,3 @@ export function createProviderSessionBindingRepository(
     },
   };
 }
-
-export function createProviderSessionBindingSnapshot(input: unknown): string {
-  return stringifyJson(input);
-}
-

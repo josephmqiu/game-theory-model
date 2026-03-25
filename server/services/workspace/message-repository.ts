@@ -1,9 +1,8 @@
 import type { DatabaseSync } from "node:sqlite";
-import { stringifyJson } from "./sqlite-json";
 import type { MessageRecord } from "./workspace-types";
 
 export interface MessageRepository {
-  appendMessage(message: MessageRecord): MessageRecord;
+  upsertMessage(message: MessageRecord): MessageRecord;
   getMessage(id: string): MessageRecord | undefined;
   listMessagesByThreadId(threadId: string): MessageRecord[];
   clear(): void;
@@ -52,7 +51,7 @@ export function createMessageRepository(db: DatabaseSync): MessageRepository {
   const clearStatement = db.prepare(`DELETE FROM messages`);
 
   return {
-    appendMessage(message) {
+    upsertMessage(message) {
       upsertStatement.run({
         $id: message.id,
         $workspaceId: message.workspaceId,
@@ -75,14 +74,12 @@ export function createMessageRepository(db: DatabaseSync): MessageRepository {
       return row ? mapMessageRow(row) : undefined;
     },
     listMessagesByThreadId(threadId) {
-      return listStatement.all({ $threadId: threadId }).map((row) => mapMessageRow(row));
+      return listStatement
+        .all({ $threadId: threadId })
+        .map((row) => mapMessageRow(row));
     },
     clear() {
       clearStatement.run();
     },
   };
-}
-
-export function createMessageSnapshot(input: unknown): string {
-  return stringifyJson(input);
 }

@@ -1,6 +1,10 @@
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { layoutEntities } from "@/services/entity/entity-layout";
-import type { Analysis, AnalysisFileReference, LayoutState } from "@/types/entity";
+import type {
+  Analysis,
+  AnalysisFileReference,
+  LayoutState,
+} from "@/types/entity";
 import type { Workspace } from "@/types/workspace";
 import {
   AnalysisFileError,
@@ -25,8 +29,6 @@ interface PickerWindow extends Window {
 const ANALYSIS_FILE_EXTENSION = ".gta";
 const ANALYSIS_FILE_DESCRIPTION = "Game Theory Analyzer Files";
 const WORKSPACE_SYNC_ENDPOINT = "/api/workspace/state";
-
-type WorkspacePersistenceSource = Partial<AnalysisFileReference>;
 
 let currentWorkspace: Pick<
   Workspace,
@@ -114,7 +116,9 @@ function buildWorkspaceSnapshot(
   timestamp = Date.now(),
 ): Workspace {
   const fallbackName =
-    state.analysis.name.trim() || state.analysis.topic.trim() || "Untitled Workspace";
+    state.analysis.name.trim() ||
+    state.analysis.topic.trim() ||
+    "Untitled Workspace";
 
   const workspace = createWorkspaceFromAnalysis(state.analysis, state.layout, {
     id: currentWorkspace?.id ?? state.analysis.id,
@@ -129,7 +133,7 @@ function buildWorkspaceSnapshot(
 
 async function syncWorkspaceState(
   workspace: Workspace,
-  source?: WorkspacePersistenceSource,
+  source?: AnalysisPersistenceSource,
 ): Promise<void> {
   try {
     const response = await fetch(WORKSPACE_SYNC_ENDPOINT, {
@@ -429,15 +433,13 @@ export async function loadAnalysisFromText(
 ): Promise<void> {
   const { workspace, analysis, layout } = parseWorkspaceFileText(text);
   rememberWorkspace(workspace);
-  useEntityGraphStore.getState().loadAnalysis(
-    analysis,
-    buildResolvedLayout(analysis, layout),
-    {
+  useEntityGraphStore
+    .getState()
+    .loadAnalysis(analysis, buildResolvedLayout(analysis, layout), {
       fileName: source?.fileName ?? undefined,
       filePath: source?.filePath ?? undefined,
       fileHandle: source?.fileHandle ?? undefined,
-    },
-  );
+    });
   await syncWorkspaceState(workspace, source);
 }
 

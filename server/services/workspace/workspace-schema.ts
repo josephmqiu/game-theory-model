@@ -66,6 +66,11 @@ CREATE TABLE IF NOT EXISTS runs (
   updated_at INTEGER NOT NULL
 );
 
+-- NOTE: provider_session_bindings and command_receipts are local runtime state,
+-- not portable workspace data. They are colocated here as accepted debt in
+-- schema v1 because the DB is not yet exported. A future phase should split
+-- these into a separate local-runtime-state.sqlite so the portable workspace
+-- boundary is enforced at the storage layer.
 CREATE TABLE IF NOT EXISTS provider_session_bindings (
   thread_id TEXT PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -118,4 +123,3 @@ PRAGMA user_version = ${WORKSPACE_SCHEMA_VERSION};
 export function initializeWorkspaceSchema(db: DatabaseSync): void {
   db.exec(WORKSPACE_SCHEMA_SQL);
 }
-

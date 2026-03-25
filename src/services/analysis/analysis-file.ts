@@ -1,8 +1,5 @@
 import type { Analysis, LayoutState } from "@/types/entity";
-import type {
-  Workspace,
-  WorkspaceEnvelopeV4,
-} from "@/types/workspace";
+import type { Workspace, WorkspaceEnvelopeV4 } from "@/types/workspace";
 import { validateAnalysis } from "@/services/entity/entity-validation";
 
 export class AnalysisFileError extends Error {
@@ -186,10 +183,15 @@ export function createWorkspaceFromAnalysis(
 // ── Serialize / Parse ──
 
 export function serializeWorkspaceFile(workspace: Workspace): string {
+  const portable = { ...workspace };
+  for (const field of NON_PORTABLE_WORKSPACE_FIELDS) {
+    delete (portable as Record<string, unknown>)[field];
+  }
+
   const file: WorkspaceEnvelopeV4 = {
     type: WORKSPACE_FILE_TYPE,
     version: WORKSPACE_FILE_VERSION,
-    workspace,
+    workspace: portable,
   };
   return JSON.stringify(file, null, 2);
 }
@@ -258,9 +260,7 @@ function parseWorkspaceEnvelope(
   };
 }
 
-export function parseWorkspaceFileText(
-  text: string,
-): ParseWorkspaceFileResult {
+export function parseWorkspaceFileText(text: string): ParseWorkspaceFileResult {
   let raw: unknown;
 
   try {
@@ -287,9 +287,10 @@ export function parseWorkspaceFileText(
   return parsed;
 }
 
-export function parseAnalysisFileText(
-  text: string,
-): { analysis: Analysis; layout: LayoutState } {
+export function parseAnalysisFileText(text: string): {
+  analysis: Analysis;
+  layout: LayoutState;
+} {
   const parsed = parseWorkspaceFileText(text);
   return {
     analysis: parsed.analysis,

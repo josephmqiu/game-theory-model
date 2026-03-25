@@ -1,5 +1,4 @@
 import type { DatabaseSync } from "node:sqlite";
-import { stringifyJson } from "./sqlite-json";
 import type { RunRecord } from "./workspace-types";
 
 export interface RunRepository {
@@ -67,7 +66,9 @@ export function createRunRepository(db: DatabaseSync): RunRepository {
       return row ? mapRunRow(row) : undefined;
     },
     listRunsByThreadId(threadId) {
-      return listStatement.all({ $threadId: threadId }).map((row) => mapRunRow(row));
+      return listStatement
+        .all({ $threadId: threadId })
+        .map((row) => mapRunRow(row));
     },
     upsertRun(run) {
       upsertStatement.run({
@@ -95,8 +96,4 @@ export function createRunRepository(db: DatabaseSync): RunRepository {
       clearStatement.run();
     },
   };
-}
-
-export function createRunSnapshot(input: unknown): string {
-  return stringifyJson(input);
 }

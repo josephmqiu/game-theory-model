@@ -33,7 +33,6 @@ export interface WorkspaceDatabase {
   providerSessionBindings: ProviderSessionBindingRepository;
   commandReceipts: CommandReceiptStore;
   close(): void;
-  resetForTest(): void;
 }
 
 let sharedWorkspaceDatabase: WorkspaceDatabase | null = null;
@@ -79,19 +78,6 @@ export function createWorkspaceDatabase(
         db.close();
       }
     },
-    resetForTest() {
-      if (db.isOpen) {
-        db.exec(`
-          DELETE FROM command_receipts;
-          DELETE FROM provider_session_bindings;
-          DELETE FROM activities;
-          DELETE FROM messages;
-          DELETE FROM runs;
-          DELETE FROM threads;
-          DELETE FROM workspaces;
-        `);
-      }
-    },
   };
 }
 
@@ -119,4 +105,3 @@ export function resetWorkspaceDatabaseForTest(): void {
     }
   }
 }
-

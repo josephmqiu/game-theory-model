@@ -1,9 +1,8 @@
 import type { DatabaseSync } from "node:sqlite";
-import { stringifyJson } from "./sqlite-json";
 import type { ActivityRecord } from "./workspace-types";
 
 export interface ActivityRepository {
-  appendActivity(activity: ActivityRecord): ActivityRecord;
+  upsertActivity(activity: ActivityRecord): ActivityRecord;
   getActivity(id: string): ActivityRecord | undefined;
   listActivitiesByRunId(runId: string): ActivityRecord[];
   clear(): void;
@@ -52,7 +51,7 @@ export function createActivityRepository(db: DatabaseSync): ActivityRepository {
   const clearStatement = db.prepare(`DELETE FROM activities`);
 
   return {
-    appendActivity(activity) {
+    upsertActivity(activity) {
       upsertStatement.run({
         $id: activity.id,
         $workspaceId: activity.workspaceId,
@@ -75,15 +74,12 @@ export function createActivityRepository(db: DatabaseSync): ActivityRepository {
       return row ? mapActivityRow(row) : undefined;
     },
     listActivitiesByRunId(runId) {
-      return listStatement.all({ $runId: runId }).map((row) => mapActivityRow(row));
+      return listStatement
+        .all({ $runId: runId })
+        .map((row) => mapActivityRow(row));
     },
     clear() {
       clearStatement.run();
     },
   };
 }
-
-export function createActivitySnapshot(input: unknown): string {
-  return stringifyJson(input);
-}
-

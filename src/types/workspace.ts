@@ -7,6 +7,7 @@ export interface WorkspaceThreadSummary {
   title: string;
   createdAt: number;
   updatedAt: number;
+  /** Application-level run correlation ID (not a provider session ID). Safe for portable storage. */
   latestRunId?: string;
   latestMessageAt?: number;
   summary?: string;
@@ -51,4 +52,3 @@ export interface WorkspaceEnvelopeV4 {
   version: 4;
   workspace: Workspace;
 }
-

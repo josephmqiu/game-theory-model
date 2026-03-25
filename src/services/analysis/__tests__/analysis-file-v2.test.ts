@@ -144,7 +144,10 @@ describe("v3 entity analysis file format", () => {
   });
 
   it("always saves analysis files as the workspace envelope format", () => {
-    const text = serializeAnalysisFile(createTestAnalysis(), createTestLayout());
+    const text = serializeAnalysisFile(
+      createTestAnalysis(),
+      createTestLayout(),
+    );
     const parsed = JSON.parse(text);
 
     expect(parsed.type).toBe("game-theory-workspace");
@@ -272,5 +275,26 @@ describe("v3 entity analysis file format", () => {
     expect(text).not.toContain("commandReceipts");
     expect(text).not.toContain("runtimeLogs");
     expect(text).not.toContain('"logs"');
+  });
+
+  it("strips non-portable fields from a contaminated workspace on serialize", () => {
+    const workspace = createTestWorkspace() as unknown as Record<
+      string,
+      unknown
+    >;
+    workspace.commandReceipts = [{ id: "r1", kind: "analysis.reset" }];
+    workspace.providerSessionBindings = [{ threadId: "t1", sessionId: "s1" }];
+    workspace.runtimeLogs = ["log entry"];
+    workspace.logs = ["another log"];
+
+    const text = serializeWorkspaceFile(workspace as unknown as Workspace);
+
+    expect(text).not.toContain("commandReceipts");
+    expect(text).not.toContain("providerSessionBindings");
+    expect(text).not.toContain("runtimeLogs");
+    expect(text).not.toContain('"logs"');
+
+    const parsed = parseWorkspaceFileText(text);
+    expect(parsed.workspace.id).toBe("workspace-1");
   });
 });

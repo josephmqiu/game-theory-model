@@ -1,5 +1,4 @@
 import type { DatabaseSync } from "node:sqlite";
-import { stringifyJson } from "./sqlite-json";
 import type { ThreadRecord } from "./workspace-types";
 
 export interface ThreadRepository {
@@ -53,7 +52,9 @@ export function createThreadRepository(db: DatabaseSync): ThreadRepository {
       return row ? mapThreadRow(row) : undefined;
     },
     listThreadsByWorkspaceId(workspaceId) {
-      return listStatement.all({ $workspaceId: workspaceId }).map((row) => mapThreadRow(row));
+      return listStatement
+        .all({ $workspaceId: workspaceId })
+        .map((row) => mapThreadRow(row));
     },
     upsertThread(thread) {
       upsertStatement.run({
@@ -75,8 +76,4 @@ export function createThreadRepository(db: DatabaseSync): ThreadRepository {
       clearStatement.run();
     },
   };
-}
-
-export function createThreadSnapshot(input: unknown): string {
-  return stringifyJson(input);
 }
