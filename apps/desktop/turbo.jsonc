@@ -7,16 +7,16 @@
       "outputs": ["dist-electron/**"],
     },
     "dev": {
-      "dependsOn": ["t3#build"],
+      "dependsOn": ["@gta/server#build"],
       "persistent": true,
     },
     "start": {
-      "dependsOn": ["build", "@gta/web#build", "t3#build"],
+      "dependsOn": ["build", "@gta/web#build", "@gta/server#build"],
       "cache": false,
       "persistent": true,
     },
     "smoke-test": {
-      "dependsOn": ["build", "@gta/web#build", "t3#build"],
+      "dependsOn": ["build", "@gta/web#build", "@gta/server#build"],
       "cache": false,
       "outputs": [],
     },

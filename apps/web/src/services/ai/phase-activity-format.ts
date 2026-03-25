@@ -1,5 +1,5 @@
 import i18n from "@/i18n";
-import type { AnalysisPhaseActivityEvent } from "./analysis-client";
+import type { AnalysisPhaseActivityEvent } from "@/transport/analysis-rpc";
 
 /**
  * Convert a phase_activity SSE event into a human-readable status line.

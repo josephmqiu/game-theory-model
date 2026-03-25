@@ -1,5 +1,5 @@
 {
-  "name": "t3",
+  "name": "@gta/server",
   "version": "0.0.14",
   "license": "MIT",
   "repository": {
@@ -8,7 +8,7 @@
     "directory": "apps/server"
   },
   "bin": {
-    "t3": "./dist/index.mjs"
+    "gta-server": "./dist/index.mjs"
   },
   "files": [
     "dist"

@@ -1,4 +1,4 @@
-// Architecture: In browser mode, state comes via analysis-client SSE.
+// Architecture: In browser mode, state comes via WebSocket transport.
 // In Electron, local mutations still work.
 // This store is now purely a local state container — no server-side service imports.
 
@@ -13,10 +13,7 @@ import type {
   LayoutState,
 } from "@/types/entity";
 import { RELATIONSHIP_CATEGORY } from "@/types/entity";
-import type {
-  MethodologyPhase,
-  PhaseStatus,
-} from "@/types/methodology";
+import type { MethodologyPhase, PhaseStatus } from "@/types/methodology";
 import { normalizePhaseStates, upsertPhaseStatus } from "@/types/methodology";
 
 // ── State shape ──
@@ -68,7 +65,7 @@ interface EntityGraphStoreState extends AnalysisFileReference {
   }) => void;
   markDirty: () => void;
 
-  // SSE sync methods — used by analysis-client for renderer-side updates
+  // Server sync methods — used by WS transport adapters for renderer-side updates
   upsertEntityFromServer: (entity: AnalysisEntity) => void;
   removeEntityFromServer: (id: string) => void;
   upsertRelationshipFromServer: (relationship: AnalysisRelationship) => void;
@@ -177,7 +174,7 @@ function reconcileLayoutState(
 
 // ── Store ──
 // This store is a LOCAL state container for the renderer.
-// In browser mode, state arrives via analysis-client SSE (syncAnalysis).
+// In browser mode, state arrives via WebSocket transport (syncAnalysis).
 // Local mutations (addEntities, updateEntity, etc.) still work for Electron mode
 // and for offline/backward-compat scenarios.
 

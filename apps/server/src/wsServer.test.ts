@@ -27,6 +27,7 @@ import {
 } from "./serverLayers";
 
 import {
+  EDITORS,
   EventId,
   ORCHESTRATION_WS_CHANNELS,
   ORCHESTRATION_WS_METHODS,

@@ -11,11 +11,7 @@ const RENDERER_DIRS = [
 ];
 
 // Specific renderer-side service files
-const RENDERER_FILES = [
-  "src/router.tsx",
-  "src/services/ai/analysis-client.ts",
-  "src/services/ai/ai-service.ts",
-];
+const RENDERER_FILES = ["src/router.tsx", "src/services/ai/ai-service.ts"];
 
 // Server-only modules — importing these from renderer code causes runtime crashes
 const FORBIDDEN_PATTERNS = [
@@ -73,7 +69,7 @@ describe("runtime boundary — renderer must not import server-only modules", ()
         expect(
           violation,
           `Renderer file imports server-only module "${forbidden}". ` +
-            `This will crash in the browser. Use analysis-client instead.`,
+            `This will crash in the browser. Use the transport layer instead.`,
         ).toBeUndefined();
       }
     });

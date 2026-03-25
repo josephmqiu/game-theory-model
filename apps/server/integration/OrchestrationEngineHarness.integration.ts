@@ -22,7 +22,7 @@ import {
   Stream,
 } from "effect";
 
-import { GitCore, type GitCoreShape } from "../src/git/Services/GitCore.ts";
+import { GitCoreStub } from "../src/git/Services/GitCore.ts";
 import {
   TextGeneration,
   type TextGenerationShape,
@@ -43,7 +43,7 @@ import { makeCodexAdapterLive } from "../src/provider/Layers/CodexAdapter.ts";
 import { CodexAdapter } from "../src/provider/Services/CodexAdapter.ts";
 import { ProviderService } from "../src/provider/Services/ProviderService.ts";
 import { AnalyticsService } from "../src/telemetry/Services/AnalyticsService.ts";
-// CheckpointReactor removed (code-editor feature)
+import { AnalysisReactorLive } from "../src/orchestration/Layers/AnalysisReactor.ts";
 import { OrchestrationEngineLive } from "../src/orchestration/Layers/OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "../src/orchestration/Layers/ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "../src/orchestration/Layers/ProjectionSnapshotQuery.ts";
@@ -171,8 +171,7 @@ export interface OrchestrationIntegrationHarness {
   readonly engine: OrchestrationEngineShape;
   readonly snapshotQuery: ProjectionSnapshotQuery["Service"];
   readonly providerService: ProviderService["Service"];
-  readonly checkpointStore: CheckpointStore["Service"];
-  // checkpointRepository removed (checkpoint persistence stripped)
+  // checkpointStore removed (checkpoint persistence stripped)
   readonly pendingApprovalRepository: ProjectionPendingApprovalRepository["Service"];
   readonly waitForThread: (
     threadId: string,
@@ -305,40 +304,32 @@ export const makeOrchestrationIntegrationHarness = (
           Layer.provide(AnalyticsService.layerTest),
         );
 
-    const checkpointStoreLayer = CheckpointStoreLive.pipe(
-      Layer.provide(GitCoreLive),
-    );
     const runtimeServicesLayer = Layer.mergeAll(
       orchestrationLayer,
       OrchestrationProjectionSnapshotQueryLive,
       // ProjectionCheckpointRepositoryLive removed (checkpoint persistence stripped)
       ProjectionPendingApprovalRepositoryLive,
-      checkpointStoreLayer,
       providerLayer,
       RuntimeReceiptBusLive,
     );
     const runtimeIngestionLayer = ProviderRuntimeIngestionLive.pipe(
       Layer.provideMerge(runtimeServicesLayer),
     );
-    const gitCoreLayer = Layer.succeed(GitCore, {
-      renameBranch: (input: Parameters<GitCoreShape["renameBranch"]>[0]) =>
-        Effect.succeed({ branch: input.newBranch }),
-    } as unknown as GitCoreShape);
     const textGenerationLayer = Layer.succeed(TextGeneration, {
       generateBranchName: () => Effect.succeed({ branch: null }),
     } as unknown as TextGenerationShape);
     const providerCommandReactorLayer = ProviderCommandReactorLive.pipe(
       Layer.provideMerge(runtimeServicesLayer),
-      Layer.provideMerge(gitCoreLayer),
+      Layer.provideMerge(GitCoreStub),
       Layer.provideMerge(textGenerationLayer),
     );
-    const checkpointReactorLayer = CheckpointReactorLive.pipe(
+    const analysisReactorLayer = AnalysisReactorLive.pipe(
       Layer.provideMerge(runtimeServicesLayer),
     );
     const orchestrationReactorLayer = OrchestrationReactorLive.pipe(
       Layer.provideMerge(runtimeIngestionLayer),
       Layer.provideMerge(providerCommandReactorLayer),
-      Layer.provideMerge(checkpointReactorLayer),
+      Layer.provideMerge(analysisReactorLayer),
     );
     const layer = orchestrationReactorLayer.pipe(
       Layer.provide(persistenceLayer),
@@ -363,11 +354,7 @@ export const makeOrchestrationIntegrationHarness = (
       "load ProviderService service",
       () => runtime.runPromise(Effect.service(ProviderService)),
     ).pipe(Effect.orDie);
-    const checkpointStore = yield* tryRuntimePromise(
-      "load CheckpointStore service",
-      () => runtime.runPromise(Effect.service(CheckpointStore)),
-    ).pipe(Effect.orDie);
-    // checkpointRepository removed (checkpoint persistence stripped)
+    // checkpointStore removed (checkpoint persistence stripped)
     const pendingApprovalRepository = yield* tryRuntimePromise(
       "load ProjectionPendingApprovalRepository service",
       () =>
@@ -535,8 +522,7 @@ export const makeOrchestrationIntegrationHarness = (
       engine,
       snapshotQuery,
       providerService,
-      checkpointStore,
-      // checkpointRepository removed (checkpoint persistence stripped)
+      // checkpointStore removed (checkpoint persistence stripped)
       pendingApprovalRepository,
       waitForThread,
       waitForDomainEvent,

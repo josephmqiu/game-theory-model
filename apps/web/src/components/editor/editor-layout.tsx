@@ -27,6 +27,7 @@ import { useElectronMenu } from "@/hooks/use-electron-menu";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { initAppStorage } from "@/utils/app-storage";
 import {
+  initTransportLayer,
   startAnalysis as transportStartAnalysis,
   abortAnalysis as transportAbortAnalysis,
   hydrateAnalysisState as transportHydrateAnalysisState,
@@ -181,10 +182,24 @@ export default function EditorLayout() {
   });
 
   useEffect(() => {
+    // Derive WebSocket URL: desktop bridge > env var > window.location fallback
+    const bridgeUrl = (
+      window as { desktopBridge?: { getWsUrl: () => string | null } }
+    ).desktopBridge?.getWsUrl?.();
+    const envUrl = import.meta.env.VITE_WS_URL as string | undefined;
+    const wsUrl =
+      bridgeUrl ||
+      envUrl ||
+      `ws://${window.location.hostname}:${window.location.port || "3001"}`;
+
+    const teardownTransport = initTransportLayer(wsUrl);
+
     void initAppStorage().then(() => {
       useAgentSettingsStore.getState().hydrate();
       void transportHydrateAnalysisState();
     });
+
+    return teardownTransport;
   }, []);
 
   useEffect(() => {

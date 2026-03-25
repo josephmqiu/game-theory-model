@@ -1,11 +1,17 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "//": "TODO: Rename T3CODE_* env vars to GTA_* across the entire codebase",
   "globalEnv": [
     "PORT",
     "VITE_WS_URL",
     "VITE_DEV_SERVER_URL",
     "ELECTRON_RENDERER_PORT",
+    "GTA_LOG_WS_EVENTS",
+    "GTA_MODE",
+    "GTA_PORT",
+    "GTA_NO_BROWSER",
+    "GTA_HOME",
+    "GTA_AUTH_TOKEN",
+    "GTA_DESKTOP_WS_URL",
     "T3CODE_LOG_WS_EVENTS",
     "T3CODE_MODE",
     "T3CODE_PORT",

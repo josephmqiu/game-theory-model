@@ -215,7 +215,7 @@ export async function* streamChat(
             // Entity sync from chat — handle at transport layer
             if (chunk.type === "entity_snapshot") {
               if (chunk.analysis) {
-                import("./analysis-client").then((m) => {
+                import("@/transport/analysis-rpc").then((m) => {
                   m.handleChatEntitySnapshot(chunk.analysis);
                 });
               }
