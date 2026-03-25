@@ -1,5 +1,6 @@
 import * as analysisOrchestrator from "../agents/analysis-agent";
 import * as entityGraphService from "./entity-graph-service";
+import * as revalidationService from "./revalidation-service";
 import { normalizeRequestedActivePhases } from "./analysis-phase-selection";
 import {
   createCommandBus,
@@ -147,6 +148,18 @@ const defaultHandlers: CommandHandlerMap = {
       deleted: true,
       id: command.id,
       revision: entityGraphService.getRevision(),
+    };
+  },
+  async "revalidation.start"(command) {
+    const { runId } = revalidationService.revalidate(
+      command.staleEntityIds,
+      command.startPhase,
+    );
+    const status = revalidationService.getRevalStatus(runId);
+    return {
+      runId,
+      status: status?.status ?? "running",
+      startPhase: command.startPhase,
     };
   },
 };

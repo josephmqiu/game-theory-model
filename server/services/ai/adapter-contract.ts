@@ -55,12 +55,7 @@ export interface RuntimeStructuredTurnInput {
   signal?: AbortSignal;
   timeoutMs?: number;
   webSearch?: boolean;
-  onActivity?: (activity: {
-    kind: "note" | "tool" | "web-search";
-    message: string;
-    toolName?: string;
-    query?: string;
-  }) => void;
+  onActivity?: AnalysisActivityCallback;
 }
 
 export interface RuntimeSessionDiagnostics {

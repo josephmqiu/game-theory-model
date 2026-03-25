@@ -85,6 +85,12 @@ export interface RelationshipDeleteCommandInput extends CommandMetadataInput {
   id: string;
 }
 
+export interface RevalidationStartCommandInput extends CommandMetadataInput {
+  kind: "revalidation.start";
+  startPhase: string;
+  staleEntityIds?: string[];
+}
+
 export type SubmitCommand =
   | AnalysisStartCommandInput
   | AnalysisAbortCommandInput
@@ -93,7 +99,8 @@ export type SubmitCommand =
   | EntityUpdateCommandInput
   | EntityDeleteCommandInput
   | RelationshipCreateCommandInput
-  | RelationshipDeleteCommandInput;
+  | RelationshipDeleteCommandInput
+  | RevalidationStartCommandInput;
 
 export type Command = SubmitCommand & ResolvedCommandMetadata;
 
@@ -129,6 +136,12 @@ export interface DeleteResult {
   revision: number;
 }
 
+export interface RevalidationStartResult {
+  runId: string;
+  status: string;
+  startPhase: string;
+}
+
 export interface CommandResultMap {
   "analysis.start": AnalysisStartResult;
   "analysis.abort": AnalysisAbortResult;
@@ -138,6 +151,7 @@ export interface CommandResultMap {
   "entity.delete": DeleteResult;
   "relationship.create": AnalysisRelationship;
   "relationship.delete": DeleteResult;
+  "revalidation.start": RevalidationStartResult;
 }
 
 export interface CommandErrorInfo {

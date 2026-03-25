@@ -1,52 +1,61 @@
-import { configDefaults, defineConfig } from 'vitest/config'
-import { devtools } from '@tanstack/devtools-vite'
-import { tanstackStart } from '@tanstack/react-start/plugin/vite'
-import viteReact from '@vitejs/plugin-react'
-import viteTsConfigPaths from 'vite-tsconfig-paths'
-import { fileURLToPath, URL } from 'node:url'
-import tailwindcss from '@tailwindcss/vite'
-import { nitro } from 'nitro/vite'
+import { configDefaults, defineConfig } from "vitest/config";
+import { devtools } from "@tanstack/devtools-vite";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import viteReact from "@vitejs/plugin-react";
+import viteTsConfigPaths from "vite-tsconfig-paths";
+import { fileURLToPath, URL } from "node:url";
+import tailwindcss from "@tailwindcss/vite";
+import { nitro } from "nitro/vite";
 
-const isElectronBuild = process.env.BUILD_TARGET === 'electron'
+const isElectronBuild = process.env.BUILD_TARGET === "electron";
 
 const config = defineConfig({
   test: {
     teardownTimeout: 1000,
     server: {
       deps: {
-        inline: ['react-markdown', 'remark-gfm'],
+        inline: ["react-markdown", "remark-gfm"],
       },
     },
     exclude: [
       ...configDefaults.exclude,
-      'legacy/**',
-      '.output/**',
-      'dist/**',
-      'electron-dist/**',
-      'dist-electron/**',
+      "legacy/**",
+      ".output/**",
+      "dist/**",
+      "electron-dist/**",
+      "dist-electron/**",
+      ".claude/**",
     ],
   },
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
-  assetsInclude: ['**/*.wasm'],
+  assetsInclude: ["**/*.wasm"],
   plugins: [
     devtools(),
     nitro({
-      rollupConfig: { external: [/^@sentry\//, 'canvas', 'jsdom', 'cssstyle', 'canvaskit-wasm'] },
-      serverDir: './server',
-      ...(isElectronBuild ? { preset: 'node-server' } : {}),
+      rollupConfig: {
+        external: [
+          /^@sentry\//,
+          "canvas",
+          "jsdom",
+          "cssstyle",
+          "canvaskit-wasm",
+        ],
+      },
+      serverDir: "./server",
+      ...(isElectronBuild ? { preset: "node-server" } : {}),
     }),
     // this is the plugin that enables path aliases
     viteTsConfigPaths({
-      projects: ['./tsconfig.json'],
+      projects: ["./tsconfig.json"],
     }),
     tailwindcss(),
     tanstackStart(),
     viteReact(),
   ],
-})
+});
 
-export default config
+export default config;

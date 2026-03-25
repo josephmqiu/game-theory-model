@@ -34,7 +34,11 @@ vi.mock("../utils/ai-logger", () => ({
 }));
 
 vi.mock("../agents/analysis-agent", () => ({
-  runFull: vi.fn().mockResolvedValue({ runId: "run-mock-123" }),
+  runFull: vi.fn().mockResolvedValue({
+    runId: "run-mock-123",
+    workspaceId: "ws-mock-1",
+    threadId: "thread-mock-1",
+  }),
   getActiveStatus: vi.fn().mockReturnValue(null),
   abort: vi.fn(),
 }));
@@ -118,11 +122,14 @@ describe("handleStartAnalysis", () => {
       undefined,
       undefined,
       undefined,
+      expect.objectContaining({
+        commandId: expect.any(String),
+        producer: "command-handlers",
+      }),
     );
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       runId: "run-mock-123",
       status: "started",
-      estimatedPhases: 3,
     });
   });
 
@@ -141,6 +148,10 @@ describe("handleStartAnalysis", () => {
       "claude-sonnet-4-20250514",
       undefined,
       undefined,
+      expect.objectContaining({
+        commandId: expect.any(String),
+        producer: "command-handlers",
+      }),
     );
   });
 });
@@ -355,11 +366,11 @@ describe("relationship CRUD tools", () => {
 });
 
 describe("analysis control tools", () => {
-  it("reruns from the earliest specified phase", async () => {
+  it("reruns from the earliest specified phase via the command bus", async () => {
     const { revalidate } = await import("../services/revalidation-service");
 
     const result = JSON.parse(
-      handleRerunPhases({
+      await handleRerunPhases({
         phases: ["baseline-model", "situational-grounding"],
       }),
     );
@@ -372,9 +383,9 @@ describe("analysis control tools", () => {
     });
   });
 
-  it("rejects unsupported rerun phase values", () => {
+  it("rejects unsupported rerun phase values", async () => {
     expect(
-      JSON.parse(handleRerunPhases({ phases: ["totally-invalid"] })),
+      JSON.parse(await handleRerunPhases({ phases: ["totally-invalid"] })),
     ).toEqual({
       error: "Unsupported phases: totally-invalid",
     });

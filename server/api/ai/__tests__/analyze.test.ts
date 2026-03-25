@@ -70,6 +70,10 @@ describe("/api/ai/analyze", () => {
       "gpt-5.4",
       undefined,
       runtime,
+      expect.objectContaining({
+        commandId: expect.any(String),
+        producer: "command-handlers",
+      }),
     );
     expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 202);
     expect(result).toEqual({ runId: "run-123" });

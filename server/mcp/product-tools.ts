@@ -502,19 +502,27 @@ export async function handleDeleteRelationship(args: {
   return JSON.stringify(receipt.result);
 }
 
-export function handleRerunPhases(args: { phases: string[] }): string {
+export async function handleRerunPhases(args: {
+  phases: string[];
+}): Promise<string> {
   const earliestPhase = resolveEarliestRerunPhase(args.phases);
   if (typeof earliestPhase !== "string") {
     return JSON.stringify(earliestPhase);
   }
 
-  const { runId } = revalidationService.revalidate(undefined, earliestPhase);
-  const status = revalidationService.getRevalStatus(runId);
-  return JSON.stringify({
-    runId,
-    status: status?.status ?? "running",
+  const receipt = await submitCommand({
+    kind: "revalidation.start",
     startPhase: earliestPhase,
+    requestedBy: "mcp:rerun_phases",
   });
+
+  if (receipt.status === "conflicted" || receipt.status === "failed") {
+    return JSON.stringify({
+      error: receipt.error?.message ?? "Failed to start revalidation",
+    });
+  }
+
+  return JSON.stringify(receipt.result);
 }
 
 export async function handleAbortAnalysis(): Promise<string> {
@@ -587,7 +595,10 @@ export async function handleToolCall(
           isError: false,
         };
       case "rerun_phases":
-        return { text: handleRerunPhases(toolArgs as never), isError: false };
+        return {
+          text: await handleRerunPhases(toolArgs as never),
+          isError: false,
+        };
       case "abort_analysis":
         return { text: await handleAbortAnalysis(), isError: false };
       default:

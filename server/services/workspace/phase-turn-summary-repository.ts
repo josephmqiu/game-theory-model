@@ -15,9 +15,7 @@ export interface PhaseTurnSummaryRepository {
   clear(): void;
 }
 
-function mapPhaseTurnRow(
-  row: Record<string, unknown>,
-): PhaseTurnSummaryState {
+function mapPhaseTurnRow(row: Record<string, unknown>): PhaseTurnSummaryState {
   return parseJsonColumn<PhaseTurnSummaryState>(
     row.phase_turn_json,
     "phase_turn_summaries.phase_turn_json",
@@ -87,6 +85,11 @@ export function createPhaseTurnSummaryRepository(
        phase_turn_json = excluded.phase_turn_json,
        updated_at = excluded.updated_at`,
   );
+  const getByIdStatement = db.prepare(
+    `SELECT phase_turn_json
+     FROM phase_turn_summaries
+     WHERE id = $id`,
+  );
   const clearStatement = db.prepare(`DELETE FROM phase_turn_summaries`);
 
   return {
@@ -123,10 +126,7 @@ export function createPhaseTurnSummaryRepository(
         $updatedAt: phaseTurn.updatedAt,
       });
 
-      const stored = getLatestStatement.get({
-        $runId: phaseTurn.runId,
-        $phase: phaseTurn.phase,
-      });
+      const stored = getByIdStatement.get({ $id: phaseTurn.id });
       if (!stored) {
         throw new Error(
           `Failed to persist phase turn "${phaseTurn.id}" for run "${phaseTurn.runId}".`,

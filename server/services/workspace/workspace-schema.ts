@@ -100,6 +100,10 @@ CREATE TABLE IF NOT EXISTS command_receipts (
 `;
 
 const FINAL_SCHEMA_SQL = `
+-- No FK constraints on domain_events: events are an audit trail that may
+-- reference entities not yet created (e.g. thread.created events are appended
+-- in the same batch that creates the thread projection row). Orphan cleanup
+-- is handled by workspace deletion logic, not by cascade constraints.
 CREATE TABLE IF NOT EXISTS domain_events (
   sequence INTEGER PRIMARY KEY AUTOINCREMENT,
   id TEXT NOT NULL UNIQUE,
@@ -164,9 +168,9 @@ function getUserVersion(db: DatabaseSync): number {
 }
 
 function getColumnNames(db: DatabaseSync, tableName: string): Set<string> {
-  const rows = db
-    .prepare(`PRAGMA table_info(${tableName})`)
-    .all() as Array<{ name?: string }>;
+  const rows = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{
+    name?: string;
+  }>;
   return new Set(rows.map((row) => String(row.name)));
 }
 
@@ -194,7 +198,12 @@ function recordMigration(db: DatabaseSync, version: number): void {
 }
 
 function ensureProjectionColumns(db: DatabaseSync): void {
-  ensureColumn(db, "threads", "is_primary", "is_primary INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(
+    db,
+    "threads",
+    "is_primary",
+    "is_primary INTEGER NOT NULL DEFAULT 0",
+  );
   ensureColumn(db, "threads", "latest_run_id", "latest_run_id TEXT");
   ensureColumn(
     db,
@@ -257,8 +266,6 @@ export function initializeWorkspaceSchema(db: DatabaseSync): void {
 
   const currentVersion = getUserVersion(db);
   if (currentVersion < WORKSPACE_SCHEMA_VERSION) {
-    recordMigration(db, WORKSPACE_SCHEMA_VERSION);
-  } else if (currentVersion === 0) {
     recordMigration(db, WORKSPACE_SCHEMA_VERSION);
   }
 }

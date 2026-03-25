@@ -33,7 +33,9 @@ describe("domain-event-store", () => {
     });
   }
 
-  function appendStartedRun(database: ReturnType<typeof createWorkspaceDatabase>) {
+  function appendStartedRun(
+    database: ReturnType<typeof createWorkspaceDatabase>,
+  ) {
     const context = database.eventStore.resolveThreadContext({
       workspaceId: "workspace-1",
       producer: "test",
@@ -338,6 +340,36 @@ describe("domain-event-store", () => {
         ["reval-1", "revalidation"],
       ]),
     );
+
+    database.close();
+  });
+
+  it("projects run.completed directly onto the run state without a trailing run.status.changed", () => {
+    const database = createDatabase();
+    const { context } = appendStartedRun(database);
+
+    database.eventStore.appendEvents([
+      {
+        type: "run.completed",
+        workspaceId: context.workspaceId,
+        threadId: context.threadId,
+        runId: "run-1",
+        payload: { finishedAt: 500 },
+        occurredAt: 500,
+        producer: "test",
+      },
+    ]);
+
+    const run = database.runs.getRunState("run-1");
+    expect(run).toMatchObject({
+      status: "completed",
+      finishedAt: 500,
+    });
+
+    const thread = database.threads.getThreadState(context.threadId);
+    expect(thread).toMatchObject({
+      latestTerminalStatus: "completed",
+    });
 
     database.close();
   });

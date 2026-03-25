@@ -69,7 +69,10 @@ function transaction<T>(db: DatabaseSync, run: () => T): T {
   }
 }
 
-function updateThreadActivity(thread: ThreadState, occurredAt: number): ThreadState {
+function updateThreadActivity(
+  thread: ThreadState,
+  occurredAt: number,
+): ThreadState {
   return {
     ...thread,
     latestActivityAt:
@@ -103,7 +106,9 @@ function projectEvent(
       return;
     }
     case "run.created": {
-      const existingThread = repositories.threads.getThreadState(event.threadId);
+      const existingThread = repositories.threads.getThreadState(
+        event.threadId,
+      );
       if (!existingThread) {
         throw new Error(
           `Cannot project run "${event.runId}" without thread "${event.threadId}".`,
@@ -182,10 +187,11 @@ function projectEvent(
         );
       }
 
-      const latestTurn = repositories.phaseTurnSummaries.getLatestPhaseTurnByRunAndPhase(
-        event.runId!,
-        event.payload.phase,
-      );
+      const latestTurn =
+        repositories.phaseTurnSummaries.getLatestPhaseTurnByRunAndPhase(
+          event.runId!,
+          event.payload.phase,
+        );
       const turn: PhaseTurnSummaryState = {
         id: `phase-turn-${nanoid()}`,
         workspaceId: event.workspaceId,
@@ -204,10 +210,11 @@ function projectEvent(
       return;
     }
     case "phase.completed": {
-      const latestTurn = repositories.phaseTurnSummaries.getLatestPhaseTurnByRunAndPhase(
-        event.runId!,
-        event.payload.phase,
-      );
+      const latestTurn =
+        repositories.phaseTurnSummaries.getLatestPhaseTurnByRunAndPhase(
+          event.runId!,
+          event.payload.phase,
+        );
       if (!latestTurn) {
         throw new Error(
           `Cannot project phase completion for "${event.payload.phase}" without an active phase turn.`,
@@ -272,20 +279,17 @@ function projectEvent(
         );
       }
 
-      if (
-        event.type === "run.failed" ||
-        event.type === "run.cancelled"
-      ) {
+      if (event.type === "run.failed" || event.type === "run.cancelled") {
         const activePhase =
           event.type === "run.failed"
             ? event.payload.activePhase
             : event.payload.activePhase;
         if (activePhase) {
-        const latestTurn =
-          repositories.phaseTurnSummaries.getLatestPhaseTurnByRunAndPhase(
-            event.runId!,
-            activePhase,
-          );
+          const latestTurn =
+            repositories.phaseTurnSummaries.getLatestPhaseTurnByRunAndPhase(
+              event.runId!,
+              activePhase,
+            );
           if (latestTurn && latestTurn.status === "running") {
             repositories.phaseTurnSummaries.upsertPhaseTurnSummary({
               ...latestTurn,
@@ -300,17 +304,28 @@ function projectEvent(
         }
       }
 
+      const terminalStatus =
+        event.type === "run.completed"
+          ? "completed"
+          : event.type === "run.failed"
+            ? "failed"
+            : "cancelled";
+
+      repositories.runs.upsertRunState({
+        ...run,
+        status: terminalStatus,
+        finishedAt: event.payload.finishedAt,
+        failure:
+          event.type === "run.failed" ? event.payload.error : run.failure,
+        updatedAt: event.occurredAt,
+      });
+
       const thread = repositories.threads.getThreadState(run.threadId);
       if (thread) {
         repositories.threads.upsertThreadState({
           ...thread,
           latestRunId: run.id,
-          latestTerminalStatus:
-            event.type === "run.completed"
-              ? "completed"
-              : event.type === "run.failed"
-                ? "failed"
-                : "cancelled",
+          latestTerminalStatus: terminalStatus,
           updatedAt: Math.max(thread.updatedAt, event.occurredAt),
         });
       }
@@ -325,7 +340,9 @@ function resolveRunContext(
 ): { workspaceId: string; threadId: string } {
   const run = repositories.runs.getRunState(runId);
   if (!run) {
-    throw new Error(`Cannot resolve workspace/thread for missing run "${runId}".`);
+    throw new Error(
+      `Cannot resolve workspace/thread for missing run "${runId}".`,
+    );
   }
 
   return {
@@ -380,9 +397,9 @@ export function createDomainEventStore(input: {
           const priorForRun =
             rawEvent.runId === undefined
               ? undefined
-              : (lastEventByRunId.has(rawEvent.runId)
-                  ? lastEventByRunId.get(rawEvent.runId)
-                  : input.domainEvents.getLastEventByRunId(rawEvent.runId));
+              : lastEventByRunId.has(rawEvent.runId)
+                ? lastEventByRunId.get(rawEvent.runId)
+                : input.domainEvents.getLastEventByRunId(rawEvent.runId);
 
           const stored = input.domainEvents.insertRecord({
             id: rawEvent.id ?? createDomainEventId(),

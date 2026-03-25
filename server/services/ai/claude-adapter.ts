@@ -256,7 +256,9 @@ export async function createChatMcpServer() {
       "Rerun analysis from the earliest specified phase",
       { phases: z.array(z.string()) },
       async (args) => ({
-        content: [{ type: "text" as const, text: handleRerunPhases(args) }],
+        content: [
+          { type: "text" as const, text: await handleRerunPhases(args) },
+        ],
       }),
     ),
     tool("abort_analysis", "Abort the active analysis", {}, async () => ({
