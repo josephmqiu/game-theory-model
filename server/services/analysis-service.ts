@@ -36,7 +36,6 @@ import {
   centralThesisDataSchema,
   metaCheckDataSchema,
 } from "../../src/types/entity";
-import { PHASE_PROMPTS } from "../agents/phase-prompts";
 import { createRunLogger } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
 import type { AnalysisActivityCallback } from "./ai/analysis-activity";
@@ -46,6 +45,7 @@ import type {
   RuntimeStructuredTurnInput,
 } from "./ai/adapter-contract";
 import { getRuntimeAdapter } from "./ai/adapter-contract";
+import { buildPhasePromptBundle } from "./analysis-prompt-provenance";
 
 async function loadAnalysisAdapter(
   provider?: string,
@@ -123,6 +123,7 @@ export interface PhaseContext {
   model?: string;
   runtime?: PhaseRuntimeContext;
   runId?: string;
+  phaseTurnId?: string;
   signal?: AbortSignal;
   logger?: RunLogger;
   onActivity?: AnalysisActivityCallback;
@@ -551,79 +552,6 @@ function validatePhaseOutput(
   }
 
   return { success: true, entities, relationships };
-}
-
-// ── Prompt building (ported from phase-worker.ts) ──
-
-function buildPrompt(
-  phase: SupportedPhase,
-  topic: string,
-  priorContext?: string,
-  revisionRetryInstruction?: string,
-  revisionSystemPrompt?: string,
-  runtime?: PhaseRuntimeContext,
-): { system: string; user: string } {
-  const systemPrompt = revisionSystemPrompt ?? PHASE_PROMPTS[phase];
-  const effortGuidance = buildAnalysisEffortGuidance(
-    runtime?.effortLevel ?? "medium",
-  );
-  const parts = [
-    `Analyze the following topic:\n\n${topic}`,
-    [
-      "Analysis-mode tool guidance:",
-      "- Use web search to verify current, time-sensitive facts before finalizing entities.",
-      "- Use get_entity, query_entities, and query_relationships to inspect prior analytical state when helpful.",
-      "- If you detect a disruption trigger, call request_loopback(trigger_type, justification).",
-      "- Return only the final JSON object that matches the schema.",
-    ].join("\n"),
-    effortGuidance,
-  ];
-  if (priorContext) {
-    parts.push(
-      `\nPrior phase output (use as context, reference entity ids where relevant):\n\n${priorContext}`,
-    );
-  }
-  if (revisionRetryInstruction) {
-    parts.push(`\nRevision retry instruction:\n\n${revisionRetryInstruction}`);
-  }
-  return { system: systemPrompt, user: parts.join("\n") };
-}
-
-function buildAnalysisEffortGuidance(
-  effortLevel: AnalysisEffortLevel,
-): string {
-  const guidanceByEffort: Record<AnalysisEffortLevel, string[]> = {
-    low: [
-      "Analysis effort guidance:",
-      '- Effort level: "low".',
-      "- Prioritize core players, objectives, strategic structure, and the minimum research needed for a useful answer.",
-      "- Avoid unnecessary branching or long-tail possibilities.",
-      "- Prefer concise outputs when uncertainty is high.",
-    ],
-    medium: [
-      "Analysis effort guidance:",
-      '- Effort level: "medium".',
-      "- Preserve the current expected level of depth and research coverage.",
-      "- Focus on the main strategic structure without expanding scope unnecessarily.",
-      "- Keep uncertainty visible, but do not add extra alternatives unless they materially help the analysis.",
-    ],
-    high: [
-      "Analysis effort guidance:",
-      '- Effort level: "high".',
-      "- Allow broader research and comparison when it materially improves the analysis.",
-      "- Surface more alternatives, assumptions, and uncertainty explicitly.",
-      "- Spend more attention on edge cases and competing explanations.",
-    ],
-    max: [
-      "Analysis effort guidance:",
-      '- Effort level: "max".',
-      "- Use the broadest research and comparison budget available when it materially improves the analysis.",
-      "- Surface alternatives, uncertainty, and edge cases explicitly.",
-      "- Prefer completeness over brevity when the evidence supports it.",
-    ],
-  };
-
-  return guidanceByEffort[effortLevel].join("\n");
 }
 
 // ── Text-based fallback parsing (ported from phase-worker.ts) ──
@@ -1920,17 +1848,20 @@ export async function runPhase(
       `svc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     );
 
-  const { system, user } = buildPrompt(
+  const { system, user } = buildPhasePromptBundle({
     phase,
     topic,
-    context?.priorEntities,
-    context?.revisionRetryInstruction,
-    context?.revisionSystemPrompt,
-    context?.runtime,
-  );
+    priorContext: context?.priorEntities,
+    revisionRetryInstruction: context?.revisionRetryInstruction,
+    revisionSystemPrompt: context?.revisionSystemPrompt,
+    effortLevel: context?.runtime?.effortLevel ?? "medium",
+  });
   const model = context?.model ?? "claude-sonnet-4-20250514";
   const provider = context?.provider ?? "anthropic";
   const schema = buildOutputSchema(phase);
+  const logContext = context?.phaseTurnId
+    ? { phaseTurnId: context.phaseTurnId }
+    : {};
   const emitActivity = (message: string, toolName?: string) => {
     context?.onActivity?.({
       kind: toolName === "WebSearch" ? "web-search" : toolName ? "tool" : "note",
@@ -1940,7 +1871,12 @@ export async function runPhase(
   };
   let emittedResearchMilestone = false;
 
-  logger.log("analysis-service", "phase-start", { phase, provider, model });
+  logger.log("analysis-service", "phase-start", {
+    phase,
+    provider,
+    model,
+    ...logContext,
+  });
   emitActivity("Preparing phase analysis");
 
   // Check abort signal before adapter call
@@ -1953,7 +1889,11 @@ export async function runPhase(
     };
   }
 
-  logger.log("analysis-service", "adapter-call", { phase, provider });
+  logger.log("analysis-service", "adapter-call", {
+    phase,
+    provider,
+    ...logContext,
+  });
 
   let adapterResult: unknown;
   try {
@@ -2000,6 +1940,7 @@ export async function runPhase(
     logger.warn("analysis-service", "text-fallback", {
       phase,
       responseLength: adapterResult.length,
+      ...logContext,
     });
     emitActivity("Validating structured output");
     const textResult = parseTextResponse(adapterResult, phase);
@@ -2008,15 +1949,18 @@ export async function runPhase(
         phase,
         entities: textResult.entities.length,
         relationships: textResult.relationships.length,
+        ...logContext,
       });
     } else {
       logger.warn("analysis-service", "validation-failed", {
         phase,
         error: textResult.error,
+        ...logContext,
       });
       logger.capture("analysis-service", "raw-response", {
         phase,
         raw: adapterResult,
+        ...logContext,
       });
     }
     return textResult;
@@ -2040,6 +1984,7 @@ export async function runPhase(
       Array.isArray((adapterResult as Record<string, unknown>).relationships)
         ? (adapterResult as Record<string, unknown[]>).relationships.length
         : 0,
+    ...logContext,
   });
 
   emitActivity("Validating structured output");
@@ -2049,15 +1994,18 @@ export async function runPhase(
       phase,
       entities: validated.entities.length,
       relationships: validated.relationships.length,
+      ...logContext,
     });
   } else {
     logger.warn("analysis-service", "validation-failed", {
       phase,
       error: validated.error,
+      ...logContext,
     });
     logger.capture("analysis-service", "raw-response", {
       phase,
       raw: JSON.stringify(adapterResult),
+      ...logContext,
     });
   }
   return validated;
@@ -2065,8 +2013,27 @@ export async function runPhase(
 
 // ── Exported for testing ──
 
+function buildPromptForTest(
+  phase: SupportedPhase,
+  topic: string,
+  priorContext?: string,
+  revisionRetryInstruction?: string,
+  revisionSystemPrompt?: string,
+  runtime?: PhaseRuntimeContext,
+) {
+  const { system, user } = buildPhasePromptBundle({
+    phase,
+    topic,
+    priorContext,
+    revisionRetryInstruction,
+    revisionSystemPrompt,
+    effortLevel: runtime?.effortLevel ?? "medium",
+  });
+  return { system, user };
+}
+
 export {
-  buildPrompt as _buildPrompt,
+  buildPromptForTest as _buildPrompt,
   parseTextResponse as _parseTextResponse,
   validatePhaseOutput as _validatePhaseOutput,
   trimJsonLike as _trimJsonLike,

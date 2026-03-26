@@ -50,6 +50,13 @@ describe("command-handlers durable run start", () => {
       threadId: result.threadId,
       workspaceId: result.workspaceId,
       kind: "analysis",
+      promptProvenance: {
+        analysisType: "game-theory",
+        templateSetIdentity: "game-theory:phase-prompts",
+      },
+      logCorrelation: {
+        logFileName: `${result.runId}.jsonl`,
+      },
     });
   });
 });

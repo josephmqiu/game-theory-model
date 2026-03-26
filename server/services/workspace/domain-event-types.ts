@@ -10,6 +10,9 @@ import type {
   ActivityScope,
   ActivityStatus,
   DurableMessageRole,
+  PhaseTurnPromptProvenance,
+  RunPromptProvenance,
+  RunSummaryState,
 } from "../../../shared/types/workspace-state";
 
 export const DOMAIN_EVENT_SCHEMA_VERSION = 1;
@@ -43,6 +46,10 @@ export interface RunCreatedEventPayload {
   status: "running";
   startedAt: number;
   totalPhases: number;
+  promptProvenance: RunPromptProvenance;
+  logCorrelation: {
+    logFileName: string;
+  };
 }
 
 export interface RunStatusChangedEventPayload {
@@ -55,19 +62,26 @@ export interface RunStatusChangedEventPayload {
   failedPhase?: MethodologyPhase;
   failure?: RuntimeError;
   finishedAt?: number | null;
+  summary?: RunSummaryState;
+  latestPhaseTurnId?: string;
 }
 
 export interface PhaseStartedEventPayload {
   phase: MethodologyPhase;
+  phaseTurnId: string;
+  turnIndex: number;
+  promptProvenance: PhaseTurnPromptProvenance;
 }
 
 export interface PhaseCompletedEventPayload {
   phase: MethodologyPhase;
+  phaseTurnId: string;
   summary: PhaseSummary;
 }
 
 export interface PhaseActivityRecordedEventPayload {
   phase: MethodologyPhase;
+  phaseTurnId: string;
   kind: AnalysisPhaseActivityKind;
   message: string;
   toolName?: string;
@@ -100,18 +114,24 @@ export interface ThreadActivityRecordedEventPayload {
 
 export interface RunCompletedEventPayload {
   finishedAt: number;
+  summary: RunSummaryState;
+  latestPhaseTurnId?: string;
 }
 
 export interface RunFailedEventPayload {
   activePhase: MethodologyPhase | null;
+  latestPhaseTurnId?: string;
   failedPhase?: MethodologyPhase;
   error: RuntimeError;
   finishedAt: number;
+  summary: RunSummaryState;
 }
 
 export interface RunCancelledEventPayload {
   activePhase: MethodologyPhase | null;
+  latestPhaseTurnId?: string;
   finishedAt: number;
+  summary: RunSummaryState;
 }
 
 export interface DomainEventPayloadMap {

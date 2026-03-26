@@ -4,6 +4,7 @@ import { parseJsonColumn, stringifyJson } from "./sqlite-json";
 import type { MethodologyPhase } from "../../../shared/types/methodology";
 
 export interface PhaseTurnSummaryRepository {
+  getPhaseTurnSummary(id: string): PhaseTurnSummaryState | undefined;
   getLatestPhaseTurnByRunAndPhase(
     runId: string,
     phase: MethodologyPhase,
@@ -48,6 +49,13 @@ export function createPhaseTurnSummaryRepository(
        phase,
        turn_index,
        status,
+       prompt_template_identity,
+       prompt_template_hash,
+       prompt_effective_prompt_hash,
+       prompt_variant,
+       activity_last_kind,
+       activity_last_message,
+       activity_last_occurred_at,
        started_at,
        completed_at,
        last_event_id,
@@ -63,6 +71,13 @@ export function createPhaseTurnSummaryRepository(
        $phase,
        $turnIndex,
        $status,
+       $promptTemplateIdentity,
+       $promptTemplateHash,
+       $promptEffectivePromptHash,
+       $promptVariant,
+       $activityLastKind,
+       $activityLastMessage,
+       $activityLastOccurredAt,
        $startedAt,
        $completedAt,
        $lastEventId,
@@ -78,6 +93,13 @@ export function createPhaseTurnSummaryRepository(
        phase = excluded.phase,
        turn_index = excluded.turn_index,
        status = excluded.status,
+       prompt_template_identity = excluded.prompt_template_identity,
+       prompt_template_hash = excluded.prompt_template_hash,
+       prompt_effective_prompt_hash = excluded.prompt_effective_prompt_hash,
+       prompt_variant = excluded.prompt_variant,
+       activity_last_kind = excluded.activity_last_kind,
+       activity_last_message = excluded.activity_last_message,
+       activity_last_occurred_at = excluded.activity_last_occurred_at,
        started_at = excluded.started_at,
        completed_at = excluded.completed_at,
        last_event_id = excluded.last_event_id,
@@ -93,6 +115,10 @@ export function createPhaseTurnSummaryRepository(
   const clearStatement = db.prepare(`DELETE FROM phase_turn_summaries`);
 
   return {
+    getPhaseTurnSummary(id) {
+      const row = getByIdStatement.get({ $id: id });
+      return row ? mapPhaseTurnRow(row) : undefined;
+    },
     getLatestPhaseTurnByRunAndPhase(runId, phase) {
       const row = getLatestStatement.get({
         $runId: runId,
@@ -114,6 +140,15 @@ export function createPhaseTurnSummaryRepository(
         $phase: phaseTurn.phase,
         $turnIndex: phaseTurn.turnIndex,
         $status: phaseTurn.status,
+        $promptTemplateIdentity: phaseTurn.promptProvenance.templateIdentity,
+        $promptTemplateHash: phaseTurn.promptProvenance.templateHash,
+        $promptEffectivePromptHash:
+          phaseTurn.promptProvenance.effectivePromptHash,
+        $promptVariant: phaseTurn.promptProvenance.variant,
+        $activityLastKind: phaseTurn.activitySummary?.lastKind ?? null,
+        $activityLastMessage: phaseTurn.activitySummary?.lastMessage ?? null,
+        $activityLastOccurredAt:
+          phaseTurn.activitySummary?.lastOccurredAt ?? null,
         $startedAt: phaseTurn.startedAt,
         $completedAt: phaseTurn.completedAt,
         $lastEventId: phaseTurn.lastEventId,

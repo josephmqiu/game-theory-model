@@ -319,6 +319,15 @@ describe("thread-store", () => {
             completed: 1,
             total: 10,
           },
+          promptProvenance: {
+            analysisType: "game-theory",
+            activePhases: ["situational-grounding"],
+            templateSetIdentity: "game-theory:phase-prompts",
+            templateSetHash: "template-set-hash",
+          },
+          logCorrelation: {
+            logFileName: "run-1.jsonl",
+          },
           startedAt: 123,
           finishedAt: null,
           createdAt: 123,

@@ -19,6 +19,10 @@ import type {
 import type { PhaseResult } from "../services/analysis-service";
 import { runPhase } from "../services/analysis-service";
 import {
+  buildPhasePromptBundle,
+  createRunPromptProvenance,
+} from "../services/analysis-prompt-provenance";
+import {
   SUPPORTED_ANALYSIS_PHASES,
   getCanonicalAnalysisPhaseIndex,
   normalizeRequestedActivePhases,
@@ -51,6 +55,8 @@ import type {
   AnyDomainEventInput,
   DomainEventInput,
 } from "../services/workspace/domain-event-types";
+import { nanoid } from "nanoid";
+import type { RunSummaryState } from "../../shared/types/workspace-state";
 
 // ── Types ──
 
@@ -108,9 +114,12 @@ interface ActiveRun {
   editQueue: Array<() => void>;
   startTime: number;
   phasesCompleted: MethodologyPhase[];
+  phaseTurnCounts: Partial<Record<MethodologyPhase, number>>;
+  activePhaseTurnId: string | null;
   abortController: AbortController;
   error?: string;
   logger: RunLogger;
+  promptProvenance: ReturnType<typeof createRunPromptProvenance>;
 }
 
 // ── Constants ──
@@ -341,6 +350,30 @@ function appendRunLifecycleEvents(
   );
 }
 
+function nextPhaseTurn(run: ActiveRun, phase: MethodologyPhase): {
+  phaseTurnId: string;
+  turnIndex: number;
+} {
+  const turnIndex = (run.phaseTurnCounts[phase] ?? 0) + 1;
+  run.phaseTurnCounts[phase] = turnIndex;
+  return {
+    phaseTurnId: `phase-turn-${nanoid()}`,
+    turnIndex,
+  };
+}
+
+function buildRunSummary(
+  run: ActiveRun,
+  statusMessage: string,
+  failedPhase?: MethodologyPhase,
+): RunSummaryState {
+  return {
+    statusMessage,
+    failedPhase,
+    completedPhases: run.phasesCompleted.length,
+  };
+}
+
 // ── Retry classification ──
 
 export function classifyFailure(error: string): FailureClass {
@@ -505,10 +538,28 @@ async function executeSinglePhase(
   run.activePhase = phase;
   runtimeStatus.setActivePhase(run.runId, phase);
   entityGraphService.setPhaseStatus(phase, "running");
+  const priorContext = buildPriorContext(
+    phase,
+    run.phasesCompleted,
+    run.activePhases,
+  );
+  const { phaseTurnId, turnIndex } = nextPhaseTurn(run, phase);
+  run.activePhaseTurnId = phaseTurnId;
+  const phasePromptBundle = buildPhasePromptBundle({
+    phase,
+    topic,
+    priorContext,
+    effortLevel: run.runtime.effortLevel,
+  });
   appendRunLifecycleEvents(run, "analysis-agent", [
     {
       type: "phase.started",
-      payload: { phase },
+      payload: {
+        phase,
+        phaseTurnId,
+        turnIndex,
+        promptProvenance: phasePromptBundle.promptProvenance,
+      },
       occurredAt: phaseStart,
     },
     {
@@ -520,18 +571,14 @@ async function executeSinglePhase(
           completed: run.phasesCompleted.length,
           total: run.activePhases.length,
         },
+        summary: buildRunSummary(run, `Running ${phase}`),
+        latestPhaseTurnId: phaseTurnId,
       },
       occurredAt: phaseStart,
     },
   ]);
   emitProgress({ type: "phase_started", phase, runId: run.runId });
-  run.logger.log("orchestrator", "phase-start", { phase });
-
-  const priorContext = buildPriorContext(
-    phase,
-    run.phasesCompleted,
-    run.activePhases,
-  );
+  run.logger.log("orchestrator", "phase-start", { phase, phaseTurnId });
 
   let lastError = "";
 
@@ -547,6 +594,7 @@ async function executeSinglePhase(
       run.logger.error("orchestrator", "run-timeout", {
         elapsedMs: Date.now() - run.startTime,
         phase,
+        phaseTurnId,
       });
       entityGraphService.setPhaseStatus(phase, "failed");
       return { success: false, error: "Run-level timeout exceeded" };
@@ -554,6 +602,7 @@ async function executeSinglePhase(
 
     run.logger.log("orchestrator", "attempt-start", {
       phase,
+      phaseTurnId,
       attempt: attempt + 1,
       maxAttempts: MAX_RETRIES + 1,
     });
@@ -581,6 +630,7 @@ async function executeSinglePhase(
           model: run.model,
           runtime: run.runtime,
           runId: run.runId,
+          phaseTurnId,
           signal: phaseAbort.signal,
           logger: run.logger,
           onActivity: (activity) => {
@@ -589,6 +639,7 @@ async function executeSinglePhase(
                 type: "phase.activity.recorded",
                 payload: {
                   phase,
+                  phaseTurnId,
                   kind: activity.kind,
                   message: activity.message,
                   ...(activity.toolName ? { toolName: activity.toolName } : {}),
@@ -620,6 +671,7 @@ async function executeSinglePhase(
       if (classification === "terminal") {
         run.logger.error("orchestrator", "phase-failed", {
           phase,
+          phaseTurnId,
           elapsedMs: Date.now() - phaseStart,
           failureKind: classification,
           lastError,
@@ -629,6 +681,7 @@ async function executeSinglePhase(
       }
       run.logger.warn("orchestrator", "attempt-failed", {
         phase,
+        phaseTurnId,
         attempt: attempt + 1,
         error: lastError,
         classification,
@@ -660,6 +713,7 @@ async function executeSinglePhase(
         if (commitResult.status === "retry_required") {
           run.logger.warn("orchestrator", "truncation-retry", {
             phase,
+            phaseTurnId,
             originalAiEntityCount: commitResult.originalAiEntityCount,
             returnedAiEntityCount: commitResult.returnedAiEntityCount,
           });
@@ -669,6 +723,40 @@ async function executeSinglePhase(
             "Retrying phase after validation/transport issue",
           );
 
+          const retryPromptBundle = buildPhasePromptBundle({
+            phase,
+            topic,
+            priorContext,
+            revisionRetryInstruction: commitResult.retryMessage,
+            effortLevel: run.runtime.effortLevel,
+          });
+          appendRunLifecycleEvents(run, "analysis-agent", [
+            {
+              type: "phase.started",
+              payload: {
+                phase,
+                phaseTurnId,
+                turnIndex,
+                promptProvenance: retryPromptBundle.promptProvenance,
+              },
+              occurredAt: Date.now(),
+            },
+            {
+              type: "run.status.changed",
+              payload: {
+                status: "running",
+                activePhase: phase,
+                progress: {
+                  completed: run.phasesCompleted.length,
+                  total: run.activePhases.length,
+                },
+                summary: buildRunSummary(run, `Retrying ${phase}`),
+                latestPhaseTurnId: phaseTurnId,
+              },
+              occurredAt: Date.now(),
+            },
+          ]);
+
           const retryResult = await Promise.race([
             runPhase(phase, topic, {
               priorEntities: priorContext,
@@ -677,6 +765,7 @@ async function executeSinglePhase(
               model: run.model,
               runtime: run.runtime,
               runId: run.runId,
+              phaseTurnId,
               signal: phaseAbort.signal,
               logger: run.logger,
               onActivity: (activity) => {
@@ -685,6 +774,7 @@ async function executeSinglePhase(
                     type: "phase.activity.recorded",
                     payload: {
                       phase,
+                      phaseTurnId,
                       kind: activity.kind,
                       message: activity.message,
                       ...(activity.toolName
@@ -750,6 +840,7 @@ async function executeSinglePhase(
         if (classification === "terminal") {
           run.logger.error("orchestrator", "phase-failed", {
             phase,
+            phaseTurnId,
             elapsedMs: Date.now() - phaseStart,
             failureKind: classification,
             lastError,
@@ -759,6 +850,7 @@ async function executeSinglePhase(
         }
         run.logger.warn("orchestrator", "attempt-failed", {
           phase,
+          phaseTurnId,
           attempt: attempt + 1,
           error: lastError,
           classification,
@@ -778,6 +870,7 @@ async function executeSinglePhase(
 
       run.logger.log("orchestrator", "phase-complete", {
         phase,
+        phaseTurnId,
         elapsedMs: Date.now() - phaseStart,
         entities: result.entities.length,
         relationships: result.relationships.length,
@@ -796,6 +889,7 @@ async function executeSinglePhase(
           type: "phase.completed",
           payload: {
             phase,
+            phaseTurnId,
             summary,
           },
           occurredAt: Date.now(),
@@ -809,6 +903,11 @@ async function executeSinglePhase(
               completed: run.phasesCompleted.length + 1,
               total: run.activePhases.length,
             },
+            summary: {
+              statusMessage: `Completed ${phase}`,
+              completedPhases: run.phasesCompleted.length + 1,
+            },
+            latestPhaseTurnId: phaseTurnId,
           },
           occurredAt: Date.now(),
         },
@@ -833,6 +932,7 @@ async function executeSinglePhase(
     if (classification === "terminal") {
       run.logger.error("orchestrator", "phase-failed", {
         phase,
+        phaseTurnId,
         elapsedMs: Date.now() - phaseStart,
         failureKind: classification,
         lastError,
@@ -842,6 +942,7 @@ async function executeSinglePhase(
     }
     run.logger.warn("orchestrator", "attempt-failed", {
       phase,
+      phaseTurnId,
       attempt: attempt + 1,
       error: lastError,
       classification,
@@ -859,6 +960,7 @@ async function executeSinglePhase(
   // Exhausted retries
   run.logger.error("orchestrator", "phase-failed", {
     phase,
+    phaseTurnId,
     elapsedMs: Date.now() - phaseStart,
     failureKind: "retries-exhausted",
     lastError,
@@ -886,13 +988,13 @@ export async function runFull(
   }
 
   const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const logger = createRunLogger(runId);
   const analysisTimer = timer();
   const abortController = new AbortController();
   const runtime = resolveAnalysisRuntime(runtimeOverrides);
   const activePhases = normalizeRequestedActivePhases(
     runtimeOverrides?.activePhases,
   );
+  const promptProvenance = createRunPromptProvenance(activePhases);
   const autoRevalidationEnabled =
     activePhases.length === SUPPORTED_PHASES.length;
   const workspaceDatabase = getWorkspaceDatabase();
@@ -909,6 +1011,10 @@ export async function runFull(
       occurredAt: runOccurredAt,
     },
   );
+  const logger = createRunLogger(runId, {
+    workspaceId: resolvedThreadContext.workspaceId,
+    threadId: resolvedThreadContext.threadId,
+  });
 
   if (
     !runtimeStatus.acquireRun("analysis", runId, {
@@ -954,8 +1060,11 @@ export async function runFull(
     editQueue: [],
     startTime: Date.now(),
     phasesCompleted: [],
+    phaseTurnCounts: {},
+    activePhaseTurnId: null,
     abortController,
     logger,
+    promptProvenance,
   };
 
   try {
@@ -976,6 +1085,10 @@ export async function runFull(
           status: "running",
           startedAt: runOccurredAt,
           totalPhases: activePhases.length,
+          promptProvenance,
+          logCorrelation: {
+            logFileName: `${runId}.jsonl`,
+          },
         },
         commandId: persistenceContext.commandId,
         receiptId: persistenceContext.receiptId,
@@ -995,6 +1108,10 @@ export async function runFull(
           progress: {
             completed: 0,
             total: activePhases.length,
+          },
+          summary: {
+            statusMessage: "Run started",
+            completedPhases: 0,
           },
         },
         commandId: persistenceContext.commandId,
@@ -1056,6 +1173,7 @@ export async function runFull(
             if (runTimeoutSignal.aborted && !signal?.aborted) {
               run.status = "failed";
               run.error = "Run-level timeout exceeded";
+              const finishedAt = Date.now();
               const failure = runtimeStatus.inferRuntimeError(
                 "Run-level timeout exceeded",
                 run.provider as "anthropic" | "openai" | undefined,
@@ -1065,11 +1183,17 @@ export async function runFull(
                   type: "run.failed",
                   payload: {
                     activePhase: phase,
+                    latestPhaseTurnId: run.activePhaseTurnId ?? undefined,
                     failedPhase: phase,
                     error: failure,
-                    finishedAt: Date.now(),
+                    finishedAt,
+                    summary: buildRunSummary(
+                      run,
+                      "Run-level timeout exceeded",
+                      phase,
+                    ),
                   },
-                  occurredAt: Date.now(),
+                  occurredAt: finishedAt,
                 },
                 {
                   type: "run.status.changed",
@@ -1082,9 +1206,15 @@ export async function runFull(
                     },
                     failedPhase: phase,
                     failure,
-                    finishedAt: Date.now(),
+                    finishedAt,
+                    summary: buildRunSummary(
+                      run,
+                      "Run-level timeout exceeded",
+                      phase,
+                    ),
+                    latestPhaseTurnId: run.activePhaseTurnId ?? undefined,
                   },
-                  occurredAt: Date.now(),
+                  occurredAt: finishedAt,
                 },
               ]);
               runtimeStatus.releaseRun(run.runId, "failed", {
@@ -1104,14 +1234,17 @@ export async function runFull(
             } else {
               run.status = "interrupted";
               run.error = "Run was aborted";
+              const finishedAt = Date.now();
               appendRunLifecycleEvents(run, "analysis-agent", [
                 {
                   type: "run.cancelled",
                   payload: {
                     activePhase: phase,
-                    finishedAt: Date.now(),
+                    latestPhaseTurnId: run.activePhaseTurnId ?? undefined,
+                    finishedAt,
+                    summary: buildRunSummary(run, "Run was aborted"),
                   },
-                  occurredAt: Date.now(),
+                  occurredAt: finishedAt,
                 },
                 {
                   type: "run.status.changed",
@@ -1122,9 +1255,11 @@ export async function runFull(
                       completed: run.phasesCompleted.length,
                       total: run.activePhases.length,
                     },
-                    finishedAt: Date.now(),
+                    finishedAt,
+                    summary: buildRunSummary(run, "Run was aborted"),
+                    latestPhaseTurnId: run.activePhaseTurnId ?? undefined,
                   },
-                  occurredAt: Date.now(),
+                  occurredAt: finishedAt,
                 },
               ]);
               runtimeStatus.releaseRun(run.runId, "cancelled");
@@ -1135,6 +1270,7 @@ export async function runFull(
           } else {
             run.status = "failed";
             run.error = result.error;
+            const finishedAt = Date.now();
             const failure = runtimeStatus.inferRuntimeError(
               result.error ?? "Unknown error",
               run.provider as "anthropic" | "openai" | undefined,
@@ -1144,11 +1280,17 @@ export async function runFull(
                 type: "run.failed",
                 payload: {
                   activePhase: phase,
+                  latestPhaseTurnId: run.activePhaseTurnId ?? undefined,
                   failedPhase: phase,
                   error: failure,
-                  finishedAt: Date.now(),
+                  finishedAt,
+                  summary: buildRunSummary(
+                    run,
+                    result.error ?? "Unknown error",
+                    phase,
+                  ),
                 },
-                occurredAt: Date.now(),
+                occurredAt: finishedAt,
               },
               {
                 type: "run.status.changed",
@@ -1161,9 +1303,15 @@ export async function runFull(
                   },
                   failedPhase: phase,
                   failure,
-                  finishedAt: Date.now(),
+                  finishedAt,
+                  summary: buildRunSummary(
+                    run,
+                    result.error ?? "Unknown error",
+                    phase,
+                  ),
+                  latestPhaseTurnId: run.activePhaseTurnId ?? undefined,
                 },
-                occurredAt: Date.now(),
+                occurredAt: finishedAt,
               },
             ]);
             runtimeStatus.releaseRun(run.runId, "failed", {
@@ -1209,6 +1357,7 @@ export async function runFull(
               });
               run.status = "failed";
               run.error = `Loopback convergence failed after ${passCount} passes`;
+              const finishedAt = Date.now();
               const failure = runtimeStatus.inferRuntimeError(
                 run.error,
                 run.provider as "anthropic" | "openai" | undefined,
@@ -1218,11 +1367,13 @@ export async function runFull(
                   type: "run.failed",
                   payload: {
                     activePhase: phase,
+                    latestPhaseTurnId: run.activePhaseTurnId ?? undefined,
                     failedPhase: phase,
                     error: failure,
-                    finishedAt: Date.now(),
+                    finishedAt,
+                    summary: buildRunSummary(run, run.error, phase),
                   },
-                  occurredAt: Date.now(),
+                  occurredAt: finishedAt,
                 },
                 {
                   type: "run.status.changed",
@@ -1235,9 +1386,11 @@ export async function runFull(
                     },
                     failedPhase: phase,
                     failure,
-                    finishedAt: Date.now(),
+                    finishedAt,
+                    summary: buildRunSummary(run, run.error, phase),
+                    latestPhaseTurnId: run.activePhaseTurnId ?? undefined,
                   },
-                  occurredAt: Date.now(),
+                  occurredAt: finishedAt,
                 },
               ]);
               runtimeStatus.releaseRun(run.runId, "failed", {
@@ -1274,13 +1427,16 @@ export async function runFull(
       if (run.status === "running") {
         run.status = "completed";
         run.activePhase = null;
+        const finishedAt = Date.now();
         appendRunLifecycleEvents(run, "analysis-agent", [
           {
             type: "run.completed",
             payload: {
-              finishedAt: Date.now(),
+              finishedAt,
+              summary: buildRunSummary(run, "Run completed"),
+              latestPhaseTurnId: run.activePhaseTurnId ?? undefined,
             },
-            occurredAt: Date.now(),
+            occurredAt: finishedAt,
           },
           {
             type: "run.status.changed",
@@ -1291,9 +1447,11 @@ export async function runFull(
                 completed: run.phasesCompleted.length,
                 total: run.activePhases.length,
               },
-              finishedAt: Date.now(),
+              finishedAt,
+              summary: buildRunSummary(run, "Run completed"),
+              latestPhaseTurnId: run.activePhaseTurnId ?? undefined,
             },
-            occurredAt: Date.now(),
+            occurredAt: finishedAt,
           },
         ]);
 

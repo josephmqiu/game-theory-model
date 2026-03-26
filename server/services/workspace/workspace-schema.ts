@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const WORKSPACE_SCHEMA_VERSION = 2;
+export const WORKSPACE_SCHEMA_VERSION = 3;
 
 const BASE_SCHEMA_SQL = `
 PRAGMA foreign_keys = ON;
@@ -59,6 +59,23 @@ CREATE TABLE IF NOT EXISTS runs (
   model TEXT,
   effort TEXT,
   status TEXT NOT NULL,
+  run_kind TEXT,
+  active_phase TEXT,
+  progress_completed INTEGER NOT NULL DEFAULT 0,
+  progress_total INTEGER NOT NULL DEFAULT 0,
+  failure_json TEXT,
+  latest_activity_at INTEGER,
+  latest_activity_kind TEXT,
+  latest_activity_message TEXT,
+  summary_status_message TEXT,
+  summary_failed_phase TEXT,
+  summary_completed_phases INTEGER NOT NULL DEFAULT 0,
+  prompt_analysis_type TEXT,
+  prompt_active_phases_json TEXT,
+  prompt_template_set_identity TEXT,
+  prompt_template_set_hash TEXT,
+  latest_phase_turn_id TEXT,
+  log_file_name TEXT,
   run_json TEXT NOT NULL,
   started_at INTEGER NOT NULL,
   finished_at INTEGER,
@@ -131,6 +148,13 @@ CREATE TABLE IF NOT EXISTS phase_turn_summaries (
   phase TEXT NOT NULL,
   turn_index INTEGER NOT NULL,
   status TEXT NOT NULL,
+  prompt_template_identity TEXT,
+  prompt_template_hash TEXT,
+  prompt_effective_prompt_hash TEXT,
+  prompt_variant TEXT,
+  activity_last_kind TEXT,
+  activity_last_message TEXT,
+  activity_last_occurred_at INTEGER,
   started_at INTEGER NOT NULL,
   completed_at INTEGER,
   last_event_id TEXT NOT NULL,
@@ -242,6 +266,50 @@ function ensureProjectionColumns(db: DatabaseSync): void {
     "latest_activity_message",
     "latest_activity_message TEXT",
   );
+  ensureColumn(
+    db,
+    "runs",
+    "summary_status_message",
+    "summary_status_message TEXT",
+  );
+  ensureColumn(
+    db,
+    "runs",
+    "summary_failed_phase",
+    "summary_failed_phase TEXT",
+  );
+  ensureColumn(
+    db,
+    "runs",
+    "summary_completed_phases",
+    "summary_completed_phases INTEGER NOT NULL DEFAULT 0",
+  );
+  ensureColumn(
+    db,
+    "runs",
+    "prompt_analysis_type",
+    "prompt_analysis_type TEXT",
+  );
+  ensureColumn(
+    db,
+    "runs",
+    "prompt_active_phases_json",
+    "prompt_active_phases_json TEXT",
+  );
+  ensureColumn(
+    db,
+    "runs",
+    "prompt_template_set_identity",
+    "prompt_template_set_identity TEXT",
+  );
+  ensureColumn(
+    db,
+    "runs",
+    "prompt_template_set_hash",
+    "prompt_template_set_hash TEXT",
+  );
+  ensureColumn(db, "runs", "latest_phase_turn_id", "latest_phase_turn_id TEXT");
+  ensureColumn(db, "runs", "log_file_name", "log_file_name TEXT");
 
   ensureColumn(db, "activities", "phase", "phase TEXT");
   ensureColumn(
@@ -259,6 +327,49 @@ function ensureProjectionColumns(db: DatabaseSync): void {
   ensureColumn(db, "activities", "occurred_at", "occurred_at INTEGER");
   ensureColumn(db, "activities", "scope", "scope TEXT");
   ensureColumn(db, "activities", "status", "status TEXT");
+
+  ensureColumn(
+    db,
+    "phase_turn_summaries",
+    "prompt_template_identity",
+    "prompt_template_identity TEXT",
+  );
+  ensureColumn(
+    db,
+    "phase_turn_summaries",
+    "prompt_template_hash",
+    "prompt_template_hash TEXT",
+  );
+  ensureColumn(
+    db,
+    "phase_turn_summaries",
+    "prompt_effective_prompt_hash",
+    "prompt_effective_prompt_hash TEXT",
+  );
+  ensureColumn(
+    db,
+    "phase_turn_summaries",
+    "prompt_variant",
+    "prompt_variant TEXT",
+  );
+  ensureColumn(
+    db,
+    "phase_turn_summaries",
+    "activity_last_kind",
+    "activity_last_kind TEXT",
+  );
+  ensureColumn(
+    db,
+    "phase_turn_summaries",
+    "activity_last_message",
+    "activity_last_message TEXT",
+  );
+  ensureColumn(
+    db,
+    "phase_turn_summaries",
+    "activity_last_occurred_at",
+    "activity_last_occurred_at INTEGER",
+  );
 }
 
 export function initializeWorkspaceSchema(db: DatabaseSync): void {

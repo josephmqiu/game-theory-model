@@ -50,6 +50,23 @@ export interface RunActivitySummary {
   message: string;
 }
 
+export interface RunSummaryState {
+  statusMessage: string;
+  failedPhase?: MethodologyPhase;
+  completedPhases: number;
+}
+
+export interface RunPromptProvenance {
+  analysisType: "game-theory";
+  activePhases: MethodologyPhase[];
+  templateSetIdentity: string;
+  templateSetHash: string;
+}
+
+export interface RunLogCorrelation {
+  logFileName: string;
+}
+
 export interface RunState {
   id: string;
   workspaceId: string;
@@ -72,6 +89,10 @@ export interface RunState {
   updatedAt: number;
   latestActivityAt?: number;
   latestActivity?: RunActivitySummary;
+  summary?: RunSummaryState;
+  promptProvenance: RunPromptProvenance;
+  latestPhaseTurnId?: string;
+  logCorrelation: RunLogCorrelation;
 }
 
 export interface ActivityEntry {
@@ -98,6 +119,20 @@ export type PhaseTurnStatus =
   | "failed"
   | "cancelled";
 
+export interface PhaseTurnPromptProvenance {
+  phase: MethodologyPhase;
+  templateIdentity: string;
+  templateHash: string;
+  effectivePromptHash: string;
+  variant: "initial" | "revision";
+}
+
+export interface PhaseTurnActivitySummary {
+  lastKind: AnalysisPhaseActivityKind;
+  lastMessage: string;
+  lastOccurredAt: number;
+}
+
 export interface PhaseTurnSummaryState {
   id: string;
   workspaceId: string;
@@ -108,6 +143,8 @@ export interface PhaseTurnSummaryState {
   status: PhaseTurnStatus;
   summary?: PhaseSummary;
   failure?: RuntimeError;
+  promptProvenance: PhaseTurnPromptProvenance;
+  activitySummary?: PhaseTurnActivitySummary;
   startedAt: number;
   completedAt: number | null;
   lastEventId: string;

@@ -13,12 +13,18 @@ import * as orchestrator from "../agents/analysis-agent";
 import * as runtimeStatus from "./runtime-status";
 import { getWorkspaceDatabase } from "./workspace";
 import { runPhase } from "./analysis-service";
+import {
+  buildPhasePromptBundle,
+  createRunPromptProvenance,
+} from "./analysis-prompt-provenance";
 import { commitPhaseSnapshot } from "./revision-diff";
 import { createRunLogger, serverWarn, timer } from "../utils/ai-logger";
 import type {
   AnyDomainEventInput,
   DomainEventInput,
 } from "./workspace/domain-event-types";
+import { nanoid } from "nanoid";
+import type { RunSummaryState } from "../../shared/types/workspace-state";
 
 // ── Constants ──
 
@@ -99,6 +105,18 @@ function appendRevalidationEvents(
         }) as AnyDomainEventInput,
     ),
   );
+}
+
+function buildRevalidationSummary(
+  completedPhases: number,
+  statusMessage: string,
+  failedPhase?: MethodologyPhase,
+): RunSummaryState {
+  return {
+    statusMessage,
+    failedPhase,
+    completedPhases,
+  };
 }
 
 // ── Phase resolution ──
@@ -253,6 +271,7 @@ export function revalidate(
     producer: "revalidation-service",
     occurredAt,
   });
+  const promptProvenance = createRunPromptProvenance(phases);
   workspaceDatabase.eventStore.appendEvents([
     ...(threadContext.createdThreadEvent ? [threadContext.createdThreadEvent] : []),
     {
@@ -268,6 +287,10 @@ export function revalidate(
         status: "running",
         startedAt: occurredAt,
         totalPhases: phases.length,
+        promptProvenance,
+        logCorrelation: {
+          logFileName: `${runId}.jsonl`,
+        },
       },
       occurredAt,
       producer: "revalidation-service",
@@ -284,6 +307,7 @@ export function revalidate(
           completed: 0,
           total: phases.length,
         },
+        summary: buildRevalidationSummary(0, "Run started"),
       },
       occurredAt,
       producer: "revalidation-service",
@@ -313,6 +337,8 @@ async function executeRevalidation(
   // Re-run from the earliest stale phase through the end
   const phases = phasesFrom(startPhase);
   let phasesCompleted = 0;
+  const phaseTurnCounts: Partial<Record<MethodologyPhase, number>> = {};
+  let latestPhaseTurnId: string | undefined;
 
   const staleCount = entityGraphService.getStaleEntityIds().length;
   logger.log("revalidation", "start", {
@@ -322,33 +348,12 @@ async function executeRevalidation(
   });
 
   for (const p of phases) {
+    const turnIndex = (phaseTurnCounts[p] ?? 0) + 1;
+    phaseTurnCounts[p] = turnIndex;
+    const phaseTurnId = `phase-turn-${nanoid()}`;
+    latestPhaseTurnId = phaseTurnId;
     runtimeStatus.setActivePhase(runId, p);
-    appendRevalidationEvents(runId, [
-      {
-        type: "phase.started",
-        payload: { phase: p },
-        occurredAt: Date.now(),
-      },
-      {
-        type: "run.status.changed",
-        payload: {
-          status: "running",
-          activePhase: p,
-          progress: {
-            completed: phasesCompleted,
-            total: phases.length,
-          },
-        },
-        occurredAt: Date.now(),
-      },
-    ]);
-    emitProgress({ type: "phase_started", phase: p, runId });
-    logger.log("revalidation", "phase-rerun", { phase: p, runId });
-
-    // Get FRESH analysis state for prior context (includes newly regenerated earlier phases)
     const freshAnalysis = entityGraphService.getAnalysis();
-
-    // Build prior context from entities in earlier completed phases
     const completedPhases = V2_PHASES.slice(0, V2_PHASES.indexOf(p));
     const priorEntities = freshAnalysis.entities
       .filter((e) => completedPhases.includes(e.phase))
@@ -365,7 +370,40 @@ async function executeRevalidation(
       }));
     const priorContext =
       priorEntities.length > 0 ? JSON.stringify(priorEntities) : undefined;
-
+    const phasePromptBundle = buildPhasePromptBundle({
+      phase: p,
+      topic,
+      priorContext,
+      effortLevel: lastRunRuntime?.effortLevel ?? "medium",
+    });
+    appendRevalidationEvents(runId, [
+      {
+        type: "phase.started",
+        payload: {
+          phase: p,
+          phaseTurnId,
+          turnIndex,
+          promptProvenance: phasePromptBundle.promptProvenance,
+        },
+        occurredAt: Date.now(),
+      },
+      {
+        type: "run.status.changed",
+        payload: {
+          status: "running",
+          activePhase: p,
+          progress: {
+            completed: phasesCompleted,
+            total: phases.length,
+          },
+          summary: buildRevalidationSummary(phasesCompleted, `Running ${p}`),
+          latestPhaseTurnId: phaseTurnId,
+        },
+        occurredAt: Date.now(),
+      },
+    ]);
+    emitProgress({ type: "phase_started", phase: p, runId });
+    logger.log("revalidation", "phase-rerun", { phase: p, runId });
     const phaseStart = Date.now();
     let result = await runPhase(p, topic, {
       provider: lastRunProvider,
@@ -374,12 +412,14 @@ async function executeRevalidation(
       priorEntities: priorContext,
       logger,
       runId,
+      phaseTurnId,
       onActivity: (activity) => {
         appendRevalidationEvents(runId, [
           {
             type: "phase.activity.recorded",
             payload: {
               phase: p,
+              phaseTurnId,
               kind: activity.kind,
               message: activity.message,
               ...(activity.toolName ? { toolName: activity.toolName } : {}),
@@ -407,6 +447,43 @@ async function executeRevalidation(
             returnedAiEntityCount: commitResult.returnedAiEntityCount,
           });
 
+          const retryPromptBundle = buildPhasePromptBundle({
+            phase: p,
+            topic,
+            priorContext,
+            revisionRetryInstruction: commitResult.retryMessage,
+            effortLevel: lastRunRuntime?.effortLevel ?? "medium",
+          });
+          appendRevalidationEvents(runId, [
+            {
+              type: "phase.started",
+              payload: {
+                phase: p,
+                phaseTurnId,
+                turnIndex,
+                promptProvenance: retryPromptBundle.promptProvenance,
+              },
+              occurredAt: Date.now(),
+            },
+            {
+              type: "run.status.changed",
+              payload: {
+                status: "running",
+                activePhase: p,
+                progress: {
+                  completed: phasesCompleted,
+                  total: phases.length,
+                },
+                summary: buildRevalidationSummary(
+                  phasesCompleted,
+                  `Retrying ${p}`,
+                ),
+                latestPhaseTurnId: phaseTurnId,
+              },
+              occurredAt: Date.now(),
+            },
+          ]);
+
           result = await runPhase(p, topic, {
             provider: lastRunProvider,
             model: lastRunModel,
@@ -415,12 +492,14 @@ async function executeRevalidation(
             revisionRetryInstruction: commitResult.retryMessage,
             logger,
             runId,
+            phaseTurnId,
             onActivity: (activity) => {
               appendRevalidationEvents(runId, [
                 {
                   type: "phase.activity.recorded",
                   payload: {
                     phase: p,
+                    phaseTurnId,
                     kind: activity.kind,
                     message: activity.message,
                     ...(activity.toolName
@@ -445,9 +524,15 @@ async function executeRevalidation(
                 type: "run.failed",
                 payload: {
                   activePhase: p,
+                  latestPhaseTurnId: phaseTurnId,
                   failedPhase: p,
                   error: failure,
                   finishedAt: Date.now(),
+                  summary: buildRevalidationSummary(
+                    phasesCompleted,
+                    error,
+                    p,
+                  ),
                 },
                 occurredAt: Date.now(),
               },
@@ -463,6 +548,12 @@ async function executeRevalidation(
                   failedPhase: p,
                   failure,
                   finishedAt: Date.now(),
+                  summary: buildRevalidationSummary(
+                    phasesCompleted,
+                    error,
+                    p,
+                  ),
+                  latestPhaseTurnId: phaseTurnId,
                 },
                 occurredAt: Date.now(),
               },
@@ -523,6 +614,7 @@ async function executeRevalidation(
             type: "phase.completed",
             payload: {
               phase: p,
+              phaseTurnId,
               summary: phaseSummary,
             },
             occurredAt: Date.now(),
@@ -536,6 +628,11 @@ async function executeRevalidation(
                 completed: phasesCompleted,
                 total: phases.length,
               },
+              summary: buildRevalidationSummary(
+                phasesCompleted,
+                `Completed ${p}`,
+              ),
+              latestPhaseTurnId: phaseTurnId,
             },
             occurredAt: Date.now(),
           },
@@ -561,9 +658,11 @@ async function executeRevalidation(
             type: "run.failed",
             payload: {
               activePhase: p,
+              latestPhaseTurnId: phaseTurnId,
               failedPhase: p,
               error: failure,
               finishedAt: Date.now(),
+              summary: buildRevalidationSummary(phasesCompleted, error, p),
             },
             occurredAt: Date.now(),
           },
@@ -579,6 +678,8 @@ async function executeRevalidation(
               failedPhase: p,
               failure,
               finishedAt: Date.now(),
+              summary: buildRevalidationSummary(phasesCompleted, error, p),
+              latestPhaseTurnId: phaseTurnId,
             },
             occurredAt: Date.now(),
           },
@@ -612,9 +713,11 @@ async function executeRevalidation(
           type: "run.failed",
           payload: {
             activePhase: p,
+            latestPhaseTurnId: phaseTurnId,
             failedPhase: p,
             error: failure,
             finishedAt: Date.now(),
+            summary: buildRevalidationSummary(phasesCompleted, error, p),
           },
           occurredAt: Date.now(),
         },
@@ -630,6 +733,8 @@ async function executeRevalidation(
             failedPhase: p,
             failure,
             finishedAt: Date.now(),
+            summary: buildRevalidationSummary(phasesCompleted, error, p),
+            latestPhaseTurnId: phaseTurnId,
           },
           occurredAt: Date.now(),
         },
@@ -660,6 +765,8 @@ async function executeRevalidation(
       type: "run.completed",
       payload: {
         finishedAt: Date.now(),
+        summary: buildRevalidationSummary(phasesCompleted, "Run completed"),
+        latestPhaseTurnId,
       },
       occurredAt: Date.now(),
     },
@@ -673,6 +780,8 @@ async function executeRevalidation(
           total: phases.length,
         },
         finishedAt: Date.now(),
+        summary: buildRevalidationSummary(phasesCompleted, "Run completed"),
+        latestPhaseTurnId,
       },
       occurredAt: Date.now(),
     },

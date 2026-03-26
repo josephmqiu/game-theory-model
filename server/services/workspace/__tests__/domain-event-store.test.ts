@@ -4,6 +4,10 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import { createWorkspaceDatabase } from "../workspace-db";
 import type { PhaseSummary } from "../../../../shared/types/events";
+import type {
+  PhaseTurnPromptProvenance,
+  RunPromptProvenance,
+} from "../../../../shared/types/workspace-state";
 
 function createPhaseSummary(durationMs = 100): PhaseSummary {
   return {
@@ -11,6 +15,28 @@ function createPhaseSummary(durationMs = 100): PhaseSummary {
     relationshipsCreated: 0,
     entitiesUpdated: 0,
     durationMs,
+  };
+}
+
+function createRunPromptProvenance(): RunPromptProvenance {
+  return {
+    analysisType: "game-theory",
+    activePhases: ["situational-grounding", "player-identification"],
+    templateSetIdentity: "game-theory:phase-prompts",
+    templateSetHash: "template-set-hash",
+  };
+}
+
+function createPhasePromptProvenance(
+  phase: PhaseTurnPromptProvenance["phase"],
+  variant: PhaseTurnPromptProvenance["variant"] = "initial",
+): PhaseTurnPromptProvenance {
+  return {
+    phase,
+    templateIdentity: `game-theory:${phase}:${variant}`,
+    templateHash: `${phase}-template-hash`,
+    effectivePromptHash: `${phase}-${variant}-effective-hash`,
+    variant,
   };
 }
 
@@ -60,6 +86,10 @@ describe("domain-event-store", () => {
           status: "running",
           startedAt: 100,
           totalPhases: 2,
+          promptProvenance: createRunPromptProvenance(),
+          logCorrelation: {
+            logFileName: "run-1.jsonl",
+          },
         },
         commandId: "cmd-1",
         receiptId: "receipt-1",
@@ -79,6 +109,10 @@ describe("domain-event-store", () => {
           progress: {
             completed: 0,
             total: 2,
+          },
+          summary: {
+            statusMessage: "Run started",
+            completedPhases: 0,
           },
         },
         commandId: "cmd-1",
@@ -144,13 +178,14 @@ describe("domain-event-store", () => {
           runId: "run-1",
           payload: {
             phase: "situational-grounding",
+            phaseTurnId: "missing-turn",
             summary: createPhaseSummary(),
           },
           occurredAt: 200,
           producer: "test",
         },
       ]),
-    ).toThrow("without an active phase turn");
+    ).toThrow('without phase turn "missing-turn"');
 
     expect(database.eventStore.listEventsByRunId("run-1")).toHaveLength(2);
     expect(
@@ -170,7 +205,14 @@ describe("domain-event-store", () => {
         workspaceId: context.workspaceId,
         threadId: context.threadId,
         runId: "run-1",
-        payload: { phase: "situational-grounding" },
+        payload: {
+          phase: "situational-grounding",
+          phaseTurnId: "phase-turn-1",
+          turnIndex: 1,
+          promptProvenance: createPhasePromptProvenance(
+            "situational-grounding",
+          ),
+        },
         occurredAt: 200,
         producer: "test",
       },
@@ -181,6 +223,7 @@ describe("domain-event-store", () => {
         runId: "run-1",
         payload: {
           phase: "situational-grounding",
+          phaseTurnId: "phase-turn-1",
           kind: "note",
           message: "Gathering background facts",
         },
@@ -194,6 +237,7 @@ describe("domain-event-store", () => {
         runId: "run-1",
         payload: {
           phase: "situational-grounding",
+          phaseTurnId: "phase-turn-1",
           summary: createPhaseSummary(40),
         },
         occurredAt: 202,
@@ -204,7 +248,15 @@ describe("domain-event-store", () => {
         workspaceId: context.workspaceId,
         threadId: context.threadId,
         runId: "run-1",
-        payload: { phase: "situational-grounding" },
+        payload: {
+          phase: "situational-grounding",
+          phaseTurnId: "phase-turn-2",
+          turnIndex: 2,
+          promptProvenance: createPhasePromptProvenance(
+            "situational-grounding",
+            "revision",
+          ),
+        },
         occurredAt: 203,
         producer: "test",
       },
@@ -215,6 +267,7 @@ describe("domain-event-store", () => {
         runId: "run-1",
         payload: {
           phase: "situational-grounding",
+          phaseTurnId: "phase-turn-2",
           kind: "tool",
           message: "Re-checking sources",
           toolName: "web.search",
@@ -229,6 +282,7 @@ describe("domain-event-store", () => {
         runId: "run-1",
         payload: {
           phase: "situational-grounding",
+          phaseTurnId: "phase-turn-2",
           summary: createPhaseSummary(30),
         },
         occurredAt: 205,
@@ -241,6 +295,11 @@ describe("domain-event-store", () => {
         runId: "run-1",
         payload: {
           finishedAt: 206,
+          summary: {
+            statusMessage: "Run completed",
+            completedPhases: 2,
+          },
+          latestPhaseTurnId: "phase-turn-2",
         },
         occurredAt: 206,
         producer: "test",
@@ -258,6 +317,11 @@ describe("domain-event-store", () => {
             total: 2,
           },
           finishedAt: 206,
+          summary: {
+            statusMessage: "Run completed",
+            completedPhases: 2,
+          },
+          latestPhaseTurnId: "phase-turn-2",
         },
         occurredAt: 206,
         producer: "test",
@@ -272,6 +336,17 @@ describe("domain-event-store", () => {
       "completed",
       "completed",
     ]);
+    expect(phaseTurns[1]).toMatchObject({
+      id: "phase-turn-2",
+      promptProvenance: expect.objectContaining({
+        variant: "revision",
+      }),
+      activitySummary: {
+        lastKind: "tool",
+        lastMessage: "Re-checking sources",
+        lastOccurredAt: 204,
+      },
+    });
 
     const activities = database.activities.listActivitiesByRunId("run-1");
     expect(activities).toHaveLength(2);
@@ -287,6 +362,11 @@ describe("domain-event-store", () => {
       latestActivity: {
         kind: "tool",
         message: "Re-checking sources",
+      },
+      latestPhaseTurnId: "phase-turn-2",
+      promptProvenance: createRunPromptProvenance(),
+      logCorrelation: {
+        logFileName: "run-1.jsonl",
       },
     });
 
@@ -311,6 +391,10 @@ describe("domain-event-store", () => {
           status: "running",
           startedAt: 300,
           totalPhases: 1,
+          promptProvenance: createRunPromptProvenance(),
+          logCorrelation: {
+            logFileName: "reval-1.jsonl",
+          },
         },
         occurredAt: 300,
         producer: "test",
@@ -326,6 +410,10 @@ describe("domain-event-store", () => {
           progress: {
             completed: 0,
             total: 1,
+          },
+          summary: {
+            statusMessage: "Run started",
+            completedPhases: 0,
           },
         },
         occurredAt: 301,
@@ -354,7 +442,13 @@ describe("domain-event-store", () => {
         workspaceId: context.workspaceId,
         threadId: context.threadId,
         runId: "run-1",
-        payload: { finishedAt: 500 },
+        payload: {
+          finishedAt: 500,
+          summary: {
+            statusMessage: "Run completed",
+            completedPhases: 0,
+          },
+        },
         occurredAt: 500,
         producer: "test",
       },
@@ -369,6 +463,80 @@ describe("domain-event-store", () => {
     const thread = database.threads.getThreadState(context.threadId);
     expect(thread).toMatchObject({
       latestTerminalStatus: "completed",
+    });
+
+    database.close();
+  });
+
+  it("marks the active phase turn failed when a run fails", () => {
+    const database = createDatabase();
+    const { context } = appendStartedRun(database);
+
+    database.eventStore.appendEvents([
+      {
+        type: "phase.started",
+        workspaceId: context.workspaceId,
+        threadId: context.threadId,
+        runId: "run-1",
+        payload: {
+          phase: "situational-grounding",
+          phaseTurnId: "phase-turn-failed",
+          turnIndex: 1,
+          promptProvenance: createPhasePromptProvenance(
+            "situational-grounding",
+          ),
+        },
+        occurredAt: 600,
+        producer: "test",
+      },
+      {
+        type: "run.failed",
+        workspaceId: context.workspaceId,
+        threadId: context.threadId,
+        runId: "run-1",
+        payload: {
+          activePhase: "situational-grounding",
+          latestPhaseTurnId: "phase-turn-failed",
+          failedPhase: "situational-grounding",
+          error: {
+            tag: "provider",
+            message: "Upstream failure",
+            retryable: false,
+            reason: "unknown",
+            provider: "claude",
+          },
+          finishedAt: 601,
+          summary: {
+            statusMessage: "Upstream failure",
+            failedPhase: "situational-grounding",
+            completedPhases: 0,
+          },
+        },
+        occurredAt: 601,
+        producer: "test",
+      },
+    ]);
+
+    const run = database.runs.getRunState("run-1");
+    expect(run).toMatchObject({
+      status: "failed",
+      latestPhaseTurnId: "phase-turn-failed",
+      summary: {
+        statusMessage: "Upstream failure",
+        failedPhase: "situational-grounding",
+        completedPhases: 0,
+      },
+    });
+
+    const phaseTurn = database.phaseTurnSummaries.getPhaseTurnSummary(
+      "phase-turn-failed",
+    );
+    expect(phaseTurn).toMatchObject({
+      id: "phase-turn-failed",
+      status: "failed",
+      failure: expect.objectContaining({
+        message: "Upstream failure",
+      }),
     });
 
     database.close();

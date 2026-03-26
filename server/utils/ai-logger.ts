@@ -12,6 +12,10 @@ export interface ServerLogEntry {
   sub: string
   event: string
   run: string
+  workspaceId?: string
+  threadId?: string
+  phaseTurnId?: string
+  phase?: string
   [key: string]: unknown
 }
 
@@ -22,7 +26,18 @@ export interface LogEntry {
   sub: string
   event: string
   run: string
+  workspaceId?: string
+  threadId?: string
+  phaseTurnId?: string
+  phase?: string
   [key: string]: unknown
+}
+
+export interface LogContextFields {
+  workspaceId?: string
+  threadId?: string
+  phaseTurnId?: string
+  phase?: string
 }
 
 export interface RunLogger {
@@ -98,7 +113,7 @@ export function appendRunLogEntries(
       }
     }
     appendFileSync(
-      getLogPath(runId),
+      getRunLogPath(runId),
       lines.join('\n') + '\n',
       'utf-8',
     )
@@ -131,6 +146,7 @@ function createClientEntry(
   level: LogEntry['level'],
   sub: string,
   event: string,
+  context?: LogContextFields,
   data?: Record<string, unknown>,
 ): LogEntry {
   return {
@@ -140,6 +156,7 @@ function createClientEntry(
     sub,
     event,
     run: runId,
+    ...(context ?? {}),
     ...(data ?? {}),
   }
 }
@@ -208,7 +225,10 @@ function beaconEntries(payload: string): boolean {
   }
 }
 
-export function createRunLogger(runId: string): RunLogger {
+export function createRunLogger(
+  runId: string,
+  context: LogContextFields = {},
+): RunLogger {
   const buffer: LogEntry[] = []
   let flushPromise: Promise<boolean> | null = null
 
@@ -219,7 +239,10 @@ export function createRunLogger(runId: string): RunLogger {
     data?: Record<string, unknown>,
   ) => {
     try {
-      appendClientEntry(buffer, createClientEntry(runId, level, sub, event, data))
+      appendClientEntry(
+        buffer,
+        createClientEntry(runId, level, sub, event, context, data),
+      )
     } catch {
       // Diagnostics must never break the main analysis flow.
     }
@@ -312,7 +335,11 @@ function sanitizeData(data?: Record<string, unknown>): Record<string, unknown> {
   return sanitized
 }
 
-function getLogPath(runId: string): string {
+export function getRunLogFileName(runId: string): string {
+  return `${runId}.jsonl`
+}
+
+export function getRunLogPath(runId: string): string {
   return join(LOG_DIR, `${runId}.jsonl`)
 }
 

@@ -6,6 +6,7 @@ import type {
   AnalysisEntity,
   AnalysisRelationship,
 } from "../../../shared/types/entity";
+import { getWorkspaceDatabase, resetWorkspaceDatabaseForTest } from "../../services/workspace";
 import type {
   PhaseOutputEntity,
   PhaseResult,
@@ -53,6 +54,7 @@ const mockRunPhase = vi.fn<
       model?: string;
       runtime?: ResolvedAnalysisRuntime;
       runId?: string;
+      phaseTurnId?: string;
       signal?: AbortSignal;
       logger?: unknown;
       onActivity?: (activity: {
@@ -339,6 +341,7 @@ describe("analysis-orchestrator", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     mockTriggers = [];
+    resetWorkspaceDatabaseForTest();
     orchestrator = await importOrchestrator();
     orchestrator._resetForTest();
   });
@@ -425,6 +428,77 @@ describe("analysis-orchestrator", () => {
     const finalStatus = orchestrator.getStatus(runId);
     expect(finalStatus.status).toBe("completed");
     expect(finalStatus.phasesCompleted).toBe(9);
+  });
+
+  it("persists durable run and phase-turn provenance for subset runs", async () => {
+    mockRunPhase
+      .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
+      .mockResolvedValueOnce(makePhaseResult("player-identification"));
+
+    const { runId, threadId, workspaceId } = await orchestrator.runFull(
+      "Test topic",
+      "openai",
+      "gpt-4o",
+      undefined,
+      {
+        activePhases: [
+          "situational-grounding",
+          "player-identification",
+        ],
+      },
+    );
+    await flushAsync();
+
+    const database = getWorkspaceDatabase();
+    const run = database.runs.getRunState(runId);
+    expect(run).toMatchObject({
+      id: runId,
+      workspaceId,
+      threadId,
+      provider: "openai",
+      model: "gpt-4o",
+      status: "completed",
+      summary: {
+        statusMessage: "Run completed",
+        completedPhases: 2,
+      },
+      promptProvenance: {
+        analysisType: "game-theory",
+        activePhases: ["situational-grounding", "player-identification"],
+        templateSetIdentity: "game-theory:phase-prompts",
+      },
+      logCorrelation: {
+        logFileName: `${runId}.jsonl`,
+      },
+    });
+
+    const phaseTurns =
+      database.phaseTurnSummaries.listPhaseTurnSummariesByRunId(runId);
+    expect(phaseTurns).toHaveLength(2);
+    expect(phaseTurns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          phase: "situational-grounding",
+          turnIndex: 1,
+          promptProvenance: expect.objectContaining({
+            phase: "situational-grounding",
+            variant: "initial",
+          }),
+        }),
+        expect.objectContaining({
+          phase: "player-identification",
+          turnIndex: 1,
+          promptProvenance: expect.objectContaining({
+            phase: "player-identification",
+            variant: "initial",
+          }),
+        }),
+      ]),
+    );
+    const latestPhaseTurn = phaseTurns.find(
+      (phaseTurn) => phaseTurn.phase === "player-identification",
+    );
+    expect(run?.latestPhaseTurnId).toBe(latestPhaseTurn?.id);
   });
 
   it("rejects unsupported activePhases before starting a run", async () => {

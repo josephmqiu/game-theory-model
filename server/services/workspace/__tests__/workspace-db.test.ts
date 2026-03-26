@@ -61,6 +61,40 @@ describe("workspace database", () => {
       .get();
     expect(Number(migrationCount?.count)).toBe(1);
 
+    const runColumns = database.db
+      .prepare(`PRAGMA table_info(runs)`)
+      .all()
+      .map((row) => String(row.name));
+    expect(runColumns).toEqual(
+      expect.arrayContaining([
+        "summary_status_message",
+        "summary_failed_phase",
+        "summary_completed_phases",
+        "prompt_analysis_type",
+        "prompt_active_phases_json",
+        "prompt_template_set_identity",
+        "prompt_template_set_hash",
+        "latest_phase_turn_id",
+        "log_file_name",
+      ]),
+    );
+
+    const phaseTurnColumns = database.db
+      .prepare(`PRAGMA table_info(phase_turn_summaries)`)
+      .all()
+      .map((row) => String(row.name));
+    expect(phaseTurnColumns).toEqual(
+      expect.arrayContaining([
+        "prompt_template_identity",
+        "prompt_template_hash",
+        "prompt_effective_prompt_hash",
+        "prompt_variant",
+        "activity_last_kind",
+        "activity_last_message",
+        "activity_last_occurred_at",
+      ]),
+    );
+
     const workspace = createWorkspaceRecordFromSnapshot({
       id: "workspace-1",
       name: "Trade war",

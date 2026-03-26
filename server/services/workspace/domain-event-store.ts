@@ -1,4 +1,3 @@
-import { nanoid } from "nanoid";
 import type { DatabaseSync } from "node:sqlite";
 import type {
   ActivityEntry,
@@ -163,6 +162,8 @@ function projectEvent(
           completed: 0,
           total: event.payload.totalPhases,
         },
+        promptProvenance: event.payload.promptProvenance,
+        logCorrelation: event.payload.logCorrelation,
         startedAt: event.payload.startedAt,
         finishedAt: null,
         createdAt: event.occurredAt,
@@ -194,6 +195,9 @@ function projectEvent(
           event.payload.finishedAt === undefined
             ? run.finishedAt
             : event.payload.finishedAt,
+        summary: event.payload.summary ?? run.summary,
+        latestPhaseTurnId:
+          event.payload.latestPhaseTurnId ?? run.latestPhaseTurnId,
         updatedAt: event.occurredAt,
       });
 
@@ -221,41 +225,41 @@ function projectEvent(
         );
       }
 
-      const latestTurn =
-        repositories.phaseTurnSummaries.getLatestPhaseTurnByRunAndPhase(
-          event.runId!,
-          event.payload.phase,
-        );
+      const existingTurn = repositories.phaseTurnSummaries.getPhaseTurnSummary(
+        event.payload.phaseTurnId,
+      );
       const turn: PhaseTurnSummaryState = {
-        id: `phase-turn-${nanoid()}`,
+        id: event.payload.phaseTurnId,
         workspaceId: event.workspaceId,
         threadId: event.threadId,
         runId: event.runId!,
         phase: event.payload.phase,
-        turnIndex: latestTurn ? latestTurn.turnIndex + 1 : 1,
+        turnIndex: event.payload.turnIndex,
         status: "running",
-        startedAt: event.occurredAt,
+        promptProvenance: event.payload.promptProvenance,
+        startedAt: existingTurn?.startedAt ?? event.occurredAt,
         completedAt: null,
         lastEventId: event.id,
-        createdAt: event.occurredAt,
+        createdAt: existingTurn?.createdAt ?? event.occurredAt,
         updatedAt: event.occurredAt,
+        activitySummary: existingTurn?.activitySummary,
+        summary: existingTurn?.summary,
+        failure: existingTurn?.failure,
       };
       repositories.phaseTurnSummaries.upsertPhaseTurnSummary(turn);
       return;
     }
     case "phase.completed": {
-      const latestTurn =
-        repositories.phaseTurnSummaries.getLatestPhaseTurnByRunAndPhase(
-          event.runId!,
-          event.payload.phase,
-        );
-      if (!latestTurn) {
+      const turn = repositories.phaseTurnSummaries.getPhaseTurnSummary(
+        event.payload.phaseTurnId,
+      );
+      if (!turn) {
         throw new Error(
-          `Cannot project phase completion for "${event.payload.phase}" without an active phase turn.`,
+          `Cannot project phase completion for "${event.payload.phase}" without phase turn "${event.payload.phaseTurnId}".`,
         );
       }
       repositories.phaseTurnSummaries.upsertPhaseTurnSummary({
-        ...latestTurn,
+        ...turn,
         status: "completed",
         summary: event.payload.summary,
         completedAt: event.occurredAt,
@@ -283,6 +287,22 @@ function projectEvent(
       };
       repositories.activities.upsertActivityEntry(activity);
 
+      const turn = repositories.phaseTurnSummaries.getPhaseTurnSummary(
+        event.payload.phaseTurnId,
+      );
+      if (turn) {
+        repositories.phaseTurnSummaries.upsertPhaseTurnSummary({
+          ...turn,
+          activitySummary: {
+            lastKind: event.payload.kind,
+            lastMessage: event.payload.message,
+            lastOccurredAt: event.occurredAt,
+          },
+          lastEventId: event.id,
+          updatedAt: event.occurredAt,
+        });
+      }
+
       const run = repositories.runs.getRunState(event.runId!);
       if (run) {
         repositories.runs.upsertRunState({
@@ -292,6 +312,7 @@ function projectEvent(
             kind: event.payload.kind,
             message: event.payload.message,
           },
+          latestPhaseTurnId: event.payload.phaseTurnId,
           updatedAt: Math.max(run.updatedAt, event.occurredAt),
         });
       }
@@ -341,19 +362,15 @@ function projectEvent(
       }
 
       if (event.type === "run.failed" || event.type === "run.cancelled") {
-        const activePhase =
-          event.type === "run.failed"
-            ? event.payload.activePhase
-            : event.payload.activePhase;
-        if (activePhase) {
-          const latestTurn =
-            repositories.phaseTurnSummaries.getLatestPhaseTurnByRunAndPhase(
-              event.runId!,
-              activePhase,
+        const latestPhaseTurnId = event.payload.latestPhaseTurnId;
+        if (latestPhaseTurnId) {
+          const turn =
+            repositories.phaseTurnSummaries.getPhaseTurnSummary(
+              latestPhaseTurnId,
             );
-          if (latestTurn && latestTurn.status === "running") {
+          if (turn && turn.status === "running") {
             repositories.phaseTurnSummaries.upsertPhaseTurnSummary({
-              ...latestTurn,
+              ...turn,
               status: event.type === "run.failed" ? "failed" : "cancelled",
               failure:
                 event.type === "run.failed" ? event.payload.error : undefined,
@@ -378,6 +395,9 @@ function projectEvent(
         finishedAt: event.payload.finishedAt,
         failure:
           event.type === "run.failed" ? event.payload.error : run.failure,
+        summary: event.payload.summary,
+        latestPhaseTurnId:
+          event.payload.latestPhaseTurnId ?? run.latestPhaseTurnId,
         updatedAt: event.occurredAt,
       });
 
