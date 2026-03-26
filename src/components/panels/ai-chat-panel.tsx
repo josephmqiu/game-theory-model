@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Send,
   Plus,
@@ -17,6 +17,7 @@ import i18n from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { useAIStore } from "@/stores/ai-store";
 import type { PanelCorner } from "@/stores/ai-store";
+import { useThreadStore } from "@/stores/thread-store";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
 import { useRunStatusStore } from "@/stores/run-status-store";
@@ -28,6 +29,7 @@ import {
   isAllowedProvider,
 } from "@/services/ai/allowed-providers";
 import * as analysisClient from "@/services/ai/analysis-client";
+import { projectThreadMessagesToChatMessages } from "@/services/ai/thread-projection";
 import ClaudeLogo from "@/components/icons/claude-logo";
 import OpenAILogo from "@/components/icons/openai-logo";
 import OpenCodeLogo from "@/components/icons/opencode-logo";
@@ -159,6 +161,11 @@ function ToolStatusMessage({
 export function AIChatMinimizedBar() {
   const isMinimized = useAIStore((s) => s.isMinimized);
   const toggleMinimize = useAIStore((s) => s.toggleMinimize);
+  const activeThreadTitle = useThreadStore(
+    (s) =>
+      s.activeThreadDetail?.thread.title ??
+      s.threads.find((thread) => thread.id === s.activeThreadId)?.title,
+  );
 
   if (!isMinimized) return null;
 
@@ -170,7 +177,7 @@ export function AIChatMinimizedBar() {
     >
       <MessageSquare size={13} className="text-muted-foreground" />
       <span className="text-xs text-muted-foreground max-w-[120px] truncate">
-        {useAIStore.getState().chatTitle}
+        {activeThreadTitle || "Analysis Chat"}
       </span>
       <ChevronUp size={12} className="text-muted-foreground" />
     </button>
@@ -201,13 +208,10 @@ export default function AIChatPanel({
   const [dragStyle, setDragStyle] = useState<React.CSSProperties | null>(null);
   const [panelHeight, setPanelHeight] = useState(400); // Default height
 
-  const messages = useAIStore((s) => s.messages);
   const isStreaming = useAIStore((s) => s.isStreaming);
-  const clearMessages = useAIStore((s) => s.clearMessages);
   const panelCorner = useAIStore((s) => s.panelCorner);
   const isMinimized = useAIStore((s) => s.isMinimized);
   const setPanelCorner = useAIStore((s) => s.setPanelCorner);
-  const chatTitle = useAIStore((s) => s.chatTitle);
   const stopStreaming = useAIStore((s) => s.stopStreaming);
   const toggleMinimize = useAIStore((s) => s.toggleMinimize);
   const hydrateModelPreference = useAIStore((s) => s.hydrateModelPreference);
@@ -219,6 +223,15 @@ export default function AIChatPanel({
   const setModelGroups = useAIStore((s) => s.setModelGroups);
   const isLoadingModels = useAIStore((s) => s.isLoadingModels);
   const setLoadingModels = useAIStore((s) => s.setLoadingModels);
+  const threads = useThreadStore((s) => s.threads);
+  const activeThreadId = useThreadStore((s) => s.activeThreadId);
+  const activeThreadDetail = useThreadStore((s) => s.activeThreadDetail);
+  const overlayMessages = useThreadStore((s) => s.overlayMessages);
+  const isLoadingThreads = useThreadStore((s) => s.isLoading);
+  const isCreatingThread = useThreadStore((s) => s.isCreating);
+  const threadError = useThreadStore((s) => s.error);
+  const selectThread = useThreadStore((s) => s.selectThread);
+  const createThread = useThreadStore((s) => s.createThread);
   const providers = useAgentSettingsStore((s) => s.providers);
   const providersHydrated = useAgentSettingsStore((s) => s.isHydrated);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
@@ -234,6 +247,18 @@ export default function AIChatPanel({
   const isAnalysisMode = mode === "analysis";
   const previousAnalysisIdRef = useRef<string | null>(null);
   const terminalNoticeKeysRef = useRef<Set<string>>(new Set());
+  const projectedMessages = useMemo(
+    () =>
+      projectThreadMessagesToChatMessages(activeThreadDetail?.messages ?? []),
+    [activeThreadDetail?.messages],
+  );
+  const messages = useMemo(
+    () => [...projectedMessages, ...overlayMessages],
+    [overlayMessages, projectedMessages],
+  );
+  const activeThreadTitle =
+    activeThreadDetail?.thread.title ??
+    threads.find((thread) => thread.id === activeThreadId)?.title;
 
   // Poll analysis orchestrator running state
   useEffect(() => {
@@ -267,45 +292,41 @@ export default function AIChatPanel({
           useEntityGraphStore.getState().analysis.entities.length;
 
         if (nextStatus.status === "idle" && previousStatus.runId) {
-          const noticeKey = getAnalysisTerminalNoticeKey(
-            previousStatus.runId,
-            "completed",
-          );
-          if (!terminalNoticeKeysRef.current.has(noticeKey)) {
-            terminalNoticeKeysRef.current.add(noticeKey);
-            useAIStore
-              .getState()
-              .addMessage(
+            const noticeKey = getAnalysisTerminalNoticeKey(
+              previousStatus.runId,
+              "completed",
+            );
+            if (!terminalNoticeKeysRef.current.has(noticeKey)) {
+              terminalNoticeKeysRef.current.add(noticeKey);
+              useThreadStore.getState().addOverlayMessage(
                 buildAnalysisTerminalMessage(
                   previousStatus.runId,
                   "completed",
                   entityCount,
                 ),
               );
-          }
-        } else if (
-          (nextStatus.status === "failed" ||
+            }
+          } else if (
+            (nextStatus.status === "failed" ||
             nextStatus.status === "cancelled") &&
           nextStatus.runId
         ) {
           const noticeKey = getAnalysisTerminalNoticeKey(
-            nextStatus.runId,
-            nextStatus.status,
-          );
-          if (!terminalNoticeKeysRef.current.has(noticeKey)) {
-            terminalNoticeKeysRef.current.add(noticeKey);
-            useAIStore
-              .getState()
-              .addMessage(
+              nextStatus.runId,
+              nextStatus.status,
+            );
+            if (!terminalNoticeKeysRef.current.has(noticeKey)) {
+              terminalNoticeKeysRef.current.add(noticeKey);
+              useThreadStore.getState().addOverlayMessage(
                 buildAnalysisTerminalMessage(
                   nextStatus.runId,
                   nextStatus.status,
                   entityCount,
                 ),
               );
+            }
           }
         }
-      }
 
       previousStatus = nextStatus;
     });
@@ -565,7 +586,7 @@ export default function AIChatPanel({
   const inputPlaceholder = isStreaming
     ? t("ai.generating")
     : t("analysis.chatInputPlaceholder");
-  const displayTitle = messages.length === 0 ? t("analysis.title") : chatTitle;
+  const displayTitle = activeThreadTitle || t("analysis.title");
 
   return (
     <div
@@ -629,12 +650,40 @@ export default function AIChatPanel({
         <Button
           variant="ghost"
           size="icon-sm"
-          onClick={clearMessages}
+          onClick={() => void createThread()}
+          disabled={isStreaming || isCreatingThread}
           title={t("ai.newChat")}
         >
-          <Plus size={14} />
+          {isCreatingThread ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Plus size={14} />
+          )}
         </Button>
       </div>
+
+      {threads.length > 0 && (
+        <div className="border-b border-border bg-card/80 px-2 py-2">
+          <div className="flex max-h-24 flex-col gap-1 overflow-y-auto">
+            {threads.map((thread) => (
+              <button
+                key={thread.id}
+                type="button"
+                onClick={() => void selectThread(thread.id)}
+                disabled={isLoadingThreads || isStreaming}
+                className={cn(
+                  "flex items-center rounded-md px-2 py-1.5 text-left text-xs transition-colors",
+                  thread.id === activeThreadId
+                    ? "bg-secondary text-foreground"
+                    : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
+                )}
+              >
+                <span className="truncate">{thread.title}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* --- Messages --- */}
       <div
@@ -643,6 +692,11 @@ export default function AIChatPanel({
           isDocked ? "rounded-xl" : "rounded-b-xl",
         )}
       >
+        {threadError && (
+          <div className="mb-3 rounded-md border border-destructive/20 bg-destructive/5 px-2.5 py-2 text-[11px] text-destructive/80">
+            {threadError}
+          </div>
+        )}
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <p className="max-w-[240px] text-xs text-muted-foreground">
@@ -702,7 +756,7 @@ export default function AIChatPanel({
             type="button"
             onClick={() => {
               if (analysisRunning) {
-                useAIStore.getState().addMessage({
+                useThreadStore.getState().addOverlayMessage({
                   id: `provider-blocked-${Date.now()}`,
                   role: "assistant",
                   content: i18n.t("analysis.cannotChangeModel"),

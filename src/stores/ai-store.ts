@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ChatMessage, ChatAttachment } from "@/services/ai/ai-types";
+import type { ChatAttachment } from "@/services/ai/ai-types";
 import type { ModelGroup } from "@/types/agent-settings";
 import { appStorage } from "@/utils/app-storage";
 
@@ -85,14 +85,6 @@ function writeStoredConcurrency(n: number): void {
   }
 }
 
-function warnDuplicateMessageId(id: string): void {
-  if (!import.meta.env.DEV || typeof console === "undefined") {
-    return;
-  }
-
-  console.warn("[ai-store] duplicate message id", { id });
-}
-
 // Keep SSR/CSR first render deterministic to avoid hydration mismatch.
 // Real preference is loaded on mount via hydrateModelPreference().
 const initialPreferredModel = DEFAULT_MODEL;
@@ -104,9 +96,6 @@ export interface AIModelInfo {
 }
 
 interface AIState {
-  messages: ChatMessage[];
-  workspaceId?: string;
-  threadId?: string;
   isStreaming: boolean;
   isPanelOpen: boolean;
   activeTab: "chat" | "code";
@@ -119,18 +108,12 @@ interface AIState {
   isLoadingModels: boolean;
   panelCorner: PanelCorner;
   isMinimized: boolean;
-  chatTitle: string;
   generationProgress: { current: number; total: number } | null;
   concurrency: number;
   pendingAttachments: ChatAttachment[];
   abortController: AbortController | null;
 
   setConcurrency: (n: number) => void;
-  setWorkspaceThread: (identity: {
-    workspaceId?: string;
-    threadId?: string;
-  }) => void;
-  setChatTitle: (title: string) => void;
   setGenerationProgress: (
     progress: { current: number; total: number } | null,
   ) => void;
@@ -140,19 +123,12 @@ interface AIState {
   setAvailableModels: (models: AIModelInfo[]) => void;
   setModelGroups: (groups: ModelGroup[]) => void;
   setLoadingModels: (v: boolean) => void;
-  addMessage: (msg: ChatMessage) => void;
-  updateMessageById: (
-    id: string,
-    updates: Partial<Pick<ChatMessage, "content" | "isStreaming" | "attachments" | "toolStatus">>,
-  ) => void;
-  updateLastMessage: (content: string) => void;
   setStreaming: (v: boolean) => void;
   togglePanel: () => void;
   setPanelOpen: (open: boolean) => void;
   setActiveTab: (tab: "chat" | "code") => void;
   setGeneratedCode: (code: string) => void;
   setCodeFormat: (f: "react-tailwind" | "html-css" | "react-inline") => void;
-  clearMessages: () => void;
   setPanelCorner: (corner: PanelCorner) => void;
   toggleMinimize: () => void;
   addPendingAttachment: (attachment: ChatAttachment) => void;
@@ -163,9 +139,6 @@ interface AIState {
 }
 
 export const useAIStore = create<AIState>((set, get) => ({
-  messages: [],
-  workspaceId: undefined,
-  threadId: undefined,
   isStreaming: false,
   isPanelOpen: true,
   activeTab: "chat",
@@ -178,7 +151,6 @@ export const useAIStore = create<AIState>((set, get) => ({
   isLoadingModels: false,
   panelCorner: "bottom-left",
   isMinimized: false,
-  chatTitle: "New Chat",
   concurrency: 1,
   generationProgress: null,
   pendingAttachments: [],
@@ -189,12 +161,6 @@ export const useAIStore = create<AIState>((set, get) => ({
     writeStoredConcurrency(clamped);
     set({ concurrency: clamped });
   },
-  setWorkspaceThread: ({ workspaceId, threadId }) =>
-    set((state) => ({
-      workspaceId: workspaceId ?? state.workspaceId,
-      threadId: threadId ?? state.threadId,
-    })),
-  setChatTitle: (chatTitle) => set({ chatTitle }),
   setGenerationProgress: (generationProgress) => set({ generationProgress }),
 
   hydrateModelPreference: () => {
@@ -210,42 +176,6 @@ export const useAIStore = create<AIState>((set, get) => ({
       set({ isMinimized: prefs.isMinimized });
     if (prefs.codeFormat) set({ codeFormat: prefs.codeFormat });
   },
-
-  addMessage: (msg) =>
-    set((s) => {
-      if (s.messages.some((existing) => existing.id === msg.id)) {
-        warnDuplicateMessageId(msg.id);
-        return s;
-      }
-
-      return { messages: [...s.messages, msg] };
-    }),
-
-  updateMessageById: (id, updates) =>
-    set((s) => {
-      let changed = false;
-      const messages = s.messages.map((message) => {
-        if (message.id !== id) return message;
-        changed = true;
-        return { ...message, ...updates };
-      });
-
-      return changed ? { messages } : s;
-    }),
-
-  updateLastMessage: (content) =>
-    set((s) => {
-      const msgs = [...s.messages];
-      // Find the last real assistant message, skipping tool-status rows
-      for (let i = msgs.length - 1; i >= 0; i--) {
-        const m = msgs[i];
-        if (m.role === "assistant" && !m.id.startsWith("tool-")) {
-          msgs[i] = { ...m, content };
-          break;
-        }
-      }
-      return { messages: msgs };
-    }),
 
   setStreaming: (isStreaming) => set({ isStreaming }),
 
@@ -276,7 +206,6 @@ export const useAIStore = create<AIState>((set, get) => ({
   setAvailableModels: (availableModels) => set({ availableModels }),
   setModelGroups: (modelGroups) => set({ modelGroups }),
   setLoadingModels: (isLoadingModels) => set({ isLoadingModels }),
-  clearMessages: () => set({ messages: [], chatTitle: "New Chat" }),
 
   setPanelCorner: (panelCorner) => {
     set({ panelCorner });

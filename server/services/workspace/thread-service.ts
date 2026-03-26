@@ -5,6 +5,7 @@ import type {
   ActivityStatus,
   DurableMessageRole,
   ThreadMessageState,
+  ThreadState,
 } from "../../../shared/types/workspace-state";
 import { getWorkspaceDatabase, type WorkspaceDatabase } from "./workspace-db";
 import type { AnyDomainEventInput } from "./domain-event-types";
@@ -19,6 +20,24 @@ export interface EnsureThreadInput {
   correlationId?: string;
   causationId?: string;
   occurredAt?: number;
+}
+
+export interface CreateThreadInput {
+  workspaceId: string;
+  title?: string;
+  producer: string;
+  commandId?: string;
+  receiptId?: string;
+  correlationId?: string;
+  causationId?: string;
+  occurredAt?: number;
+}
+
+export interface ThreadDetail {
+  workspaceId: string;
+  thread: ThreadState;
+  messages: ThreadMessageState[];
+  activities: ActivityEntry[];
 }
 
 export interface RecordThreadMessageInput {
@@ -82,6 +101,64 @@ export function createThreadService(
   database: WorkspaceDatabase = getWorkspaceDatabase(),
 ) {
   return {
+    listThreadsByWorkspaceId(workspaceId: string): ThreadState[] {
+      return database.threads.listThreadsByWorkspaceId(workspaceId);
+    },
+
+    getThreadById(threadId: string): ThreadState | undefined {
+      return database.threads.getThreadState(threadId);
+    },
+
+    getThreadDetailById(threadId: string): ThreadDetail | undefined {
+      const thread = database.threads.getThreadState(threadId);
+      if (!thread) {
+        return undefined;
+      }
+
+      return {
+        workspaceId: thread.workspaceId,
+        thread,
+        messages: database.messages
+          .listMessagesByThreadId(threadId)
+          .map((message) =>
+            parseThreadMessageState(message.messageJson, {
+              id: message.id,
+              workspaceId: message.workspaceId,
+              threadId: message.threadId,
+              role: message.role as DurableMessageRole,
+              content: message.content,
+              createdAt: message.createdAt,
+              updatedAt: message.updatedAt,
+            }),
+          ),
+        activities: database.activities.listActivitiesByThreadId(threadId),
+      };
+    },
+
+    createThread(input: CreateThreadInput): ThreadState {
+      const threadId = `${input.workspaceId}:thread-${nanoid()}`;
+      const threadTitle = input.title?.trim() || "New Chat";
+
+      this.ensureThread({
+        workspaceId: input.workspaceId,
+        threadId,
+        threadTitle,
+        producer: input.producer,
+        commandId: input.commandId,
+        receiptId: input.receiptId,
+        correlationId: input.correlationId,
+        causationId: input.causationId,
+        occurredAt: input.occurredAt,
+      });
+
+      const thread = database.threads.getThreadState(threadId);
+      if (!thread) {
+        throw new Error(`Failed to persist thread "${threadId}".`);
+      }
+
+      return thread;
+    },
+
     ensureThread(input: EnsureThreadInput) {
       const resolved = database.eventStore.resolveThreadContext({
         workspaceId: input.workspaceId,

@@ -1,4 +1,5 @@
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
+import { useThreadStore } from "@/stores/thread-store";
 import { layoutEntities } from "@/services/entity/entity-layout";
 import type {
   Analysis,
@@ -441,6 +442,7 @@ export async function loadAnalysisFromText(
       fileHandle: source?.fileHandle ?? undefined,
     });
   await syncWorkspaceState(workspace, source);
+  await useThreadStore.getState().hydrateWorkspace(workspace.id);
 }
 
 export async function initializeWorkspacePersistence(): Promise<void> {
@@ -450,6 +452,7 @@ export async function initializeWorkspacePersistence(): Promise<void> {
     filePath: null,
     fileHandle: null,
   });
+  await useThreadStore.getState().hydrateWorkspace(workspace.id);
 }
 
 export async function openAnalysisFromPath(filePath: string): Promise<boolean> {

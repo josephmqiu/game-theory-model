@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { nanoid } from "nanoid";
 import { useAIStore } from "@/stores/ai-store";
+import { useThreadStore } from "@/stores/thread-store";
 import { streamChat } from "@/services/ai/ai-service";
 import type { ChatMessage as ChatMessageType } from "@/services/ai/ai-types";
 import type { AIStreamChunk } from "@/services/ai/ai-types";
@@ -135,19 +136,15 @@ export function updateToolStatusMessage(
 
 export function useChatHandlers() {
   const [input, setInput] = useState("");
-  const messages = useAIStore((s) => s.messages);
-  const workspaceId = useAIStore((s) => s.workspaceId);
-  const threadId = useAIStore((s) => s.threadId);
   const isStreaming = useAIStore((s) => s.isStreaming);
   const model = useAIStore((s) => s.model);
   const availableModels = useAIStore((s) => s.availableModels);
   const isLoadingModels = useAIStore((s) => s.isLoadingModels);
-  const addMessage = useAIStore((s) => s.addMessage);
-  const updateLastMessage = useAIStore((s) => s.updateLastMessage);
   const setStreaming = useAIStore((s) => s.setStreaming);
 
   const handleSend = useCallback(
     async (text?: string) => {
+      const threadState = useThreadStore.getState();
       const messageText = text ?? input.trim();
       if (
         !messageText ||
@@ -159,6 +156,7 @@ export function useChatHandlers() {
       }
 
       setInput("");
+      threadState.clearOverlayMessages();
 
       const userMsg: ChatMessageType = {
         id: nanoid(),
@@ -166,7 +164,7 @@ export function useChatHandlers() {
         content: messageText,
         timestamp: Date.now(),
       };
-      addMessage(userMsg);
+      threadState.addOverlayMessage(userMsg);
 
       const assistantMsg: ChatMessageType = {
         id: nanoid(),
@@ -175,18 +173,8 @@ export function useChatHandlers() {
         timestamp: Date.now(),
         isStreaming: true,
       };
-      addMessage(assistantMsg);
+      threadState.addOverlayMessage(assistantMsg);
       setStreaming(true);
-
-      if (messages.length === 0) {
-        const cleanText = messageText.replace(
-          /^(Explain|Summarize|Describe|What|How|Why)\s+/i,
-          "",
-        );
-        const words = cleanText.split(" ").slice(0, 4).join(" ");
-        const title = words.length > 30 ? `${words.slice(0, 30)}...` : words;
-        useAIStore.getState().setChatTitle(title || "Analysis Chat");
-      }
 
       const currentProvider = useAIStore
         .getState()
@@ -196,6 +184,7 @@ export function useChatHandlers() {
       let accumulated = "";
       const abortController = new AbortController();
       useAIStore.getState().setAbortController(abortController);
+      let terminalErrorMessage: string | null = null;
 
       // Track in-flight tool calls so repeated calls to the same tool
       // each get their own lifecycle in FIFO order.
@@ -218,15 +207,11 @@ export function useChatHandlers() {
           abortController.signal,
           undefined,
           {
-            workspaceId,
-            threadId,
-            threadTitle:
-              messages.length === 0
-                ? useAIStore.getState().chatTitle || "Analysis Chat"
-                : undefined,
+            workspaceId: threadState.workspaceId,
+            threadId: threadState.activeThreadId,
             useCanonicalThreadRequest: true,
             onResolvedThread: (identity) => {
-              useAIStore.getState().setWorkspaceThread(identity);
+              useThreadStore.getState().setActiveThreadIdentity(identity);
             },
           },
         )) {
@@ -237,7 +222,7 @@ export function useChatHandlers() {
             case "thinking": {
               chatThinking += chunk.content;
               const thinkingStep = `<step title="Thinking">${chatThinking}</step>`;
-              updateLastMessage(
+              useThreadStore.getState().updateLastOverlayAssistantMessage(
                 thinkingStep + (accumulated ? `\n${accumulated}` : ""),
               );
               break;
@@ -247,7 +232,9 @@ export function useChatHandlers() {
               const thinkingPrefix = chatThinking
                 ? `<step title="Thinking">${chatThinking}</step>\n`
                 : "";
-              updateLastMessage(thinkingPrefix + accumulated);
+              useThreadStore.getState().updateLastOverlayAssistantMessage(
+                thinkingPrefix + accumulated,
+              );
               break;
             }
             case "tool_start": {
@@ -257,7 +244,7 @@ export function useChatHandlers() {
                 chunk.toolName,
                 toolMsgId,
               );
-              addMessage({
+              useThreadStore.getState().addOverlayMessage({
                 id: toolMsgId,
                 role: "assistant",
                 content: `Using ${chunk.toolName}`,
@@ -274,14 +261,15 @@ export function useChatHandlers() {
                 chunk.toolName,
               );
               if (msgId) {
-                useAIStore.setState((s) => ({
-                  messages: updateToolStatusMessage(
-                    s.messages,
+                const store = useThreadStore.getState();
+                store.replaceOverlayMessages(
+                  updateToolStatusMessage(
+                    store.overlayMessages,
                     msgId,
                     chunk.toolName,
                     "done",
                   ),
-                }));
+                );
               }
               break;
             }
@@ -291,21 +279,25 @@ export function useChatHandlers() {
                 chunk.toolName,
               );
               if (msgId) {
-                useAIStore.setState((s) => ({
-                  messages: updateToolStatusMessage(
-                    s.messages,
+                const store = useThreadStore.getState();
+                store.replaceOverlayMessages(
+                  updateToolStatusMessage(
+                    store.overlayMessages,
                     msgId,
                     chunk.toolName,
                     "error",
                     chunk.error,
                   ),
-                }));
+                );
               }
               break;
             }
             case "error": {
               accumulated += `\n\n**Error:** ${chunk.content}`;
-              updateLastMessage(accumulated);
+              terminalErrorMessage = chunk.content;
+              useThreadStore.getState().updateLastOverlayAssistantMessage(
+                accumulated,
+              );
               break;
             }
             case "done":
@@ -319,7 +311,10 @@ export function useChatHandlers() {
             error instanceof Error ? error.message : "Unknown error";
           console.error("[chat] stream-error:", errMsg);
           accumulated = `**Error:** ${errMsg}`;
-          updateLastMessage(accumulated);
+          terminalErrorMessage = errMsg;
+          useThreadStore.getState().updateLastOverlayAssistantMessage(
+            accumulated,
+          );
         }
       } finally {
         useAIStore.getState().setAbortController(null);
@@ -329,8 +324,9 @@ export function useChatHandlers() {
         // spinners never survive a completed or aborted turn.
         for (const msgIds of pendingToolMsgIds.values()) {
           for (const msgId of msgIds) {
-            useAIStore.setState((s) => ({
-              messages: s.messages.map((message) =>
+            const store = useThreadStore.getState();
+            store.replaceOverlayMessages(
+              store.overlayMessages.map((message) =>
                 message.id === msgId
                   ? {
                       ...message,
@@ -345,34 +341,35 @@ export function useChatHandlers() {
                     }
                   : message,
               ),
-            }));
+            );
           }
+        }
+
+        try {
+          await useThreadStore.getState().refreshThreads();
+          await useThreadStore.getState().refreshActiveThreadDetail();
+        } catch (error) {
+          terminalErrorMessage =
+            error instanceof Error ? error.message : "Failed to refresh thread.";
         }
       }
 
-      useAIStore.setState((state) => {
-        const nextMessages = [...state.messages];
-        const lastMessage = nextMessages.find(
-          (message) => message.id === assistantMsg.id,
-        );
-        if (lastMessage) {
-          lastMessage.content = accumulated;
-          lastMessage.isStreaming = false;
-        }
-        return { messages: nextMessages };
-      });
+      useThreadStore.getState().clearOverlayMessages();
+      if (terminalErrorMessage && !abortController.signal.aborted) {
+        useThreadStore.getState().addOverlayMessage({
+          id: `overlay-error-${nanoid(6)}`,
+          role: "assistant",
+          content: `**Error:** ${terminalErrorMessage}`,
+          timestamp: Date.now(),
+        });
+      }
     },
     [
       availableModels.length,
       input,
       isLoadingModels,
       isStreaming,
-      messages,
-      threadId,
-      workspaceId,
       model,
-      addMessage,
-      updateLastMessage,
       setStreaming,
     ],
   );
