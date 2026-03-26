@@ -273,7 +273,9 @@ export function revalidate(
   });
   const promptProvenance = createRunPromptProvenance(phases);
   workspaceDatabase.eventStore.appendEvents([
-    ...(threadContext.createdThreadEvent ? [threadContext.createdThreadEvent] : []),
+    ...(threadContext.createdThreadEvent
+      ? [threadContext.createdThreadEvent]
+      : []),
     {
       type: "run.created",
       workspaceId: threadContext.workspaceId,
@@ -406,6 +408,10 @@ async function executeRevalidation(
     logger.log("revalidation", "phase-rerun", { phase: p, runId });
     const phaseStart = Date.now();
     let result = await runPhase(p, topic, {
+      promptBundle: {
+        system: phasePromptBundle.system,
+        user: phasePromptBundle.user,
+      },
       provider: lastRunProvider,
       model: lastRunModel,
       runtime: lastRunRuntime,
@@ -485,6 +491,10 @@ async function executeRevalidation(
           ]);
 
           result = await runPhase(p, topic, {
+            promptBundle: {
+              system: retryPromptBundle.system,
+              user: retryPromptBundle.user,
+            },
             provider: lastRunProvider,
             model: lastRunModel,
             runtime: lastRunRuntime,
@@ -528,11 +538,7 @@ async function executeRevalidation(
                   failedPhase: p,
                   error: failure,
                   finishedAt: Date.now(),
-                  summary: buildRevalidationSummary(
-                    phasesCompleted,
-                    error,
-                    p,
-                  ),
+                  summary: buildRevalidationSummary(phasesCompleted, error, p),
                 },
                 occurredAt: Date.now(),
               },
@@ -548,11 +554,7 @@ async function executeRevalidation(
                   failedPhase: p,
                   failure,
                   finishedAt: Date.now(),
-                  summary: buildRevalidationSummary(
-                    phasesCompleted,
-                    error,
-                    p,
-                  ),
+                  summary: buildRevalidationSummary(phasesCompleted, error, p),
                   latestPhaseTurnId: phaseTurnId,
                 },
                 occurredAt: Date.now(),

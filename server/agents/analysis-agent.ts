@@ -350,7 +350,10 @@ function appendRunLifecycleEvents(
   );
 }
 
-function nextPhaseTurn(run: ActiveRun, phase: MethodologyPhase): {
+function nextPhaseTurn(
+  run: ActiveRun,
+  phase: MethodologyPhase,
+): {
   phaseTurnId: string;
   turnIndex: number;
 } {
@@ -626,6 +629,10 @@ async function executeSinglePhase(
       result = await Promise.race([
         runPhase(phase, topic, {
           priorEntities: priorContext,
+          promptBundle: {
+            system: phasePromptBundle.system,
+            user: phasePromptBundle.user,
+          },
           provider: run.provider,
           model: run.model,
           runtime: run.runtime,
@@ -760,6 +767,10 @@ async function executeSinglePhase(
           const retryResult = await Promise.race([
             runPhase(phase, topic, {
               priorEntities: priorContext,
+              promptBundle: {
+                system: retryPromptBundle.system,
+                user: retryPromptBundle.user,
+              },
               revisionRetryInstruction: commitResult.retryMessage,
               provider: run.provider,
               model: run.model,
@@ -999,8 +1010,8 @@ export async function runFull(
     activePhases.length === SUPPORTED_PHASES.length;
   const workspaceDatabase = getWorkspaceDatabase();
   const runOccurredAt = Date.now();
-  const resolvedThreadContext = workspaceDatabase.eventStore.resolveThreadContext(
-    {
+  const resolvedThreadContext =
+    workspaceDatabase.eventStore.resolveThreadContext({
       workspaceId: persistenceContext.workspaceId,
       threadId: persistenceContext.threadId,
       producer: persistenceContext.producer ?? "analysis-agent",
@@ -1009,8 +1020,7 @@ export async function runFull(
       correlationId: persistenceContext.correlationId,
       causationId: persistenceContext.causationId,
       occurredAt: runOccurredAt,
-    },
-  );
+    });
   const logger = createRunLogger(runId, {
     workspaceId: resolvedThreadContext.workspaceId,
     threadId: resolvedThreadContext.threadId,
@@ -1490,16 +1500,14 @@ export async function runFull(
                 runId: run.runId,
               });
               try {
-                return await session.runStructuredTurn(
-                  {
-                    prompt: graphSummary,
-                    systemPrompt: SYNTHESIS_SYSTEM_PROMPT,
-                    model,
-                    schema: SYNTHESIS_OUTPUT_SCHEMA,
-                    runId: run.runId,
-                    webSearch: false,
-                  },
-                );
+                return await session.runStructuredTurn({
+                  prompt: graphSummary,
+                  systemPrompt: SYNTHESIS_SYSTEM_PROMPT,
+                  model,
+                  schema: SYNTHESIS_OUTPUT_SCHEMA,
+                  runId: run.runId,
+                  webSearch: false,
+                });
               } finally {
                 await session.dispose();
               }

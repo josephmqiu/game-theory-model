@@ -47,9 +47,7 @@ import type {
 import { getRuntimeAdapter } from "./ai/adapter-contract";
 import { buildPhasePromptBundle } from "./analysis-prompt-provenance";
 
-async function loadAnalysisAdapter(
-  provider?: string,
-): Promise<RuntimeAdapter> {
+async function loadAnalysisAdapter(provider?: string): Promise<RuntimeAdapter> {
   if (process.env.GAME_THEORY_ANALYSIS_TEST_MODE === "1") {
     const mod = await import("./ai/test-adapter");
     return {
@@ -127,6 +125,8 @@ export interface PhaseContext {
   signal?: AbortSignal;
   logger?: RunLogger;
   onActivity?: AnalysisActivityCallback;
+  /** Pre-built prompts from the orchestrator. Skips redundant buildPhasePromptBundle call. */
+  promptBundle?: { system: string; user: string };
 }
 
 // ── Supported phase types ──
@@ -1848,14 +1848,16 @@ export async function runPhase(
       `svc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     );
 
-  const { system, user } = buildPhasePromptBundle({
-    phase,
-    topic,
-    priorContext: context?.priorEntities,
-    revisionRetryInstruction: context?.revisionRetryInstruction,
-    revisionSystemPrompt: context?.revisionSystemPrompt,
-    effortLevel: context?.runtime?.effortLevel ?? "medium",
-  });
+  const { system, user } =
+    context?.promptBundle ??
+    buildPhasePromptBundle({
+      phase,
+      topic,
+      priorContext: context?.priorEntities,
+      revisionRetryInstruction: context?.revisionRetryInstruction,
+      revisionSystemPrompt: context?.revisionSystemPrompt,
+      effortLevel: context?.runtime?.effortLevel ?? "medium",
+    });
   const model = context?.model ?? "claude-sonnet-4-20250514";
   const provider = context?.provider ?? "anthropic";
   const schema = buildOutputSchema(phase);
@@ -1864,7 +1866,8 @@ export async function runPhase(
     : {};
   const emitActivity = (message: string, toolName?: string) => {
     context?.onActivity?.({
-      kind: toolName === "WebSearch" ? "web-search" : toolName ? "tool" : "note",
+      kind:
+        toolName === "WebSearch" ? "web-search" : toolName ? "tool" : "note",
       message,
       ...(toolName ? { toolName } : {}),
     });
@@ -2013,27 +2016,7 @@ export async function runPhase(
 
 // ── Exported for testing ──
 
-function buildPromptForTest(
-  phase: SupportedPhase,
-  topic: string,
-  priorContext?: string,
-  revisionRetryInstruction?: string,
-  revisionSystemPrompt?: string,
-  runtime?: PhaseRuntimeContext,
-) {
-  const { system, user } = buildPhasePromptBundle({
-    phase,
-    topic,
-    priorContext,
-    revisionRetryInstruction,
-    revisionSystemPrompt,
-    effortLevel: runtime?.effortLevel ?? "medium",
-  });
-  return { system, user };
-}
-
 export {
-  buildPromptForTest as _buildPrompt,
   parseTextResponse as _parseTextResponse,
   validatePhaseOutput as _validatePhaseOutput,
   trimJsonLike as _trimJsonLike,

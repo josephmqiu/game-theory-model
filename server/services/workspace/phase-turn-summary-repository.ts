@@ -26,6 +26,11 @@ function mapPhaseTurnRow(row: Record<string, unknown>): PhaseTurnSummaryState {
 export function createPhaseTurnSummaryRepository(
   db: DatabaseSync,
 ): PhaseTurnSummaryRepository {
+  const getByIdStatement = db.prepare(
+    `SELECT phase_turn_json
+     FROM phase_turn_summaries
+     WHERE id = $id`,
+  );
   const getLatestStatement = db.prepare(
     `SELECT phase_turn_json
      FROM phase_turn_summaries
@@ -40,6 +45,7 @@ export function createPhaseTurnSummaryRepository(
      WHERE run_id = $runId
      ORDER BY phase ASC, turn_index ASC`,
   );
+  const clearStatement = db.prepare(`DELETE FROM phase_turn_summaries`);
   const upsertStatement = db.prepare(
     `INSERT INTO phase_turn_summaries (
        id,
@@ -107,12 +113,6 @@ export function createPhaseTurnSummaryRepository(
        phase_turn_json = excluded.phase_turn_json,
        updated_at = excluded.updated_at`,
   );
-  const getByIdStatement = db.prepare(
-    `SELECT phase_turn_json
-     FROM phase_turn_summaries
-     WHERE id = $id`,
-  );
-  const clearStatement = db.prepare(`DELETE FROM phase_turn_summaries`);
 
   return {
     getPhaseTurnSummary(id) {

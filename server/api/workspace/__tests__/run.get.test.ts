@@ -55,7 +55,7 @@ function seedRun() {
       type: "phase.started",
       workspaceId: thread.workspaceId,
       threadId: thread.id,
-        runId: "run-1",
+      runId: "run-1",
       payload: {
         phase: "situational-grounding",
         phaseTurnId: "phase-turn-1",
@@ -108,7 +108,7 @@ function seedRun() {
       type: "run.completed",
       workspaceId: thread.workspaceId,
       threadId: thread.id,
-        runId: "run-1",
+      runId: "run-1",
       payload: {
         finishedAt: 106,
         summary: {
@@ -131,7 +131,7 @@ describe("/api/workspace/run", () => {
     resetWorkspaceDatabaseForTest();
   });
 
-  it("returns run detail with durable phase turns, activities, domain events, and log path", async () => {
+  it("returns run detail with durable phase turns, activities, domain events, and log filename", async () => {
     const { thread } = seedRun();
     getQueryMock.mockReturnValue({ runId: "run-1" });
 
@@ -165,7 +165,7 @@ describe("/api/workspace/run", () => {
         expect.objectContaining({ type: "run.created", runId: "run-1" }),
         expect.objectContaining({ type: "run.completed", runId: "run-1" }),
       ]),
-      jsonlLogPath: expect.stringContaining("run-1.jsonl"),
+      logFileName: "run-1.jsonl",
     });
     expect(setResponseStatusMock).not.toHaveBeenCalled();
   });

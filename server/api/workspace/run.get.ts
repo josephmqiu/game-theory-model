@@ -1,6 +1,9 @@
 import { defineEventHandler, getQuery, setResponseStatus } from "h3";
 import { z } from "zod";
-import { createRunService, getWorkspaceDatabase } from "../../services/workspace";
+import {
+  createRunService,
+  getWorkspaceDatabase,
+} from "../../services/workspace";
 
 const runQuerySchema = z.object({
   runId: z.string().trim().min(1),
@@ -14,21 +17,26 @@ export default defineEventHandler((event) => {
     return { error: "Invalid run query" };
   }
 
-  const runService = createRunService(getWorkspaceDatabase());
-  const detail = runService.getRunDetailById(parsed.data.runId);
+  try {
+    const runService = createRunService(getWorkspaceDatabase());
+    const detail = runService.getRunDetailById(parsed.data.runId);
 
-  if (!detail) {
-    setResponseStatus(event, 404);
-    return { error: "Run not found" };
+    if (!detail) {
+      setResponseStatus(event, 404);
+      return { error: "Run not found" };
+    }
+
+    if (
+      parsed.data.workspaceId &&
+      detail.run.workspaceId !== parsed.data.workspaceId
+    ) {
+      setResponseStatus(event, 403);
+      return { error: "Run does not belong to the requested workspace" };
+    }
+
+    return detail;
+  } catch {
+    setResponseStatus(event, 500);
+    return { error: "Internal error" };
   }
-
-  if (
-    parsed.data.workspaceId &&
-    detail.run.workspaceId !== parsed.data.workspaceId
-  ) {
-    setResponseStatus(event, 403);
-    return { error: "Run does not belong to the requested workspace" };
-  }
-
-  return detail;
 });

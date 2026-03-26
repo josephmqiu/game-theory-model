@@ -1,8 +1,5 @@
 import type { RunKind } from "./api";
-import type {
-  AnalysisPhaseActivityKind,
-  PhaseSummary,
-} from "./events";
+import type { AnalysisPhaseActivityKind, PhaseSummary } from "./events";
 import type { MethodologyPhase } from "./methodology";
 import type { RuntimeError } from "./runtime-error";
 
@@ -39,11 +36,7 @@ export interface ThreadMessageState {
   }>;
 }
 
-export type DurableRunStatus =
-  | "running"
-  | "completed"
-  | "failed"
-  | "cancelled";
+export type DurableRunStatus = "running" | "completed" | "failed" | "cancelled";
 
 export interface RunActivitySummary {
   kind: AnalysisPhaseActivityKind;
@@ -90,9 +83,9 @@ export interface RunState {
   latestActivityAt?: number;
   latestActivity?: RunActivitySummary;
   summary?: RunSummaryState;
-  promptProvenance: RunPromptProvenance;
+  promptProvenance?: RunPromptProvenance;
   latestPhaseTurnId?: string;
-  logCorrelation: RunLogCorrelation;
+  logCorrelation?: RunLogCorrelation;
 }
 
 export interface ActivityEntry {
@@ -113,11 +106,7 @@ export interface ActivityEntry {
   causedByEventId?: string;
 }
 
-export type PhaseTurnStatus =
-  | "running"
-  | "completed"
-  | "failed"
-  | "cancelled";
+export type PhaseTurnStatus = "running" | "completed" | "failed" | "cancelled";
 
 export interface PhaseTurnPromptProvenance {
   phase: MethodologyPhase;

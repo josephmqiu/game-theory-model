@@ -150,12 +150,15 @@ export function createRunRepository(db: DatabaseSync): RunRepository {
         $summaryStatusMessage: run.summary?.statusMessage ?? null,
         $summaryFailedPhase: run.summary?.failedPhase ?? null,
         $summaryCompletedPhases: run.summary?.completedPhases ?? 0,
-        $promptAnalysisType: run.promptProvenance.analysisType,
-        $promptActivePhasesJson: stringifyJson(run.promptProvenance.activePhases),
-        $promptTemplateSetIdentity: run.promptProvenance.templateSetIdentity,
-        $promptTemplateSetHash: run.promptProvenance.templateSetHash,
+        $promptAnalysisType: run.promptProvenance?.analysisType ?? null,
+        $promptActivePhasesJson: run.promptProvenance
+          ? stringifyJson(run.promptProvenance.activePhases)
+          : null,
+        $promptTemplateSetIdentity:
+          run.promptProvenance?.templateSetIdentity ?? null,
+        $promptTemplateSetHash: run.promptProvenance?.templateSetHash ?? null,
         $latestPhaseTurnId: run.latestPhaseTurnId ?? null,
-        $logFileName: run.logCorrelation.logFileName,
+        $logFileName: run.logCorrelation?.logFileName ?? null,
         $runJson: stringifyJson(run),
         $startedAt: run.startedAt,
         $finishedAt: run.finishedAt,

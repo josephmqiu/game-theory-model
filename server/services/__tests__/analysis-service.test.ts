@@ -551,11 +551,11 @@ const mockCodexRunAnalysisPhase = vi.fn();
 vi.mock("../ai/adapter-contract", () => ({
   getRuntimeAdapter: vi.fn(async (providerInput?: string) => {
     if (
-      providerInput
-      && providerInput !== "anthropic"
-      && providerInput !== "claude"
-      && providerInput !== "openai"
-      && providerInput !== "codex"
+      providerInput &&
+      providerInput !== "anthropic" &&
+      providerInput !== "claude" &&
+      providerInput !== "openai" &&
+      providerInput !== "codex"
     ) {
       throw new Error(`Unknown provider: ${providerInput}`);
     }
@@ -851,9 +851,13 @@ describe("analysis-service", () => {
       );
 
       const { runPhase } = await importService();
-      const result = await runPhase("situational-grounding", "US-China trade war", {
-        onActivity,
-      });
+      const result = await runPhase(
+        "situational-grounding",
+        "US-China trade war",
+        {
+          onActivity,
+        },
+      );
 
       expect(result.success).toBe(true);
       const [, , , , options] = mockClaudeRunAnalysisPhase.mock.calls[0];
@@ -1178,13 +1182,15 @@ describe("analysis-service", () => {
     });
   });
 
-  describe("_buildPrompt", () => {
+  describe("buildPhasePromptBundle", () => {
     it("builds prompt without prior context", async () => {
-      const { _buildPrompt } = await importService();
-      const { system, user } = _buildPrompt(
-        "situational-grounding",
-        "US-China trade war",
-      );
+      const { buildPhasePromptBundle } =
+        await import("../analysis-prompt-provenance");
+      const { system, user } = buildPhasePromptBundle({
+        phase: "situational-grounding",
+        topic: "US-China trade war",
+        effortLevel: "medium",
+      });
 
       expect(system).toContain("Phase 1");
       expect(user).toContain("US-China trade war");
@@ -1200,27 +1206,27 @@ describe("analysis-service", () => {
     });
 
     it("builds prompt with prior context", async () => {
-      const { _buildPrompt } = await importService();
-      const { user } = _buildPrompt(
-        "player-identification",
-        "US-China trade war",
-        '{"entities":[]}',
-      );
+      const { buildPhasePromptBundle } =
+        await import("../analysis-prompt-provenance");
+      const { user } = buildPhasePromptBundle({
+        phase: "player-identification",
+        topic: "US-China trade war",
+        priorContext: '{"entities":[]}',
+        effortLevel: "medium",
+      });
 
       expect(user).toContain("Prior phase output");
       expect(user).toContain('{"entities":[]}');
     });
 
     it("builds prompt with low effort guidance", async () => {
-      const { _buildPrompt } = await importService();
-      const { user } = _buildPrompt(
-        "situational-grounding",
-        "US-China trade war",
-        undefined,
-        undefined,
-        undefined,
-        { webSearch: true, effortLevel: "low" },
-      );
+      const { buildPhasePromptBundle } =
+        await import("../analysis-prompt-provenance");
+      const { user } = buildPhasePromptBundle({
+        phase: "situational-grounding",
+        topic: "US-China trade war",
+        effortLevel: "low",
+      });
 
       expect(user).toContain('Effort level: "low"');
       expect(user).toContain(
@@ -1229,19 +1235,19 @@ describe("analysis-service", () => {
       expect(user).toContain(
         "Avoid unnecessary branching or long-tail possibilities.",
       );
-      expect(user).toContain("Prefer concise outputs when uncertainty is high.");
+      expect(user).toContain(
+        "Prefer concise outputs when uncertainty is high.",
+      );
     });
 
     it("builds prompt with high effort guidance", async () => {
-      const { _buildPrompt } = await importService();
-      const { user } = _buildPrompt(
-        "situational-grounding",
-        "US-China trade war",
-        undefined,
-        undefined,
-        undefined,
-        { webSearch: true, effortLevel: "high" },
-      );
+      const { buildPhasePromptBundle } =
+        await import("../analysis-prompt-provenance");
+      const { user } = buildPhasePromptBundle({
+        phase: "situational-grounding",
+        topic: "US-China trade war",
+        effortLevel: "high",
+      });
 
       expect(user).toContain('Effort level: "high"');
       expect(user).toContain(
