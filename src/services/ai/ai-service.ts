@@ -1,29 +1,9 @@
 import type { AIStreamChunk } from "./ai-types";
-import type { AIModelInfo } from "@/stores/ai-store";
 import {
-  DEFAULT_GENERATE_TIMEOUT_MS,
   DEFAULT_STREAM_HARD_TIMEOUT_MS,
   DEFAULT_STREAM_NO_TEXT_TIMEOUT_MS,
   STREAM_TIMEOUT_MIN_MS,
 } from "./ai-runtime-config";
-
-interface RunLogger {
-  log: (sub: string, event: string, data?: Record<string, unknown>) => void;
-  warn: (sub: string, event: string, data?: Record<string, unknown>) => void;
-  error: (sub: string, event: string, data?: Record<string, unknown>) => void;
-}
-
-interface RunContext {
-  runId: string;
-  logger: RunLogger;
-}
-
-function timer(): { elapsed(): number } {
-  const started = Date.now();
-  return {
-    elapsed: () => Date.now() - started,
-  };
-}
 
 export interface StreamChatOptions {
   hardTimeoutMs?: number;
@@ -180,7 +160,9 @@ export async function* streamChat(
               messages: messages.map((m) => ({
                 role: m.role,
                 content: m.content,
-                ...(m.attachments?.length ? { attachments: m.attachments } : {}),
+                ...(m.attachments?.length
+                  ? { attachments: m.attachments }
+                  : {}),
               })),
               model,
               provider,
@@ -351,8 +333,7 @@ export async function* streamChat(
           if (chunk.type === "error") {
             yield {
               type: "error",
-              content:
-                chunk.content || chunk.error?.message || "Unknown error",
+              content: chunk.content || chunk.error?.message || "Unknown error",
             } as AIStreamChunk;
             return;
           }
@@ -412,104 +393,5 @@ export async function* streamChat(
     clearTimeout(hardTimeout);
     clearNoTextTimeout();
     clearFirstTextTimeout();
-  }
-}
-
-/**
- * Non-streaming completion for design/code generation.
- * Calls the server-side endpoint which routes to the appropriate provider SDK.
- */
-export async function generateCompletion(
-  systemPrompt: string,
-  userMessage: string,
-  model?: string,
-  provider?: string,
-  run?: RunContext,
-): Promise<string> {
-  const requestTimer = timer();
-  run?.logger.log("completion", "request-start", {
-    model: model ?? "missing",
-    provider: provider ?? "missing",
-    systemLen: systemPrompt.length,
-    messageLen: userMessage.length,
-    timeoutMs: DEFAULT_GENERATE_TIMEOUT_MS,
-  });
-
-  const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    DEFAULT_GENERATE_TIMEOUT_MS,
-  );
-
-  let response: Response;
-  try {
-    response = await fetch("/api/ai/generate", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(run ? { "X-Run-Id": run.runId } : {}),
-      },
-      body: JSON.stringify({
-        system: systemPrompt,
-        message: userMessage,
-        model,
-        provider,
-      }),
-      signal: controller.signal,
-    });
-  } catch (error) {
-    clearTimeout(timeout);
-    if (controller.signal.aborted) {
-      run?.logger.warn("completion", "request-timeout", {
-        elapsedMs: requestTimer.elapsed(),
-        timeoutMs: DEFAULT_GENERATE_TIMEOUT_MS,
-      });
-      throw new Error("AI generation request timed out. Please retry.");
-    }
-    run?.logger.error("completion", "fetch-error", {
-      elapsedMs: requestTimer.elapsed(),
-      error: error instanceof Error ? error.message : "Unknown fetch error",
-    });
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
-
-  if (!response.ok) {
-    run?.logger.error("completion", "server-error", {
-      elapsedMs: requestTimer.elapsed(),
-      status: response.status,
-    });
-    throw new Error(`Server error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  if (data.error) {
-    run?.logger.error("completion", "server-error", {
-      elapsedMs: requestTimer.elapsed(),
-      error: data.error,
-    });
-    throw new Error(data.error);
-  }
-  const text = data.text ?? "";
-  run?.logger.log("completion", "response-ok", {
-    elapsedMs: requestTimer.elapsed(),
-    textLength: text.length,
-  });
-  return text;
-}
-
-/**
- * Fetches available AI models from the server.
- * The server queries Claude Agent SDK for the supported model list.
- */
-export async function fetchAvailableModels(): Promise<AIModelInfo[]> {
-  try {
-    const response = await fetch("/api/ai/models");
-    if (!response.ok) return [];
-    const data = await response.json();
-    return data.models ?? [];
-  } catch {
-    return [];
   }
 }

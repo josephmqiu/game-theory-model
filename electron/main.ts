@@ -51,16 +51,15 @@ import {
   getLegacyPortFilePath,
   getPortFilePath,
 } from "../src/lib/runtime-state-paths";
-import {
-  createAppSettingsStore,
-  createPreferenceStore,
-} from "./persistence";
+import { createAppSettingsStore, createPreferenceStore } from "./persistence";
 
 let mainWindow: BrowserWindow | null = null;
 let nitroProcess: ChildProcess | null = null;
 let nitroShutdownPromise: Promise<void> | null = null;
 let isShuttingDown = false;
 let serverPort = 0;
+let nitroRestartAttempt = 0;
+let nitroRestartTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingFilePath: string | null = null;
 const APP_NAME = "Game Theory Analyzer";
 const SMOKE_READY_FILE_NAME = "smoke-ready.json";
@@ -187,7 +186,9 @@ async function cleanupPortFile(): Promise<void> {
   }
 }
 
-async function writeSmokeReadyFile(data: Record<string, unknown>): Promise<void> {
+async function writeSmokeReadyFile(
+  data: Record<string, unknown>,
+): Promise<void> {
   if (!isSmokeTestMode) return;
 
   const filePath = getSmokeReadyFilePath();
@@ -258,6 +259,32 @@ function ensureAnalysisFileName(filePath: string): string {
 // Nitro server
 // ---------------------------------------------------------------------------
 
+function scheduleNitroRestart(reason: string): void {
+  if (isShuttingDown || nitroRestartTimer) return;
+  const delayMs = Math.min(500 * 2 ** nitroRestartAttempt, 10_000);
+  nitroRestartAttempt += 1;
+  log.warn(
+    `[nitro] Exited unexpectedly (${reason}); restarting in ${delayMs}ms (attempt ${nitroRestartAttempt})`,
+  );
+  nitroRestartTimer = setTimeout(() => {
+    nitroRestartTimer = null;
+    startNitroServer()
+      .then(async (newPort) => {
+        serverPort = newPort;
+        await writePortFile(newPort);
+        await waitForAnalysisStateReady(newPort);
+        nitroRestartAttempt = 0;
+        log.info(`[nitro] Restarted successfully on port ${newPort}`);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.loadURL(`http://${NITRO_HOST}:${newPort}/editor`);
+        }
+      })
+      .catch((err) => {
+        log.error(`[nitro] Failed to restart: ${err}`);
+      });
+  }, delayMs);
+}
+
 async function startNitroServer(): Promise<number> {
   const port = await getFreePorts();
   const entry = getServerEntry();
@@ -313,9 +340,7 @@ async function startNitroServer(): Promise<number> {
       log.error(
         `[nitro] spawn error: ${error instanceof Error ? error.message : String(error)}`,
       );
-      settleReject(
-        error instanceof Error ? error : new Error(String(error)),
-      );
+      settleReject(error instanceof Error ? error : new Error(String(error)));
       shutdownOnFailure();
     });
     child.on("exit", (code, signal) => {
@@ -343,20 +368,7 @@ async function startNitroServer(): Promise<number> {
         mainWindow &&
         !mainWindow.isDestroyed()
       ) {
-        log.info("[nitro] Restarting server after crash...");
-        startNitroServer()
-          .then(async (newPort) => {
-            serverPort = newPort;
-            await writePortFile(newPort);
-            await waitForAnalysisStateReady(newPort);
-            log.info(`[nitro] Restarted on port ${newPort}`);
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.loadURL(`http://${NITRO_HOST}:${newPort}/editor`);
-            }
-          })
-          .catch((err) => {
-            log.error(`[nitro] Failed to restart: ${err}`);
-          });
+        scheduleNitroRestart(`exit code ${code}`);
       }
     });
 
@@ -789,7 +801,13 @@ async function blockMountedDiskImageLaunch(): Promise<boolean> {
     return false;
   }
 
-  if (!isRunningFromMountedDiskImage(process.platform, app.isPackaged, process.execPath)) {
+  if (
+    !isRunningFromMountedDiskImage(
+      process.platform,
+      app.isPackaged,
+      process.execPath,
+    )
+  ) {
     return false;
   }
 
@@ -888,6 +906,10 @@ app.on("activate", () => {
 
 app.on("before-quit", async () => {
   isShuttingDown = true;
+  if (nitroRestartTimer) {
+    clearTimeout(nitroRestartTimer);
+    nitroRestartTimer = null;
+  }
   clearUpdateTimer();
   await cleanupSmokeReadyFile();
   await cleanupPortFile();
@@ -958,6 +980,10 @@ async function stopNitroProcess(child = nitroProcess): Promise<void> {
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
   process.on(signal, () => {
     isShuttingDown = true;
+    if (nitroRestartTimer) {
+      clearTimeout(nitroRestartTimer);
+      nitroRestartTimer = null;
+    }
     void stopNitroProcess();
     Promise.all([cleanupPortFile(), cleanupSmokeReadyFile()]).finally(() =>
       process.exit(0),

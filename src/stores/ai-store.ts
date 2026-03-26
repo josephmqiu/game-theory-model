@@ -11,14 +11,12 @@ export type PanelCorner =
 
 const DEFAULT_MODEL = "claude-sonnet-4-5-20250929";
 const MODEL_PREFERENCE_STORAGE_KEY = "game-theory-analyzer-ai-model-preference";
-const CONCURRENCY_STORAGE_KEY = "game-theory-analyzer-ai-concurrency";
 const UI_PREFS_KEY = "game-theory-analyzer-ai-ui-preferences";
 
 interface AIUIPrefs {
   isPanelOpen?: boolean;
   panelCorner?: PanelCorner;
   isMinimized?: boolean;
-  codeFormat?: "react-tailwind" | "html-css" | "react-inline";
 }
 
 function readUIPrefs(): AIUIPrefs {
@@ -64,27 +62,6 @@ function writeStoredModelPreference(model: string): void {
   }
 }
 
-function readStoredConcurrency(): number {
-  if (typeof window === "undefined") return 1;
-  try {
-    const value = appStorage.getItem(CONCURRENCY_STORAGE_KEY);
-    if (!value) return 1;
-    const n = parseInt(value, 10);
-    return n >= 1 && n <= 6 ? n : 1;
-  } catch {
-    return 1;
-  }
-}
-
-function writeStoredConcurrency(n: number): void {
-  if (typeof window === "undefined") return;
-  try {
-    appStorage.setItem(CONCURRENCY_STORAGE_KEY, String(n));
-  } catch {
-    // Ignore storage failures
-  }
-}
-
 // Keep SSR/CSR first render deterministic to avoid hydration mismatch.
 // Real preference is loaded on mount via hydrateModelPreference().
 const initialPreferredModel = DEFAULT_MODEL;
@@ -98,9 +75,6 @@ export interface AIModelInfo {
 interface AIState {
   isStreaming: boolean;
   isPanelOpen: boolean;
-  activeTab: "chat" | "code";
-  generatedCode: string;
-  codeFormat: "react-tailwind" | "html-css" | "react-inline";
   model: string;
   preferredModel: string;
   availableModels: AIModelInfo[];
@@ -108,16 +82,9 @@ interface AIState {
   isLoadingModels: boolean;
   panelCorner: PanelCorner;
   isMinimized: boolean;
-  generationProgress: { current: number; total: number } | null;
-  concurrency: number;
   pendingAttachments: ChatAttachment[];
   abortController: AbortController | null;
   pendingPlan: { topic: string } | null;
-
-  setConcurrency: (n: number) => void;
-  setGenerationProgress: (
-    progress: { current: number; total: number } | null,
-  ) => void;
 
   hydrateModelPreference: () => void;
   selectModel: (model: string) => void;
@@ -127,9 +94,6 @@ interface AIState {
   setStreaming: (v: boolean) => void;
   togglePanel: () => void;
   setPanelOpen: (open: boolean) => void;
-  setActiveTab: (tab: "chat" | "code") => void;
-  setGeneratedCode: (code: string) => void;
-  setCodeFormat: (f: "react-tailwind" | "html-css" | "react-inline") => void;
   setPanelCorner: (corner: PanelCorner) => void;
   toggleMinimize: () => void;
   addPendingAttachment: (attachment: ChatAttachment) => void;
@@ -143,9 +107,6 @@ interface AIState {
 export const useAIStore = create<AIState>((set, get) => ({
   isStreaming: false,
   isPanelOpen: true,
-  activeTab: "chat",
-  generatedCode: "",
-  codeFormat: "react-tailwind",
   model: initialPreferredModel,
   preferredModel: initialPreferredModel,
   availableModels: [],
@@ -153,31 +114,19 @@ export const useAIStore = create<AIState>((set, get) => ({
   isLoadingModels: false,
   panelCorner: "bottom-left",
   isMinimized: false,
-  concurrency: 1,
-  generationProgress: null,
   pendingAttachments: [],
   abortController: null,
   pendingPlan: null,
 
-  setConcurrency: (n) => {
-    const clamped = Math.max(1, Math.min(6, n));
-    writeStoredConcurrency(clamped);
-    set({ concurrency: clamped });
-  },
-  setGenerationProgress: (generationProgress) => set({ generationProgress }),
-
   hydrateModelPreference: () => {
     const stored = readStoredModelPreference();
     if (stored) set({ model: stored, preferredModel: stored });
-    const storedConcurrency = readStoredConcurrency();
-    if (storedConcurrency !== 1) set({ concurrency: storedConcurrency });
     const prefs = readUIPrefs();
     if (typeof prefs.isPanelOpen === "boolean")
       set({ isPanelOpen: prefs.isPanelOpen });
     if (prefs.panelCorner) set({ panelCorner: prefs.panelCorner });
     if (typeof prefs.isMinimized === "boolean")
       set({ isMinimized: prefs.isMinimized });
-    if (prefs.codeFormat) set({ codeFormat: prefs.codeFormat });
   },
 
   setStreaming: (isStreaming) => set({ isStreaming }),
@@ -191,15 +140,6 @@ export const useAIStore = create<AIState>((set, get) => ({
   setPanelOpen: (isPanelOpen) => {
     set({ isPanelOpen });
     writeUIPrefs({ isPanelOpen });
-  },
-
-  setActiveTab: (activeTab) => set({ activeTab }),
-
-  setGeneratedCode: (generatedCode) => set({ generatedCode }),
-
-  setCodeFormat: (codeFormat) => {
-    set({ codeFormat });
-    writeUIPrefs({ codeFormat });
   },
 
   selectModel: (model) => {

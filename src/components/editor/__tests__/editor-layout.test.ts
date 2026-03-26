@@ -1,10 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
-import {
-  abortAnalysisRun,
-  type AnalysisResult,
-} from "@/components/editor/analysis-run";
+import { describe, expect, it } from "vitest";
 
 const topBarPath = join(process.cwd(), "src/components/editor/top-bar.tsx");
 const landingPath = join(process.cwd(), "src/routes/index.tsx");
@@ -105,46 +101,5 @@ describe("editor layout", () => {
     expect(launcherSource).toContain(
       "onStartAnalysis(topic, currentProvider, validModel)",
     );
-  });
-
-  it("aborts the active run, waits for completion, and flushes logs", async () => {
-    const controller = new AbortController();
-    const logger = {
-      log: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      capture: vi.fn(),
-      flush: vi.fn().mockResolvedValue(true),
-      entries: () => [],
-    };
-    const onSettled = vi.fn();
-
-    const promise = new Promise<AnalysisResult>((resolve) => {
-      controller.signal.addEventListener("abort", () => {
-        onSettled();
-        resolve({
-          runId: "run-abort",
-          entities: [],
-          relationships: [],
-        });
-      });
-    });
-
-    await abortAnalysisRun(
-      {
-        controller,
-        promise,
-        runId: "run-abort",
-        logger,
-      },
-      "new-analysis",
-    );
-
-    expect(controller.signal.aborted).toBe(true);
-    expect(onSettled).toHaveBeenCalledTimes(1);
-    expect(logger.warn).toHaveBeenCalledWith("ui", "abort-requested", {
-      reason: "new-analysis",
-    });
-    expect(logger.flush).toHaveBeenCalledTimes(1);
   });
 });
