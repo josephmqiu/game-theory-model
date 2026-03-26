@@ -1,5 +1,5 @@
 // analysis-service.ts — per-phase execution engine.
-// Absorbs prompt building (phase-prompts.ts) and response parsing (phase-worker.ts).
+// Absorbs prompt building and response parsing (phase-worker.ts).
 // Calls the active adapter's runAnalysisPhase() for structured output,
 // with fallback to text parsing for backward compatibility.
 //
