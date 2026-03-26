@@ -380,6 +380,60 @@ const en = {
   "agents.analysisPhasesAll": "All phases",
   "agents.analysisPhasesCustom": "Custom",
 
+  // ── Settings Tabs ──
+  "settings.tabProviders": "Providers",
+  "settings.tabAnalysis": "Analysis",
+  "settings.tabSystem": "System",
+
+  // ── Plan Preview ──
+  "plan.title": "Analysis Plan",
+  "plan.phases": "Phases",
+  "plan.phaseCount": "{{count}} phases",
+  "plan.startAnalysis": "Start Analysis",
+  "plan.effortQuick": "Quick",
+  "plan.effortStandard": "Standard",
+  "plan.effortThorough": "Thorough",
+  "plan.effortMaximum": "Maximum",
+  "plan.webSearchEnabled": "Search",
+  "plan.webSearchDisabled": "No search",
+
+  // ── Connection State ──
+  "connection.connected": "Connected",
+  "connection.connecting": "Connecting",
+  "connection.recovering": "Reconnecting",
+  "connection.disconnected": "Offline",
+
+  // ── Diagnostic Errors ──
+  "diagnostic.validationError": "Validation Error",
+  "diagnostic.transportError": "Transport Error",
+  "diagnostic.providerError": "Provider Error",
+  "diagnostic.sessionError": "Session Error",
+  "diagnostic.processError": "Process Error",
+  "diagnostic.rateLimited": "Rate limited — try again in a few minutes",
+  "diagnostic.unauthorized": "Check provider authentication in Settings",
+  "diagnostic.unavailable":
+    "Provider temporarily unavailable — try a different model",
+  "diagnostic.transportHint":
+    "Connection interrupted — the app will retry automatically",
+  "diagnostic.sessionHint": "Session expired — start a new thread to continue",
+  "diagnostic.processNotInstalled":
+    "Required tool is not installed — check Settings",
+  "diagnostic.processHint":
+    "Provider process failed — try reconnecting in Settings",
+  "diagnostic.validationHint":
+    "The model returned invalid output — retrying may help",
+  "diagnostic.copyDiagnostic": "Copy Diagnostic Info",
+  "diagnostic.copied": "Copied",
+  "diagnostic.retry": "Retry",
+  "diagnostic.phase": "Phase: {{phase}}",
+
+  // ── Activity ──
+  "activity.timestamp": "{{time}}",
+
+  // ── Thread Settings ──
+  "threadSettings.effort": "Effort",
+  "threadSettings.search": "Search",
+
   // ── Figma Import ──
   "figma.title": "Import from Figma",
   "figma.dropFile": "Drop a .fig file here",
@@ -443,8 +497,7 @@ const en = {
   "analysis.launcherTitle": "Start a game-theory analysis",
   "analysis.launcherHint":
     "Describe a negotiation, conflict, policy fight, market contest, or strategic situation to map on the canvas.",
-  "analysis.launcherInputPlaceholder":
-    "What do you want to analyze?",
+  "analysis.launcherInputPlaceholder": "What do you want to analyze?",
   "analysis.launcherButton": "Start analysis",
   "analysis.launcherModelReady": "Using {{model}}",
   "analysis.launcherReady": "Ready",

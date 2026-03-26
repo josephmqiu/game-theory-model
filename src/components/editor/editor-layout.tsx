@@ -21,6 +21,7 @@ import {
   buildAnalysisRuntimeOverrides,
   useAgentSettingsStore,
 } from "@/stores/agent-settings-store";
+import { useThreadSettingsStore } from "@/stores/thread-settings-store";
 import { useCanvasStore } from "@/stores/canvas-store";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useElectronMenu } from "@/hooks/use-electron-menu";
@@ -181,6 +182,7 @@ export default function EditorLayout() {
   useEffect(() => {
     void initAppStorage().then(() => {
       useAgentSettingsStore.getState().hydrate();
+      useThreadSettingsStore.getState().hydrate();
       void analysisClient.hydrateAnalysisState();
     });
   }, []);

@@ -21,6 +21,7 @@ import { useThreadStore } from "@/stores/thread-store";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
 import { useRunStatusStore } from "@/stores/run-status-store";
+import type { ConnectionState } from "@/stores/run-status-store";
 
 import type { ChatMessage as ChatMessageType } from "@/services/ai/ai-types";
 import type { AIProviderType } from "@/types/agent-settings";
@@ -29,12 +30,21 @@ import {
   isAllowedProvider,
 } from "@/services/ai/allowed-providers";
 import * as analysisClient from "@/services/ai/analysis-client";
-import { projectThreadMessagesToChatMessages } from "@/services/ai/thread-projection";
+import {
+  projectThreadMessagesToChatMessages,
+  buildTranscript,
+  type TranscriptEntry,
+} from "@/services/ai/thread-projection";
 import ClaudeLogo from "@/components/icons/claude-logo";
 import OpenAILogo from "@/components/icons/openai-logo";
 import OpenCodeLogo from "@/components/icons/opencode-logo";
 import CopilotLogo from "@/components/icons/copilot-logo";
+import { V3_PHASES } from "@/types/methodology";
+import type { AnalysisEffortLevel } from "../../../shared/types/analysis-runtime";
 import ChatMessage from "./chat-message";
+import { ActivityCard } from "./activity-card";
+import { PhaseDivider } from "./phase-divider";
+import { PlanPreviewCard } from "./plan-preview-card";
 import { useChatHandlers } from "./ai-chat-handlers";
 import { FixedChecklist } from "./ai-chat-checklist";
 import { buildAnalysisCompleteMessage } from "./ai-chat-lifecycle";
@@ -154,6 +164,99 @@ function ToolStatusMessage({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Connection state indicator
+// ---------------------------------------------------------------------------
+
+const CONNECTION_DOT_CLASSES: Record<ConnectionState, string> = {
+  CONNECTED: "bg-green-500",
+  CONNECTING: "bg-amber-500 animate-pulse",
+  RECOVERING: "bg-amber-500 animate-pulse",
+  DISCONNECTED: "bg-destructive/60",
+};
+
+const CONNECTION_LABEL_KEYS: Record<ConnectionState, string> = {
+  CONNECTED: "connection.connected",
+  CONNECTING: "connection.connecting",
+  RECOVERING: "connection.recovering",
+  DISCONNECTED: "connection.disconnected",
+};
+
+function ConnectionIndicator() {
+  const { t } = useTranslation();
+  const connectionState = useRunStatusStore((s) => s.connectionState);
+
+  // Don't show anything when connected — save space
+  if (connectionState === "CONNECTED") return null;
+
+  return (
+    <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-md bg-secondary/40">
+      <div
+        className={cn(
+          "w-1.5 h-1.5 rounded-full shrink-0",
+          CONNECTION_DOT_CLASSES[connectionState],
+        )}
+      />
+      <span className="text-[10px] text-muted-foreground">
+        {t(CONNECTION_LABEL_KEYS[connectionState])}
+      </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Plan preview card wrapper — reads settings from stores
+// ---------------------------------------------------------------------------
+
+function PlanPreviewCardWrapper({
+  topic,
+  model,
+  availableModels,
+}: {
+  topic: string;
+  model: string;
+  availableModels: Array<{ value: string; displayName: string }>;
+}) {
+  const analysisPhaseMode = useAgentSettingsStore((s) => s.analysisPhaseMode);
+  const analysisCustomPhases = useAgentSettingsStore(
+    (s) => s.analysisCustomPhases,
+  );
+  const analysisEffortLevel = useAgentSettingsStore(
+    (s) => s.analysisEffortLevel,
+  );
+  const analysisWebSearch = useAgentSettingsStore((s) => s.analysisWebSearch);
+
+  const phases =
+    analysisPhaseMode === "custom" ? analysisCustomPhases : [...V3_PHASES];
+  const effort: AnalysisEffortLevel = analysisEffortLevel ?? "medium";
+  const webSearch = analysisWebSearch ?? true;
+  const modelDisplayName = availableModels.find(
+    (m) => m.value === model,
+  )?.displayName;
+
+  return (
+    <PlanPreviewCard
+      topic={topic}
+      phases={phases}
+      model={model}
+      modelDisplayName={modelDisplayName}
+      effort={effort}
+      webSearch={webSearch}
+      onApprove={(settings) => {
+        // Start analysis with the approved settings
+        const runtime = {
+          webSearch: settings.webSearch,
+          effortLevel: settings.effort,
+          activePhases: settings.phases,
+        };
+        useAIStore.getState().setPendingPlan(null);
+        analysisClient.startAnalysis(topic, undefined, model, runtime);
+      }}
+      onCancel={() => useAIStore.getState().setPendingPlan(null)}
+    />
+  );
+}
+
 /**
  * Minimized AI bar — a compact clickable pill.
  * Parent is responsible for placing it in the layout.
@@ -248,6 +351,8 @@ export default function AIChatPanel({
   const isAnalysisMode = mode === "analysis";
   const previousAnalysisIdRef = useRef<string | null>(null);
   const terminalNoticeKeysRef = useRef<Set<string>>(new Set());
+  const pendingPlan = useAIStore((s) => s.pendingPlan);
+  const runStatusForTranscript = useRunStatusStore((s) => s.runStatus);
   const projectedMessages = useMemo(
     () =>
       projectThreadMessagesToChatMessages(activeThreadDetail?.messages ?? []),
@@ -257,6 +362,19 @@ export default function AIChatPanel({
     () => [...projectedMessages, ...overlayMessages],
     [overlayMessages, projectedMessages],
   );
+  // Build unified transcript when we have activities
+  const transcript: TranscriptEntry[] = useMemo(() => {
+    const activities = activeThreadDetail?.activities ?? [];
+    if (activities.length === 0) return [];
+    return buildTranscript(activeThreadDetail?.messages ?? [], activities, {
+      activePhase: runStatusForTranscript.activePhase,
+    });
+  }, [
+    activeThreadDetail?.messages,
+    activeThreadDetail?.activities,
+    runStatusForTranscript.activePhase,
+  ]);
+  const hasTranscript = transcript.length > 0;
   const activeThreadTitle =
     activeThreadDetail?.thread.title ??
     threads.find((thread) => thread.id === activeThreadId)?.title;
@@ -293,41 +411,45 @@ export default function AIChatPanel({
           useEntityGraphStore.getState().analysis.entities.length;
 
         if (nextStatus.status === "idle" && previousStatus.runId) {
-            const noticeKey = getAnalysisTerminalNoticeKey(
-              previousStatus.runId,
-              "completed",
-            );
-            if (!terminalNoticeKeysRef.current.has(noticeKey)) {
-              terminalNoticeKeysRef.current.add(noticeKey);
-              useThreadStore.getState().addOverlayMessage(
+          const noticeKey = getAnalysisTerminalNoticeKey(
+            previousStatus.runId,
+            "completed",
+          );
+          if (!terminalNoticeKeysRef.current.has(noticeKey)) {
+            terminalNoticeKeysRef.current.add(noticeKey);
+            useThreadStore
+              .getState()
+              .addOverlayMessage(
                 buildAnalysisTerminalMessage(
                   previousStatus.runId,
                   "completed",
                   entityCount,
                 ),
               );
-            }
-          } else if (
-            (nextStatus.status === "failed" ||
+          }
+        } else if (
+          (nextStatus.status === "failed" ||
             nextStatus.status === "cancelled") &&
           nextStatus.runId
         ) {
           const noticeKey = getAnalysisTerminalNoticeKey(
-              nextStatus.runId,
-              nextStatus.status,
-            );
-            if (!terminalNoticeKeysRef.current.has(noticeKey)) {
-              terminalNoticeKeysRef.current.add(noticeKey);
-              useThreadStore.getState().addOverlayMessage(
+            nextStatus.runId,
+            nextStatus.status,
+          );
+          if (!terminalNoticeKeysRef.current.has(noticeKey)) {
+            terminalNoticeKeysRef.current.add(noticeKey);
+            useThreadStore
+              .getState()
+              .addOverlayMessage(
                 buildAnalysisTerminalMessage(
                   nextStatus.runId,
                   nextStatus.status,
                   entityCount,
                 ),
               );
-            }
           }
         }
+      }
 
       previousStatus = nextStatus;
     });
@@ -632,9 +754,7 @@ export default function AIChatPanel({
               <ChevronDown size={14} />
             </Button>
           )}
-          <span
-            className={cn("flex min-w-0 flex-col", isDocked ? "px-2" : "")}
-          >
+          <span className={cn("flex min-w-0 flex-col", isDocked ? "px-2" : "")}>
             <span
               className="max-w-[160px] truncate overflow-hidden text-ellipsis text-sm font-medium text-foreground"
               title={displayTitle}
@@ -655,6 +775,7 @@ export default function AIChatPanel({
               className="animate-spin text-muted-foreground ml-2"
             />
           )}
+          <ConnectionIndicator />
         </div>
         <Button
           variant="ghost"
@@ -706,7 +827,15 @@ export default function AIChatPanel({
             {threadError}
           </div>
         )}
-        {messages.length === 0 ? (
+        {/* Plan preview card (shown before analysis starts) */}
+        {pendingPlan && (
+          <PlanPreviewCardWrapper
+            topic={pendingPlan.topic}
+            model={model}
+            availableModels={availableModels}
+          />
+        )}
+        {messages.length === 0 && !pendingPlan ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <p className="max-w-[240px] text-xs text-muted-foreground">
               {emptyStateLabel}
@@ -715,6 +844,72 @@ export default function AIChatPanel({
               {emptyStateHint}
             </p>
           </div>
+        ) : hasTranscript ? (
+          /* Unified transcript — interleaves messages, activities, phase dividers */
+          <>
+            {transcript.map((entry) => {
+              if (entry.kind === "message") {
+                return (
+                  <ChatMessage
+                    key={entry.id}
+                    role={entry.message.role}
+                    content={entry.message.content}
+                    isStreaming={false}
+                    attachments={entry.message.attachments}
+                  />
+                );
+              }
+              if (entry.kind === "activity") {
+                return (
+                  <ActivityCard
+                    key={entry.id}
+                    kind={
+                      entry.activityKind === "tool"
+                        ? "tool-call"
+                        : entry.activityKind === "web-search"
+                          ? "web-search"
+                          : "unknown"
+                    }
+                    message={entry.message}
+                    status={entry.status}
+                    toolName={entry.toolName}
+                    query={entry.query}
+                    timestamp={entry.timestamp}
+                    isLive={entry.isLive}
+                  />
+                );
+              }
+              if (entry.kind === "phase-divider") {
+                return (
+                  <PhaseDivider
+                    key={entry.id}
+                    phaseNumber={entry.phaseNumber}
+                    phaseName={entry.phaseName}
+                    status={entry.status}
+                  />
+                );
+              }
+              return null;
+            })}
+            {/* Overlay messages still render after transcript (streaming chat) */}
+            {overlayMessages.map((msg) =>
+              isToolMessage(msg.id) ? (
+                <ToolStatusMessage
+                  key={msg.id}
+                  content={msg.content}
+                  status={resolveToolStatus(msg, isStreaming)}
+                />
+              ) : (
+                <ChatMessage
+                  key={msg.id}
+                  role={msg.role}
+                  content={msg.content}
+                  isStreaming={msg.isStreaming && isStreaming}
+                  attachments={msg.attachments}
+                />
+              ),
+            )}
+          </>
         ) : (
           messages.map((msg) =>
             isToolMessage(msg.id) ? (

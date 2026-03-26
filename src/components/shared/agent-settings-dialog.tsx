@@ -35,15 +35,22 @@ import OpenAILogo from "@/components/icons/openai-logo";
 import OpenCodeLogo from "@/components/icons/opencode-logo";
 import CopilotLogo from "@/components/icons/copilot-logo";
 
-/** MCP tools that correspond to allowed providers (claude-code → anthropic, codex-cli → openai) */
+// ---------------------------------------------------------------------------
+// Tab type
+// ---------------------------------------------------------------------------
+
+type SettingsTab = "providers" | "analysis" | "system";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** MCP tools that correspond to allowed providers */
 const ALLOWED_MCP_TOOLS = new Set(["claude-code", "codex-cli"]);
 
-/** Provider display metadata — labels use PROVIDER_LABELS for allowed providers,
- *  i18n keys for the rest. Descriptions are i18n keys resolved at render time. */
 const PROVIDER_META: Record<
   AIProviderType,
   {
-    /** Direct display label (not an i18n key) — sourced from PROVIDER_LABELS */
     label: string;
     descriptionKey: string;
     agent: "claude-code" | "codex-cli" | "opencode" | "copilot";
@@ -88,6 +95,10 @@ const ANALYSIS_EFFORT_LABEL_KEYS: Record<AnalysisEffortLevel, string> = {
   high: "agents.analysisEffortThorough",
   max: "agents.analysisEffortThorough",
 };
+
+// ---------------------------------------------------------------------------
+// API helpers
+// ---------------------------------------------------------------------------
 
 async function connectAgent(
   agent: "claude-code" | "codex-cli" | "opencode" | "copilot",
@@ -150,6 +161,10 @@ async function callMcpInstall(
   return res.json();
 }
 
+// ---------------------------------------------------------------------------
+// ProviderRow (unchanged)
+// ---------------------------------------------------------------------------
+
 function ProviderRow({ type }: { type: AIProviderType }) {
   const { t } = useTranslation();
   const provider = useAgentSettingsStore((s) => s.providers[type]);
@@ -203,7 +218,6 @@ function ProviderRow({ type }: { type: AIProviderType }) {
     setInstallInfo(null);
     const result = await installAgent(agentName);
     if (result.success) {
-      // Auto-connect after successful install
       setIsInstalling(false);
       setNotInstalled(false);
       handleConnect(type);
@@ -232,7 +246,6 @@ function ProviderRow({ type }: { type: AIProviderType }) {
 
   const { Icon } = meta;
 
-  // Button logic: connected → Disconnect, installing → spinner, notInstalled (no instructions yet) → Install, else → Connect
   const renderAction = () => {
     if (provider.isConnected) {
       return (
@@ -291,7 +304,6 @@ function ProviderRow({ type }: { type: AIProviderType }) {
           provider.isConnected ? "bg-secondary/40" : "hover:bg-secondary/30",
         )}
       >
-        {/* Icon */}
         <div
           className={cn(
             "w-6 h-6 rounded-md flex items-center justify-center shrink-0 transition-colors",
@@ -303,7 +315,6 @@ function ProviderRow({ type }: { type: AIProviderType }) {
           <Icon className="w-3.5 h-3.5" />
         </div>
 
-        {/* Name + description */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-[13px] font-medium text-foreground leading-tight">
@@ -331,11 +342,9 @@ function ProviderRow({ type }: { type: AIProviderType }) {
           )}
         </div>
 
-        {/* Action */}
         {renderAction()}
       </div>
 
-      {/* Install instructions (shown after install failure) */}
       {installInfo && (
         <div className="mx-3 mt-1 mb-1 px-2.5 py-2 rounded-md bg-secondary/30 flex items-center gap-2">
           {installInfo.command && (
@@ -360,13 +369,31 @@ function ProviderRow({ type }: { type: AIProviderType }) {
   );
 }
 
-export default function AgentSettingsDialog() {
+// ---------------------------------------------------------------------------
+// Tab panes
+// ---------------------------------------------------------------------------
+
+function ProvidersTab() {
   const { t } = useTranslation();
-  const open = useAgentSettingsStore((s) => s.dialogOpen);
-  const setDialogOpen = useAgentSettingsStore((s) => s.setDialogOpen);
-  const mcpIntegrations = useAgentSettingsStore((s) => s.mcpIntegrations);
-  const mcpHttpPort = useAgentSettingsStore((s) => s.mcpHttpPort);
-  const toggleMCP = useAgentSettingsStore((s) => s.toggleMCPIntegration);
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-1 px-1">
+        <Zap size={12} className="text-muted-foreground" />
+        <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+          {t("agents.agentsOnCanvas")}
+        </h4>
+      </div>
+      <div className="space-y-0.5">
+        {ALLOWED_PROVIDERS.map((type) => (
+          <ProviderRow key={type} type={type} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AnalysisTab() {
+  const { t } = useTranslation();
   const analysisWebSearch = useAgentSettingsStore((s) => s.analysisWebSearch);
   const analysisEffortLevel = useAgentSettingsStore(
     (s) => s.analysisEffortLevel,
@@ -388,18 +415,169 @@ export default function AgentSettingsDialog() {
     (s) => s.toggleAnalysisPhase,
   );
   const persist = useAgentSettingsStore((s) => s.persist);
+
+  const selectedAnalysisEffort = analysisEffortLevel ?? "medium";
+  const selectedAnalysisWebSearch = analysisWebSearch ?? true;
+  const selectedPhaseCount = analysisCustomPhases.length;
+
+  const handleWebSearchChange = useCallback(
+    (checked: boolean) => {
+      setAnalysisWebSearch(checked);
+      persist();
+    },
+    [persist, setAnalysisWebSearch],
+  );
+
+  const handleEffortChange = useCallback(
+    (effortLevel: AnalysisEffortLevel) => {
+      setAnalysisEffortLevel(effortLevel);
+      persist();
+    },
+    [persist, setAnalysisEffortLevel],
+  );
+
+  const handlePhaseModeChange = useCallback(
+    (mode: "all" | "custom") => {
+      setAnalysisPhaseMode(mode);
+      persist();
+    },
+    [persist, setAnalysisPhaseMode],
+  );
+
+  const handlePhaseToggle = useCallback(
+    (phase: (typeof V3_PHASES)[number]) => {
+      toggleAnalysisPhase(phase);
+      persist();
+    },
+    [persist, toggleAnalysisPhase],
+  );
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 mb-1 px-1">
+        <RefreshCw size={12} className="text-muted-foreground" />
+        <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+          {t("agents.analysisRuntime")}
+        </h4>
+      </div>
+
+      {/* Web search */}
+      <div className="rounded-lg bg-secondary/30 px-3 py-2">
+        <div className="flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="text-[12px] font-medium text-foreground">
+              {t("agents.analysisWebSearch")}
+            </div>
+            <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+              {t("agents.analysisWebSearchHint")}
+            </p>
+          </div>
+          <Switch
+            checked={selectedAnalysisWebSearch}
+            onCheckedChange={handleWebSearchChange}
+            aria-label={t("agents.analysisWebSearch")}
+          />
+        </div>
+      </div>
+
+      {/* Effort level */}
+      <div className="rounded-lg bg-secondary/30 px-3 py-2">
+        <div className="text-[12px] font-medium text-foreground">
+          {t("agents.analysisEffort")}
+        </div>
+        <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+          {t("agents.analysisEffortHint")}
+        </p>
+        <div className="mt-2 grid grid-cols-3 gap-1.5">
+          {ANALYSIS_EFFORT_OPTIONS.map((effortLevel) => (
+            <Button
+              key={effortLevel}
+              type="button"
+              size="sm"
+              variant={
+                selectedAnalysisEffort === effortLevel ? "default" : "outline"
+              }
+              onClick={() => handleEffortChange(effortLevel)}
+              className="h-8 px-2 text-[11px]"
+            >
+              {t(ANALYSIS_EFFORT_LABEL_KEYS[effortLevel])}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {/* Phase selection */}
+      <div className="rounded-lg bg-secondary/30 px-3 py-2">
+        <div className="text-[12px] font-medium text-foreground">
+          {t("agents.analysisPhases")}
+        </div>
+        <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+          {t("agents.analysisPhasesHint")}
+        </p>
+        <div className="mt-2 grid grid-cols-2 gap-1.5">
+          <Button
+            type="button"
+            size="sm"
+            variant={analysisPhaseMode === "all" ? "default" : "outline"}
+            onClick={() => handlePhaseModeChange("all")}
+            className="h-8 px-2 text-[11px]"
+          >
+            {t("agents.analysisPhasesAll")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={analysisPhaseMode === "custom" ? "default" : "outline"}
+            onClick={() => handlePhaseModeChange("custom")}
+            className="h-8 px-2 text-[11px]"
+          >
+            {t("agents.analysisPhasesCustom")}
+          </Button>
+        </div>
+
+        {analysisPhaseMode === "custom" && (
+          <div className="mt-2 space-y-1.5">
+            {V3_PHASES.map((phase) => {
+              const checked = analysisCustomPhases.includes(phase);
+              const disableToggle = checked && selectedPhaseCount === 1;
+
+              return (
+                <label
+                  key={phase}
+                  className={cn(
+                    "flex cursor-pointer items-start gap-2 rounded-md border border-border/60 px-2.5 py-2 text-[11px] transition-colors",
+                    checked
+                      ? "bg-background/80 text-foreground"
+                      : "text-muted-foreground hover:bg-background/50",
+                    disableToggle && "cursor-not-allowed opacity-70",
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-3.5 w-3.5 rounded border-input"
+                    checked={checked}
+                    disabled={disableToggle}
+                    onChange={() => handlePhaseToggle(phase)}
+                  />
+                  <span className="min-w-0 flex-1">{PHASE_LABELS[phase]}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SystemTab() {
+  const { t } = useTranslation();
+  const mcpIntegrations = useAgentSettingsStore((s) => s.mcpIntegrations);
+  const mcpHttpPort = useAgentSettingsStore((s) => s.mcpHttpPort);
+  const toggleMCP = useAgentSettingsStore((s) => s.toggleMCPIntegration);
+  const persist = useAgentSettingsStore((s) => s.persist);
   const mcpServerRunning = useAgentSettingsStore((s) => s.mcpServerRunning);
   const setMcpServerStatus = useAgentSettingsStore((s) => s.setMcpServerStatus);
-  const dialogRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setDialogOpen(false);
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [open, setDialogOpen]);
 
   const [mcpInstalling, setMcpInstalling] = useState<string | null>(null);
   const [mcpError, setMcpError] = useState<string | null>(null);
@@ -413,9 +591,8 @@ export default function AgentSettingsDialog() {
     setIsElectron(!!window.electronAPI);
   }, []);
 
-  // Fetch MCP server status on dialog open
+  // Fetch MCP server status on mount
   useEffect(() => {
-    if (!open) return;
     fetch("/api/mcp/server")
       .then((r) => r.json())
       .then(
@@ -434,16 +611,16 @@ export default function AgentSettingsDialog() {
       .catch(() => {
         setMcpServerError("Unable to read MCP server status.");
       });
-  }, [open, setMcpServerStatus]);
+  }, [setMcpServerStatus]);
 
-  // Fetch auto-update setting on dialog open (Electron only)
+  // Fetch auto-update setting (Electron only)
   useEffect(() => {
-    if (!open || !window.electronAPI?.updater?.getAutoCheck) return;
+    if (!window.electronAPI?.updater?.getAutoCheck) return;
     window.electronAPI.updater
       .getAutoCheck()
       .then(setAutoUpdateEnabled)
       .catch((err) => console.error("[auto-update getAutoCheck]", err));
-  }, [open]);
+  }, []);
 
   const handleAutoUpdateToggle = useCallback(async (enabled: boolean) => {
     setAutoUpdateEnabled(enabled);
@@ -453,42 +630,6 @@ export default function AgentSettingsDialog() {
       console.error("[auto-update toggle]", err);
     }
   }, []);
-
-  const selectedAnalysisEffort = analysisEffortLevel ?? "standard";
-  const selectedAnalysisWebSearch = analysisWebSearch ?? true;
-  const selectedPhaseCount = analysisCustomPhases.length;
-
-  const handleAnalysisWebSearchChange = useCallback(
-    (checked: boolean) => {
-      setAnalysisWebSearch(checked);
-      persist();
-    },
-    [persist, setAnalysisWebSearch],
-  );
-
-  const handleAnalysisEffortChange = useCallback(
-    (effortLevel: AnalysisEffortLevel) => {
-      setAnalysisEffortLevel(effortLevel);
-      persist();
-    },
-    [persist, setAnalysisEffortLevel],
-  );
-
-  const handleAnalysisPhaseModeChange = useCallback(
-    (mode: "all" | "custom") => {
-      setAnalysisPhaseMode(mode);
-      persist();
-    },
-    [persist, setAnalysisPhaseMode],
-  );
-
-  const handleAnalysisPhaseToggle = useCallback(
-    (phase: (typeof V3_PHASES)[number]) => {
-      toggleAnalysisPhase(phase);
-      persist();
-    },
-    [persist, toggleAnalysisPhase],
-  );
 
   const handleCopyConfig = useCallback(() => {
     if (!mcpServerRunning) return;
@@ -532,9 +673,175 @@ export default function AgentSettingsDialog() {
     [mcpIntegrations, mcpServerPort, toggleMCP, persist, t],
   );
 
-  if (!open) return null;
-
   const isBusy = mcpInstalling !== null;
+
+  return (
+    <div className="space-y-3">
+      {/* MCP Server */}
+      <div>
+        <div className="flex items-center gap-2 mb-1.5 px-1">
+          <Globe size={12} className="text-muted-foreground" />
+          <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+            {t("agents.mcpServer")}
+          </h4>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-secondary/30">
+          <div
+            className={cn(
+              "w-2 h-2 rounded-full shrink-0",
+              mcpServerRunning ? "bg-green-500" : "bg-muted-foreground/30",
+            )}
+          />
+          <span className="text-[12px] text-foreground flex-1">
+            {mcpServerRunning
+              ? t("agents.mcpServerRunning")
+              : t("agents.mcpServerStopped")}
+          </span>
+          <span className="text-[11px] text-muted-foreground shrink-0">
+            managed by app
+          </span>
+          <span className="text-[11px] text-muted-foreground shrink-0">
+            {t("agents.port")}
+          </span>
+          <span className="h-6 min-w-[52px] rounded border border-input bg-secondary px-2 text-[11px] leading-6 text-center tabular-nums text-foreground">
+            {mcpServerPort}
+          </span>
+        </div>
+        {mcpServerRunning && (
+          <div className="mt-1.5 px-3 py-1.5 rounded-lg bg-secondary/20">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-muted-foreground">
+                {t("agents.mcpClientConfig")}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={handleCopyConfig}
+                className="shrink-0 h-5 w-5"
+              >
+                {configCopied ? (
+                  <Check size={9} className="text-green-500" />
+                ) : (
+                  <Copy size={9} />
+                )}
+              </Button>
+            </div>
+            <code className="text-[10px] text-muted-foreground font-mono select-all leading-none">{`{ "type": "http", "url": "http://127.0.0.1:${mcpServerPort}/mcp" }`}</code>
+          </div>
+        )}
+        {mcpServerError && (
+          <div className="flex items-center gap-1.5 mt-2 px-1">
+            <AlertCircle size={11} className="text-destructive shrink-0" />
+            <p className="text-[10px] text-destructive">{mcpServerError}</p>
+          </div>
+        )}
+      </div>
+
+      {/* MCP Integrations */}
+      <div>
+        <div className="flex items-center gap-2 mb-1.5 px-1">
+          <Terminal size={12} className="text-muted-foreground" />
+          <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+            {t("agents.mcpIntegrations")}
+          </h4>
+        </div>
+
+        <div className="grid grid-cols-2 gap-x-2 gap-y-0">
+          {mcpIntegrations
+            .filter((m) => ALLOWED_MCP_TOOLS.has(m.tool))
+            .map((m) => (
+              <div
+                key={m.tool}
+                className={cn(
+                  "flex items-center justify-between py-1.5 px-3 rounded-lg transition-colors",
+                  m.enabled ? "bg-secondary/40" : "hover:bg-secondary/20",
+                )}
+              >
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span
+                    className={cn(
+                      "text-[12px] truncate",
+                      m.enabled ? "text-foreground" : "text-muted-foreground",
+                    )}
+                  >
+                    {m.displayName}
+                  </span>
+                  {mcpInstalling === m.tool && (
+                    <Loader2
+                      size={10}
+                      className="animate-spin text-muted-foreground shrink-0"
+                    />
+                  )}
+                </div>
+                <Switch
+                  checked={m.enabled}
+                  disabled={isBusy}
+                  onCheckedChange={() => handleToggleMCP(m.tool)}
+                  className="shrink-0 ml-2"
+                />
+              </div>
+            ))}
+        </div>
+        {mcpError && (
+          <div className="flex items-center gap-1.5 mt-2 px-1">
+            <AlertCircle size={11} className="text-destructive shrink-0" />
+            <p className="text-[10px] text-destructive">{mcpError}</p>
+          </div>
+        )}
+        <p className="text-[10px] text-muted-foreground/60 mt-2 px-1">
+          {t("agents.mcpRestart")}
+        </p>
+      </div>
+
+      {/* Auto-update toggle (Electron only) */}
+      {isElectron && (
+        <div>
+          <div className="h-px bg-border mb-3" />
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-2">
+              <RefreshCw size={12} className="text-muted-foreground" />
+              <span className="text-[12px] text-foreground">
+                {t("agents.autoUpdate")}
+              </span>
+            </div>
+            <Switch
+              checked={autoUpdateEnabled}
+              onCheckedChange={handleAutoUpdateToggle}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main dialog
+// ---------------------------------------------------------------------------
+
+const TAB_DEFINITIONS: { key: SettingsTab; labelKey: string }[] = [
+  { key: "providers", labelKey: "settings.tabProviders" },
+  { key: "analysis", labelKey: "settings.tabAnalysis" },
+  { key: "system", labelKey: "settings.tabSystem" },
+];
+
+export default function AgentSettingsDialog() {
+  const { t } = useTranslation();
+  const open = useAgentSettingsStore((s) => s.dialogOpen);
+  const setDialogOpen = useAgentSettingsStore((s) => s.setDialogOpen);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<SettingsTab>("providers");
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDialogOpen(false);
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [open, setDialogOpen]);
+
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -547,7 +854,7 @@ export default function AgentSettingsDialog() {
         className="relative bg-card rounded-xl border border-border w-[480px] max-h-[80vh] overflow-hidden shadow-xl flex flex-col"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-3 pb-2">
+        <div className="flex items-center justify-between px-5 pt-3 pb-0">
           <h3 className="text-sm font-semibold text-foreground">
             {t("agents.title")}
           </h3>
@@ -560,293 +867,31 @@ export default function AgentSettingsDialog() {
           </Button>
         </div>
 
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto px-5 pb-4">
-          {/* Agents section */}
-          <div className="mb-3">
-            <div className="flex items-center gap-2 mb-1 px-1">
-              <Zap size={12} className="text-muted-foreground" />
-              <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                {t("agents.agentsOnCanvas")}
-              </h4>
-            </div>
-            <div className="space-y-0.5">
-              {ALLOWED_PROVIDERS.map((type) => (
-                <ProviderRow key={type} type={type} />
-              ))}
-            </div>
-          </div>
+        {/* Tab navigation */}
+        <div className="flex gap-0 px-5 pt-2 pb-0">
+          {TAB_DEFINITIONS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={cn(
+                "px-3 py-1.5 text-[11px] font-medium transition-colors border-b-2 -mb-px",
+                activeTab === tab.key
+                  ? "text-foreground border-amber-500"
+                  : "text-muted-foreground border-transparent hover:text-foreground hover:border-border",
+              )}
+            >
+              {t(tab.labelKey)}
+            </button>
+          ))}
+        </div>
+        <div className="h-px bg-border" />
 
-          {/* Divider */}
-          <div className="h-px bg-border mb-3" />
-
-          {/* Analysis runtime section */}
-          <div className="mb-3">
-            <div className="flex items-center gap-2 mb-1.5 px-1">
-              <RefreshCw size={12} className="text-muted-foreground" />
-              <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                {t("agents.analysisRuntime")}
-              </h4>
-            </div>
-
-            <div className="space-y-2">
-              <div className="rounded-lg bg-secondary/30 px-3 py-2">
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[12px] font-medium text-foreground">
-                      {t("agents.analysisWebSearch")}
-                    </div>
-                    <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
-                      {t("agents.analysisWebSearchHint")}
-                    </p>
-                  </div>
-                  <Switch
-                    checked={selectedAnalysisWebSearch}
-                    onCheckedChange={handleAnalysisWebSearchChange}
-                    aria-label={t("agents.analysisWebSearch")}
-                  />
-                </div>
-              </div>
-
-              <div className="rounded-lg bg-secondary/30 px-3 py-2">
-                <div className="text-[12px] font-medium text-foreground">
-                  {t("agents.analysisEffort")}
-                </div>
-                <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
-                  {t("agents.analysisEffortHint")}
-                </p>
-                <div className="mt-2 grid grid-cols-3 gap-1.5">
-                  {ANALYSIS_EFFORT_OPTIONS.map((effortLevel) => (
-                    <Button
-                      key={effortLevel}
-                      type="button"
-                      size="sm"
-                      variant={
-                        selectedAnalysisEffort === effortLevel
-                          ? "default"
-                          : "outline"
-                      }
-                      onClick={() => handleAnalysisEffortChange(effortLevel)}
-                      className="h-8 px-2 text-[11px]"
-                    >
-                      {t(ANALYSIS_EFFORT_LABEL_KEYS[effortLevel])}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-lg bg-secondary/30 px-3 py-2">
-                <div className="text-[12px] font-medium text-foreground">
-                  {t("agents.analysisPhases")}
-                </div>
-                <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
-                  {t("agents.analysisPhasesHint")}
-                </p>
-                <div className="mt-2 grid grid-cols-2 gap-1.5">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={
-                      analysisPhaseMode === "all" ? "default" : "outline"
-                    }
-                    onClick={() => handleAnalysisPhaseModeChange("all")}
-                    className="h-8 px-2 text-[11px]"
-                  >
-                    {t("agents.analysisPhasesAll")}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={
-                      analysisPhaseMode === "custom" ? "default" : "outline"
-                    }
-                    onClick={() => handleAnalysisPhaseModeChange("custom")}
-                    className="h-8 px-2 text-[11px]"
-                  >
-                    {t("agents.analysisPhasesCustom")}
-                  </Button>
-                </div>
-
-                {analysisPhaseMode === "custom" && (
-                  <div className="mt-2 space-y-1.5">
-                    {V3_PHASES.map((phase) => {
-                      const checked = analysisCustomPhases.includes(phase);
-                      const disableToggle =
-                        checked && selectedPhaseCount === 1;
-
-                      return (
-                        <label
-                          key={phase}
-                          className={cn(
-                            "flex cursor-pointer items-start gap-2 rounded-md border border-border/60 px-2.5 py-2 text-[11px] transition-colors",
-                            checked
-                              ? "bg-background/80 text-foreground"
-                              : "text-muted-foreground hover:bg-background/50",
-                            disableToggle && "cursor-not-allowed opacity-70",
-                          )}
-                        >
-                          <input
-                            type="checkbox"
-                            className="mt-0.5 h-3.5 w-3.5 rounded border-input"
-                            checked={checked}
-                            disabled={disableToggle}
-                            onChange={() => handleAnalysisPhaseToggle(phase)}
-                          />
-                          <span className="min-w-0 flex-1">
-                            {PHASE_LABELS[phase]}
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Divider */}
-          <div className="h-px bg-border mb-3" />
-
-          {/* MCP Server section */}
-          <div className="mb-3">
-            <div className="flex items-center gap-2 mb-1.5 px-1">
-              <Globe size={12} className="text-muted-foreground" />
-              <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                {t("agents.mcpServer")}
-              </h4>
-            </div>
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-secondary/30">
-              {/* Status indicator */}
-              <div
-                className={cn(
-                  "w-2 h-2 rounded-full shrink-0",
-                  mcpServerRunning ? "bg-green-500" : "bg-muted-foreground/30",
-                )}
-              />
-              <span className="text-[12px] text-foreground flex-1">
-                {mcpServerRunning
-                  ? t("agents.mcpServerRunning")
-                  : t("agents.mcpServerStopped")}
-              </span>
-              <span className="text-[11px] text-muted-foreground shrink-0">
-                managed by app
-              </span>
-              <span className="text-[11px] text-muted-foreground shrink-0">
-                {t("agents.port")}
-              </span>
-              <span className="h-6 min-w-[52px] rounded border border-input bg-secondary px-2 text-[11px] leading-6 text-center tabular-nums text-foreground">
-                {mcpServerPort}
-              </span>
-            </div>
-            {mcpServerRunning && (
-              <div className="mt-1.5 px-3 py-1.5 rounded-lg bg-secondary/20">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-muted-foreground">
-                    {t("agents.mcpClientConfig")}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={handleCopyConfig}
-                    className="shrink-0 h-5 w-5"
-                  >
-                    {configCopied ? (
-                      <Check size={9} className="text-green-500" />
-                    ) : (
-                      <Copy size={9} />
-                    )}
-                  </Button>
-                </div>
-                <code className="text-[10px] text-muted-foreground font-mono select-all leading-none">{`{ "type": "http", "url": "http://127.0.0.1:${mcpServerPort}/mcp" }`}</code>
-              </div>
-            )}
-            {mcpServerError && (
-              <div className="flex items-center gap-1.5 mt-2 px-1">
-                <AlertCircle size={11} className="text-destructive shrink-0" />
-                <p className="text-[10px] text-destructive">{mcpServerError}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Divider */}
-          <div className="h-px bg-border mb-3" />
-
-          {/* MCP integrations section */}
-          <div>
-            <div className="flex items-center gap-2 mb-1.5 px-1">
-              <Terminal size={12} className="text-muted-foreground" />
-              <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                {t("agents.mcpIntegrations")}
-              </h4>
-            </div>
-
-            <div className="grid grid-cols-2 gap-x-2 gap-y-0">
-              {mcpIntegrations
-                .filter((m) => ALLOWED_MCP_TOOLS.has(m.tool))
-                .map((m) => (
-                  <div
-                    key={m.tool}
-                    className={cn(
-                      "flex items-center justify-between py-1.5 px-3 rounded-lg transition-colors",
-                      m.enabled ? "bg-secondary/40" : "hover:bg-secondary/20",
-                    )}
-                  >
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span
-                        className={cn(
-                          "text-[12px] truncate",
-                          m.enabled
-                            ? "text-foreground"
-                            : "text-muted-foreground",
-                        )}
-                      >
-                        {m.displayName}
-                      </span>
-                      {mcpInstalling === m.tool && (
-                        <Loader2
-                          size={10}
-                          className="animate-spin text-muted-foreground shrink-0"
-                        />
-                      )}
-                    </div>
-                    <Switch
-                      checked={m.enabled}
-                      disabled={isBusy}
-                      onCheckedChange={() => handleToggleMCP(m.tool)}
-                      className="shrink-0 ml-2"
-                    />
-                  </div>
-                ))}
-            </div>
-            {mcpError && (
-              <div className="flex items-center gap-1.5 mt-2 px-1">
-                <AlertCircle size={11} className="text-destructive shrink-0" />
-                <p className="text-[10px] text-destructive">{mcpError}</p>
-              </div>
-            )}
-            <p className="text-[10px] text-muted-foreground/60 mt-2 px-1">
-              {t("agents.mcpRestart")}
-            </p>
-          </div>
-
-          {/* Auto-update toggle (Electron only) */}
-          {isElectron && (
-            <>
-              <div className="h-px bg-border my-3" />
-              <div className="flex items-center justify-between px-1">
-                <div className="flex items-center gap-2">
-                  <RefreshCw size={12} className="text-muted-foreground" />
-                  <span className="text-[12px] text-foreground">
-                    {t("agents.autoUpdate")}
-                  </span>
-                </div>
-                <Switch
-                  checked={autoUpdateEnabled}
-                  onCheckedChange={handleAutoUpdateToggle}
-                />
-              </div>
-            </>
-          )}
+        {/* Tab content */}
+        <div className="flex-1 overflow-y-auto px-5 py-3">
+          {activeTab === "providers" && <ProvidersTab />}
+          {activeTab === "analysis" && <AnalysisTab />}
+          {activeTab === "system" && <SystemTab />}
         </div>
       </div>
     </div>

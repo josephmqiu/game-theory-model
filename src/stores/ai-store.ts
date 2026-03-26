@@ -112,6 +112,7 @@ interface AIState {
   concurrency: number;
   pendingAttachments: ChatAttachment[];
   abortController: AbortController | null;
+  pendingPlan: { topic: string } | null;
 
   setConcurrency: (n: number) => void;
   setGenerationProgress: (
@@ -136,6 +137,7 @@ interface AIState {
   clearPendingAttachments: () => void;
   setAbortController: (c: AbortController | null) => void;
   stopStreaming: () => void;
+  setPendingPlan: (plan: { topic: string } | null) => void;
 }
 
 export const useAIStore = create<AIState>((set, get) => ({
@@ -155,6 +157,7 @@ export const useAIStore = create<AIState>((set, get) => ({
   generationProgress: null,
   pendingAttachments: [],
   abortController: null,
+  pendingPlan: null,
 
   setConcurrency: (n) => {
     const clamped = Math.max(1, Math.min(6, n));
@@ -231,4 +234,5 @@ export const useAIStore = create<AIState>((set, get) => ({
       s.abortController?.abort();
       return { isStreaming: false, abortController: null };
     }),
+  setPendingPlan: (pendingPlan) => set({ pendingPlan }),
 }));
