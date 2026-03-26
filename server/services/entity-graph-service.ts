@@ -23,7 +23,6 @@ import {
   normalizePhaseStates,
   upsertPhaseStatus,
 } from "../../src/types/methodology";
-import { getWorkspaceDatabase } from "./workspace";
 import type { EntityGraphRepository } from "./workspace/entity-graph-repository";
 
 // ── Module-level state ──
@@ -40,11 +39,21 @@ let _fileHandle: FileSystemFileHandle | null = null;
 const listeners = new Set<(event: AnalysisMutationEvent) => void>();
 
 // ── SQLite backing ──
+// Lazy import to avoid pulling node:sqlite into the module graph eagerly.
+// Bun does not support node:sqlite, so static imports break the dev server.
 
 let _repoOverride: EntityGraphRepository | null = null;
+let _getWorkspaceDatabase:
+  | (() => { entityGraph: EntityGraphRepository })
+  | null = null;
 
 function getRepo(): EntityGraphRepository {
-  return _repoOverride ?? getWorkspaceDatabase().entityGraph;
+  if (_repoOverride) return _repoOverride;
+  if (!_getWorkspaceDatabase) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    _getWorkspaceDatabase = require("./workspace").getWorkspaceDatabase;
+  }
+  return _getWorkspaceDatabase!().entityGraph;
 }
 
 function hasWorkspaceContext(): boolean {

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, unlinkSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { getWorkspaceDatabasePath } from "./workspace-db-path";
 import { initializeWorkspaceSchema } from "./workspace-schema";
 import { createActivityRepository } from "./activity-repository";
@@ -28,9 +28,29 @@ import type { ThreadRepository } from "./thread-repository";
 import type { WorkspaceRepository } from "./workspace-repository";
 import type { CommandReceiptStore } from "../command-bus";
 
+// Lazy-load node:sqlite to avoid breaking the Bun-hosted Vite dev server.
+// Bun does not implement node:sqlite. Nitro plugins eagerly resolve the
+// full static import graph, so a top-level value import of DatabaseSync
+// crashes the dev server before any request is served. The lazy require()
+// defers resolution until the first actual database open, which only
+// happens under Node.js (Nitro server runtime), not Bun (Vite host).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _DatabaseSyncCtor: any = null;
+function loadDatabaseSync() {
+  if (!_DatabaseSyncCtor) {
+    const esmRequire = createRequire(import.meta.url);
+    _DatabaseSyncCtor = esmRequire("node:sqlite").DatabaseSync;
+  }
+  return _DatabaseSyncCtor;
+}
+
 export interface WorkspaceDatabaseOptions {
   databasePath?: string;
 }
+
+// Re-export the DatabaseSync type for consumers that need it in signatures.
+// This is type-only and does not trigger node:sqlite resolution at import time.
+import type { DatabaseSync } from "node:sqlite";
 
 export interface WorkspaceDatabase {
   databasePath: string;
@@ -52,12 +72,13 @@ export interface WorkspaceDatabase {
 
 let sharedWorkspaceDatabase: WorkspaceDatabase | null = null;
 
-function openWorkspaceDatabase(databasePath: string): DatabaseSync {
+function openWorkspaceDatabase(databasePath: string) {
   if (databasePath !== ":memory:") {
     mkdirSync(dirname(databasePath), { recursive: true });
   }
 
-  return new DatabaseSync(databasePath, {
+  const DatabaseSyncCtor = loadDatabaseSync();
+  return new DatabaseSyncCtor(databasePath, {
     enableForeignKeyConstraints: true,
     timeout: 5_000,
   });
