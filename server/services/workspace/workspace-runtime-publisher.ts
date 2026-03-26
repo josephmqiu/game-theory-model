@@ -168,4 +168,7 @@ export function publishWorkspaceRuntimeUpdates(
 export function _resetWorkspaceRuntimePublisherForTest(): void {
   latestPushByKey.clear();
   revisionByKey.clear();
+  // Intentionally not clearing listeners — the transport's module-level
+  // subscription is registered once at import time and must persist across
+  // test resets. Tests that add their own listeners should unsubscribe them.
 }

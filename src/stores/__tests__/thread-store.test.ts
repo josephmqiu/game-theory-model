@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { appStorage } from "@/utils/app-storage";
 
 const bindContextMock = vi.fn();
 const sendRequestMock = vi.fn();
 const disconnectMock = vi.fn();
 const listeners: Array<(event: unknown) => void> = [];
+const getItemMock = vi
+  .fn<(key: string) => string | null>()
+  .mockReturnValue(null);
+const setItemMock = vi.fn();
+const removeItemMock = vi.fn();
 
 vi.mock("@/services/ai/workspace-runtime-client", () => ({
   workspaceRuntimeClient: {
@@ -22,6 +26,14 @@ vi.mock("@/services/ai/workspace-runtime-client", () => ({
         }
       };
     },
+  },
+}));
+
+vi.mock("@/utils/app-storage", () => ({
+  appStorage: {
+    getItem: (...args: unknown[]) => getItemMock(...(args as [string])),
+    setItem: (...args: unknown[]) => setItemMock(...args),
+    removeItem: (...args: unknown[]) => removeItemMock(...args),
   },
 }));
 
@@ -78,6 +90,9 @@ describe("thread-store", () => {
     bindContextMock.mockReset();
     sendRequestMock.mockReset();
     disconnectMock.mockReset();
+    getItemMock.mockReset().mockReturnValue(null);
+    setItemMock.mockReset();
+    removeItemMock.mockReset();
     listeners.splice(0, listeners.length);
   });
 
@@ -88,10 +103,7 @@ describe("thread-store", () => {
   });
 
   it("restores the last selected thread when hydrating a workspace", async () => {
-    vi.spyOn(appStorage, "getItem").mockReturnValue(
-      JSON.stringify({ "workspace-1": "thread-2" }),
-    );
-    vi.spyOn(appStorage, "setItem").mockImplementation(() => {});
+    getItemMock.mockReturnValue(JSON.stringify({ "workspace-1": "thread-2" }));
     bindContextMock.mockResolvedValue(createBootstrap());
 
     const { useThreadStore } = await import("@/stores/thread-store");
@@ -105,8 +117,7 @@ describe("thread-store", () => {
   });
 
   it("creates a thread through the websocket transport and rebinds to it", async () => {
-    vi.spyOn(appStorage, "getItem").mockReturnValue("{}");
-    vi.spyOn(appStorage, "setItem").mockImplementation(() => {});
+    getItemMock.mockReturnValue("{}");
     bindContextMock
       .mockResolvedValueOnce(
         createBootstrap({
@@ -176,9 +187,8 @@ describe("thread-store", () => {
     expect(useThreadStore.getState().threads[0]?.title).toBe("New Thread");
   });
 
-  it("clears overlay messages when pushed durable thread detail catches up", async () => {
-    vi.spyOn(appStorage, "getItem").mockReturnValue("{}");
-    vi.spyOn(appStorage, "setItem").mockImplementation(() => {});
+  it("clears overlay messages when thread-detail push matches", async () => {
+    getItemMock.mockReturnValue("{}");
     bindContextMock.mockResolvedValue(
       createBootstrap({
         activeThreadId: "thread-1",
@@ -258,6 +268,32 @@ describe("thread-store", () => {
       },
     });
 
+    expect(useThreadStore.getState().overlayMessages).toEqual([]);
+  });
+
+  it("populates latest run from run-detail push", async () => {
+    getItemMock.mockReturnValue("{}");
+    bindContextMock.mockResolvedValue(
+      createBootstrap({
+        activeThreadId: "thread-1",
+        activeThreadDetail: {
+          thread: {
+            id: "thread-1",
+            workspaceId: "workspace-1",
+            title: "First",
+            isPrimary: true,
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          messages: [],
+          activities: [],
+        },
+      }),
+    );
+
+    const { useThreadStore } = await import("@/stores/thread-store");
+    await useThreadStore.getState().hydrateWorkspace("workspace-1");
+
     listeners[0]?.({
       type: "push",
       channel: "run-detail",
@@ -292,7 +328,35 @@ describe("thread-store", () => {
       },
     });
 
-    expect(useThreadStore.getState().overlayMessages).toEqual([]);
     expect(useThreadStore.getState().latestRun?.id).toBe("run-1");
+  });
+
+  it("rebinds when stored selection differs from server default", async () => {
+    getItemMock.mockReturnValue(JSON.stringify({ "workspace-1": "thread-2" }));
+    bindContextMock
+      .mockResolvedValueOnce(
+        createBootstrap({
+          activeThreadId: "thread-1",
+          activeThreadDetail: {
+            thread: {
+              id: "thread-1",
+              workspaceId: "workspace-1",
+              title: "First",
+              isPrimary: true,
+              createdAt: 1,
+              updatedAt: 2,
+            },
+            messages: [],
+            activities: [],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(createBootstrap());
+
+    const { useThreadStore } = await import("@/stores/thread-store");
+    await useThreadStore.getState().hydrateWorkspace("workspace-1");
+
+    expect(bindContextMock).toHaveBeenCalledTimes(2);
+    expect(useThreadStore.getState().activeThreadId).toBe("thread-2");
   });
 });

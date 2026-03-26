@@ -1,14 +1,17 @@
 import { nanoid } from "nanoid";
 import { z } from "zod";
-import type { Message as WebSocketMessage, Peer as WebSocketPeer } from "crossws";
+import type {
+  Message as WebSocketMessage,
+  Peer as WebSocketPeer,
+} from "crossws";
 import type {
   WorkspaceRuntimeBootstrap,
   WorkspaceRuntimeClientEnvelope,
   WorkspaceRuntimeClientHello,
   WorkspaceRuntimeDiagnosticsSnapshot,
-  WorkspaceRuntimePushEnvelope,
   WorkspaceRuntimeRequest,
   WorkspaceRuntimeResponse,
+  WorkspaceRuntimeServerEnvelope,
   WorkspaceTransportDiagnostic,
 } from "../../../shared/types/workspace-runtime";
 import { getWorkspaceDatabase } from "./workspace-db";
@@ -55,7 +58,10 @@ interface PeerState {
 }
 
 const recentDiagnostics: WorkspaceTransportDiagnostic[] = [];
-const diagnosticsByConnectionId = new Map<string, WorkspaceTransportDiagnostic[]>();
+const diagnosticsByConnectionId = new Map<
+  string,
+  WorkspaceTransportDiagnostic[]
+>();
 const peerStates = new Map<string, PeerState>();
 
 function pushBounded<T>(items: T[], value: T, maxSize: number): void {
@@ -66,7 +72,10 @@ function pushBounded<T>(items: T[], value: T, maxSize: number): void {
 }
 
 function recordDiagnostic(
-  diagnostic: Omit<WorkspaceTransportDiagnostic, "id" | "source" | "timestamp"> & {
+  diagnostic: Omit<
+    WorkspaceTransportDiagnostic,
+    "id" | "source" | "timestamp"
+  > & {
     source?: WorkspaceTransportDiagnostic["source"];
     timestamp?: number;
   },
@@ -90,16 +99,15 @@ function recordDiagnostic(
 
 function sendEnvelope(
   peer: WebSocketPeer,
-  envelope: WorkspaceRuntimeBootstrap | WorkspaceRuntimePushEnvelope | WorkspaceRuntimeResponse,
+  envelope: WorkspaceRuntimeServerEnvelope,
 ): void {
-  peer.send(JSON.stringify("type" in envelope && envelope.type === "push"
-    ? envelope
-    : "serverConnectionId" in envelope
-      ? { type: "bootstrap", payload: envelope }
-      : envelope));
+  peer.send(JSON.stringify(envelope));
 }
 
-function buildBootstrap(hello: WorkspaceRuntimeClientHello, connectionId: string) {
+function buildBootstrap(
+  hello: WorkspaceRuntimeClientHello,
+  connectionId: string,
+) {
   const database = getWorkspaceDatabase();
   const snapshot = buildWorkspaceRuntimeSnapshotCore(database, {
     workspaceId: hello.workspaceId,
@@ -116,18 +124,53 @@ function buildBootstrap(hello: WorkspaceRuntimeClientHello, connectionId: string
   } satisfies WorkspaceRuntimeBootstrap;
 }
 
-function parseClientEnvelope(message: WebSocketMessage): WorkspaceRuntimeClientEnvelope {
+function parseClientEnvelope(
+  message: WebSocketMessage,
+): WorkspaceRuntimeClientEnvelope {
   const rawText = message.text();
 
+  let parsed: unknown;
   try {
-    return JSON.parse(rawText) as WorkspaceRuntimeClientEnvelope;
+    parsed = JSON.parse(rawText);
   } catch {
     throw new Error("Malformed websocket frame");
   }
+
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    !("type" in parsed) ||
+    typeof (parsed as Record<string, unknown>).type !== "string"
+  ) {
+    throw new Error("Malformed websocket frame: missing type");
+  }
+
+  return parsed as WorkspaceRuntimeClientEnvelope;
 }
 
-async function handleHello(peerState: PeerState, envelope: WorkspaceRuntimeClientHello) {
-  const bootstrap = buildBootstrap(envelope, peerState.connectionId);
+async function handleHello(
+  peerState: PeerState,
+  envelope: WorkspaceRuntimeClientHello,
+) {
+  let bootstrap;
+  try {
+    bootstrap = buildBootstrap(envelope, peerState.connectionId);
+  } catch (error) {
+    recordDiagnostic({
+      code: "error",
+      level: "error",
+      message: "Failed to build bootstrap",
+      connectionId: peerState.connectionId,
+      workspaceId: envelope.workspaceId,
+      threadId: envelope.activeThreadId,
+      data: {
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
+    peerState.peer.close(1011, "Bootstrap failed");
+    return;
+  }
+
   peerState.workspaceId = bootstrap.workspaceId;
   peerState.activeThreadId = bootstrap.activeThreadId;
 
@@ -144,7 +187,7 @@ async function handleHello(peerState: PeerState, envelope: WorkspaceRuntimeClien
     },
   });
 
-  sendEnvelope(peerState.peer, bootstrap);
+  sendEnvelope(peerState.peer, { type: "bootstrap", payload: bootstrap });
   recordDiagnostic({
     code: "bootstrap-sent",
     level: "info",
@@ -340,6 +383,16 @@ export async function handleWorkspaceRuntimeMessage(
 
   if (envelope.type === "client_hello") {
     await handleHello(peerState, clientHelloSchema.parse(envelope));
+    return;
+  }
+
+  if (!peerState.workspaceId) {
+    sendEnvelope(peerState.peer, {
+      type: "response",
+      requestId: "requestId" in envelope ? envelope.requestId : "unknown",
+      ok: false,
+      error: "Send client_hello before requests",
+    });
     return;
   }
 

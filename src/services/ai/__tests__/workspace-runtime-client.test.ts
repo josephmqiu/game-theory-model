@@ -53,7 +53,9 @@ class MockWebSocket {
 
   emitOpen(): void {
     this.readyState = MockWebSocket.OPEN;
-    this.listeners.get("open")?.forEach((listener) => listener(new Event("open")));
+    this.listeners
+      .get("open")
+      ?.forEach((listener) => listener(new Event("open")));
   }
 
   emitMessage(payload: unknown): void {
@@ -101,7 +103,8 @@ describe("workspace-runtime-client", () => {
   });
 
   afterEach(async () => {
-    const { workspaceRuntimeClient } = await import("../workspace-runtime-client");
+    const { workspaceRuntimeClient } =
+      await import("../workspace-runtime-client");
     workspaceRuntimeClient.resetForTest();
     MockWebSocket.reset();
     vi.useRealTimers();
@@ -114,7 +117,8 @@ describe("workspace-runtime-client", () => {
   });
 
   it("sends client hello and resolves bootstrap", async () => {
-    const { workspaceRuntimeClient } = await import("../workspace-runtime-client");
+    const { workspaceRuntimeClient } =
+      await import("../workspace-runtime-client");
     const bootstrapPromise = workspaceRuntimeClient.bindContext({
       workspaceId: "workspace-1",
       activeThreadId: "thread-1",
@@ -141,7 +145,8 @@ describe("workspace-runtime-client", () => {
   });
 
   it("reconnects with exponential backoff after close", async () => {
-    const { workspaceRuntimeClient } = await import("../workspace-runtime-client");
+    const { workspaceRuntimeClient } =
+      await import("../workspace-runtime-client");
     const bootstrapPromise = workspaceRuntimeClient.bindContext({
       workspaceId: "workspace-1",
       activeThreadId: "thread-1",
@@ -166,10 +171,105 @@ describe("workspace-runtime-client", () => {
       workspaceId: "workspace-1",
       activeThreadId: "thread-1",
     });
+
+    // 2nd socket was opened so reconnectAttempt reset to 0.
+    // Close it — backoff = RECONNECT_BACKOFF_MS[0] = 1000ms, then attempt becomes 1
+    secondSocket.emitClose({ code: 1006, reason: "drop" });
+    vi.advanceTimersByTime(999);
+    expect(MockWebSocket.instances).toHaveLength(2);
+
+    vi.advanceTimersByTime(1);
+    expect(MockWebSocket.instances).toHaveLength(3);
+    const thirdSocket = MockWebSocket.latest();
+    // Do NOT open the 3rd socket — so reconnectAttempt stays at 1.
+    // Close it — backoff = RECONNECT_BACKOFF_MS[1] = 2000ms, then attempt becomes 2
+    thirdSocket.emitClose({ code: 1006, reason: "drop" });
+    vi.advanceTimersByTime(1999);
+    expect(MockWebSocket.instances).toHaveLength(3);
+
+    vi.advanceTimersByTime(1);
+    expect(MockWebSocket.instances).toHaveLength(4);
+    const fourthSocket = MockWebSocket.latest();
+    // Open the 4th socket — reconnectAttempt resets to 0
+    fourthSocket.emitOpen();
+
+    // Close the 4th socket — backoff should be 1000ms again (reset on open)
+    fourthSocket.emitClose({ code: 1006, reason: "drop" });
+    vi.advanceTimersByTime(999);
+    expect(MockWebSocket.instances).toHaveLength(4);
+
+    vi.advanceTimersByTime(1);
+    expect(MockWebSocket.instances).toHaveLength(5);
+  });
+
+  it("rejects pending requests when disconnect is called", async () => {
+    const { workspaceRuntimeClient } =
+      await import("../workspace-runtime-client");
+    const bootstrapPromise = workspaceRuntimeClient.bindContext({
+      workspaceId: "workspace-1",
+      activeThreadId: "thread-1",
+    });
+    const socket = MockWebSocket.latest();
+    socket.emitOpen();
+    socket.emitMessage(bootstrapPayload("conn-1"));
+    await bootstrapPromise;
+
+    const requestPromise = workspaceRuntimeClient.sendRequest(
+      "workspace.thread.create",
+      { workspaceId: "workspace-1", title: "New thread" },
+    );
+
+    // Disconnect while the request is still pending
+    workspaceRuntimeClient.disconnect();
+
+    await expect(requestPromise).rejects.toThrow("disconnected");
+  });
+
+  it("carries latest push revision in reconnect hello", async () => {
+    const { workspaceRuntimeClient } =
+      await import("../workspace-runtime-client");
+    const bootstrapPromise = workspaceRuntimeClient.bindContext({
+      workspaceId: "workspace-1",
+      activeThreadId: "thread-1",
+    });
+    const firstSocket = MockWebSocket.latest();
+    firstSocket.emitOpen();
+    firstSocket.emitMessage(bootstrapPayload("conn-1"));
+    await bootstrapPromise;
+
+    // Emit a push message with revision 5 on the "threads" channel
+    firstSocket.emitMessage({
+      type: "push",
+      channel: "threads",
+      revision: 5,
+      scope: { workspaceId: "workspace-1" },
+      payload: { workspaceId: "workspace-1", threads: [] },
+    });
+
+    // Close the socket to trigger reconnect
+    firstSocket.emitClose({ code: 1006, reason: "drop" });
+
+    // Advance past the 1000ms backoff
+    vi.advanceTimersByTime(1000);
+    expect(MockWebSocket.instances).toHaveLength(2);
+
+    const secondSocket = MockWebSocket.latest();
+    secondSocket.emitOpen();
+
+    const hello = JSON.parse(secondSocket.sent[0]);
+    expect(hello).toMatchObject({
+      type: "client_hello",
+      connectionId: "conn-1",
+      workspaceId: "workspace-1",
+      lastSeenByChannel: {
+        threads: 5,
+      },
+    });
   });
 
   it("tracks pending requests, reports mismatches, and resolves matching responses", async () => {
-    const { workspaceRuntimeClient } = await import("../workspace-runtime-client");
+    const { workspaceRuntimeClient } =
+      await import("../workspace-runtime-client");
     const bootstrapPromise = workspaceRuntimeClient.bindContext({
       workspaceId: "workspace-1",
       activeThreadId: "thread-1",
@@ -219,4 +319,3 @@ describe("workspace-runtime-client", () => {
     ).toBe(true);
   });
 });
-

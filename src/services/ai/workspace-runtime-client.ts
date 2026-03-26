@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 import type {
   WorkspaceRuntimeBootstrap,
   WorkspaceRuntimeBootstrapEnvelope,
+  WorkspaceRuntimeChannel,
   WorkspaceRuntimeClientHello,
   WorkspaceRuntimePushEnvelope,
   WorkspaceRuntimeRequest,
@@ -11,6 +12,11 @@ import type {
 } from "../../../shared/types/workspace-runtime";
 
 const RECONNECT_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
+const CHANNELS: WorkspaceRuntimeChannel[] = [
+  "threads",
+  "thread-detail",
+  "run-detail",
+];
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_DIAGNOSTICS = 100;
 
@@ -34,7 +40,9 @@ function pushBounded<T>(items: T[], value: T, maxSize: number): void {
 
 function buildWebSocketUrl(pathname: string): string {
   if (typeof window === "undefined") {
-    throw new Error("Workspace runtime websocket is only available in the browser.");
+    throw new Error(
+      "Workspace runtime websocket is only available in the browser.",
+    );
   }
 
   const url = new URL(pathname, window.location.origin);
@@ -52,12 +60,11 @@ class WorkspaceRuntimeClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private intentionalClose = false;
-  private pendingBootstrap:
-    | {
-        reject: (reason?: unknown) => void;
-        resolve: (bootstrap: WorkspaceRuntimeBootstrap) => void;
-      }
-    | null = null;
+  private pendingBootstrap: {
+    reject: (reason?: unknown) => void;
+    resolve: (bootstrap: WorkspaceRuntimeBootstrap) => void;
+    timeoutId: ReturnType<typeof setTimeout>;
+  } | null = null;
   private listeners = new Set<RuntimeListener>();
   private pendingRequests = new Map<string, PendingRequest>();
   private latestPushByChannel = new Map<
@@ -99,8 +106,11 @@ class WorkspaceRuntimeClient {
     if (envelope.type === "bootstrap") {
       this.currentConnectionId = envelope.payload.serverConnectionId;
       this.listeners.forEach((listener) => listener(envelope));
-      this.pendingBootstrap?.resolve(envelope.payload);
-      this.pendingBootstrap = null;
+      if (this.pendingBootstrap) {
+        clearTimeout(this.pendingBootstrap.timeoutId);
+        this.pendingBootstrap.resolve(envelope.payload);
+        this.pendingBootstrap = null;
+      }
       return;
     }
 
@@ -132,7 +142,9 @@ class WorkspaceRuntimeClient {
     if (envelope.ok) {
       pending.resolve(envelope.result);
     } else {
-      pending.reject(new Error(envelope.error ?? "Workspace runtime request failed"));
+      pending.reject(
+        new Error(envelope.error ?? "Workspace runtime request failed"),
+      );
     }
   };
 
@@ -243,23 +255,29 @@ class WorkspaceRuntimeClient {
   }
 
   private async sendHello(): Promise<void> {
-    if (!this.desiredContext || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+    if (
+      !this.desiredContext ||
+      !this.ws ||
+      this.ws.readyState !== WebSocket.OPEN
+    ) {
       return;
     }
 
     const hello: WorkspaceRuntimeClientHello = {
       type: "client_hello",
-      ...(this.currentConnectionId ? { connectionId: this.currentConnectionId } : {}),
+      ...(this.currentConnectionId
+        ? { connectionId: this.currentConnectionId }
+        : {}),
       workspaceId: this.desiredContext.workspaceId,
       ...(this.desiredContext.activeThreadId
         ? { activeThreadId: this.desiredContext.activeThreadId }
         : {}),
-      lastSeenByChannel: {
-        threads: this.latestPushByChannel.get("threads")?.revision ?? 0,
-        "thread-detail":
-          this.latestPushByChannel.get("thread-detail")?.revision ?? 0,
-        "run-detail": this.latestPushByChannel.get("run-detail")?.revision ?? 0,
-      },
+      lastSeenByChannel: Object.fromEntries(
+        CHANNELS.map((ch) => [
+          ch,
+          this.latestPushByChannel.get(ch)?.revision ?? 0,
+        ]),
+      ) as Record<WorkspaceRuntimeChannel, number>,
     };
 
     this.ws.send(JSON.stringify(hello));
@@ -279,9 +297,30 @@ class WorkspaceRuntimeClient {
     this.desiredContext = context;
     this.clearReconnectTimer();
 
+    // Reject any prior pending bootstrap to avoid leaked promises.
+    if (this.pendingBootstrap) {
+      clearTimeout(this.pendingBootstrap.timeoutId);
+      this.pendingBootstrap.reject(
+        new Error("Superseded by newer bindContext call"),
+      );
+      this.pendingBootstrap = null;
+    }
+
     const bootstrapPromise = new Promise<WorkspaceRuntimeBootstrap>(
       (resolve, reject) => {
-        this.pendingBootstrap = { resolve, reject };
+        const timeoutId = setTimeout(() => {
+          this.pendingBootstrap = null;
+          this.recordDiagnostic({
+            code: "request-timeout",
+            level: "error",
+            message: "Workspace runtime bootstrap timed out",
+            connectionId: this.currentConnectionId,
+            workspaceId: this.desiredContext?.workspaceId,
+            threadId: this.desiredContext?.activeThreadId,
+          });
+          reject(new Error("Workspace runtime bootstrap timed out"));
+        }, REQUEST_TIMEOUT_MS);
+        this.pendingBootstrap = { resolve, reject, timeoutId };
       },
     );
 
@@ -357,8 +396,11 @@ class WorkspaceRuntimeClient {
     this.currentConnectionId = undefined;
     this.latestPushByChannel.clear();
     this.clearReconnectTimer();
-    this.pendingBootstrap?.reject(new Error("Workspace runtime disconnected"));
-    this.pendingBootstrap = null;
+    if (this.pendingBootstrap) {
+      clearTimeout(this.pendingBootstrap.timeoutId);
+      this.pendingBootstrap.reject(new Error("Workspace runtime disconnected"));
+      this.pendingBootstrap = null;
+    }
     for (const pending of this.pendingRequests.values()) {
       clearTimeout(pending.timeoutId);
       pending.reject(new Error("Workspace runtime disconnected"));
@@ -370,8 +412,16 @@ class WorkspaceRuntimeClient {
     }
 
     this.intentionalClose = true;
+    this.detachSocketListeners(this.ws);
     this.ws.close();
     this.ws = null;
+  }
+
+  private detachSocketListeners(ws: WebSocket): void {
+    ws.removeEventListener("open", this.handleOpen);
+    ws.removeEventListener("message", this.handleMessage);
+    ws.removeEventListener("close", this.handleClose);
+    ws.removeEventListener("error", this.handleError);
   }
 
   getDiagnostics(): WorkspaceTransportDiagnostic[] {

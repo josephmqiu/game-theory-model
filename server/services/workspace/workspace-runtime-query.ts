@@ -31,11 +31,14 @@ function resolveActiveThreadId(
   threads: ThreadState[],
   requestedThreadId?: string,
 ): string | undefined {
-  if (requestedThreadId && threads.some((thread) => thread.id === requestedThreadId)) {
+  if (
+    requestedThreadId &&
+    threads.some((thread) => thread.id === requestedThreadId)
+  ) {
     return requestedThreadId;
   }
 
-  return threads[0]?.id ?? threads.find((thread) => thread.isPrimary)?.id;
+  return threads.find((thread) => thread.isPrimary)?.id ?? threads[0]?.id;
 }
 
 function parseThreadMessageState(
@@ -72,17 +75,19 @@ function getThreadDetail(
 
   return {
     thread,
-    messages: database.messages.listMessagesByThreadId(threadId).map((message) =>
-      parseThreadMessageState(message.messageJson, {
-        id: message.id,
-        workspaceId: message.workspaceId,
-        threadId: message.threadId,
-        role: message.role as DurableMessageRole,
-        content: message.content,
-        createdAt: message.createdAt,
-        updatedAt: message.updatedAt,
-      }),
-    ),
+    messages: database.messages
+      .listMessagesByThreadId(threadId)
+      .map((message) =>
+        parseThreadMessageState(message.messageJson, {
+          id: message.id,
+          workspaceId: message.workspaceId,
+          threadId: message.threadId,
+          role: message.role as DurableMessageRole,
+          content: message.content,
+          createdAt: message.createdAt,
+          updatedAt: message.updatedAt,
+        }),
+      ),
     activities: database.activities.listActivitiesByThreadId(threadId),
   };
 }
@@ -108,8 +113,9 @@ function getLatestRunDetail(
 
   return {
     latestRun,
-    latestPhaseTurns:
-      database.phaseTurnSummaries.listPhaseTurnSummariesByRunId(latestRun.id),
+    latestPhaseTurns: database.phaseTurnSummaries.listPhaseTurnSummariesByRunId(
+      latestRun.id,
+    ),
   };
 }
 

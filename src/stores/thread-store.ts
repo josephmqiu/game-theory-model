@@ -114,7 +114,7 @@ function resolveRestoredThreadId(
     return storedThreadId;
   }
 
-  return threads[0]?.id ?? threads.find((thread) => thread.isPrimary)?.id;
+  return threads.find((thread) => thread.isPrimary)?.id ?? threads[0]?.id;
 }
 
 function shouldClearOverlayMessages(
@@ -125,11 +125,14 @@ function shouldClearOverlayMessages(
     return false;
   }
 
-  const userOverlay = overlayMessages.find((message) => message.role === "user");
+  const userOverlay = overlayMessages.find(
+    (message) => message.role === "user",
+  );
   const assistantOverlay = [...overlayMessages]
     .reverse()
     .find(
-      (message) => message.role === "assistant" && !message.id.startsWith("tool-"),
+      (message) =>
+        message.role === "assistant" && !message.id.startsWith("tool-"),
     );
 
   if (!assistantOverlay || assistantOverlay.isStreaming) {
@@ -138,7 +141,8 @@ function shouldClearOverlayMessages(
 
   const projectedHasAssistant = detail.messages.some(
     (message) =>
-      message.role === "assistant" && message.content === assistantOverlay.content,
+      message.role === "assistant" &&
+      message.content === assistantOverlay.content,
   );
   if (!projectedHasAssistant) {
     return false;
@@ -175,7 +179,10 @@ function applyBootstrap(bootstrap: WorkspaceRuntimeBootstrap): void {
     );
 
     if (bootstrap.workspaceId && bootstrap.activeThreadId) {
-      writeStoredThreadSelection(bootstrap.workspaceId, bootstrap.activeThreadId);
+      writeStoredThreadSelection(
+        bootstrap.workspaceId,
+        bootstrap.activeThreadId,
+      );
     }
 
     return {
@@ -194,6 +201,11 @@ function applyBootstrap(bootstrap: WorkspaceRuntimeBootstrap): void {
 }
 
 function applyThreadsPush(push: WorkspaceRuntimePushEnvelope<"threads">): void {
+  let rebindTarget: {
+    workspaceId: string;
+    activeThreadId: string;
+  } | null = null;
+
   useThreadStore.setState((state) => {
     if (state.workspaceId !== push.payload.workspaceId) {
       return state;
@@ -213,10 +225,10 @@ function applyThreadsPush(push: WorkspaceRuntimePushEnvelope<"threads">): void {
       nextActiveThreadId !== state.activeThreadId &&
       push.payload.workspaceId
     ) {
-      void workspaceRuntimeClient.bindContext({
+      rebindTarget = {
         workspaceId: push.payload.workspaceId,
         activeThreadId: nextActiveThreadId,
-      });
+      };
     }
 
     return {
@@ -232,10 +244,16 @@ function applyThreadsPush(push: WorkspaceRuntimePushEnvelope<"threads">): void {
       latestRun:
         nextActiveThreadId === state.activeThreadId ? state.latestRun : null,
       latestPhaseTurns:
-        nextActiveThreadId === state.activeThreadId ? state.latestPhaseTurns : [],
+        nextActiveThreadId === state.activeThreadId
+          ? state.latestPhaseTurns
+          : [],
       error: undefined,
     };
   });
+
+  if (rebindTarget) {
+    void workspaceRuntimeClient.bindContext(rebindTarget);
+  }
 }
 
 function applyThreadDetailPush(
@@ -270,7 +288,9 @@ function applyThreadDetailPush(
   });
 }
 
-function applyRunDetailPush(push: WorkspaceRuntimePushEnvelope<"run-detail">): void {
+function applyRunDetailPush(
+  push: WorkspaceRuntimePushEnvelope<"run-detail">,
+): void {
   useThreadStore.setState((state) => {
     if (
       state.workspaceId !== push.payload.workspaceId ||
@@ -318,7 +338,10 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
         bootstrap.threads,
         getStoredThreadSelection(workspaceId),
       );
-      if (nextActiveThreadId && nextActiveThreadId !== bootstrap.activeThreadId) {
+      if (
+        nextActiveThreadId &&
+        nextActiveThreadId !== bootstrap.activeThreadId
+      ) {
         const rebound = await workspaceRuntimeClient.bindContext({
           workspaceId: bootstrap.workspaceId,
           activeThreadId: nextActiveThreadId,
@@ -370,7 +393,12 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
   async refreshAndClearOverlay() {
     const workspaceId = get().workspaceId;
     if (!workspaceId) {
-      set({ activeThreadDetail: null, overlayMessages: [], latestRun: null, latestPhaseTurns: [] });
+      set({
+        activeThreadDetail: null,
+        overlayMessages: [],
+        latestRun: null,
+        latestPhaseTurns: [],
+      });
       return;
     }
     applyBootstrap(
@@ -379,7 +407,6 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
         activeThreadId: get().activeThreadId,
       }),
     );
-    set({ overlayMessages: [] });
   },
 
   async selectThread(threadId) {
@@ -544,7 +571,9 @@ workspaceRuntimeClient.subscribe((envelope) => {
       );
       return;
     case "run-detail":
-      applyRunDetailPush(envelope as WorkspaceRuntimePushEnvelope<"run-detail">);
+      applyRunDetailPush(
+        envelope as WorkspaceRuntimePushEnvelope<"run-detail">,
+      );
       return;
   }
 });

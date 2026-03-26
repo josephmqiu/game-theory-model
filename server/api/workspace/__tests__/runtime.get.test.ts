@@ -174,9 +174,13 @@ describe("/api/workspace/runtime websocket", () => {
         peer: FakePeer,
         message: ReturnType<typeof wsMessage>,
       ) => Promise<void>;
-      close: (peer: FakePeer, details?: { code?: number; reason?: string }) => void;
+      close: (
+        peer: FakePeer,
+        details?: { code?: number; reason?: string },
+      ) => void;
     };
-    const diagnosticsRoute = (await import("../runtime-diagnostics.get")).default;
+    const diagnosticsRoute = (await import("../runtime-diagnostics.get"))
+      .default;
     const peer1 = new FakePeer("conn-1");
 
     route.open(peer1);
@@ -238,5 +242,58 @@ describe("/api/workspace/runtime websocket", () => {
     ).toEqual(
       expect.arrayContaining(["hello-received", "request-completed", "close"]),
     );
+  });
+
+  it("forwards explicit activeThreadId in bootstrap", async () => {
+    const database = getWorkspaceDatabase();
+    const threadService = createThreadService(database);
+    const threadA = threadService.createThread({
+      workspaceId: "workspace-1",
+      title: "Thread A",
+      producer: "test",
+      occurredAt: 100,
+    });
+    const threadB = threadService.createThread({
+      workspaceId: "workspace-1",
+      title: "Thread B",
+      producer: "test",
+      occurredAt: 101,
+    });
+
+    const route = (await import("../runtime.get")).default as unknown as {
+      open: (peer: FakePeer) => void;
+      message: (
+        peer: FakePeer,
+        message: ReturnType<typeof wsMessage>,
+      ) => Promise<void>;
+    };
+    const peer = new FakePeer("conn-1");
+
+    route.open(peer);
+    await route.message(
+      peer,
+      wsMessage({
+        type: "client_hello",
+        workspaceId: "workspace-1",
+        activeThreadId: threadB.id,
+      }),
+    );
+
+    expect(peer.sent[0]).toMatchObject({
+      type: "bootstrap",
+      payload: {
+        activeThreadId: threadB.id,
+        activeThreadDetail: {
+          thread: expect.objectContaining({
+            title: "Thread B",
+          }),
+        },
+      },
+    });
+
+    // Ensure it picked threadB, not threadA
+    expect(peer.sent[0]).not.toMatchObject({
+      payload: { activeThreadId: threadA.id },
+    });
   });
 });
