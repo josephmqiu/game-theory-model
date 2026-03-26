@@ -1,4 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  DEFAULT_PROMPT_PACK_ID,
+  DEFAULT_PROMPT_PACK_MODE,
+  DEFAULT_PROMPT_PACK_VERSION,
+} from "../../../shared/types/prompt-pack";
 
 // ── Fixtures ──
 
@@ -768,21 +773,20 @@ describe("analysis-service", () => {
       expect(result.relationships).toHaveLength(0);
     });
 
-    it("includes prior context in prompt when provided", async () => {
+    it("includes the compact phase brief in the prompt when provided", async () => {
       mockClaudeRunAnalysisPhase.mockResolvedValue(VALID_PHASE_2_STRUCTURED);
 
-      const priorEntities = JSON.stringify({
-        entities: VALID_PHASE_1_STRUCTURED.entities,
-      });
+      const phaseBrief =
+        "Prior-phase digest:\n- situational-grounding: 2 facts\n\nAnchor entities:\n- fact-1";
 
       const { runPhase } = await importService();
       await runPhase("player-identification", "US-China trade war", {
-        priorEntities,
+        phaseBrief,
       });
 
       const [prompt] = mockClaudeRunAnalysisPhase.mock.calls[0];
-      expect(prompt).toContain("Prior phase output");
-      expect(prompt).toContain(priorEntities);
+      expect(prompt).toContain("Compact phase brief");
+      expect(prompt).toContain(phaseBrief);
     });
 
     it("does NOT retry on failure (returns failure to caller)", async () => {
@@ -1211,27 +1215,39 @@ describe("analysis-service", () => {
       expect(user).toContain("Preserve the current expected level of depth");
       expect(user).not.toContain("Prior phase");
       expect(promptProvenance).toMatchObject({
-        promptPackId: "game-theory/default",
-        promptPackVersion: "2026-03-25.1",
-        promptPackMode: "analysis-runtime",
+        promptPackId: DEFAULT_PROMPT_PACK_ID,
+        promptPackVersion: DEFAULT_PROMPT_PACK_VERSION,
+        promptPackMode: DEFAULT_PROMPT_PACK_MODE,
+        promptPackSource: {
+          kind: "bundled",
+        },
         phase: "situational-grounding",
         variant: "initial",
-        templateIdentity: "game-theory/default:situational-grounding:initial",
+        templateIdentity: `${DEFAULT_PROMPT_PACK_ID}:situational-grounding:initial`,
+        toolPolicy: {
+          enabledAnalysisTools: [
+            "get_entity",
+            "query_entities",
+            "query_relationships",
+            "request_loopback",
+          ],
+          webSearch: true,
+        },
       });
     });
 
-    it("builds prompt with prior context", async () => {
+    it("builds prompt with a compact phase brief", async () => {
       const { buildPhasePromptBundle } =
         await import("../analysis-prompt-provenance");
       const { user } = buildPhasePromptBundle({
         phase: "player-identification",
         topic: "US-China trade war",
-        priorContext: '{"entities":[]}',
+        phaseBrief: "Prior-phase digest:\n- situational-grounding: 2 facts",
         effortLevel: "medium",
       });
 
-      expect(user).toContain("Prior phase output");
-      expect(user).toContain('{"entities":[]}');
+      expect(user).toContain("Compact phase brief");
+      expect(user).toContain("Prior-phase digest");
     });
 
     it("builds prompt with low effort guidance", async () => {
@@ -1291,18 +1307,30 @@ describe("analysis-service", () => {
       });
 
       expect(runProvenance).toMatchObject({
-        promptPackId: "game-theory/default",
-        promptPackVersion: "2026-03-25.1",
-        promptPackMode: "analysis-runtime",
-        templateSetIdentity: "game-theory/default",
+        promptPackId: DEFAULT_PROMPT_PACK_ID,
+        promptPackVersion: DEFAULT_PROMPT_PACK_VERSION,
+        promptPackMode: DEFAULT_PROMPT_PACK_MODE,
+        promptPackSource: {
+          kind: "bundled",
+        },
+        templateSetIdentity: DEFAULT_PROMPT_PACK_ID,
+        toolPolicyByPhase: expect.objectContaining({
+          "historical-game": expect.any(Object),
+          "formal-modeling": expect.any(Object),
+        }),
       });
       expect(promptProvenance).toMatchObject({
-        promptPackId: "game-theory/default",
-        promptPackVersion: "2026-03-25.1",
-        promptPackMode: "analysis-runtime",
+        promptPackId: DEFAULT_PROMPT_PACK_ID,
+        promptPackVersion: DEFAULT_PROMPT_PACK_VERSION,
+        promptPackMode: DEFAULT_PROMPT_PACK_MODE,
+        promptPackSource: {
+          kind: "bundled",
+        },
         phase: "historical-game",
         variant: "revision",
-        templateIdentity: "game-theory/default:historical-game:revision",
+        templateIdentity: `${DEFAULT_PROMPT_PACK_ID}:historical-game:revision`,
+        toolPolicy: expect.any(Object),
+        doneCondition: expect.any(String),
       });
     });
   });

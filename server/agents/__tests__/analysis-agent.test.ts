@@ -6,7 +6,15 @@ import type {
   AnalysisEntity,
   AnalysisRelationship,
 } from "../../../shared/types/entity";
-import { getWorkspaceDatabase, resetWorkspaceDatabaseForTest } from "../../services/workspace";
+import {
+  DEFAULT_PROMPT_PACK_ID,
+  DEFAULT_PROMPT_PACK_MODE,
+  DEFAULT_PROMPT_PACK_VERSION,
+} from "../../../shared/types/prompt-pack";
+import {
+  getWorkspaceDatabase,
+  resetWorkspaceDatabaseForTest,
+} from "../../services/workspace";
 import type {
   PhaseOutputEntity,
   PhaseResult,
@@ -48,7 +56,7 @@ const mockRunPhase = vi.fn<
     phase: MethodologyPhase,
     topic: string,
     context?: {
-      priorEntities?: string;
+      phaseBrief?: string;
       revisionRetryInstruction?: string;
       provider?: string;
       model?: string;
@@ -441,10 +449,7 @@ describe("analysis-orchestrator", () => {
       "gpt-4o",
       undefined,
       {
-        activePhases: [
-          "situational-grounding",
-          "player-identification",
-        ],
+        activePhases: ["situational-grounding", "player-identification"],
       },
     );
     await flushAsync();
@@ -465,10 +470,10 @@ describe("analysis-orchestrator", () => {
       promptProvenance: {
         analysisType: "game-theory",
         activePhases: ["situational-grounding", "player-identification"],
-        promptPackId: "game-theory/default",
-        promptPackVersion: "2026-03-25.1",
-        promptPackMode: "analysis-runtime",
-        templateSetIdentity: "game-theory/default",
+        promptPackId: DEFAULT_PROMPT_PACK_ID,
+        promptPackVersion: DEFAULT_PROMPT_PACK_VERSION,
+        promptPackMode: DEFAULT_PROMPT_PACK_MODE,
+        templateSetIdentity: DEFAULT_PROMPT_PACK_ID,
       },
       logCorrelation: {
         logFileName: `${runId}.jsonl`,
@@ -484,26 +489,24 @@ describe("analysis-orchestrator", () => {
           phase: "situational-grounding",
           turnIndex: 1,
           promptProvenance: expect.objectContaining({
-            promptPackId: "game-theory/default",
-            promptPackVersion: "2026-03-25.1",
-            promptPackMode: "analysis-runtime",
+            promptPackId: DEFAULT_PROMPT_PACK_ID,
+            promptPackVersion: DEFAULT_PROMPT_PACK_VERSION,
+            promptPackMode: DEFAULT_PROMPT_PACK_MODE,
             phase: "situational-grounding",
             variant: "initial",
-            templateIdentity:
-              "game-theory/default:situational-grounding:initial",
+            templateIdentity: `${DEFAULT_PROMPT_PACK_ID}:situational-grounding:initial`,
           }),
         }),
         expect.objectContaining({
           phase: "player-identification",
           turnIndex: 1,
           promptProvenance: expect.objectContaining({
-            promptPackId: "game-theory/default",
-            promptPackVersion: "2026-03-25.1",
-            promptPackMode: "analysis-runtime",
+            promptPackId: DEFAULT_PROMPT_PACK_ID,
+            promptPackVersion: DEFAULT_PROMPT_PACK_VERSION,
+            promptPackMode: DEFAULT_PROMPT_PACK_MODE,
             phase: "player-identification",
             variant: "initial",
-            templateIdentity:
-              "game-theory/default:player-identification:initial",
+            templateIdentity: `${DEFAULT_PROMPT_PACK_ID}:player-identification:initial`,
           }),
         }),
       ]),
@@ -672,13 +675,17 @@ describe("analysis-orchestrator", () => {
       ),
     ).toBe("terminal");
     expect(
-      orchestrator.classifyFailure("invalid_json_schema: outputSchema rejected"),
+      orchestrator.classifyFailure(
+        "invalid_json_schema: outputSchema rejected",
+      ),
     ).toBe("terminal");
   });
 
   it("classifies remote Codex aborts as retryable", () => {
     expect(
-      orchestrator.classifyFailure("Codex turn failed: Aborted (status=failed)"),
+      orchestrator.classifyFailure(
+        "Codex turn failed: Aborted (status=failed)",
+      ),
     ).toBe("retryable");
     expect(
       orchestrator.classifyFailure(
@@ -770,7 +777,11 @@ describe("analysis-orchestrator", () => {
       .mockResolvedValueOnce(makePhaseResult("scenarios"))
       .mockResolvedValueOnce(makePhaseResult("meta-check"));
 
-    const { runId } = await orchestrator.runFull("Test topic", "openai", "gpt-5.4");
+    const { runId } = await orchestrator.runFull(
+      "Test topic",
+      "openai",
+      "gpt-5.4",
+    );
     await flushAsync();
 
     const status = orchestrator.getStatus(runId);
@@ -833,7 +844,11 @@ describe("analysis-orchestrator", () => {
     const events: AnalysisProgressEvent[] = [];
     const unsubscribe = orchestrator.onProgress((event) => events.push(event));
 
-    const { runId } = await orchestrator.runFull("Test topic", "openai", "gpt-5.4");
+    const { runId } = await orchestrator.runFull(
+      "Test topic",
+      "openai",
+      "gpt-5.4",
+    );
     await flushAsync();
     unsubscribe();
 
@@ -1394,13 +1409,9 @@ describe("analysis-orchestrator", () => {
         .mockResolvedValueOnce(makePhaseResult("scenarios"))
         .mockResolvedValueOnce(makePhaseResult("meta-check"));
 
-      await orchestrator.runFull(
-        "Test topic",
-        "openai",
-        "gpt-4o",
-        undefined,
-        { webSearch: false },
-      );
+      await orchestrator.runFull("Test topic", "openai", "gpt-4o", undefined, {
+        webSearch: false,
+      });
       await flushAsync();
 
       // All 9 phases must have been called
@@ -1612,9 +1623,15 @@ describe("analysis-orchestrator", () => {
         .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
         .mockResolvedValueOnce(makePhaseResult("baseline-model"));
 
-      await orchestrator.runFull("Test topic", undefined, undefined, undefined, {
-        activePhases: ["situational-grounding", "baseline-model"],
-      });
+      await orchestrator.runFull(
+        "Test topic",
+        undefined,
+        undefined,
+        undefined,
+        {
+          activePhases: ["situational-grounding", "baseline-model"],
+        },
+      );
       await flushAsync();
 
       expect(mockRevalidation.onRunComplete).toHaveBeenCalledWith(
@@ -1862,21 +1879,27 @@ describe("analysis-orchestrator", () => {
         return Promise.resolve(makePhaseResult(phase));
       });
 
-      await orchestrator.runFull("Test topic", undefined, undefined, undefined, {
-        activePhases: [
-          "situational-grounding",
-          "baseline-model",
-          "scenarios",
-        ],
-      });
+      await orchestrator.runFull(
+        "Test topic",
+        undefined,
+        undefined,
+        undefined,
+        {
+          activePhases: [
+            "situational-grounding",
+            "baseline-model",
+            "scenarios",
+          ],
+        },
+      );
       await flushAsync();
 
       const secondBaselineContext = mockRunPhase.mock.calls[3][2] as
-        | { priorEntities?: string }
+        | { phaseBrief?: string }
         | undefined;
-      expect(secondBaselineContext?.priorEntities).toContain("fact-1");
-      expect(secondBaselineContext?.priorEntities).not.toContain("game-1");
-      expect(secondBaselineContext?.priorEntities).not.toContain("scenario-1");
+      expect(secondBaselineContext?.phaseBrief).toContain("fact-1");
+      expect(secondBaselineContext?.phaseBrief).not.toContain("game-1");
+      expect(secondBaselineContext?.phaseBrief).not.toContain("scenario-1");
     });
   });
 });

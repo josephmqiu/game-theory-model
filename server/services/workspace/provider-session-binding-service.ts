@@ -2,8 +2,7 @@ import type { RuntimeProvider } from "../../../shared/types/analysis-runtime";
 import { serverLog } from "../../utils/ai-logger";
 import { recordWorkspaceRecoveryDiagnostic } from "./runtime-recovery-diagnostics";
 import { getWorkspaceDatabase } from "./workspace-db";
-
-export type ProviderSessionBindingPurpose = "chat" | "analysis" | "recovery";
+import type { ProviderSessionBindingPurpose } from "./workspace-types";
 
 export type ProviderSessionBindingRecoveryReason =
   | "missing_local_binding"
@@ -63,10 +62,12 @@ interface ProviderSessionBindingDiagnostic {
 function parseBindingJson(
   raw: string,
   fallback: {
+    purpose: ProviderSessionBindingPurpose;
     provider: RuntimeProvider;
     workspaceId: string;
     threadId: string;
     providerSessionId: string;
+    phaseTurnId: string | null;
     runId: string | null;
     updatedAt: number;
   },
@@ -90,9 +91,16 @@ function parseBindingJson(
         provider: parsed.provider,
         workspaceId: parsed.workspaceId,
         threadId: parsed.threadId,
-        purpose: parsed.purpose,
-        ...(parsed.runId ? { runId: parsed.runId } : {}),
-        ...(parsed.phaseTurnId ? { phaseTurnId: parsed.phaseTurnId } : {}),
+        purpose: parsed.purpose ?? fallback.purpose,
+        ...(parsed.runId ?? fallback.runId
+          ? { runId: parsed.runId ?? fallback.runId ?? undefined }
+          : {}),
+        ...(parsed.phaseTurnId ?? fallback.phaseTurnId
+          ? {
+              phaseTurnId:
+                parsed.phaseTurnId ?? fallback.phaseTurnId ?? undefined,
+            }
+          : {}),
         providerSessionId: parsed.providerSessionId,
         ...(parsed.claudeSessionId
           ? { claudeSessionId: parsed.claudeSessionId }
@@ -114,8 +122,9 @@ function parseBindingJson(
     provider: fallback.provider,
     workspaceId: fallback.workspaceId,
     threadId: fallback.threadId,
-    purpose: "chat",
+    purpose: fallback.purpose,
     ...(fallback.runId ? { runId: fallback.runId } : {}),
+    ...(fallback.phaseTurnId ? { phaseTurnId: fallback.phaseTurnId } : {}),
     providerSessionId: fallback.providerSessionId,
     ...(fallback.provider === "claude"
       ? { claudeSessionId: fallback.providerSessionId }
@@ -126,19 +135,23 @@ function parseBindingJson(
 
 export function getProviderSessionBinding(
   threadId: string,
+  purpose: ProviderSessionBindingPurpose = "chat",
 ): ProviderSessionBindingState | null {
   const record = getWorkspaceDatabase().providerSessionBindings.getBinding(
     threadId,
+    purpose,
   );
   if (!record) {
     return null;
   }
 
   return parseBindingJson(record.bindingJson, {
+    purpose: record.purpose,
     provider: record.provider as RuntimeProvider,
     workspaceId: record.workspaceId,
     threadId: record.threadId,
     providerSessionId: record.providerSessionId,
+    phaseTurnId: record.phaseTurnId,
     runId: record.runId,
     updatedAt: record.updatedAt,
   });
@@ -154,9 +167,11 @@ export function upsertProviderSessionBinding(
   };
   getWorkspaceDatabase().providerSessionBindings.upsertBinding({
     threadId: next.threadId,
+    purpose: next.purpose,
     workspaceId: next.workspaceId,
     provider: next.provider,
     providerSessionId: next.providerSessionId,
+    phaseTurnId: next.phaseTurnId ?? null,
     runId: next.runId ?? null,
     bindingJson: JSON.stringify(next),
     updatedAt: next.updatedAt,
@@ -195,13 +210,15 @@ export function clearProviderSessionBinding(
     runId?: string;
     reason?: ProviderSessionBindingRecoveryReason;
     expectedPurpose?: ProviderSessionBindingPurpose;
+    purpose?: ProviderSessionBindingPurpose;
     phaseTurnId?: string;
     provider?: RuntimeProvider;
     providerSessionId?: string;
     message?: string;
   } = {},
 ): boolean {
-  const existing = getProviderSessionBinding(threadId);
+  const purpose = options.purpose ?? options.expectedPurpose ?? "chat";
+  const existing = getProviderSessionBinding(threadId, purpose);
   if (!existing) {
     return false;
   }
@@ -212,7 +229,10 @@ export function clearProviderSessionBinding(
     return false;
   }
 
-  getWorkspaceDatabase().providerSessionBindings.deleteBinding(threadId);
+  getWorkspaceDatabase().providerSessionBindings.deleteBinding(
+    threadId,
+    purpose,
+  );
   serverLog(options.runId, "provider-session-binding", "binding-cleared", {
     workspaceId: existing.workspaceId,
     threadId,
@@ -285,3 +305,5 @@ export function createProviderSessionBindingService() {
     },
   };
 }
+
+export type { ProviderSessionBindingPurpose } from "./workspace-types";

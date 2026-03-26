@@ -1,0 +1,229 @@
+{
+  "analysisType": "game-theory",
+  "mode": "analysis-runtime",
+  "id": "game-theory/default",
+  "version": "2026-03-25.1",
+  "source": {
+    "kind": "bundled"
+  },
+  "phases": [
+    {
+      "phase": "situational-grounding",
+      "objective": "Ground the facts and constraints before theory.",
+      "doneCondition": "The situation is concrete enough to identify the players, constraints, and sequence of events.",
+      "toolPolicy": {
+        "enabledAnalysisTools": [
+          "get_entity",
+          "query_entities",
+          "query_relationships",
+          "request_loopback"
+        ],
+        "webSearch": true
+      }
+    },
+    {
+      "phase": "player-identification",
+      "objective": "Identify the decision-makers and what they are optimizing for.",
+      "doneCondition": "Primary players and their objectives are explicit.",
+      "toolPolicy": {
+        "enabledAnalysisTools": [
+          "get_entity",
+          "query_entities",
+          "query_relationships",
+          "request_loopback"
+        ],
+        "webSearch": true
+      }
+    },
+    {
+      "phase": "baseline-model",
+      "objective": "Build the smallest strategic game that captures the tension.",
+      "doneCondition": "The minimal canonical game and feasible strategy set are established.",
+      "toolPolicy": {
+        "enabledAnalysisTools": [
+          "get_entity",
+          "query_entities",
+          "query_relationships",
+          "request_loopback"
+        ],
+        "webSearch": true
+      }
+    },
+    {
+      "phase": "historical-game",
+      "objective": "Capture repeated-play history and dynamic patterns.",
+      "doneCondition": "Relevant history, trust, signaling, and repeated-game patterns are captured.",
+      "toolPolicy": {
+        "enabledAnalysisTools": [
+          "get_entity",
+          "query_entities",
+          "query_relationships",
+          "request_loopback"
+        ],
+        "webSearch": true
+      }
+    },
+    {
+      "phase": "formal-modeling",
+      "objective": "Formalize strategies, payoffs, and structural relationships.",
+      "doneCondition": "The formal model is explicit enough to support deeper analysis.",
+      "toolPolicy": {
+        "enabledAnalysisTools": [
+          "get_entity",
+          "query_entities",
+          "query_relationships",
+          "request_loopback"
+        ],
+        "webSearch": true
+      }
+    },
+    {
+      "phase": "assumptions",
+      "objective": "Surface assumptions and their stability.",
+      "doneCondition": "Key assumptions are listed, linked, and confidence-bounded.",
+      "toolPolicy": {
+        "enabledAnalysisTools": [
+          "get_entity",
+          "query_entities",
+          "query_relationships",
+          "request_loopback"
+        ],
+        "webSearch": true
+      }
+    },
+    {
+      "phase": "elimination",
+      "objective": "Remove unsupported outcomes and weak branches.",
+      "doneCondition": "Non-viable outcomes are explicitly eliminated with rationale.",
+      "toolPolicy": {
+        "enabledAnalysisTools": [
+          "get_entity",
+          "query_entities",
+          "query_relationships",
+          "request_loopback"
+        ],
+        "webSearch": true
+      }
+    },
+    {
+      "phase": "scenarios",
+      "objective": "Generate plausible strategic scenarios and branches.",
+      "doneCondition": "The main scenario set covers the meaningful forks in the game.",
+      "toolPolicy": {
+        "enabledAnalysisTools": [
+          "get_entity",
+          "query_entities",
+          "query_relationships",
+          "request_loopback"
+        ],
+        "webSearch": true
+      }
+    },
+    {
+      "phase": "meta-check",
+      "objective": "Check blind spots and consistency before finalizing.",
+      "doneCondition": "Blind spots, contradictions, and open risks are surfaced.",
+      "toolPolicy": {
+        "enabledAnalysisTools": [
+          "get_entity",
+          "query_entities",
+          "query_relationships",
+          "request_loopback"
+        ],
+        "webSearch": true
+      }
+    }
+  ],
+  "templateFiles": [
+    {
+      "phase": "situational-grounding",
+      "variant": "initial",
+      "path": "prompts/situational-grounding/initial.md"
+    },
+    {
+      "phase": "situational-grounding",
+      "variant": "revision",
+      "path": "prompts/situational-grounding/revision.md"
+    },
+    {
+      "phase": "player-identification",
+      "variant": "initial",
+      "path": "prompts/player-identification/initial.md"
+    },
+    {
+      "phase": "player-identification",
+      "variant": "revision",
+      "path": "prompts/player-identification/revision.md"
+    },
+    {
+      "phase": "baseline-model",
+      "variant": "initial",
+      "path": "prompts/baseline-model/initial.md"
+    },
+    {
+      "phase": "baseline-model",
+      "variant": "revision",
+      "path": "prompts/baseline-model/revision.md"
+    },
+    {
+      "phase": "historical-game",
+      "variant": "initial",
+      "path": "prompts/historical-game/initial.md"
+    },
+    {
+      "phase": "historical-game",
+      "variant": "revision",
+      "path": "prompts/historical-game/revision.md"
+    },
+    {
+      "phase": "formal-modeling",
+      "variant": "initial",
+      "path": "prompts/formal-modeling/initial.md"
+    },
+    {
+      "phase": "formal-modeling",
+      "variant": "revision",
+      "path": "prompts/formal-modeling/revision.md"
+    },
+    {
+      "phase": "assumptions",
+      "variant": "initial",
+      "path": "prompts/assumptions/initial.md"
+    },
+    {
+      "phase": "assumptions",
+      "variant": "revision",
+      "path": "prompts/assumptions/revision.md"
+    },
+    {
+      "phase": "elimination",
+      "variant": "initial",
+      "path": "prompts/elimination/initial.md"
+    },
+    {
+      "phase": "elimination",
+      "variant": "revision",
+      "path": "prompts/elimination/revision.md"
+    },
+    {
+      "phase": "scenarios",
+      "variant": "initial",
+      "path": "prompts/scenarios/initial.md"
+    },
+    {
+      "phase": "scenarios",
+      "variant": "revision",
+      "path": "prompts/scenarios/revision.md"
+    },
+    {
+      "phase": "meta-check",
+      "variant": "initial",
+      "path": "prompts/meta-check/initial.md"
+    },
+    {
+      "phase": "meta-check",
+      "variant": "revision",
+      "path": "prompts/meta-check/revision.md"
+    }
+  ]
+}

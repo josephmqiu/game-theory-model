@@ -22,6 +22,7 @@ import {
   buildPhasePromptBundle,
   createRunPromptProvenance,
 } from "../services/analysis-prompt-provenance";
+import { buildPhaseBrief } from "../services/analysis-phase-brief";
 import {
   SUPPORTED_ANALYSIS_PHASES,
   getCanonicalAnalysisPhaseIndex,
@@ -41,7 +42,9 @@ import { resolveAnalysisRuntime } from "../config/analysis-runtime-resolver";
 import * as runtimeStatus from "../services/runtime-status";
 import {
   clearProviderSessionBinding,
+  getProviderSessionBinding,
   getWorkspaceDatabase,
+  upsertProviderSessionBinding,
 } from "../services/workspace";
 import { createRunLogger, timer } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
@@ -130,6 +133,7 @@ function clearAnalysisRunBinding(
 ): void {
   clearProviderSessionBinding(run.threadId, {
     runId: run.runId,
+    purpose: "analysis",
     expectedPurpose: "analysis",
     reason: "process_terminated",
   });
@@ -432,47 +436,18 @@ function drainEditQueue(): void {
   }
 }
 
-// ── Prior context builder ──
+function syncAnalysisBindingPhaseTurn(run: ActiveRun): void {
+  const binding = getProviderSessionBinding(run.threadId, "analysis");
+  if (!binding || !run.activePhaseTurnId) {
+    return;
+  }
 
-function buildPriorContext(
-  currentPhase: SupportedPhase,
-  completedPhases: MethodologyPhase[],
-  activePhases: SupportedPhase[],
-): string | undefined {
-  if (completedPhases.length === 0) return undefined;
-
-  const currentPhaseIndex = getCanonicalAnalysisPhaseIndex(currentPhase);
-  const priorCompletedPhases = completedPhases.filter((phase) => {
-    if (!activePhases.includes(phase as SupportedPhase)) {
-      return false;
-    }
-
-    const phaseIndex = getCanonicalAnalysisPhaseIndex(phase);
-    return phaseIndex !== -1 && phaseIndex < currentPhaseIndex;
+  upsertProviderSessionBinding({
+    ...binding,
+    runId: run.runId,
+    phaseTurnId: run.activePhaseTurnId,
+    updatedAt: Date.now(),
   });
-
-  if (priorCompletedPhases.length === 0) return undefined;
-
-  const analysis = entityGraphService.getAnalysis();
-  const priorEntities = analysis.entities.filter((e) =>
-    priorCompletedPhases.includes(e.phase),
-  );
-
-  if (priorEntities.length === 0) return undefined;
-
-  const summary = priorEntities.map((e) => ({
-    id: e.id,
-    type: e.type,
-    name:
-      "name" in e.data
-        ? e.data.name
-        : "content" in e.data
-          ? e.data.content
-          : e.id,
-    phase: e.phase,
-  }));
-
-  return JSON.stringify(summary);
 }
 
 function resolveLoopbackJumpIndex(
@@ -557,17 +532,19 @@ async function executeSinglePhase(
   run.activePhase = phase;
   runtimeStatus.setActivePhase(run.runId, phase);
   entityGraphService.setPhaseStatus(phase, "running");
-  const priorContext = buildPriorContext(
+  const phaseBrief = buildPhaseBrief({
     phase,
-    run.phasesCompleted,
-    run.activePhases,
-  );
+    topic,
+    completedPhases: run.phasesCompleted,
+    activePhases: run.activePhases,
+  });
   const { phaseTurnId, turnIndex } = nextPhaseTurn(run, phase);
   run.activePhaseTurnId = phaseTurnId;
+  syncAnalysisBindingPhaseTurn(run);
   const phasePromptBundle = buildPhasePromptBundle({
     phase,
     topic,
-    priorContext,
+    phaseBrief: phaseBrief.phaseBrief,
     effortLevel: run.runtime.effortLevel,
   });
   appendRunLifecycleEvents(run, "analysis-agent", [
@@ -646,10 +623,11 @@ async function executeSinglePhase(
         runPhase(phase, topic, {
           workspaceId: run.workspaceId,
           threadId: run.threadId,
-          priorEntities: priorContext,
+          phaseBrief: phaseBrief.phaseBrief,
           promptBundle: {
             system: phasePromptBundle.system,
             user: phasePromptBundle.user,
+            toolPolicy: phasePromptBundle.toolPolicy,
           },
           provider: run.provider,
           model: run.model,
@@ -751,7 +729,7 @@ async function executeSinglePhase(
           const retryPromptBundle = buildPhasePromptBundle({
             phase,
             topic,
-            priorContext,
+            phaseBrief: phaseBrief.phaseBrief,
             revisionRetryInstruction: commitResult.retryMessage,
             effortLevel: run.runtime.effortLevel,
           });
@@ -786,10 +764,11 @@ async function executeSinglePhase(
             runPhase(phase, topic, {
               workspaceId: run.workspaceId,
               threadId: run.threadId,
-              priorEntities: priorContext,
+              phaseBrief: phaseBrief.phaseBrief,
               promptBundle: {
                 system: retryPromptBundle.system,
                 user: retryPromptBundle.user,
+                toolPolicy: retryPromptBundle.toolPolicy,
               },
               revisionRetryInstruction: commitResult.retryMessage,
               provider: run.provider,

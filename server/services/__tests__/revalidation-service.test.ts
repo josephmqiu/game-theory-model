@@ -16,7 +16,7 @@ const mockRunPhase = vi.fn<
     phase: MethodologyPhase,
     topic: string,
     context?: {
-      priorEntities?: string;
+      phaseBrief?: string;
       revisionRetryInstruction?: string;
       provider?: string;
       model?: string;

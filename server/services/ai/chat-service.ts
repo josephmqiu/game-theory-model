@@ -396,7 +396,7 @@ export async function createChatResponse(
             ...(runId ? { runId } : {}),
             purpose: "chat",
           },
-          getProviderSessionBinding(threadContext.threadId),
+          getProviderSessionBinding(threadContext.threadId, "chat"),
         );
 
         const effectiveSystemPrompt =

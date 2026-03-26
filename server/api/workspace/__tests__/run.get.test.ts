@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  DEFAULT_PROMPT_PACK_ID,
+  DEFAULT_PROMPT_PACK_MODE,
+  DEFAULT_PROMPT_PACK_VERSION,
+} from "../../../../shared/types/prompt-pack";
+import {
   createThreadService,
   getWorkspaceDatabase,
   resetWorkspaceDatabaseForTest,
@@ -41,11 +46,26 @@ function seedRun() {
         promptProvenance: {
           analysisType: "game-theory",
           activePhases: ["situational-grounding", "player-identification"],
-          promptPackId: "game-theory/default",
-          promptPackVersion: "2026-03-25.1",
-          promptPackMode: "analysis-runtime",
-          templateSetIdentity: "game-theory/default",
+          promptPackId: DEFAULT_PROMPT_PACK_ID,
+          promptPackVersion: DEFAULT_PROMPT_PACK_VERSION,
+          promptPackMode: DEFAULT_PROMPT_PACK_MODE,
+          promptPackSource: {
+            kind: "bundled",
+            path: "/test/prompt-pack.json",
+          },
+          templateSetIdentity: DEFAULT_PROMPT_PACK_ID,
           templateSetHash: "template-set-hash",
+          toolPolicyByPhase: {
+            "situational-grounding": {
+              enabledAnalysisTools: [
+                "get_entity",
+                "query_entities",
+                "query_relationships",
+                "request_loopback",
+              ],
+              webSearch: true,
+            },
+          },
         },
         logCorrelation: {
           logFileName: "run-1.jsonl",
@@ -64,14 +84,28 @@ function seedRun() {
         phaseTurnId: "phase-turn-1",
         turnIndex: 1,
         promptProvenance: {
-          promptPackId: "game-theory/default",
-          promptPackVersion: "2026-03-25.1",
-          promptPackMode: "analysis-runtime",
+          promptPackId: DEFAULT_PROMPT_PACK_ID,
+          promptPackVersion: DEFAULT_PROMPT_PACK_VERSION,
+          promptPackMode: DEFAULT_PROMPT_PACK_MODE,
+          promptPackSource: {
+            kind: "bundled",
+            path: "/test/prompt-pack.json",
+          },
           phase: "situational-grounding",
-          templateIdentity: "game-theory/default:situational-grounding:initial",
+          templateIdentity: `${DEFAULT_PROMPT_PACK_ID}:situational-grounding:initial`,
           templateHash: "phase-template-hash",
           effectivePromptHash: "effective-hash",
           variant: "initial",
+          toolPolicy: {
+            enabledAnalysisTools: [
+              "get_entity",
+              "query_entities",
+              "query_relationships",
+              "request_loopback",
+            ],
+            webSearch: true,
+          },
+          doneCondition: "Facts are grounded.",
         },
       },
       occurredAt: 102,

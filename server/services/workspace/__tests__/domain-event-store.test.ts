@@ -8,6 +8,11 @@ import type {
   PhaseTurnPromptProvenance,
   RunPromptProvenance,
 } from "../../../../shared/types/workspace-state";
+import {
+  DEFAULT_PROMPT_PACK_ID,
+  DEFAULT_PROMPT_PACK_MODE,
+  DEFAULT_PROMPT_PACK_VERSION,
+} from "../../../../shared/types/prompt-pack";
 
 function createPhaseSummary(durationMs = 100): PhaseSummary {
   return {
@@ -22,11 +27,35 @@ function createRunPromptProvenance(): RunPromptProvenance {
   return {
     analysisType: "game-theory",
     activePhases: ["situational-grounding", "player-identification"],
-    promptPackId: "game-theory/default",
-    promptPackVersion: "2026-03-25.1",
-    promptPackMode: "analysis-runtime",
-    templateSetIdentity: "game-theory/default",
+    promptPackId: DEFAULT_PROMPT_PACK_ID,
+    promptPackVersion: DEFAULT_PROMPT_PACK_VERSION,
+    promptPackMode: DEFAULT_PROMPT_PACK_MODE,
+    promptPackSource: {
+      kind: "bundled",
+      path: "/test/prompt-pack.json",
+    },
+    templateSetIdentity: DEFAULT_PROMPT_PACK_ID,
     templateSetHash: "template-set-hash",
+    toolPolicyByPhase: {
+      "situational-grounding": {
+        enabledAnalysisTools: [
+          "get_entity",
+          "query_entities",
+          "query_relationships",
+          "request_loopback",
+        ],
+        webSearch: true,
+      },
+      "player-identification": {
+        enabledAnalysisTools: [
+          "get_entity",
+          "query_entities",
+          "query_relationships",
+          "request_loopback",
+        ],
+        webSearch: true,
+      },
+    },
   };
 }
 
@@ -35,14 +64,28 @@ function createPhasePromptProvenance(
   variant: PhaseTurnPromptProvenance["variant"] = "initial",
 ): PhaseTurnPromptProvenance {
   return {
-    promptPackId: "game-theory/default",
-    promptPackVersion: "2026-03-25.1",
-    promptPackMode: "analysis-runtime",
+    promptPackId: DEFAULT_PROMPT_PACK_ID,
+    promptPackVersion: DEFAULT_PROMPT_PACK_VERSION,
+    promptPackMode: DEFAULT_PROMPT_PACK_MODE,
+    promptPackSource: {
+      kind: "bundled",
+      path: "/test/prompt-pack.json",
+    },
     phase,
-    templateIdentity: `game-theory/default:${phase}:${variant}`,
+    templateIdentity: `${DEFAULT_PROMPT_PACK_ID}:${phase}:${variant}`,
     templateHash: `${phase}-template-hash`,
     effectivePromptHash: `${phase}-${variant}-effective-hash`,
     variant,
+    toolPolicy: {
+      enabledAnalysisTools: [
+        "get_entity",
+        "query_entities",
+        "query_relationships",
+        "request_loopback",
+      ],
+      webSearch: true,
+    },
+    doneCondition: `${phase} done`,
   };
 }
 
@@ -534,9 +577,8 @@ describe("domain-event-store", () => {
       },
     });
 
-    const phaseTurn = database.phaseTurnSummaries.getPhaseTurnSummary(
-      "phase-turn-failed",
-    );
+    const phaseTurn =
+      database.phaseTurnSummaries.getPhaseTurnSummary("phase-turn-failed");
     expect(phaseTurn).toMatchObject({
       id: "phase-turn-failed",
       status: "failed",

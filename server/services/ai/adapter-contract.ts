@@ -32,6 +32,7 @@ export interface AnalysisRunOptions {
   maxTurns?: number;
   signal?: AbortSignal;
   webSearch?: boolean;
+  allowedToolNames?: string[];
   onActivity?: AnalysisActivityCallback;
 }
 
@@ -64,6 +65,7 @@ export interface RuntimeStructuredTurnInput {
   signal?: AbortSignal;
   timeoutMs?: number;
   webSearch?: boolean;
+  allowedToolNames?: string[];
   onActivity?: AnalysisActivityCallback;
 }
 

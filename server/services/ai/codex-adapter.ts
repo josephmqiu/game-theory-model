@@ -116,9 +116,6 @@ function getCodexBindingService() {
 function getCodexResumeThreadId(
   session: CodexSessionState,
 ): string | undefined {
-  if (session.context.purpose !== "chat") {
-    return undefined;
-  }
   if (session.binding?.provider === "codex") {
     return session.binding.codexThreadId ?? session.binding.providerSessionId;
   }
@@ -474,11 +471,25 @@ function resolveMcpServerCommand(): string {
 
 function installToolSurface(
   toolNames: readonly string[],
-  runId?: string,
+  context?: {
+    workspaceId?: string;
+    threadId?: string;
+    runId?: string;
+    phaseTurnId?: string;
+  },
 ): void {
   const env: Record<string, string> = {};
-  if (runId) {
-    env.ANALYSIS_RUN_ID = runId;
+  if (context?.runId) {
+    env.ANALYSIS_RUN_ID = context.runId;
+  }
+  if (context?.workspaceId) {
+    env.GTA_ANALYSIS_WORKSPACE_ID = context.workspaceId;
+  }
+  if (context?.threadId) {
+    env.GTA_ANALYSIS_THREAD_ID = context.threadId;
+  }
+  if (context?.phaseTurnId) {
+    env.GTA_ANALYSIS_PHASE_TURN_ID = context.phaseTurnId;
   }
   if (process.env.MCP_PORT?.trim()) {
     env.MCP_PORT = process.env.MCP_PORT.trim();
@@ -488,13 +499,21 @@ function installToolSurface(
     enabledTools: [...toolNames],
     env: Object.keys(env).length > 0 ? env : undefined,
   });
-  serverLog(runId, "codex-adapter", "mcp-config-written", {
+  serverLog(context?.runId, "codex-adapter", "mcp-config-written", {
     toolNames,
   });
 }
 
-function installAnalysisToolSurface(runId?: string): void {
-  installToolSurface(ANALYSIS_TOOL_NAMES, runId);
+function installAnalysisToolSurface(
+  toolNames: readonly string[],
+  context?: {
+    workspaceId?: string;
+    threadId?: string;
+    runId?: string;
+    phaseTurnId?: string;
+  },
+): void {
+  installToolSurface(toolNames, context);
 }
 
 function installChatToolSurface(): void {
@@ -1220,7 +1239,20 @@ export async function runAnalysisPhase<T = unknown>(
   }),
 ): Promise<T> {
   const runId = options?.runId;
-  installAnalysisToolSurface(runId);
+  const allowedToolNames = Array.from(
+    new Set(
+      (options?.allowedToolNames ?? [...ANALYSIS_TOOL_NAMES]).filter(
+        (toolName): toolName is string =>
+          (ANALYSIS_TOOL_NAMES as readonly string[]).includes(toolName),
+      ),
+    ),
+  );
+  installAnalysisToolSurface(allowedToolNames, {
+    workspaceId: session.context.workspaceId,
+    threadId: session.context.threadId,
+    runId,
+    phaseTurnId: session.context.phaseTurnId,
+  });
 
   const conn = await startAppServer(runId);
   let restoreError: Error | null = null;
@@ -1231,7 +1263,7 @@ export async function runAnalysisPhase<T = unknown>(
 
   try {
     await reloadMcpServerConfig(conn, runId);
-    await ensureConfiguredMcpServerAvailable(conn, ANALYSIS_TOOL_NAMES, runId);
+    await ensureConfiguredMcpServerAvailable(conn, allowedToolNames, runId);
 
     const webSearchMode = options?.webSearch === false ? "disabled" : "live";
     const threadResult = await sendRequest(conn, "thread/start", {
@@ -1381,9 +1413,7 @@ export async function runAnalysisPhase<T = unknown>(
         const toolName =
           typeof params.toolName === "string" ? params.toolName : "unknown";
         if (approvalId) {
-          const approved = ANALYSIS_TOOL_NAMES.includes(
-            toolName as (typeof ANALYSIS_TOOL_NAMES)[number],
-          );
+          const approved = allowedToolNames.includes(toolName);
           sendRequest(conn, "item/tool/approveUserInput", {
             id: approvalId,
             approved,
@@ -1636,6 +1666,7 @@ class CodexRuntimeSession implements RuntimeAdapterSession {
         runId: input.runId,
         signal: input.signal,
         webSearch: input.webSearch,
+        allowedToolNames: input.allowedToolNames,
         onActivity: input.onActivity,
       },
       this.state,

@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const WORKSPACE_SCHEMA_VERSION = 4;
+export const WORKSPACE_SCHEMA_VERSION = 5;
 
 const BASE_SCHEMA_SQL = `
 PRAGMA foreign_keys = ON;
@@ -87,13 +87,16 @@ CREATE TABLE IF NOT EXISTS runs (
 );
 
 CREATE TABLE IF NOT EXISTS provider_session_bindings (
-  thread_id TEXT PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
+  thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  purpose TEXT NOT NULL,
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   provider TEXT NOT NULL,
   provider_session_id TEXT NOT NULL,
+  phase_turn_id TEXT,
   run_id TEXT,
   binding_json TEXT NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (thread_id, purpose)
 );
 
 CREATE TABLE IF NOT EXISTS command_receipts (
@@ -180,6 +183,7 @@ CREATE INDEX IF NOT EXISTS idx_activities_run_id ON activities(run_id);
 CREATE INDEX IF NOT EXISTS idx_runs_workspace_id ON runs(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_runs_thread_id ON runs(thread_id);
 CREATE INDEX IF NOT EXISTS idx_provider_session_bindings_workspace_id ON provider_session_bindings(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_provider_session_bindings_thread_id ON provider_session_bindings(thread_id);
 CREATE INDEX IF NOT EXISTS idx_command_receipts_receipt_id ON command_receipts(receipt_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_domain_events_sequence ON domain_events(sequence);
 CREATE INDEX IF NOT EXISTS idx_domain_events_workspace_sequence ON domain_events(workspace_id, sequence);
@@ -225,6 +229,74 @@ function recordMigration(db: DatabaseSync, version: number): void {
     $appliedAt: Date.now(),
   });
   db.exec(`PRAGMA user_version = ${version}`);
+}
+
+function tableExists(db: DatabaseSync, tableName: string): boolean {
+  const row = db
+    .prepare(
+      `SELECT name
+       FROM sqlite_master
+       WHERE type = 'table'
+         AND name = $tableName
+       LIMIT 1`,
+    )
+    .get({ $tableName: tableName }) as { name?: string } | undefined;
+  return Boolean(row?.name);
+}
+
+function providerSessionBindingsNeedMigration(db: DatabaseSync): boolean {
+  return tableExists(db, "provider_session_bindings") &&
+    !getColumnNames(db, "provider_session_bindings").has("purpose");
+}
+
+function migrateProviderSessionBindingsToPurposeKey(
+  db: DatabaseSync,
+): void {
+  if (!providerSessionBindingsNeedMigration(db)) {
+    return;
+  }
+
+  db.exec(`
+    ALTER TABLE provider_session_bindings RENAME TO provider_session_bindings_legacy;
+
+    CREATE TABLE provider_session_bindings (
+      thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+      purpose TEXT NOT NULL,
+      workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      provider_session_id TEXT NOT NULL,
+      phase_turn_id TEXT,
+      run_id TEXT,
+      binding_json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (thread_id, purpose)
+    );
+
+    INSERT INTO provider_session_bindings (
+      thread_id,
+      purpose,
+      workspace_id,
+      provider,
+      provider_session_id,
+      phase_turn_id,
+      run_id,
+      binding_json,
+      updated_at
+    )
+    SELECT
+      thread_id,
+      'chat',
+      workspace_id,
+      provider,
+      provider_session_id,
+      NULL,
+      run_id,
+      binding_json,
+      updated_at
+    FROM provider_session_bindings_legacy;
+
+    DROP TABLE provider_session_bindings_legacy;
+  `);
 }
 
 function ensureProjectionColumns(db: DatabaseSync): void {
@@ -411,6 +483,9 @@ export function initializeWorkspaceSchema(db: DatabaseSync): void {
 
   const currentVersion = getUserVersion(db);
   if (currentVersion < WORKSPACE_SCHEMA_VERSION) {
+    if (currentVersion < 5) {
+      migrateProviderSessionBindingsToPurposeKey(db);
+    }
     recordMigration(db, WORKSPACE_SCHEMA_VERSION);
   }
 }

@@ -239,6 +239,7 @@ function appendRecoveryFailure(input: {
 
   clearProviderSessionBinding(input.run.threadId, {
     runId: input.run.id,
+    purpose: "analysis",
     expectedPurpose: "analysis",
     reason: input.reason,
   });
@@ -274,7 +275,7 @@ async function runStartupRecovery(): Promise<void> {
   });
 
   for (const run of runningRuns) {
-    const binding = getProviderSessionBinding(run.threadId);
+    const binding = getProviderSessionBinding(run.threadId, "analysis");
     if (!binding) {
       recordRecoveryLog({
         code: "recovery-binding-missing",

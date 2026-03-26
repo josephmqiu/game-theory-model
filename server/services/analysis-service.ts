@@ -40,12 +40,14 @@ import { createRunLogger } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
 import type { AnalysisActivityCallback } from "./ai/analysis-activity";
 import type { AnalysisEffortLevel } from "../../shared/types/analysis-runtime";
+import type { PromptPackToolPolicy } from "../../shared/types/prompt-pack";
 import type {
   RuntimeAdapter,
   RuntimeStructuredTurnInput,
 } from "./ai/adapter-contract";
 import { getRuntimeAdapter } from "./ai/adapter-contract";
 import { buildPhasePromptBundle } from "./analysis-prompt-provenance";
+import { getProviderSessionBinding } from "./workspace";
 
 async function loadAnalysisAdapter(provider?: string): Promise<RuntimeAdapter> {
   if (process.env.GAME_THEORY_ANALYSIS_TEST_MODE === "1") {
@@ -119,6 +121,11 @@ interface PhaseRuntimeContext {
 export interface PhaseContext {
   workspaceId?: string;
   threadId?: string;
+  phaseBrief?: string;
+  /**
+   * @deprecated Prefer phaseBrief. Kept as a compatibility fallback while
+   * callers migrate to compact phase briefs.
+   */
   priorEntities?: string;
   revisionRetryInstruction?: string;
   revisionSystemPrompt?: string;
@@ -131,7 +138,11 @@ export interface PhaseContext {
   logger?: RunLogger;
   onActivity?: AnalysisActivityCallback;
   /** Pre-built prompts from the orchestrator. Skips redundant buildPhasePromptBundle call. */
-  promptBundle?: { system: string; user: string };
+  promptBundle?: {
+    system: string;
+    user: string;
+    toolPolicy?: PromptPackToolPolicy;
+  };
 }
 
 // ── Supported phase types ──
@@ -1858,7 +1869,7 @@ export async function runPhase(
     buildPhasePromptBundle({
       phase,
       topic,
-      priorContext: context?.priorEntities,
+      phaseBrief: context?.phaseBrief ?? context?.priorEntities,
       revisionRetryInstruction: context?.revisionRetryInstruction,
       revisionSystemPrompt: context?.revisionSystemPrompt,
       effortLevel: context?.runtime?.effortLevel ?? "medium",
@@ -1912,7 +1923,10 @@ export async function runPhase(
       ...(context?.runId ? { runId: context.runId } : {}),
       ...(context?.phaseTurnId ? { phaseTurnId: context.phaseTurnId } : {}),
       purpose: "analysis",
-    });
+    },
+    context?.threadId
+      ? getProviderSessionBinding(context.threadId, "analysis")
+      : null);
     try {
       adapterResult = await session.runStructuredTurn({
         prompt: user,
@@ -1921,7 +1935,11 @@ export async function runPhase(
         schema,
         signal: context?.signal,
         runId: context?.runId,
-        webSearch: context?.runtime?.webSearch,
+        webSearch:
+          context?.promptBundle?.toolPolicy?.webSearch ??
+          context?.runtime?.webSearch,
+        allowedToolNames:
+          context?.promptBundle?.toolPolicy?.enabledAnalysisTools,
         onActivity: (activity) => {
           if (
             !emittedResearchMilestone &&

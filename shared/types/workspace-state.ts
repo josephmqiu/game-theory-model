@@ -1,7 +1,11 @@
 import type { RunKind } from "./api";
 import type { AnalysisPhaseActivityKind, PhaseSummary } from "./events";
 import type { MethodologyPhase } from "./methodology";
-import type { PromptPackMode } from "./prompt-pack";
+import type {
+  PromptPackMode,
+  PromptPackSourceRef,
+  PromptPackToolPolicy,
+} from "./prompt-pack";
 import type { RuntimeError } from "./runtime-error";
 
 export type ThreadTerminalStatus = "completed" | "failed" | "cancelled";
@@ -56,8 +60,10 @@ export interface RunPromptProvenance {
   promptPackId: string;
   promptPackVersion: string;
   promptPackMode: PromptPackMode;
+  promptPackSource: PromptPackSourceRef;
   templateSetIdentity: string;
   templateSetHash: string;
+  toolPolicyByPhase: Partial<Record<MethodologyPhase, PromptPackToolPolicy>>;
 }
 
 export interface RunLogCorrelation {
@@ -116,11 +122,14 @@ export interface PhaseTurnPromptProvenance {
   promptPackId: string;
   promptPackVersion: string;
   promptPackMode: PromptPackMode;
+  promptPackSource: PromptPackSourceRef;
   phase: MethodologyPhase;
   templateIdentity: string;
   templateHash: string;
   effectivePromptHash: string;
   variant: "initial" | "revision";
+  toolPolicy: PromptPackToolPolicy;
+  doneCondition: string;
 }
 
 export interface PhaseTurnActivitySummary {

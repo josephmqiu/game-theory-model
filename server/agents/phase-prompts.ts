@@ -3,6 +3,12 @@ import type {
   PromptPackDefinition,
   PromptTemplateDefinition,
 } from "../../shared/types/prompt-pack";
+import {
+  DEFAULT_ANALYSIS_TYPE,
+  DEFAULT_PROMPT_PACK_ID,
+  DEFAULT_PROMPT_PACK_MODE,
+  DEFAULT_PROMPT_PACK_VERSION,
+} from "../../shared/types/prompt-pack";
 
 /**
  * System prompts for methodology Phases 1-4 and 6-10.
@@ -1706,10 +1712,10 @@ function createPromptTemplates(): PromptTemplateDefinition[] {
 }
 
 export const GAME_THEORY_ANALYSIS_PROMPT_PACK: PromptPackDefinition = {
-  analysisType: "game-theory",
-  mode: "analysis-runtime",
-  id: "game-theory/default",
-  version: "2026-03-25.1",
+  analysisType: DEFAULT_ANALYSIS_TYPE,
+  mode: DEFAULT_PROMPT_PACK_MODE,
+  id: DEFAULT_PROMPT_PACK_ID,
+  version: DEFAULT_PROMPT_PACK_VERSION,
   source: {
     kind: "bundled",
   },

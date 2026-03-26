@@ -5,6 +5,13 @@ import type {
 import type { MethodologyPhase } from "../../shared/types/methodology";
 import { getAnalysis, getRelationships } from "./entity-graph-service";
 
+export interface AnalysisToolContext {
+  workspaceId?: string;
+  threadId?: string;
+  runId?: string;
+  phaseTurnId?: string;
+}
+
 export const LOOPBACK_TRIGGER_TYPES = [
   "new_player",
   "objective_changed",
@@ -31,9 +38,18 @@ export interface LoopbackTriggerRecord {
 const loopbackTriggersByRun = new Map<string, LoopbackTriggerRecord[]>();
 const UNASSIGNED_RUN_KEY = "__unassigned__";
 
-function resolveRunKey(explicitRunId?: string): string {
-  if (explicitRunId && explicitRunId.trim().length > 0) {
-    return explicitRunId;
+function resolveRunKey(context?: AnalysisToolContext | string): string {
+  if (typeof context === "string" && context.trim().length > 0) {
+    return context;
+  }
+
+  if (
+    typeof context === "object" &&
+    context !== null &&
+    context.runId &&
+    context.runId.trim().length > 0
+  ) {
+    return context.runId;
   }
 
   const envRunId = process.env.ANALYSIS_RUN_ID;
@@ -56,7 +72,10 @@ function assertTriggerType(
   );
 }
 
-export function getEntity(id: string): AnalysisEntity | null {
+export function getEntity(
+  id: string,
+  _context?: AnalysisToolContext,
+): AnalysisEntity | null {
   return getAnalysis().entities.find((entity) => entity.id === id) ?? null;
 }
 
@@ -64,7 +83,7 @@ export function queryEntities(filters: {
   phase?: string;
   type?: string;
   stale?: boolean;
-}): AnalysisEntity[] {
+}, _context?: AnalysisToolContext): AnalysisEntity[] {
   let entities = getAnalysis().entities;
 
   if (filters.phase) {
@@ -87,7 +106,7 @@ export function queryEntities(filters: {
 export function queryRelationships(filters: {
   entityId?: string;
   type?: string;
-}) {
+}, _context?: AnalysisToolContext) {
   return getRelationships({
     entityId: filters.entityId,
     type: filters.type as RelationshipType | undefined,
@@ -96,11 +115,11 @@ export function queryRelationships(filters: {
 
 export function requestLoopback(
   args: { trigger_type: string; justification: string },
-  runId?: string,
+  context?: AnalysisToolContext,
 ) {
   assertTriggerType(args.trigger_type);
 
-  const runKey = resolveRunKey(runId);
+  const runKey = resolveRunKey(context);
   const existing = loopbackTriggersByRun.get(runKey) ?? [];
   existing.push({
     trigger_type: args.trigger_type,

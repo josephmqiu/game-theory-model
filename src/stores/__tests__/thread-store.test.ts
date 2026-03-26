@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  DEFAULT_PROMPT_PACK_ID,
+  DEFAULT_PROMPT_PACK_MODE,
+  DEFAULT_PROMPT_PACK_VERSION,
+} from "../../../shared/types/prompt-pack";
 
 const bindContextMock = vi.fn();
 const sendRequestMock = vi.fn();
@@ -322,10 +327,10 @@ describe("thread-store", () => {
           promptProvenance: {
             analysisType: "game-theory",
             activePhases: ["situational-grounding"],
-            promptPackId: "game-theory/default",
-            promptPackVersion: "2026-03-25.1",
-            promptPackMode: "analysis-runtime",
-            templateSetIdentity: "game-theory/default",
+            promptPackId: DEFAULT_PROMPT_PACK_ID,
+            promptPackVersion: DEFAULT_PROMPT_PACK_VERSION,
+            promptPackMode: DEFAULT_PROMPT_PACK_MODE,
+            templateSetIdentity: DEFAULT_PROMPT_PACK_ID,
             templateSetHash: "template-set-hash",
           },
           logCorrelation: {

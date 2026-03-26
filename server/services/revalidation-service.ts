@@ -11,12 +11,17 @@ import { analysisRuntimeConfig } from "../config/analysis-runtime";
 import * as entityGraphService from "./entity-graph-service";
 import * as orchestrator from "../agents/analysis-agent";
 import * as runtimeStatus from "./runtime-status";
-import { getWorkspaceDatabase } from "./workspace";
+import {
+  getProviderSessionBinding,
+  getWorkspaceDatabase,
+  upsertProviderSessionBinding,
+} from "./workspace";
 import { runPhase } from "./analysis-service";
 import {
   buildPhasePromptBundle,
   createRunPromptProvenance,
 } from "./analysis-prompt-provenance";
+import { buildPhaseBrief } from "./analysis-phase-brief";
 import { commitPhaseSnapshot } from "./revision-diff";
 import { createRunLogger, serverWarn, timer } from "../utils/ai-logger";
 import type {
@@ -332,6 +337,10 @@ async function executeRevalidation(
 ): Promise<void> {
   const logger = createRunLogger(runId);
   const revalTimer = timer();
+  const runState = getWorkspaceDatabase().runs.getRunState(runId);
+  if (!runState) {
+    throw new Error(`Missing durable revalidation run state for "${runId}".`);
+  }
 
   // Get the analysis topic for phase re-execution
   const topic = entityGraphService.getAnalysis().topic;
@@ -354,28 +363,27 @@ async function executeRevalidation(
     phaseTurnCounts[p] = turnIndex;
     const phaseTurnId = `phase-turn-${nanoid()}`;
     latestPhaseTurnId = phaseTurnId;
+    const existingBinding = getProviderSessionBinding(runState.threadId, "analysis");
+    if (existingBinding) {
+      upsertProviderSessionBinding({
+        ...existingBinding,
+        runId,
+        phaseTurnId,
+        updatedAt: Date.now(),
+      });
+    }
     runtimeStatus.setActivePhase(runId, p);
-    const freshAnalysis = entityGraphService.getAnalysis();
     const completedPhases = V2_PHASES.slice(0, V2_PHASES.indexOf(p));
-    const priorEntities = freshAnalysis.entities
-      .filter((e) => completedPhases.includes(e.phase))
-      .map((e) => ({
-        id: e.id,
-        type: e.type,
-        name:
-          "name" in e.data
-            ? e.data.name
-            : "content" in e.data
-              ? e.data.content
-              : e.id,
-        phase: e.phase,
-      }));
-    const priorContext =
-      priorEntities.length > 0 ? JSON.stringify(priorEntities) : undefined;
+    const phaseBrief = buildPhaseBrief({
+      phase: p,
+      topic,
+      completedPhases,
+      activePhases: phases,
+    });
     const phasePromptBundle = buildPhasePromptBundle({
       phase: p,
       topic,
-      priorContext,
+      phaseBrief: phaseBrief.phaseBrief,
       effortLevel: lastRunRuntime?.effortLevel ?? "medium",
     });
     appendRevalidationEvents(runId, [
@@ -408,14 +416,17 @@ async function executeRevalidation(
     logger.log("revalidation", "phase-rerun", { phase: p, runId });
     const phaseStart = Date.now();
     let result = await runPhase(p, topic, {
+      workspaceId: runState.workspaceId,
+      threadId: runState.threadId,
       promptBundle: {
         system: phasePromptBundle.system,
         user: phasePromptBundle.user,
+        toolPolicy: phasePromptBundle.toolPolicy,
       },
       provider: lastRunProvider,
       model: lastRunModel,
       runtime: lastRunRuntime,
-      priorEntities: priorContext,
+      phaseBrief: phaseBrief.phaseBrief,
       logger,
       runId,
       phaseTurnId,
@@ -456,7 +467,7 @@ async function executeRevalidation(
           const retryPromptBundle = buildPhasePromptBundle({
             phase: p,
             topic,
-            priorContext,
+            phaseBrief: phaseBrief.phaseBrief,
             revisionRetryInstruction: commitResult.retryMessage,
             effortLevel: lastRunRuntime?.effortLevel ?? "medium",
           });
@@ -491,14 +502,17 @@ async function executeRevalidation(
           ]);
 
           result = await runPhase(p, topic, {
+            workspaceId: runState.workspaceId,
+            threadId: runState.threadId,
             promptBundle: {
               system: retryPromptBundle.system,
               user: retryPromptBundle.user,
+              toolPolicy: retryPromptBundle.toolPolicy,
             },
             provider: lastRunProvider,
             model: lastRunModel,
             runtime: lastRunRuntime,
-            priorEntities: priorContext,
+            phaseBrief: phaseBrief.phaseBrief,
             revisionRetryInstruction: commitResult.retryMessage,
             logger,
             runId,

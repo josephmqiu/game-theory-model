@@ -8,6 +8,7 @@ import {
   queryEntities,
   queryRelationships,
   requestLoopback,
+  type AnalysisToolContext,
 } from "../services/analysis-tools";
 import type { MethodologyPhase } from "../../shared/types/methodology";
 import type { RelationshipType } from "../../shared/types/entity";
@@ -295,6 +296,20 @@ function resolveToolRunId(): string | undefined {
   return activeRevalidation?.runId;
 }
 
+function resolveToolContext(): AnalysisToolContext {
+  const workspaceId = process.env.GTA_ANALYSIS_WORKSPACE_ID?.trim();
+  const threadId = process.env.GTA_ANALYSIS_THREAD_ID?.trim();
+  const phaseTurnId = process.env.GTA_ANALYSIS_PHASE_TURN_ID?.trim();
+  const runId = resolveToolRunId();
+
+  return {
+    ...(workspaceId ? { workspaceId } : {}),
+    ...(threadId ? { threadId } : {}),
+    ...(runId ? { runId } : {}),
+    ...(phaseTurnId ? { phaseTurnId } : {}),
+  };
+}
+
 function resolveEarliestRerunPhase(
   phases: string[],
 ): MethodologyPhase | { error: string } {
@@ -344,7 +359,7 @@ export function handleGetAnalysisStatus(): string {
 }
 
 export function handleGetEntity(args: { id: string }): string {
-  return JSON.stringify(getEntity(args.id));
+  return JSON.stringify(getEntity(args.id, resolveToolContext()));
 }
 
 export function handleQueryEntities(args: {
@@ -357,7 +372,7 @@ export function handleQueryEntities(args: {
       phase: args.phase,
       type: args.type,
       stale: args.stale,
-    }),
+    }, resolveToolContext()),
   );
 }
 
@@ -369,7 +384,7 @@ export function handleQueryRelationships(args: {
     queryRelationships({
       type: args.type,
       entityId: args.entityId,
-    }),
+    }, resolveToolContext()),
   );
 }
 
@@ -377,7 +392,7 @@ export function handleRequestLoopback(args: {
   trigger_type: string;
   justification: string;
 }): string {
-  return JSON.stringify(requestLoopback(args));
+  return JSON.stringify(requestLoopback(args, resolveToolContext()));
 }
 
 export async function handleCreateEntity(args: {

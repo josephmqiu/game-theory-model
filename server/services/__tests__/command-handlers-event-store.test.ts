@@ -1,4 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  DEFAULT_PROMPT_PACK_ID,
+  DEFAULT_PROMPT_PACK_MODE,
+  DEFAULT_PROMPT_PACK_VERSION,
+} from "../../../shared/types/prompt-pack";
 import { getWorkspaceDatabase } from "../workspace";
 import * as analysisAgent from "../../agents/analysis-agent";
 import {
@@ -53,10 +58,10 @@ describe("command-handlers durable run start", () => {
       promptProvenance: {
         analysisType: "game-theory",
         activePhases: expect.arrayContaining(["situational-grounding"]),
-        promptPackId: "game-theory/default",
-        promptPackVersion: "2026-03-25.1",
-        promptPackMode: "analysis-runtime",
-        templateSetIdentity: "game-theory/default",
+        promptPackId: DEFAULT_PROMPT_PACK_ID,
+        promptPackVersion: DEFAULT_PROMPT_PACK_VERSION,
+        promptPackMode: DEFAULT_PROMPT_PACK_MODE,
+        templateSetIdentity: DEFAULT_PROMPT_PACK_ID,
         templateSetHash: expect.any(String),
       },
       logCorrelation: {

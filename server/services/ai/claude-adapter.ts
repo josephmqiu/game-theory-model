@@ -23,8 +23,13 @@ import {
   queryEntities,
   queryRelationships,
   requestLoopback,
+  type AnalysisToolContext,
 } from "../analysis-tools";
-import { ANALYSIS_TOOL_NAMES, CHAT_TOOL_NAMES } from "./tool-surfaces";
+import {
+  ANALYSIS_TOOL_NAMES,
+  CHAT_TOOL_NAMES,
+  type AnalysisToolName,
+} from "./tool-surfaces";
 import { serverError, serverLog, serverWarn } from "../../utils/ai-logger";
 import {
   handleStartAnalysis,
@@ -125,9 +130,6 @@ function captureClaudeProviderSessionId(
 function getClaudeResumeSessionId(
   session: ClaudeSessionState,
 ): string | undefined {
-  if (session.context.purpose !== "chat") {
-    return undefined;
-  }
   if (session.binding?.provider === "claude") {
     return session.binding.claudeSessionId;
   }
@@ -426,25 +428,50 @@ export async function createChatMcpServer() {
 
 const ANALYSIS_MCP_SERVER_NAME = "game-theory-analysis";
 
-export async function createAnalysisMcpServer(runId?: string) {
+export async function createAnalysisMcpServer(
+  contextOrRunId: AnalysisToolContext | string = {},
+  toolNames: readonly AnalysisToolName[] = ANALYSIS_TOOL_NAMES,
+) {
   const { createSdkMcpServer, tool } =
     await import("@anthropic-ai/claude-agent-sdk");
   const { z } = await import("zod/v4");
 
-  return createSdkMcpServer({
-    name: ANALYSIS_MCP_SERVER_NAME,
-    version: "1.0.0",
-    tools: [
+  const normalizedContext =
+    typeof contextOrRunId === "string" ? { runId: contextOrRunId } : contextOrRunId;
+  const toolContext: AnalysisToolContext = {
+    ...(normalizedContext.workspaceId
+      ? { workspaceId: normalizedContext.workspaceId }
+      : {}),
+    ...(normalizedContext.threadId ? { threadId: normalizedContext.threadId } : {}),
+    ...(normalizedContext.runId ? { runId: normalizedContext.runId } : {}),
+    ...(normalizedContext.phaseTurnId
+      ? { phaseTurnId: normalizedContext.phaseTurnId }
+      : {}),
+  };
+
+  const requestedToolSet = new Set(toolNames);
+  const tools = [];
+
+  if (requestedToolSet.has("get_entity")) {
+    tools.push(
       tool(
         "get_entity",
         "Get a single analysis entity by ID",
         { id: z.string() },
         async (args) => ({
           content: [
-            { type: "text" as const, text: JSON.stringify(getEntity(args.id)) },
+            {
+              type: "text" as const,
+              text: JSON.stringify(getEntity(args.id, toolContext)),
+            },
           ],
         }),
       ),
+    );
+  }
+
+  if (requestedToolSet.has("query_entities")) {
+    tools.push(
       tool(
         "query_entities",
         "Query analysis entities by phase, type, or stale status",
@@ -457,11 +484,16 @@ export async function createAnalysisMcpServer(runId?: string) {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(queryEntities(args)),
+              text: JSON.stringify(queryEntities(args, toolContext)),
             },
           ],
         }),
       ),
+    );
+  }
+
+  if (requestedToolSet.has("query_relationships")) {
+    tools.push(
       tool(
         "query_relationships",
         "Query analysis relationships by entity or type",
@@ -473,11 +505,16 @@ export async function createAnalysisMcpServer(runId?: string) {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(queryRelationships(args)),
+              text: JSON.stringify(queryRelationships(args, toolContext)),
             },
           ],
         }),
       ),
+    );
+  }
+
+  if (requestedToolSet.has("request_loopback")) {
+    tools.push(
       tool(
         "request_loopback",
         "Record a disruption trigger for later loopback handling",
@@ -489,12 +526,18 @@ export async function createAnalysisMcpServer(runId?: string) {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(requestLoopback(args, runId)),
+              text: JSON.stringify(requestLoopback(args, toolContext)),
             },
           ],
         }),
       ),
-    ],
+    );
+  }
+
+  return createSdkMcpServer({
+    name: ANALYSIS_MCP_SERVER_NAME,
+    version: "1.0.0",
+    tools,
   });
 }
 
@@ -1069,8 +1112,20 @@ async function runClaudeStructuredTurn<T = unknown>(
   session.debugFile = debugFile ?? undefined;
   const bindingService = getClaudeBindingService();
   const resumeSessionId = getClaudeResumeSessionId(session);
-  const readOnlyMcp = await createAnalysisMcpServer(input.runId);
-  const allowedTools = ANALYSIS_TOOL_NAMES.map(
+  const allowedToolNames = (input.allowedToolNames?.filter(
+    (toolName): toolName is AnalysisToolName =>
+      (ANALYSIS_TOOL_NAMES as readonly string[]).includes(toolName),
+  ) ?? [...ANALYSIS_TOOL_NAMES]) as AnalysisToolName[];
+  const readOnlyMcp = await createAnalysisMcpServer(
+    {
+      workspaceId: session.context.workspaceId,
+      threadId: session.context.threadId,
+      runId: input.runId,
+      phaseTurnId: session.context.phaseTurnId,
+    },
+    allowedToolNames,
+  );
+  const allowedTools = allowedToolNames.map(
     (toolName) => `mcp__${ANALYSIS_MCP_SERVER_NAME}__${toolName}`,
   );
   if (input.webSearch !== false) {
@@ -1335,6 +1390,7 @@ export async function runAnalysisPhase<T = unknown>(
       signal: options?.signal,
       timeoutMs: undefined,
       webSearch: options?.webSearch,
+      allowedToolNames: options?.allowedToolNames,
       onActivity: options?.onActivity,
     });
   } finally {

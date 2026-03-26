@@ -1,5 +1,7 @@
 import type { CommandReceipt } from "../command-bus";
 
+export type ProviderSessionBindingPurpose = "chat" | "analysis" | "recovery";
+
 export interface WorkspaceRecord {
   id: string;
   name: string;
@@ -58,13 +60,14 @@ export interface RunRecord {
 
 export interface ProviderSessionBindingRecord {
   threadId: string;
+  purpose: ProviderSessionBindingPurpose;
   workspaceId: string;
   provider: string;
   providerSessionId: string;
+  phaseTurnId: string | null;
   runId: string | null;
   bindingJson: string;
   updatedAt: number;
 }
 
 export type WorkspaceCommandReceipt = CommandReceipt;
-
