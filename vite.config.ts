@@ -8,6 +8,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { nitro } from "nitro/vite";
 
 const isElectronBuild = process.env.BUILD_TARGET === "electron";
+const isVitest = process.env.VITEST === "true";
 const tanstackDevtoolsEventBusEnabled =
   process.env.TANSTACK_DEVTOOLS_EVENT_BUS === "true";
 const tanstackDevtoolsEventBusPort = process.env.TANSTACK_DEVTOOLS_EVENT_BUS_PORT
@@ -48,6 +49,13 @@ const config = defineConfig({
       },
     }),
     nitro({
+      ...(!isVitest
+        ? {
+            features: {
+              websocket: true,
+            },
+          }
+        : {}),
       node: true,
       rollupConfig: {
         external: [

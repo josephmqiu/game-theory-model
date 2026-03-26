@@ -349,15 +349,6 @@ export function useChatHandlers() {
           }
         }
 
-        try {
-          await useThreadStore.getState().refreshThreads();
-          await useThreadStore.getState().refreshAndClearOverlay();
-        } catch (error) {
-          terminalErrorMessage =
-            error instanceof Error
-              ? error.message
-              : "Failed to refresh thread.";
-        }
       }
 
       if (terminalErrorMessage && !abortController.signal.aborted) {

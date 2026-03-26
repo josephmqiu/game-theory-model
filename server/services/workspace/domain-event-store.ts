@@ -27,6 +27,7 @@ import {
   PRIMARY_THREAD_TITLE,
   resolveThreadContext,
 } from "./workspace-context";
+import { publishWorkspaceRuntimeUpdates } from "./workspace-runtime-publisher";
 
 interface DomainProjectorDependencies {
   threads: ThreadRepository;
@@ -435,7 +436,7 @@ export function createDomainEventStore(input: {
         return [];
       }
 
-      return transaction(input.db, () => {
+      const persisted = transaction(input.db, () => {
         const lastEventByRunId = new Map<string, DomainEvent | undefined>();
         const persisted: DomainEvent[] = [];
 
@@ -489,9 +490,20 @@ export function createDomainEventStore(input: {
             lastEventByRunId.set(stored.runId, stored);
           }
         }
-
         return persisted;
       });
+
+      publishWorkspaceRuntimeUpdates(
+        {
+          threads: input.threads,
+          messages: input.messages,
+          activities: input.activities,
+          runs: input.runs,
+          phaseTurnSummaries: input.phaseTurnSummaries,
+        },
+        persisted,
+      );
+      return persisted;
     },
     getLastEventByRunId(runId) {
       return input.domainEvents.getLastEventByRunId(runId);

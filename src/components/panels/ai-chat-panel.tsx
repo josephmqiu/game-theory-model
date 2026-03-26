@@ -226,6 +226,7 @@ export default function AIChatPanel({
   const threads = useThreadStore((s) => s.threads);
   const activeThreadId = useThreadStore((s) => s.activeThreadId);
   const activeThreadDetail = useThreadStore((s) => s.activeThreadDetail);
+  const latestRun = useThreadStore((s) => s.latestRun);
   const overlayMessages = useThreadStore((s) => s.overlayMessages);
   const isLoadingThreads = useThreadStore((s) => s.isLoading);
   const isCreatingThread = useThreadStore((s) => s.isCreating);
@@ -632,13 +633,21 @@ export default function AIChatPanel({
             </Button>
           )}
           <span
-            className={cn(
-              "max-w-[160px] truncate overflow-hidden text-ellipsis text-sm font-medium text-foreground",
-              isDocked ? "px-2" : "",
-            )}
-            title={displayTitle}
+            className={cn("flex min-w-0 flex-col", isDocked ? "px-2" : "")}
           >
-            {displayTitle}
+            <span
+              className="max-w-[160px] truncate overflow-hidden text-ellipsis text-sm font-medium text-foreground"
+              title={displayTitle}
+            >
+              {displayTitle}
+            </span>
+            {latestRun && (
+              <span className="text-[10px] text-muted-foreground">
+                Run {latestRun.status}
+                {latestRun.activePhase ? ` · ${latestRun.activePhase}` : ""}
+                {` · ${latestRun.progress.completed}/${latestRun.progress.total}`}
+              </span>
+            )}
           </span>
           {isStreaming && (
             <Loader2

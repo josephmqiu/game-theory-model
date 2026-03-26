@@ -1,16 +1,17 @@
 import { create } from "zustand";
 import type {
   ActivityEntry,
+  PhaseTurnSummaryState,
+  RunState,
   ThreadMessageState,
   ThreadState,
 } from "../../shared/types/workspace-state";
 import type { ChatMessage } from "@/services/ai/ai-types";
-import {
-  createThread as createThreadRequest,
-  fetchThreadDetail,
-  fetchThreads,
-  type ThreadDetailResponse,
-} from "@/services/ai/thread-client";
+import type {
+  WorkspaceRuntimeBootstrap,
+  WorkspaceRuntimePushEnvelope,
+} from "../../shared/types/workspace-runtime";
+import { workspaceRuntimeClient } from "@/services/ai/workspace-runtime-client";
 import { appStorage } from "@/utils/app-storage";
 
 const LAST_ACTIVE_THREAD_STORAGE_KEY =
@@ -27,6 +28,8 @@ interface ThreadStoreState {
   activeThreadId?: string;
   threads: ThreadState[];
   activeThreadDetail: ThreadDetailState | null;
+  latestRun: RunState | null;
+  latestPhaseTurns: PhaseTurnSummaryState[];
   overlayMessages: ChatMessage[];
   isLoading: boolean;
   isCreating: boolean;
@@ -114,20 +117,174 @@ function resolveRestoredThreadId(
   return threads[0]?.id ?? threads.find((thread) => thread.isPrimary)?.id;
 }
 
-function toThreadDetailState(detail: ThreadDetailResponse): ThreadDetailState {
+function shouldClearOverlayMessages(
+  overlayMessages: ChatMessage[],
+  detail: ThreadDetailState | null,
+): boolean {
+  if (!detail || overlayMessages.length === 0) {
+    return false;
+  }
+
+  const userOverlay = overlayMessages.find((message) => message.role === "user");
+  const assistantOverlay = [...overlayMessages]
+    .reverse()
+    .find(
+      (message) => message.role === "assistant" && !message.id.startsWith("tool-"),
+    );
+
+  if (!assistantOverlay || assistantOverlay.isStreaming) {
+    return false;
+  }
+
+  const projectedHasAssistant = detail.messages.some(
+    (message) =>
+      message.role === "assistant" && message.content === assistantOverlay.content,
+  );
+  if (!projectedHasAssistant) {
+    return false;
+  }
+
+  return userOverlay
+    ? detail.messages.some(
+        (message) =>
+          message.role === "user" && message.content === userOverlay.content,
+      )
+    : true;
+}
+
+function toThreadDetailStateFromBootstrap(
+  bootstrap: WorkspaceRuntimeBootstrap,
+): ThreadDetailState | null {
+  if (!bootstrap.activeThreadDetail) {
+    return null;
+  }
+
   return {
-    thread: detail.thread,
-    messages: detail.messages,
-    activities: detail.activities,
+    thread: bootstrap.activeThreadDetail.thread,
+    messages: bootstrap.activeThreadDetail.messages,
+    activities: bootstrap.activeThreadDetail.activities,
   };
 }
 
-async function loadThreadDetail(
-  threadId: string,
-  workspaceId?: string,
-): Promise<ThreadDetailState> {
-  const detail = await fetchThreadDetail(threadId, workspaceId);
-  return toThreadDetailState(detail);
+function applyBootstrap(bootstrap: WorkspaceRuntimeBootstrap): void {
+  useThreadStore.setState((state) => {
+    const activeThreadDetail = toThreadDetailStateFromBootstrap(bootstrap);
+    const shouldClearOverlay = shouldClearOverlayMessages(
+      state.overlayMessages,
+      activeThreadDetail,
+    );
+
+    if (bootstrap.workspaceId && bootstrap.activeThreadId) {
+      writeStoredThreadSelection(bootstrap.workspaceId, bootstrap.activeThreadId);
+    }
+
+    return {
+      workspaceId: bootstrap.workspaceId,
+      threads: bootstrap.threads,
+      activeThreadId: bootstrap.activeThreadId,
+      activeThreadDetail,
+      latestRun: bootstrap.latestRun,
+      latestPhaseTurns: bootstrap.latestPhaseTurns,
+      overlayMessages: shouldClearOverlay ? [] : state.overlayMessages,
+      isLoading: false,
+      isCreating: false,
+      error: undefined,
+    };
+  });
+}
+
+function applyThreadsPush(push: WorkspaceRuntimePushEnvelope<"threads">): void {
+  useThreadStore.setState((state) => {
+    if (state.workspaceId !== push.payload.workspaceId) {
+      return state;
+    }
+
+    const nextActiveThreadId =
+      state.activeThreadId &&
+      push.payload.threads.some((thread) => thread.id === state.activeThreadId)
+        ? state.activeThreadId
+        : resolveRestoredThreadId(
+            push.payload.threads,
+            getStoredThreadSelection(push.payload.workspaceId),
+          );
+
+    if (
+      nextActiveThreadId &&
+      nextActiveThreadId !== state.activeThreadId &&
+      push.payload.workspaceId
+    ) {
+      void workspaceRuntimeClient.bindContext({
+        workspaceId: push.payload.workspaceId,
+        activeThreadId: nextActiveThreadId,
+      });
+    }
+
+    return {
+      threads: push.payload.threads,
+      activeThreadId: nextActiveThreadId,
+      activeThreadDetail:
+        nextActiveThreadId &&
+        state.activeThreadDetail?.thread.id === nextActiveThreadId
+          ? state.activeThreadDetail
+          : nextActiveThreadId === state.activeThreadId
+            ? state.activeThreadDetail
+            : null,
+      latestRun:
+        nextActiveThreadId === state.activeThreadId ? state.latestRun : null,
+      latestPhaseTurns:
+        nextActiveThreadId === state.activeThreadId ? state.latestPhaseTurns : [],
+      error: undefined,
+    };
+  });
+}
+
+function applyThreadDetailPush(
+  push: WorkspaceRuntimePushEnvelope<"thread-detail">,
+): void {
+  useThreadStore.setState((state) => {
+    if (
+      state.workspaceId !== push.payload.workspaceId ||
+      state.activeThreadId !== push.payload.threadId
+    ) {
+      return state;
+    }
+
+    const activeThreadDetail = push.payload.detail
+      ? {
+          thread: push.payload.detail.thread,
+          messages: push.payload.detail.messages,
+          activities: push.payload.detail.activities,
+        }
+      : null;
+
+    return {
+      activeThreadDetail,
+      overlayMessages: shouldClearOverlayMessages(
+        state.overlayMessages,
+        activeThreadDetail,
+      )
+        ? []
+        : state.overlayMessages,
+      error: undefined,
+    };
+  });
+}
+
+function applyRunDetailPush(push: WorkspaceRuntimePushEnvelope<"run-detail">): void {
+  useThreadStore.setState((state) => {
+    if (
+      state.workspaceId !== push.payload.workspaceId ||
+      state.activeThreadId !== push.payload.threadId
+    ) {
+      return state;
+    }
+
+    return {
+      latestRun: push.payload.latestRun,
+      latestPhaseTurns: push.payload.latestPhaseTurns,
+      error: undefined,
+    };
+  });
 }
 
 export const useThreadStore = create<ThreadStoreState>((set, get) => ({
@@ -135,6 +292,8 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
   activeThreadId: undefined,
   threads: [],
   activeThreadDetail: null,
+  latestRun: null,
+  latestPhaseTurns: [],
   overlayMessages: [],
   isLoading: false,
   isCreating: false,
@@ -151,36 +310,30 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
     });
 
     try {
-      const response = await fetchThreads(workspaceId);
+      const bootstrap = await workspaceRuntimeClient.bindContext({
+        workspaceId,
+        activeThreadId: getStoredThreadSelection(workspaceId),
+      });
       const nextActiveThreadId = resolveRestoredThreadId(
-        response.threads,
+        bootstrap.threads,
         getStoredThreadSelection(workspaceId),
       );
-
-      set({
-        workspaceId: response.workspaceId,
-        threads: response.threads,
-        activeThreadId: nextActiveThreadId,
-        activeThreadDetail: null,
-        isLoading: false,
-        error: undefined,
-      });
-
-      if (nextActiveThreadId) {
-        const detail = await loadThreadDetail(
-          nextActiveThreadId,
-          response.workspaceId,
-        );
-        set({
-          activeThreadDetail: detail,
+      if (nextActiveThreadId && nextActiveThreadId !== bootstrap.activeThreadId) {
+        const rebound = await workspaceRuntimeClient.bindContext({
+          workspaceId: bootstrap.workspaceId,
+          activeThreadId: nextActiveThreadId,
         });
-        writeStoredThreadSelection(response.workspaceId, nextActiveThreadId);
+        applyBootstrap(rebound);
+      } else {
+        applyBootstrap(bootstrap);
       }
     } catch (error) {
       set({
         threads: [],
         activeThreadId: undefined,
         activeThreadDetail: null,
+        latestRun: null,
+        latestPhaseTurns: [],
         isLoading: false,
         error:
           error instanceof Error ? error.message : "Failed to load threads.",
@@ -193,64 +346,40 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
     if (!workspaceId) {
       return;
     }
-
-    const response = await fetchThreads(workspaceId);
-    const currentActiveThreadId = get().activeThreadId;
-    const nextActiveThreadId =
-      currentActiveThreadId &&
-      response.threads.some((thread) => thread.id === currentActiveThreadId)
-        ? currentActiveThreadId
-        : resolveRestoredThreadId(
-            response.threads,
-            getStoredThreadSelection(workspaceId),
-          );
-
-    set({
-      workspaceId: response.workspaceId,
-      threads: response.threads,
-      activeThreadId: nextActiveThreadId,
-      activeThreadDetail:
-        nextActiveThreadId &&
-        get().activeThreadDetail?.thread.id === nextActiveThreadId
-          ? get().activeThreadDetail
-          : null,
-      error: undefined,
-    });
-
-    if (nextActiveThreadId) {
-      writeStoredThreadSelection(response.workspaceId, nextActiveThreadId);
-    }
+    applyBootstrap(
+      await workspaceRuntimeClient.bindContext({
+        workspaceId,
+        activeThreadId: get().activeThreadId,
+      }),
+    );
   },
 
   async refreshActiveThreadDetail() {
-    const activeThreadId = get().activeThreadId;
-    if (!activeThreadId) {
-      set({ activeThreadDetail: null });
+    const workspaceId = get().workspaceId;
+    if (!workspaceId) {
       return;
     }
-
-    const detail = await loadThreadDetail(activeThreadId, get().workspaceId);
-    set({
-      workspaceId: detail.thread.workspaceId,
-      activeThreadDetail: detail,
-      error: undefined,
-    });
+    applyBootstrap(
+      await workspaceRuntimeClient.bindContext({
+        workspaceId,
+        activeThreadId: get().activeThreadId,
+      }),
+    );
   },
 
   async refreshAndClearOverlay() {
-    const activeThreadId = get().activeThreadId;
-    if (!activeThreadId) {
-      set({ activeThreadDetail: null, overlayMessages: [] });
+    const workspaceId = get().workspaceId;
+    if (!workspaceId) {
+      set({ activeThreadDetail: null, overlayMessages: [], latestRun: null, latestPhaseTurns: [] });
       return;
     }
-
-    const detail = await loadThreadDetail(activeThreadId, get().workspaceId);
-    set({
-      workspaceId: detail.thread.workspaceId,
-      activeThreadDetail: detail,
-      overlayMessages: [],
-      error: undefined,
-    });
+    applyBootstrap(
+      await workspaceRuntimeClient.bindContext({
+        workspaceId,
+        activeThreadId: get().activeThreadId,
+      }),
+    );
+    set({ overlayMessages: [] });
   },
 
   async selectThread(threadId) {
@@ -258,21 +387,27 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
     set({
       activeThreadId: threadId,
       activeThreadDetail: null,
+      latestRun: null,
+      latestPhaseTurns: [],
       overlayMessages: [],
       error: undefined,
     });
 
     try {
-      const detail = await loadThreadDetail(threadId, workspaceId);
-      set({
-        workspaceId: detail.thread.workspaceId,
-        activeThreadDetail: detail,
-        error: undefined,
+      if (!workspaceId) {
+        throw new Error("No active workspace.");
+      }
+      const bootstrap = await workspaceRuntimeClient.bindContext({
+        workspaceId,
+        activeThreadId: threadId,
       });
-      writeStoredThreadSelection(detail.thread.workspaceId, threadId);
+      applyBootstrap(bootstrap);
+      writeStoredThreadSelection(workspaceId, threadId);
     } catch (error) {
       set({
         activeThreadDetail: null,
+        latestRun: null,
+        latestPhaseTurns: [],
         error:
           error instanceof Error ? error.message : "Failed to load thread.",
       });
@@ -294,23 +429,22 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
     });
 
     try {
-      const response = await createThreadRequest({ workspaceId, title });
-      const detail = await loadThreadDetail(
-        response.thread.id,
-        response.workspaceId,
-      );
-      set((state) => ({
+      const response = await workspaceRuntimeClient.sendRequest<{
+        workspaceId: string;
+        thread: ThreadState;
+      }>("workspace.thread.create", {
+        workspaceId,
+        ...(title?.trim() ? { title: title.trim() } : {}),
+      });
+      const bootstrap = await workspaceRuntimeClient.bindContext({
         workspaceId: response.workspaceId,
         activeThreadId: response.thread.id,
-        activeThreadDetail: detail,
-        threads: [
-          response.thread,
-          ...state.threads.filter((thread) => thread.id !== response.thread.id),
-        ],
-        overlayMessages: [],
+      });
+      applyBootstrap(bootstrap);
+      set({
         isCreating: false,
-        error: undefined,
-      }));
+        overlayMessages: [],
+      });
       writeStoredThreadSelection(response.workspaceId, response.thread.id);
     } catch (error) {
       set({
@@ -332,15 +466,22 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
 
     if (nextWorkspaceId && nextThreadId) {
       writeStoredThreadSelection(nextWorkspaceId, nextThreadId);
+      void workspaceRuntimeClient.bindContext({
+        workspaceId: nextWorkspaceId,
+        activeThreadId: nextThreadId,
+      });
     }
   },
 
   clearProjection() {
+    workspaceRuntimeClient.disconnect();
     set({
       workspaceId: undefined,
       activeThreadId: undefined,
       threads: [],
       activeThreadDetail: null,
+      latestRun: null,
+      latestPhaseTurns: [],
       overlayMessages: [],
       isLoading: false,
       isCreating: false,
@@ -386,3 +527,24 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
     });
   },
 }));
+
+workspaceRuntimeClient.subscribe((envelope) => {
+  if (envelope.type === "bootstrap") {
+    applyBootstrap(envelope.payload);
+    return;
+  }
+
+  switch (envelope.channel) {
+    case "threads":
+      applyThreadsPush(envelope as WorkspaceRuntimePushEnvelope<"threads">);
+      return;
+    case "thread-detail":
+      applyThreadDetailPush(
+        envelope as WorkspaceRuntimePushEnvelope<"thread-detail">,
+      );
+      return;
+    case "run-detail":
+      applyRunDetailPush(envelope as WorkspaceRuntimePushEnvelope<"run-detail">);
+      return;
+  }
+});
