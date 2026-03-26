@@ -32,6 +32,8 @@ export const DOMAIN_EVENT_TYPES = [
   "run.cancelled",
   "question.created",
   "question.resolved",
+  "thread.renamed",
+  "thread.deleted",
 ] as const;
 
 export type DomainEventType = (typeof DOMAIN_EVENT_TYPES)[number];
@@ -152,6 +154,14 @@ export interface QuestionResolvedEventPayload {
   resolvedAt: number;
 }
 
+export interface ThreadRenamedEventPayload {
+  title: string;
+}
+
+export interface ThreadDeletedEventPayload {
+  deletedAt: number;
+}
+
 export interface DomainEventPayloadMap {
   "thread.created": ThreadCreatedEventPayload;
   "run.created": RunCreatedEventPayload;
@@ -166,6 +176,8 @@ export interface DomainEventPayloadMap {
   "run.cancelled": RunCancelledEventPayload;
   "question.created": QuestionCreatedEventPayload;
   "question.resolved": QuestionResolvedEventPayload;
+  "thread.renamed": ThreadRenamedEventPayload;
+  "thread.deleted": ThreadDeletedEventPayload;
 }
 
 export interface DomainEventMetadata {

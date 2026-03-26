@@ -52,14 +52,6 @@ export interface CanonicalChatRequest {
   thinkingMode?: "adaptive" | "disabled" | "enabled";
   thinkingBudgetTokens?: number;
   effort?: "low" | "medium" | "high" | "max";
-  compatibility?: {
-    system?: string;
-    messages?: Array<{
-      role: "user" | "assistant";
-      content: string;
-      attachments?: ChatAttachmentWire[];
-    }>;
-  };
 }
 
 const chatAttachmentSchema = z.object({
@@ -83,61 +75,12 @@ const canonicalChatRequestSchema = z.object({
   effort: z.enum(["low", "medium", "high", "max"]).optional(),
 });
 
-const legacyChatRequestSchema = z.object({
-  system: z.string().trim().min(1),
-  messages: z.array(
-    z.object({
-      role: z.enum(["user", "assistant"]),
-      content: z.string(),
-      attachments: z.array(chatAttachmentSchema).optional(),
-    }),
-  ),
-  model: z.string().trim().min(1),
-  provider: z.enum(ALLOWED_PROVIDERS),
-  thinkingMode: z.enum(["adaptive", "disabled", "enabled"]).optional(),
-  thinkingBudgetTokens: z.number().positive().optional(),
-  effort: z.enum(["low", "medium", "high", "max"]).optional(),
-  workspaceId: z.string().trim().min(1).optional(),
-  threadId: z.string().trim().min(1).optional(),
-  threadTitle: z.string().trim().min(1).optional(),
-});
-
-export function normalizeChatRequest(raw: unknown): CanonicalChatRequest {
-  const canonical = canonicalChatRequestSchema.safeParse(raw);
-  if (canonical.success) {
-    return canonical.data;
-  }
-
-  const legacy = legacyChatRequestSchema.safeParse(raw);
-  if (!legacy.success) {
+export function parseChatRequest(raw: unknown): CanonicalChatRequest {
+  const result = canonicalChatRequestSchema.safeParse(raw);
+  if (!result.success) {
     throw new Error("Missing or invalid required fields for chat request.");
   }
-
-  const lastUserMessage = [...legacy.data.messages]
-    .reverse()
-    .find((message) => message.role === "user");
-  if (!lastUserMessage) {
-    throw new Error("Legacy chat requests require at least one user message.");
-  }
-
-  return {
-    workspaceId: legacy.data.workspaceId,
-    threadId: legacy.data.threadId,
-    threadTitle: legacy.data.threadTitle,
-    message: {
-      content: lastUserMessage.content,
-      attachments: lastUserMessage.attachments,
-    },
-    provider: legacy.data.provider,
-    model: legacy.data.model,
-    thinkingMode: legacy.data.thinkingMode,
-    thinkingBudgetTokens: legacy.data.thinkingBudgetTokens,
-    effort: legacy.data.effort,
-    compatibility: {
-      system: legacy.data.system,
-      messages: legacy.data.messages.slice(0, -1),
-    },
-  };
+  return result.data;
 }
 
 function isAllowedProvider(
@@ -192,27 +135,6 @@ function buildServerChatSystemPrompt(): string {
     .join("\n");
 
   return `${basePrompt}\n\n${context}`;
-}
-
-/**
- * TRANSITIONAL: Stuffs bounded conversation history into the system prompt.
- * This will be replaced by native multi-turn message arrays once the
- * renderer stops sending compatibility.messages and the server thread
- * owns the full conversation context.
- */
-function buildEffectiveSystemPrompt(input: {
-  systemPrompt: string;
-  history: Array<{ role: "user" | "assistant"; content: string }>;
-}): string {
-  if (input.history.length === 0) {
-    return input.systemPrompt;
-  }
-
-  const conversationContext = input.history
-    .map((message) => `${message.role}: ${message.content}`)
-    .join("\n\n");
-
-  return `${input.systemPrompt}\n\n## Conversation History\n\n${conversationContext}`;
 }
 
 export function resolveMediaExtension(mediaType: string): string {
@@ -298,37 +220,20 @@ export async function createChatResponse(
     producer: "chat-service",
     occurredAt,
   });
-  // Durable thread messages take precedence over legacy compatibility history.
-  // If a thread was established by a prior canonical request, legacy fallback
-  // history from compatibility.messages is intentionally ignored — the durable
-  // store is the source of truth. This means a mid-session upgrade from legacy
-  // to canonical requests will lose the pre-upgrade history that wasn't persisted.
   const priorMessages = threadService.listMessagesByThreadId(
     threadContext.threadId,
   );
-  const fallbackHistory = request.compatibility?.messages ?? [];
-  const historySource =
-    priorMessages.length > 0
-      ? priorMessages.map((message) => ({
-          role: message.role,
-          content: message.content,
-        }))
-      : fallbackHistory.map((message) => ({
-          role: message.role,
-          content: message.content,
-        }));
-  const systemPromptBase =
-    request.compatibility?.system?.trim() || buildServerChatSystemPrompt();
+  const historySource = priorMessages.map((message) => ({
+    role: message.role,
+    content: message.content,
+  }));
+  const systemPromptBase = buildServerChatSystemPrompt();
   const boundedHistory = trimChatHistory(
     historySource,
     undefined,
     undefined,
     systemPromptBase.length,
   );
-  const systemPrompt = buildEffectiveSystemPrompt({
-    systemPrompt: systemPromptBase,
-    history: boundedHistory,
-  });
 
   threadService.recordMessage({
     workspaceId: threadContext.workspaceId,
@@ -405,13 +310,14 @@ export async function createChatResponse(
           request.provider === "anthropic" &&
           request.message.attachments &&
           request.message.attachments.length > 0
-            ? stripNoToolsRestriction(systemPrompt)
-            : systemPrompt;
+            ? stripNoToolsRestriction(systemPromptBase)
+            : systemPromptBase;
 
         try {
           for await (const eventChunk of session.streamChatTurn({
             prompt,
             systemPrompt: effectiveSystemPrompt,
+            messages: boundedHistory,
             model: request.model,
             runId,
             signal: abortController.signal,

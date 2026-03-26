@@ -20,7 +20,7 @@ describe("analysis-service boundary", () => {
       "utf-8",
     );
 
-    expect(source).toContain("getRuntimeAdapter");
+    expect(source).toContain("loadRuntimeAdapter");
     expect(source).toContain("createSession");
     expect(source).not.toContain("../ai/claude-adapter");
     expect(source).not.toContain("../ai/codex-adapter");

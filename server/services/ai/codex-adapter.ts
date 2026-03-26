@@ -1641,9 +1641,21 @@ class CodexRuntimeSession implements RuntimeAdapterSession {
   }
 
   streamChatTurn(input: RuntimeChatTurnInput): AsyncGenerator<ChatEvent> {
+    // For non-resumed sessions, prepend conversation history into the system
+    // prompt so the model has context. Resumed sessions already have the full
+    // conversation in the Codex thread state.
+    const resumeThreadId = getCodexResumeThreadId(this.state);
+    let effectiveSystemPrompt = input.systemPrompt;
+    if (!resumeThreadId && input.messages && input.messages.length > 0) {
+      const history = input.messages
+        .map((m) => `${m.role}: ${m.content}`)
+        .join("\n\n");
+      effectiveSystemPrompt = `${input.systemPrompt}\n\n## Conversation History\n\n${history}`;
+    }
+
     return streamChat(
       input.prompt,
-      input.systemPrompt,
+      effectiveSystemPrompt,
       input.model,
       {
         runId: input.runId,

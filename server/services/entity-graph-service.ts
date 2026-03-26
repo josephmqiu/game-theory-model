@@ -50,10 +50,30 @@ let _getWorkspaceDatabase:
 function getRepo(): EntityGraphRepository {
   if (_repoOverride) return _repoOverride;
   if (!_getWorkspaceDatabase) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    _getWorkspaceDatabase = require("./workspace").getWorkspaceDatabase;
+    // Lazy-bind on first access. Uses dynamic import() to avoid:
+    // 1. Static import of node:sqlite (breaks Bun-hosted Vite dev server)
+    // 2. Barrel-level side-effect imports (deadlocks vitest mock resolution)
+    // The synchronous throw below is caught; callers should ensure
+    // _bindWorkspaceDatabaseForInit() was called during server bootstrap.
+    throw new Error(
+      "entity-graph-service: workspace database not bound. " +
+        "Call _bindWorkspaceDatabaseForInit() during server startup.",
+    );
   }
-  return _getWorkspaceDatabase!().entityGraph;
+  return _getWorkspaceDatabase().entityGraph;
+}
+
+/**
+ * Wire the workspace database accessor. Must be called once during server
+ * bootstrap (e.g. from a Nitro plugin or test setup) before any entity
+ * mutations. Avoids pulling node:sqlite into the static import graph.
+ */
+export function _bindWorkspaceDatabaseForInit(
+  accessor: () => { entityGraph: EntityGraphRepository },
+): void {
+  if (!_getWorkspaceDatabase) {
+    _getWorkspaceDatabase = accessor;
+  }
 }
 
 function hasWorkspaceContext(): boolean {

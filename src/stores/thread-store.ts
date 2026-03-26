@@ -36,6 +36,7 @@ interface ThreadStoreState {
   activeQuestionIndex: number;
   isLoading: boolean;
   isCreating: boolean;
+  isDeleting: boolean;
   error?: string;
 
   hydrateWorkspace: (workspaceId: string) => Promise<void>;
@@ -44,6 +45,8 @@ interface ThreadStoreState {
   refreshAndClearOverlay: () => Promise<void>;
   selectThread: (threadId: string) => Promise<void>;
   createThread: (title?: string) => Promise<void>;
+  renameThread: (threadId: string, title: string) => Promise<void>;
+  deleteThread: (threadId: string) => Promise<void>;
   setActiveThreadIdentity: (identity: {
     workspaceId?: string;
     threadId?: string;
@@ -339,6 +342,7 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
   activeQuestionIndex: 0,
   isLoading: false,
   isCreating: false,
+  isDeleting: false,
   error: undefined,
 
   async hydrateWorkspace(workspaceId) {
@@ -506,6 +510,92 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
     }
   },
 
+  async renameThread(threadId, title) {
+    const workspaceId = get().workspaceId;
+    if (!workspaceId) return;
+
+    const previousThreads = get().threads;
+    const previousDetail = get().activeThreadDetail;
+
+    set((state) => ({
+      threads: state.threads.map((t) =>
+        t.id === threadId ? { ...t, title, updatedAt: Date.now() } : t,
+      ),
+      activeThreadDetail:
+        state.activeThreadDetail?.thread.id === threadId
+          ? {
+              ...state.activeThreadDetail,
+              thread: { ...state.activeThreadDetail.thread, title },
+            }
+          : state.activeThreadDetail,
+    }));
+
+    try {
+      await workspaceRuntimeClient.sendRequest("workspace.thread.rename", {
+        workspaceId,
+        threadId,
+        title,
+      });
+    } catch (error) {
+      set({
+        threads: previousThreads,
+        activeThreadDetail: previousDetail,
+        error:
+          error instanceof Error ? error.message : "Failed to rename thread.",
+      });
+    }
+  },
+
+  async deleteThread(threadId) {
+    const workspaceId = get().workspaceId;
+    if (!workspaceId) return;
+
+    set({ isDeleting: true, error: undefined });
+
+    const wasActive = get().activeThreadId === threadId;
+    if (wasActive) {
+      const remaining = get().threads.filter((t) => t.id !== threadId);
+      const nextId = resolveRestoredThreadId(remaining);
+      if (nextId) {
+        set({
+          activeThreadId: nextId,
+          activeThreadDetail: null,
+          latestRun: null,
+          latestPhaseTurns: [],
+          overlayMessages: [],
+          pendingQuestions: [],
+          activeQuestionIndex: 0,
+        });
+      }
+    }
+
+    try {
+      await workspaceRuntimeClient.sendRequest("workspace.thread.delete", {
+        workspaceId,
+        threadId,
+      });
+      set({ isDeleting: false });
+      if (wasActive) {
+        const nextId = get().activeThreadId;
+        if (nextId && workspaceId) {
+          const bootstrap = await workspaceRuntimeClient.bindContext({
+            workspaceId,
+            activeThreadId: nextId,
+          });
+          applyBootstrap(bootstrap);
+          writeStoredThreadSelection(workspaceId, nextId);
+        }
+      }
+    } catch (error) {
+      set({
+        isDeleting: false,
+        error:
+          error instanceof Error ? error.message : "Failed to delete thread.",
+      });
+      await get().refreshThreads();
+    }
+  },
+
   setActiveThreadIdentity(identity) {
     const nextWorkspaceId = identity.workspaceId ?? get().workspaceId;
     const nextThreadId = identity.threadId ?? get().activeThreadId;
@@ -538,6 +628,7 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
       activeQuestionIndex: 0,
       isLoading: false,
       isCreating: false,
+      isDeleting: false,
       error: undefined,
     });
   },

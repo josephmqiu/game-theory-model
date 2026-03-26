@@ -7,6 +7,7 @@ import { getClaudeProviderSnapshot } from "../services/ai/claude-health";
 import { getCodexProviderSnapshot } from "../services/ai/codex-health";
 
 export default () => {
+  if (process.env.VITEST === "true") return;
   void Promise.allSettled([
     getClaudeProviderSnapshot(),
     getCodexProviderSnapshot(),

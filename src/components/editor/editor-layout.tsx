@@ -12,6 +12,7 @@ import TopBar from "./top-bar";
 import AgentSettingsDialog from "@/components/shared/agent-settings-dialog";
 import UpdateReadyBanner from "./update-ready-banner";
 import AnalysisCanvas from "./analysis-canvas";
+import ThreadSwitcher from "@/components/panels/thread-switcher";
 import AnalysisLauncher from "./analysis-launcher";
 import AIChatPanel from "@/components/panels/ai-chat-panel";
 import { PhaseSidebar } from "@/components/panels/phase-sidebar";
@@ -291,12 +292,13 @@ export default function EditorLayout() {
                 className="flex shrink-0 flex-col border-r border-zinc-700 bg-zinc-900"
                 style={{ width: sidebarWidth }}
               >
-                <div className="flex items-center justify-end border-b border-zinc-700 px-1 py-0.5">
+                <div className="flex items-center gap-1 border-b border-zinc-700 px-1 py-0.5">
+                  <ThreadSwitcher className="min-w-0 flex-1" />
                   <Button
                     variant="ghost"
                     size="icon-sm"
                     onClick={() => setSidebarCollapsed(true)}
-                    className="text-muted-foreground"
+                    className="shrink-0 text-muted-foreground"
                   >
                     <PanelLeftClose size={16} />
                   </Button>

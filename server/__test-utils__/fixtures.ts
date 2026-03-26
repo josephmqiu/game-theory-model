@@ -14,13 +14,17 @@ export async function resetAllServices(): Promise<void> {
     revalidation,
     orchestrator,
     commandHandlers,
+    workspaceDb,
   ] = await Promise.all([
     import("../services/entity-graph-service"),
     import("../services/runtime-status"),
     import("../services/revalidation-service"),
     import("../agents/analysis-agent"),
     import("../services/command-handlers"),
+    import("../services/workspace/workspace-db"),
   ]);
+  // Ensure entity-graph-service can reach the workspace database in tests
+  entityGraph._bindWorkspaceDatabaseForInit(workspaceDb.getWorkspaceDatabase);
   entityGraph._resetForTest();
   runtimeStatus._resetForTest();
   revalidation._resetForTest();

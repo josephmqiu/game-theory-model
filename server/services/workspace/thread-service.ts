@@ -40,6 +40,29 @@ export interface ThreadDetail {
   activities: ActivityEntry[];
 }
 
+export interface RenameThreadInput {
+  workspaceId: string;
+  threadId: string;
+  title: string;
+  producer: string;
+  commandId?: string;
+  receiptId?: string;
+  correlationId?: string;
+  causationId?: string;
+  occurredAt?: number;
+}
+
+export interface DeleteThreadInput {
+  workspaceId: string;
+  threadId: string;
+  producer: string;
+  commandId?: string;
+  receiptId?: string;
+  correlationId?: string;
+  causationId?: string;
+  occurredAt?: number;
+}
+
 export interface RecordThreadMessageInput {
   workspaceId: string;
   threadId: string;
@@ -73,15 +96,18 @@ export interface RecordThreadActivityInput {
   causationId?: string;
 }
 
-function parseThreadMessageState(raw: string, fallback: {
-  id: string;
-  workspaceId: string;
-  threadId: string;
-  role: DurableMessageRole;
-  content: string;
-  createdAt: number;
-  updatedAt: number;
-}): ThreadMessageState {
+function parseThreadMessageState(
+  raw: string,
+  fallback: {
+    id: string;
+    workspaceId: string;
+    threadId: string;
+    role: DurableMessageRole;
+    content: string;
+    createdAt: number;
+    updatedAt: number;
+  },
+): ThreadMessageState {
   try {
     return JSON.parse(raw) as ThreadMessageState;
   } catch {
@@ -157,6 +183,56 @@ export function createThreadService(
       }
 
       return thread;
+    },
+
+    renameThread(input: RenameThreadInput): ThreadState {
+      const occurredAt = input.occurredAt ?? Date.now();
+      database.eventStore.appendEvents([
+        {
+          type: "thread.renamed",
+          workspaceId: input.workspaceId,
+          threadId: input.threadId,
+          payload: { title: input.title.trim() || "Untitled" },
+          commandId: input.commandId,
+          receiptId: input.receiptId,
+          correlationId: input.correlationId,
+          causationId: input.causationId,
+          occurredAt,
+          producer: input.producer,
+        },
+      ]);
+
+      const thread = database.threads.getThreadState(input.threadId);
+      if (!thread) {
+        throw new Error(`Thread "${input.threadId}" not found after rename.`);
+      }
+      return thread;
+    },
+
+    deleteThread(input: DeleteThreadInput): void {
+      const thread = database.threads.getThreadState(input.threadId);
+      if (!thread) {
+        throw new Error(`Thread "${input.threadId}" not found.`);
+      }
+      if (thread.isPrimary) {
+        throw new Error("Cannot delete the primary thread.");
+      }
+
+      const occurredAt = input.occurredAt ?? Date.now();
+      database.eventStore.appendEvents([
+        {
+          type: "thread.deleted",
+          workspaceId: input.workspaceId,
+          threadId: input.threadId,
+          payload: { deletedAt: occurredAt },
+          commandId: input.commandId,
+          receiptId: input.receiptId,
+          correlationId: input.correlationId,
+          causationId: input.causationId,
+          occurredAt,
+          producer: input.producer,
+        },
+      ]);
     },
 
     ensureThread(input: EnsureThreadInput) {

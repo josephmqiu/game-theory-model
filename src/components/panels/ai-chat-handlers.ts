@@ -214,7 +214,6 @@ export function useChatHandlers() {
           {
             workspaceId: threadState.workspaceId,
             threadId: threadState.activeThreadId,
-            useCanonicalThreadRequest: true,
             onResolvedThread: (identity) => {
               useThreadStore.getState().setActiveThreadIdentity(identity);
             },

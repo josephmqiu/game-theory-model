@@ -110,6 +110,21 @@ function projectEvent(
       repositories.threads.upsertThreadState(next);
       return;
     }
+    case "thread.renamed": {
+      const existing = repositories.threads.getThreadState(event.threadId);
+      if (existing) {
+        repositories.threads.upsertThreadState({
+          ...existing,
+          title: event.payload.title,
+          updatedAt: event.occurredAt,
+        });
+      }
+      return;
+    }
+    case "thread.deleted": {
+      repositories.threads.deleteThreadState(event.threadId);
+      return;
+    }
     case "message.recorded": {
       const message: ThreadMessageState = {
         id: event.payload.messageId,

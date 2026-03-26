@@ -198,14 +198,9 @@ describe("/api/ai/chat", () => {
     ]);
   });
 
-  it("accepts legacy payloads and writes to the resolved thread", async () => {
+  it("accepts canonical payloads and writes to the resolved thread", async () => {
     readBodyMock.mockResolvedValue({
-      system: "legacy-system",
-      messages: [
-        { role: "user", content: "First question" },
-        { role: "assistant", content: "First answer" },
-        { role: "user", content: "Follow up" },
-      ],
+      message: { content: "Follow up" },
       provider: "openai",
       model: "gpt-5.4",
     });

@@ -133,14 +133,16 @@ describe("ai-service streamChat", () => {
           workspaceId: "workspace-1",
           threadId: "thread-0",
           threadTitle: "Trade war",
-          useCanonicalThreadRequest: true,
           onResolvedThread,
         },
       ),
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [, init] = fetchMock.mock.calls[0] as [RequestInfo | URL, RequestInit];
+    const [, init] = fetchMock.mock.calls[0] as [
+      RequestInfo | URL,
+      RequestInit,
+    ];
     expect(JSON.parse(String(init.body))).toEqual({
       workspaceId: "workspace-1",
       threadId: "thread-0",

@@ -55,7 +55,7 @@ export async function runEval(
           const result = await runPhase(phase, fixture.topic, {
             provider,
             model,
-            priorEntities: chain
+            phaseBrief: chain
               ? chainedPriorContext
               : fixture.priorContext?.[phase],
             runtime: { webSearch: false, effortLevel: effort },

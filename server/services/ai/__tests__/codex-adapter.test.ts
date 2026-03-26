@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatEvent } from "../../../../shared/types/events";
 import { EventEmitter } from "node:events";
 
@@ -39,7 +32,9 @@ vi.mock("node:child_process", () => ({
         const data = args[0] as string;
         try {
           const parsed = JSON.parse(data.trim());
-          queueMicrotask(() => handler(parsed.method, parsed.id, parsed.params));
+          queueMicrotask(() =>
+            handler(parsed.method, parsed.id, parsed.params),
+          );
         } catch {
           // ignore non-JSON writes
         }
@@ -82,6 +77,37 @@ vi.mock("../codex-config", () => ({
 
 vi.mock("../../../utils/mcp-server-manager", () => ({
   resolveMcpProxyScript: () => mockResolveMcpProxyScript(),
+}));
+
+// Mock workspace services to prevent transitive node:sqlite imports
+vi.mock("../../workspace/provider-session-binding-service", () => ({
+  createProviderSessionBindingService: vi.fn(() => ({
+    getBinding: vi.fn(() => null),
+    upsertBinding: vi.fn((b: unknown) => b),
+    clearBinding: vi.fn(() => false),
+    recordDiagnostic: vi.fn(),
+    recordOutcome: vi.fn((b: unknown) => b),
+  })),
+  getProviderSessionBinding: vi.fn(() => null),
+  upsertProviderSessionBinding: vi.fn((b: unknown) => b),
+  clearProviderSessionBinding: vi.fn(() => false),
+  recordProviderSessionBindingDiagnostic: vi.fn(),
+}));
+
+vi.mock("../../workspace/runtime-recovery-service", () => ({
+  waitForRuntimeRecovery: vi.fn(async () => {}),
+}));
+
+vi.mock("../../workspace/runtime-recovery-diagnostics", () => ({
+  recordWorkspaceRecoveryDiagnostic: vi.fn(),
+  listWorkspaceRecoveryDiagnostics: vi.fn(() => []),
+}));
+
+vi.mock("../../entity-graph-service", () => ({
+  _bindWorkspaceDatabaseForInit: vi.fn(),
+  getAnalysis: vi.fn(() => ({ entities: [], relationships: [], phases: [] })),
+  newAnalysis: vi.fn(),
+  _resetForTest: vi.fn(),
 }));
 
 function emitResponse(id: number, result: unknown) {
@@ -180,6 +206,7 @@ function respondToChatConfig(method: string, id: number | undefined): boolean {
             delete_relationship: {},
             rerun_phases: {},
             abort_analysis: {},
+            ask_user: {},
           },
         },
       ],
@@ -299,7 +326,9 @@ describe("codex-adapter", () => {
         }
         if (method === "turn/start" && id !== undefined) {
           emitTurnStartResponse(id, "turn-chat-1");
-          queueMicrotask(() => emitTurnCompleted("thread-chat-456", "turn-chat-1"));
+          queueMicrotask(() =>
+            emitTurnCompleted("thread-chat-456", "turn-chat-1"),
+          );
         }
       });
 
@@ -309,12 +338,18 @@ describe("codex-adapter", () => {
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
       const threadStartReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes('"thread/start"'))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes('"thread/start"'))!
+          .trim(),
       );
       expect(threadStartReq.params.developerInstructions).toBe("system");
 
       const turnStartReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes('"turn/start"'))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes('"turn/start"'))!
+          .trim(),
       );
       expect(turnStartReq.params.threadId).toBe("thread-chat-456");
       expect(turnStartReq.params.input).toEqual([
@@ -357,7 +392,10 @@ describe("codex-adapter", () => {
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
       const approvalReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes("item/tool/approveUserInput"))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes("item/tool/approveUserInput"))!
+          .trim(),
       );
       expect(approvalReq.params.approved).toBe(true);
       expect(approvalReq.params.id).toBe("approval-1");
@@ -409,7 +447,10 @@ describe("codex-adapter", () => {
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
       const rejectionReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes("respondApproval"))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes("respondApproval"))!
+          .trim(),
       );
       expect(rejectionReq.params.approved).toBe(false);
       expect(rejectionReq.params.reason).toBe(
@@ -453,7 +494,10 @@ describe("codex-adapter", () => {
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
       const interruptReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes("turn/interrupt"))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes("turn/interrupt"))!
+          .trim(),
       );
       expect(interruptReq.params).toEqual({
         threadId: "thread-1",
@@ -497,7 +541,9 @@ describe("codex-adapter", () => {
         if (event.type === "error") break;
       }
 
-      expect(events.filter((event) => event.type === "tool_call_start")).toHaveLength(50);
+      expect(
+        events.filter((event) => event.type === "tool_call_start"),
+      ).toHaveLength(50);
       const errorEvent = events.find((event) => event.type === "error") as
         | { type: "error"; error: { message: string } }
         | undefined;
@@ -505,7 +551,10 @@ describe("codex-adapter", () => {
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
       const interruptReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes("turn/interrupt"))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes("turn/interrupt"))!
+          .trim(),
       );
       expect(interruptReq.params).toEqual({
         threadId: "thread-1",
@@ -658,9 +707,9 @@ describe("codex-adapter", () => {
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
       const serializedCalls = calls.map((call) => call[0]);
-      expect(serializedCalls.some((call) => call.includes('"thread/start"'))).toBe(
-        false,
-      );
+      expect(
+        serializedCalls.some((call) => call.includes('"thread/start"')),
+      ).toBe(false);
 
       const turnStartReq = JSON.parse(
         serializedCalls.find((call) => call.includes('"turn/start"'))!.trim(),
@@ -709,6 +758,7 @@ describe("codex-adapter", () => {
                   query_entities: {},
                   query_relationships: {},
                   request_loopback: {},
+                  ask_user: {},
                 },
               },
             ],
@@ -750,6 +800,7 @@ describe("codex-adapter", () => {
             "query_entities",
             "query_relationships",
             "request_loopback",
+            "ask_user",
           ],
         }),
       );
@@ -772,6 +823,7 @@ describe("codex-adapter", () => {
             "delete_relationship",
             "rerun_phases",
             "abort_analysis",
+            "ask_user",
           ],
         }),
       );
@@ -786,7 +838,10 @@ describe("codex-adapter", () => {
       expect(reloadReq.params).toEqual({});
 
       const turnStartReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes("outputSchema"))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes("outputSchema"))!
+          .trim(),
       );
       expect(turnStartReq.params.outputSchema).toEqual(schema);
       expect(turnStartReq.params.input).toEqual([
@@ -816,6 +871,7 @@ describe("codex-adapter", () => {
                   query_entities: {},
                   query_relationships: {},
                   request_loopback: {},
+                  ask_user: {},
                 },
               },
             ],
@@ -859,13 +915,19 @@ describe("codex-adapter", () => {
       expect(threadStartIndex).toBeGreaterThan(listIndex);
 
       const threadStartReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes('"thread/start"'))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes('"thread/start"'))!
+          .trim(),
       );
       expect(threadStartReq.params.developerInstructions).toBe("system");
       expect(threadStartReq.params.config).toEqual({ web_search: "live" });
 
       const turnStartReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes('"turn/start"'))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes('"turn/start"'))!
+          .trim(),
       );
       expect(turnStartReq.params.threadId).toBe("thread-abc-123");
       expect(turnStartReq.params.input).toEqual([
@@ -895,6 +957,7 @@ describe("codex-adapter", () => {
                   query_entities: {},
                   query_relationships: {},
                   request_loopback: {},
+                  ask_user: {},
                 },
               },
             ],
@@ -921,13 +984,22 @@ describe("codex-adapter", () => {
         }
       });
 
-      await runAnalysisPhase("test", "system", "gpt-4o", {}, {
-        webSearch: false,
-      });
+      await runAnalysisPhase(
+        "test",
+        "system",
+        "gpt-4o",
+        {},
+        {
+          webSearch: false,
+        },
+      );
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
       const threadStartReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes('"thread/start"'))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes('"thread/start"'))!
+          .trim(),
       );
       expect(threadStartReq.params.config).toEqual({ web_search: "disabled" });
     });
@@ -955,6 +1027,7 @@ describe("codex-adapter", () => {
                   query_entities: {},
                   query_relationships: {},
                   request_loopback: {},
+                  ask_user: {},
                 },
               },
             ],
@@ -985,9 +1058,15 @@ describe("codex-adapter", () => {
         }
       });
 
-      await runAnalysisPhase("analyze this", "system", "gpt-4o", {}, {
-        onActivity,
-      });
+      await runAnalysisPhase(
+        "analyze this",
+        "system",
+        "gpt-4o",
+        {},
+        {
+          onActivity,
+        },
+      );
 
       expect(onActivity).toHaveBeenCalledWith({
         kind: "web-search",
@@ -1019,6 +1098,7 @@ describe("codex-adapter", () => {
                   query_entities: {},
                   query_relationships: {},
                   request_loopback: {},
+                  ask_user: {},
                 },
               },
             ],
@@ -1048,9 +1128,15 @@ describe("codex-adapter", () => {
         }
       });
 
-      await runAnalysisPhase("analyze this", "system", "gpt-4o", {}, {
-        onActivity,
-      });
+      await runAnalysisPhase(
+        "analyze this",
+        "system",
+        "gpt-4o",
+        {},
+        {
+          onActivity,
+        },
+      );
 
       expect(onActivity).toHaveBeenCalledWith({
         kind: "web-search",
@@ -1081,6 +1167,7 @@ describe("codex-adapter", () => {
                   query_entities: {},
                   query_relationships: {},
                   request_loopback: {},
+                  ask_user: {},
                 },
               },
             ],
@@ -1109,9 +1196,15 @@ describe("codex-adapter", () => {
         }
       });
 
-      await runAnalysisPhase("analyze this", "system", "gpt-4o", {}, {
-        onActivity,
-      });
+      await runAnalysisPhase(
+        "analyze this",
+        "system",
+        "gpt-4o",
+        {},
+        {
+          onActivity,
+        },
+      );
 
       expect(onActivity).toHaveBeenCalledWith({
         kind: "tool",
@@ -1143,6 +1236,7 @@ describe("codex-adapter", () => {
                   query_entities: {},
                   query_relationships: {},
                   request_loopback: {},
+                  ask_user: {},
                 },
               },
             ],
@@ -1201,7 +1295,10 @@ describe("codex-adapter", () => {
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
       const approvalReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes("item/tool/approveUserInput"))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes("item/tool/approveUserInput"))!
+          .trim(),
       );
       expect(approvalReq.params.approved).toBe(true);
       expect(approvalReq.params.reason).toBe(
@@ -1259,6 +1356,7 @@ describe("codex-adapter", () => {
                   query_entities: {},
                   query_relationships: {},
                   request_loopback: {},
+                  ask_user: {},
                 },
               },
             ],
@@ -1340,6 +1438,7 @@ describe("codex-adapter", () => {
                   query_entities: {},
                   query_relationships: {},
                   request_loopback: {},
+                  ask_user: {},
                 },
               },
             ],
@@ -1403,6 +1502,7 @@ describe("codex-adapter", () => {
                   query_entities: {},
                   query_relationships: {},
                   request_loopback: {},
+                  ask_user: {},
                 },
               },
             ],
@@ -1473,6 +1573,7 @@ describe("codex-adapter", () => {
                   query_entities: {},
                   query_relationships: {},
                   request_loopback: {},
+                  ask_user: {},
                 },
               },
             ],
@@ -1491,9 +1592,15 @@ describe("codex-adapter", () => {
       });
 
       await expect(
-        runAnalysisPhase("analyze", "system", "gpt-4o", {}, {
-          signal: controller.signal,
-        }),
+        runAnalysisPhase(
+          "analyze",
+          "system",
+          "gpt-4o",
+          {},
+          {
+            signal: controller.signal,
+          },
+        ),
       ).rejects.toThrow(/^Aborted$/);
     });
 
@@ -1534,6 +1641,7 @@ describe("codex-adapter", () => {
                   query_entities: {},
                   query_relationships: {},
                   request_loopback: {},
+                  ask_user: {},
                 },
               },
             ],
@@ -1598,6 +1706,7 @@ describe("codex-adapter", () => {
                   query_entities: {},
                   query_relationships: {},
                   request_loopback: {},
+                  ask_user: {},
                 },
               },
             ],

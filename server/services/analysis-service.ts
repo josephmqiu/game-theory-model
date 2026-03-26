@@ -73,11 +73,6 @@ export interface PhaseContext {
   workspaceId?: string;
   threadId?: string;
   phaseBrief?: string;
-  /**
-   * @deprecated Prefer phaseBrief. Kept as a compatibility fallback while
-   * callers migrate to compact phase briefs.
-   */
-  priorEntities?: string;
   revisionRetryInstruction?: string;
   revisionSystemPrompt?: string;
   provider?: string;
@@ -1820,7 +1815,7 @@ export async function runPhase(
     buildPhasePromptBundle({
       phase,
       topic,
-      phaseBrief: context?.phaseBrief ?? context?.priorEntities,
+      phaseBrief: context?.phaseBrief,
       revisionRetryInstruction: context?.revisionRetryInstruction,
       revisionSystemPrompt: context?.revisionSystemPrompt,
       effortLevel: context?.runtime?.effortLevel ?? "medium",

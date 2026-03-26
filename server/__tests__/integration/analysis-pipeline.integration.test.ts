@@ -170,7 +170,7 @@ describe("analysis pipeline integration", () => {
 
     // Phase 2 with prior context
     const result2 = await runPhase("player-identification", "Steel trade war", {
-      priorEntities: priorContext,
+      phaseBrief: priorContext,
     });
     expect(result2.success).toBe(true);
     commitPhaseSnapshot({
@@ -306,7 +306,7 @@ describe("analysis pipeline integration", () => {
 
     for (const phase of phases) {
       const result = await runPhase(phase, "Steel trade war", {
-        priorEntities: priorContext,
+        phaseBrief: priorContext,
       });
       expect(result.success).toBe(true);
 

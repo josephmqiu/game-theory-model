@@ -6,6 +6,7 @@ export interface ThreadRepository {
   getThreadState(id: string): ThreadState | undefined;
   listThreadsByWorkspaceId(workspaceId: string): ThreadState[];
   upsertThreadState(thread: ThreadState): ThreadState;
+  deleteThreadState(id: string): void;
   clear(): void;
 }
 
@@ -63,6 +64,7 @@ export function createThreadRepository(db: DatabaseSync): ThreadRepository {
        thread_json = excluded.thread_json,
        updated_at = excluded.updated_at`,
   );
+  const deleteStatement = db.prepare(`DELETE FROM threads WHERE id = $id`);
   const clearStatement = db.prepare(`DELETE FROM threads`);
 
   return {
@@ -95,6 +97,9 @@ export function createThreadRepository(db: DatabaseSync): ThreadRepository {
         throw new Error(`Failed to persist thread "${thread.id}".`);
       }
       return mapThreadRow(stored);
+    },
+    deleteThreadState(id) {
+      deleteStatement.run({ $id: id });
     },
     clear() {
       clearStatement.run();

@@ -4,7 +4,11 @@ import {
   DEFAULT_PROMPT_PACK_MODE,
   DEFAULT_PROMPT_PACK_VERSION,
 } from "../../../shared/types/prompt-pack";
-import { getWorkspaceDatabase } from "../workspace";
+import {
+  getWorkspaceDatabase,
+  resetWorkspaceDatabaseForTest,
+} from "../workspace";
+import { _bindWorkspaceDatabaseForInit } from "../entity-graph-service";
 import * as analysisAgent from "../../agents/analysis-agent";
 import {
   _resetForTest as resetCommandHandlers,
@@ -21,6 +25,8 @@ vi.mock("../analysis-service", () => ({
 describe("command-handlers durable run start", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetWorkspaceDatabaseForTest();
+    _bindWorkspaceDatabaseForInit(getWorkspaceDatabase);
     resetCommandHandlers();
     analysisAgent._resetForTest();
   });

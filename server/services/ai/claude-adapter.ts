@@ -669,10 +669,21 @@ async function* streamClaudeChatTurn(
     );
   }
 
+  // For non-resumed sessions, prepend conversation history into the system
+  // prompt so the model has context. Resumed sessions already have the full
+  // conversation in the SDK's persisted state.
+  let effectiveSystemPrompt = input.systemPrompt;
+  if (!resumeSessionId && input.messages && input.messages.length > 0) {
+    const history = input.messages
+      .map((m) => `${m.role}: ${m.content}`)
+      .join("\n\n");
+    effectiveSystemPrompt = `${input.systemPrompt}\n\n## Conversation History\n\n${history}`;
+  }
+
   const q = query({
     prompt: input.prompt,
     options: {
-      systemPrompt: input.systemPrompt,
+      systemPrompt: effectiveSystemPrompt,
       model: input.model,
       maxTurns: 99,
       tools: ["WebSearch"],

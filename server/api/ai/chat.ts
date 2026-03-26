@@ -6,7 +6,7 @@ import {
 } from "h3";
 import {
   createChatResponse,
-  normalizeChatRequest,
+  parseChatRequest,
 } from "../../services/ai/chat-service";
 
 export function formatOpenCodeError(error: unknown): string {
@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
 
   let request;
   try {
-    request = normalizeChatRequest(rawBody);
+    request = parseChatRequest(rawBody);
   } catch (error) {
     setResponseStatus(event, 400);
     return {

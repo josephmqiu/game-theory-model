@@ -69,6 +69,6 @@ describe("runEval", () => {
       runPhaseImpl: mockRunPhase,
     });
     const secondCall = mockRunPhase.mock.calls[1];
-    expect(secondCall[2]?.priorEntities).toBeDefined();
+    expect(secondCall[2]?.phaseBrief).toBeDefined();
   });
 });

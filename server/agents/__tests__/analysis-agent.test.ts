@@ -51,67 +51,22 @@ vi.mock("../../services/analysis-tools", () => ({
 
 // ── Mock analysis-service ──
 
-const mockRunPhase = vi.fn<
-  (
-    phase: MethodologyPhase,
-    topic: string,
-    context?: {
-      phaseBrief?: string;
-      promptBundle?: {
-        system: string;
-        user: string;
-        toolPolicy?: unknown;
-      };
-      revisionRetryInstruction?: string;
-      provider?: string;
-      model?: string;
-      runtime?: ResolvedAnalysisRuntime;
-      runId?: string;
-      phaseTurnId?: string;
-      signal?: AbortSignal;
-      logger?: unknown;
-      onActivity?: (activity: {
-        kind: "note" | "tool" | "web-search";
-        message: string;
-        toolName?: string;
-        query?: string;
-      }) => void;
-    },
-  ) => Promise<PhaseResult>
->();
+const mockRunPhase = vi.hoisted(() => vi.fn());
 
 vi.mock("../../services/analysis-service", () => ({
-  runPhase: (...args: Parameters<typeof mockRunPhase>) => mockRunPhase(...args),
+  runPhase: (...args: unknown[]) => mockRunPhase(...args),
 }));
 
-const mockCommitPhaseSnapshot = vi.fn(
-  ({
-    entities,
-    relationships,
-  }: {
-    entities: PhaseOutputEntity[];
-    relationships: Array<{ type: string }>;
-  }): unknown => ({
-    status: "applied" as const,
-    summary: {
-      entitiesCreated: entities.filter((entity) => entity.id === null).length,
-      entitiesUpdated: entities.filter((entity) => entity.id !== null).length,
-      entitiesDeleted: 0,
-      relationshipsCreated: relationships.length,
-      relationshipsDeleted: 0,
-      currentPhaseEntityIds: [],
-    },
-  }),
-);
+const mockCommitPhaseSnapshot = vi.hoisted(() => vi.fn());
 
 vi.mock("../../services/revision-diff", () => ({
-  commitPhaseSnapshot: (...args: Parameters<typeof mockCommitPhaseSnapshot>) =>
-    mockCommitPhaseSnapshot(...args),
+  commitPhaseSnapshot: (...args: unknown[]) => mockCommitPhaseSnapshot(...args),
 }));
 
 // ── Mock entity-graph-service ──
+// vi.hoisted() ensures these are available when the hoisted vi.mock() factories run
 
-const mockEntityGraph = {
+const mockEntityGraph = vi.hoisted(() => ({
   getAnalysis: vi.fn(() => ({
     id: "test",
     name: "test",
@@ -123,16 +78,20 @@ const mockEntityGraph = {
   newAnalysis: vi.fn(),
   setPhaseStatus: vi.fn(),
   removePhaseEntities: vi.fn(),
-};
+  _bindWorkspaceDatabaseForInit: vi.fn(),
+  _resetForTest: vi.fn(),
+  _setRepoForTest: vi.fn(),
+}));
 
 vi.mock("../../services/entity-graph-service", () => mockEntityGraph);
 
 // ── Mock revalidation-service ──
 
-const mockRevalidation = {
+const mockRevalidation = vi.hoisted(() => ({
   onRunComplete: vi.fn(),
   wire: vi.fn(),
-};
+  _resetForTest: vi.fn(),
+}));
 
 vi.mock("../../services/revalidation-service", () => mockRevalidation);
 
@@ -354,6 +313,27 @@ describe("analysis-orchestrator", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     mockTriggers = [];
+    mockCommitPhaseSnapshot.mockImplementation(
+      ({
+        entities,
+        relationships,
+      }: {
+        entities: unknown[];
+        relationships: unknown[];
+      }) => ({
+        status: "applied",
+        summary: {
+          entitiesCreated: entities.filter((e: any) => (e as any).id === null)
+            .length,
+          entitiesUpdated: entities.filter((e: any) => (e as any).id !== null)
+            .length,
+          entitiesDeleted: 0,
+          relationshipsCreated: relationships.length,
+          relationshipsDeleted: 0,
+          currentPhaseEntityIds: [],
+        },
+      }),
+    );
     resetWorkspaceDatabaseForTest();
     orchestrator = await importOrchestrator();
     orchestrator._resetForTest();
@@ -635,7 +615,10 @@ describe("analysis-orchestrator", () => {
       "A run is already active",
     );
     expect(mockEntityGraph.newAnalysis).toHaveBeenCalledTimes(1);
-    expect(mockEntityGraph.newAnalysis).toHaveBeenCalledWith("Topic 1");
+    expect(mockEntityGraph.newAnalysis).toHaveBeenCalledWith(
+      "Topic 1",
+      expect.any(String),
+    );
 
     // Clean up
     resolvePhase1(makePhaseResult("situational-grounding"));

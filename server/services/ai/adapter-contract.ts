@@ -50,6 +50,7 @@ export interface RuntimeChatTurnInput {
   prompt: string;
   systemPrompt: string;
   model: string;
+  messages?: Array<{ role: string; content: string }>;
   runId?: string;
   signal?: AbortSignal;
   timeoutMs?: number;

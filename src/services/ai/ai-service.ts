@@ -42,7 +42,6 @@ export interface StreamChatThreadContext {
   workspaceId?: string;
   threadId?: string;
   threadTitle?: string;
-  useCanonicalThreadRequest?: boolean;
   onResolvedThread?: (identity: {
     workspaceId?: string;
     threadId?: string;
@@ -54,7 +53,7 @@ export interface StreamChatThreadContext {
  * The server routes to the appropriate provider SDK (no client-side key needed).
  */
 export async function* streamChat(
-  systemPrompt: string,
+  _systemPrompt: string,
   messages: Array<{
     role: "user" | "assistant";
     content: string;
@@ -139,38 +138,20 @@ export async function* streamChat(
         "Content-Type": "application/json",
         ...(runId ? { "X-Run-Id": runId } : {}),
       },
-      body: JSON.stringify(
-        threadContext?.useCanonicalThreadRequest
-          ? {
-              workspaceId: threadContext.workspaceId,
-              threadId: threadContext.threadId,
-              threadTitle: threadContext.threadTitle,
-              message: {
-                content: messages[messages.length - 1]?.content ?? "",
-                attachments: messages[messages.length - 1]?.attachments,
-              },
-              model,
-              provider,
-              thinkingMode: options?.thinkingMode,
-              thinkingBudgetTokens: options?.thinkingBudgetTokens,
-              effort: options?.effort,
-            }
-          : {
-              system: systemPrompt,
-              messages: messages.map((m) => ({
-                role: m.role,
-                content: m.content,
-                ...(m.attachments?.length
-                  ? { attachments: m.attachments }
-                  : {}),
-              })),
-              model,
-              provider,
-              thinkingMode: options?.thinkingMode,
-              thinkingBudgetTokens: options?.thinkingBudgetTokens,
-              effort: options?.effort,
-            },
-      ),
+      body: JSON.stringify({
+        workspaceId: threadContext?.workspaceId,
+        threadId: threadContext?.threadId,
+        threadTitle: threadContext?.threadTitle,
+        message: {
+          content: messages[messages.length - 1]?.content ?? "",
+          attachments: messages[messages.length - 1]?.attachments,
+        },
+        model,
+        provider,
+        thinkingMode: options?.thinkingMode,
+        thinkingBudgetTokens: options?.thinkingBudgetTokens,
+        effort: options?.effort,
+      }),
       signal: fetchSignal,
     });
 

@@ -7,6 +7,7 @@ import {
   saveAnalysis,
 } from "@/services/analysis/analysis-persistence";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
+import { useThreadStore } from "@/stores/thread-store";
 
 describe("analysis-persistence", () => {
   beforeEach(() => {
@@ -14,6 +15,8 @@ describe("analysis-persistence", () => {
     useEntityGraphStore.setState(useEntityGraphStore.getInitialState(), true);
     useEntityGraphStore.getState().newAnalysis("rock vs paper vs scissors");
     useEntityGraphStore.getState().markDirty();
+    // Mock hydrateWorkspace to avoid WebSocket call in jsdom tests
+    vi.spyOn(useThreadStore.getState(), "hydrateWorkspace").mockResolvedValue();
 
     Object.defineProperty(window, "electronAPI", {
       configurable: true,
@@ -59,12 +62,14 @@ describe("analysis-persistence", () => {
 
     const handle = {
       name: "rps-analysis.gta",
-      createWritable: vi.fn().mockRejectedValue(
-        new DOMException(
-          "The request is not allowed by the user agent or the platform in the current context.",
-          "SecurityError",
+      createWritable: vi
+        .fn()
+        .mockRejectedValue(
+          new DOMException(
+            "The request is not allowed by the user agent or the platform in the current context.",
+            "SecurityError",
+          ),
         ),
-      ),
     } as unknown as FileSystemFileHandle;
 
     const showSaveFilePicker = vi.fn().mockResolvedValue(handle);
@@ -99,9 +104,11 @@ describe("analysis-persistence", () => {
     });
 
     const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
-    const showSaveFilePicker = vi.fn().mockRejectedValue(
-      new DOMException("The user aborted a request.", "AbortError"),
-    );
+    const showSaveFilePicker = vi
+      .fn()
+      .mockRejectedValue(
+        new DOMException("The user aborted a request.", "AbortError"),
+      );
     Object.defineProperty(window, "showSaveFilePicker", {
       configurable: true,
       writable: true,

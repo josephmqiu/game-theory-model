@@ -109,8 +109,21 @@ export interface WorkspaceRuntimeResolveQuestionPayload {
   customText?: string;
 }
 
+export interface WorkspaceRuntimeRenameThreadRequestPayload {
+  workspaceId: string;
+  threadId: string;
+  title: string;
+}
+
+export interface WorkspaceRuntimeDeleteThreadRequestPayload {
+  workspaceId: string;
+  threadId: string;
+}
+
 export interface WorkspaceRuntimeRequestPayloadMap {
   "workspace.thread.create": WorkspaceRuntimeCreateThreadRequestPayload;
+  "workspace.thread.rename": WorkspaceRuntimeRenameThreadRequestPayload;
+  "workspace.thread.delete": WorkspaceRuntimeDeleteThreadRequestPayload;
   "question.resolve": WorkspaceRuntimeResolveQuestionPayload;
 }
 

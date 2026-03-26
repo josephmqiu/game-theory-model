@@ -73,6 +73,27 @@ const resolveQuestionRequestSchema = z.object({
   }),
 });
 
+const renameThreadRequestSchema = z.object({
+  type: z.literal("request"),
+  requestId: z.string().trim().min(1),
+  kind: z.literal("workspace.thread.rename"),
+  payload: z.object({
+    workspaceId: z.string().trim().min(1),
+    threadId: z.string().trim().min(1),
+    title: z.string().trim().min(1),
+  }),
+});
+
+const deleteThreadRequestSchema = z.object({
+  type: z.literal("request"),
+  requestId: z.string().trim().min(1),
+  kind: z.literal("workspace.thread.delete"),
+  payload: z.object({
+    workspaceId: z.string().trim().min(1),
+    threadId: z.string().trim().min(1),
+  }),
+});
+
 interface PeerState {
   connectionId: string;
   peer: WebSocketPeer;
@@ -330,6 +351,91 @@ async function handleResolveQuestion(
   }
 }
 
+function handleSyncRequest(
+  peerState: PeerState,
+  envelope: WorkspaceRuntimeRequest,
+  schema: z.ZodType,
+  execute: (parsed: {
+    requestId: string;
+    kind: string;
+    payload: Record<string, unknown>;
+  }) => unknown,
+) {
+  const parsed = schema.safeParse(envelope);
+  if (!parsed.success) {
+    sendEnvelope(peerState.peer, {
+      type: "response",
+      requestId: envelope.requestId,
+      ok: false,
+      error: `Invalid ${envelope.kind} payload`,
+    } satisfies WorkspaceRuntimeResponse);
+    recordDiagnostic({
+      code: "request-failed",
+      level: "warn",
+      message: "Rejected invalid websocket request payload",
+      connectionId: peerState.connectionId,
+      workspaceId: peerState.workspaceId,
+      threadId: peerState.activeThreadId,
+      data: { kind: envelope.kind },
+    });
+    return;
+  }
+
+  const data = parsed.data as {
+    requestId: string;
+    kind: string;
+    payload: Record<string, unknown>;
+  };
+  recordDiagnostic({
+    code: "request-received",
+    level: "info",
+    message: "Received websocket runtime request",
+    connectionId: peerState.connectionId,
+    workspaceId: (data.payload.workspaceId as string) ?? peerState.workspaceId,
+    threadId: peerState.activeThreadId,
+    data: { kind: data.kind, requestId: data.requestId },
+  });
+
+  try {
+    const result = execute(data);
+    sendEnvelope(peerState.peer, {
+      type: "response",
+      requestId: data.requestId,
+      ok: true,
+      result,
+    } satisfies WorkspaceRuntimeResponse);
+    recordDiagnostic({
+      code: "request-completed",
+      level: "info",
+      message: "Completed websocket runtime request",
+      connectionId: peerState.connectionId,
+      workspaceId:
+        (data.payload.workspaceId as string) ?? peerState.workspaceId,
+      threadId: peerState.activeThreadId,
+      data: { kind: data.kind, requestId: data.requestId },
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : `Failed to handle ${data.kind}`;
+    sendEnvelope(peerState.peer, {
+      type: "response",
+      requestId: data.requestId,
+      ok: false,
+      error: message,
+    } satisfies WorkspaceRuntimeResponse);
+    recordDiagnostic({
+      code: "request-failed",
+      level: "error",
+      message: "Websocket runtime request failed",
+      connectionId: peerState.connectionId,
+      workspaceId:
+        (data.payload.workspaceId as string) ?? peerState.workspaceId,
+      threadId: peerState.activeThreadId,
+      data: { kind: data.kind, requestId: data.requestId, error: message },
+    });
+  }
+}
+
 async function handleRequest(
   peerState: PeerState,
   envelope: WorkspaceRuntimeRequest,
@@ -339,108 +445,79 @@ async function handleRequest(
     return;
   }
 
-  if (envelope.kind !== "workspace.thread.create") {
-    const unsupportedResponse: WorkspaceRuntimeResponse = {
-      type: "response",
-      requestId: envelope.requestId,
-      ok: false,
-      error: `Unsupported request kind: ${envelope.kind}`,
-    };
-    sendEnvelope(peerState.peer, unsupportedResponse);
-    return;
-  }
+  const service = createThreadService(getWorkspaceDatabase());
 
-  const parsed = createThreadRequestSchema.safeParse(envelope);
-  if (!parsed.success) {
-    const invalidResponse: WorkspaceRuntimeResponse = {
-      type: "response",
-      requestId: envelope.requestId,
-      ok: false,
-      error: "Invalid workspace.thread.create payload",
-    };
-    sendEnvelope(peerState.peer, invalidResponse);
-    recordDiagnostic({
-      code: "request-failed",
-      level: "warn",
-      message: "Rejected invalid websocket request payload",
-      connectionId: peerState.connectionId,
-      workspaceId: peerState.workspaceId,
-      threadId: peerState.activeThreadId,
-      data: {
-        kind: envelope.kind,
-      },
-    });
-    return;
-  }
+  switch (envelope.kind) {
+    case "workspace.thread.create":
+      handleSyncRequest(
+        peerState,
+        envelope,
+        createThreadRequestSchema,
+        (data) => {
+          const payload = data.payload as {
+            workspaceId: string;
+            title?: string;
+          };
+          const thread = service.createThread({
+            workspaceId: payload.workspaceId,
+            title: payload.title,
+            producer: "workspace-runtime-transport",
+          });
+          return { workspaceId: thread.workspaceId, thread };
+        },
+      );
+      return;
 
-  recordDiagnostic({
-    code: "request-received",
-    level: "info",
-    message: "Received websocket runtime request",
-    connectionId: peerState.connectionId,
-    workspaceId: parsed.data.payload.workspaceId,
-    threadId: peerState.activeThreadId,
-    data: {
-      kind: parsed.data.kind,
-      requestId: parsed.data.requestId,
-    },
-  });
+    case "workspace.thread.rename":
+      handleSyncRequest(
+        peerState,
+        envelope,
+        renameThreadRequestSchema,
+        (data) => {
+          const payload = data.payload as {
+            workspaceId: string;
+            threadId: string;
+            title: string;
+          };
+          const thread = service.renameThread({
+            workspaceId: payload.workspaceId,
+            threadId: payload.threadId,
+            title: payload.title,
+            producer: "workspace-runtime-transport",
+          });
+          return { workspaceId: thread.workspaceId, thread };
+        },
+      );
+      return;
 
-  try {
-    const thread = createThreadService(getWorkspaceDatabase()).createThread({
-      workspaceId: parsed.data.payload.workspaceId,
-      title: parsed.data.payload.title,
-      producer: "workspace-runtime-transport",
-    });
+    case "workspace.thread.delete":
+      handleSyncRequest(
+        peerState,
+        envelope,
+        deleteThreadRequestSchema,
+        (data) => {
+          const payload = data.payload as {
+            workspaceId: string;
+            threadId: string;
+          };
+          service.deleteThread({
+            workspaceId: payload.workspaceId,
+            threadId: payload.threadId,
+            producer: "workspace-runtime-transport",
+          });
+          return { workspaceId: payload.workspaceId };
+        },
+      );
+      return;
 
-    const response: WorkspaceRuntimeResponse<{
-      workspaceId: string;
-      thread: typeof thread;
-    }> = {
-      type: "response",
-      requestId: parsed.data.requestId,
-      ok: true,
-      result: {
-        workspaceId: thread.workspaceId,
-        thread,
-      },
-    };
-    sendEnvelope(peerState.peer, response);
-    recordDiagnostic({
-      code: "request-completed",
-      level: "info",
-      message: "Completed websocket runtime request",
-      connectionId: peerState.connectionId,
-      workspaceId: thread.workspaceId,
-      threadId: thread.id,
-      data: {
-        kind: parsed.data.kind,
-        requestId: parsed.data.requestId,
-      },
-    });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to create thread";
-    const response: WorkspaceRuntimeResponse = {
-      type: "response",
-      requestId: parsed.data.requestId,
-      ok: false,
-      error: message,
-    };
-    sendEnvelope(peerState.peer, response);
-    recordDiagnostic({
-      code: "request-failed",
-      level: "error",
-      message: "Websocket runtime request failed",
-      connectionId: peerState.connectionId,
-      workspaceId: parsed.data.payload.workspaceId,
-      threadId: peerState.activeThreadId,
-      data: {
-        kind: parsed.data.kind,
-        requestId: parsed.data.requestId,
-        error: message,
-      },
-    });
+    default: {
+      sendEnvelope(peerState.peer, {
+        type: "response",
+        requestId: envelope.requestId,
+        ok: false,
+        error: `Unsupported request kind: ${envelope.kind}`,
+      } satisfies WorkspaceRuntimeResponse);
+    }
   }
 }
 

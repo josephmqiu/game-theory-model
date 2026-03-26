@@ -4,6 +4,7 @@ import {
   getWorkspaceDatabase,
   resetWorkspaceDatabaseForTest,
 } from "../../../services/workspace";
+import { _bindWorkspaceDatabaseForInit } from "../../../services/entity-graph-service";
 import { _resetWorkspaceRuntimePublisherForTest } from "../../../services/workspace/workspace-runtime-publisher";
 import { _resetWorkspaceRuntimeTransportForTest } from "../../../services/workspace/workspace-runtime-transport";
 
@@ -40,6 +41,7 @@ describe("/api/workspace/runtime websocket", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetWorkspaceDatabaseForTest();
+    _bindWorkspaceDatabaseForInit(getWorkspaceDatabase);
     _resetWorkspaceRuntimePublisherForTest();
     _resetWorkspaceRuntimeTransportForTest();
   });
