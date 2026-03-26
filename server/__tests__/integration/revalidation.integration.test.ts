@@ -8,7 +8,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MethodologyPhase } from "../../../shared/types/methodology";
-import { resetAllServices, makeFactOutput } from "../../__test-utils__/fixtures";
+import {
+  resetAllServices,
+  makeFactOutput,
+} from "../../__test-utils__/fixtures";
 
 // ── Mock the adapter (called by runPhase internally) ──
 
@@ -17,10 +20,14 @@ vi.mock("../../services/ai/adapter-contract", () => ({
     const isCodex = providerInput === "openai" || providerInput === "codex";
     return {
       provider: isCodex ? "codex" : "claude",
-      createSession(key: { ownerId: string; runId?: string }) {
+      createSession(key: {
+        threadId: string;
+        runId?: string;
+        purpose?: string;
+      }) {
         return {
           provider: isCodex ? "codex" : "claude",
-          key,
+          context: key,
           streamChatTurn: vi.fn(),
           runStructuredTurn: vi.fn(async () => ({
             entities: [],
@@ -29,8 +36,11 @@ vi.mock("../../services/ai/adapter-contract", () => ({
           getDiagnostics: vi.fn(() => ({
             provider: isCodex ? "codex" : "claude",
             sessionId: "revalidation-session",
-            details: { ownerId: key.ownerId },
+            details: { threadId: key.threadId },
           })),
+          getBinding() {
+            return null;
+          },
           dispose: vi.fn(async () => {}),
         };
       },
@@ -129,7 +139,9 @@ describe("revalidation integration", () => {
 
     const entities = entityGraph.getEntitiesByPhase("situational-grounding");
     const root = entities.find((e) => (e.data as any).content === "Root")!;
-    const downstream = entities.find((e) => (e.data as any).content === "Downstream")!;
+    const downstream = entities.find(
+      (e) => (e.data as any).content === "Downstream",
+    )!;
 
     const result = entityGraph.getDownstreamEntityIds(root.id);
     expect(result).toContain(downstream.id);
@@ -192,7 +204,9 @@ describe("revalidation integration", () => {
     commitPhaseSnapshot({
       phase: "situational-grounding",
       runId: "seed-run",
-      entities: [makeFactOutput({ ref: "fact-1", content: "Stale fact" })] as any,
+      entities: [
+        makeFactOutput({ ref: "fact-1", content: "Stale fact" }),
+      ] as any,
       relationships: [],
     });
     const entities = entityGraph.getEntitiesByPhase("situational-grounding");
@@ -217,7 +231,9 @@ describe("revalidation integration", () => {
     commitPhaseSnapshot({
       phase: "situational-grounding",
       runId: "seed-run",
-      entities: [makeFactOutput({ ref: "fact-1", content: "Stale fact" })] as any,
+      entities: [
+        makeFactOutput({ ref: "fact-1", content: "Stale fact" }),
+      ] as any,
       relationships: [],
     });
     const entities = entityGraph.getEntitiesByPhase("situational-grounding");
@@ -236,7 +252,9 @@ describe("revalidation integration", () => {
     commitPhaseSnapshot({
       phase: "situational-grounding",
       runId: "seed-run",
-      entities: [makeFactOutput({ ref: "fact-1", content: "Stale fact" })] as any,
+      entities: [
+        makeFactOutput({ ref: "fact-1", content: "Stale fact" }),
+      ] as any,
       relationships: [],
     });
     const entities = entityGraph.getEntitiesByPhase("situational-grounding");
@@ -255,11 +273,15 @@ describe("revalidation integration", () => {
 
     // Instead, test the deferRevalidation path which is what scheduleRevalidation
     // calls when isRunning() returns true:
-    runtimeStatus.deferRevalidation([entities[0].id], { reason: "analysis-active" });
+    runtimeStatus.deferRevalidation([entities[0].id], {
+      reason: "analysis-active",
+    });
 
     // Stale IDs should have been deferred
     expect(runtimeStatus.hasDeferredRevalidationIds()).toBe(true);
-    expect(runtimeStatus.getDeferredRevalidationIds()).toContain(entities[0].id);
+    expect(runtimeStatus.getDeferredRevalidationIds()).toContain(
+      entities[0].id,
+    );
 
     // Release the run
     runtimeStatus.releaseRun("run-1", "completed");

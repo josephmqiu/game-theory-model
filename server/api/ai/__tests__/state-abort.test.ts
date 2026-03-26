@@ -80,7 +80,7 @@ describe("/api/ai/state and /api/ai/abort", () => {
     getRevisionMock.mockReturnValue(17);
 
     const route = (await import("../state")).default;
-    const result = route({} as never);
+    const result = await route({} as never);
 
     expect(result.analysis.topic).toBe("Trade conflict");
     expect(result.runStatus).toEqual({

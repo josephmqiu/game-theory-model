@@ -345,9 +345,10 @@ async function startNitroServer(): Promise<number> {
       ) {
         log.info("[nitro] Restarting server after crash...");
         startNitroServer()
-          .then((newPort) => {
+          .then(async (newPort) => {
             serverPort = newPort;
-            writePortFile(newPort);
+            await writePortFile(newPort);
+            await waitForAnalysisStateReady(newPort);
             log.info(`[nitro] Restarted on port ${newPort}`);
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.loadURL(`http://${NITRO_HOST}:${newPort}/editor`);

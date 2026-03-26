@@ -4,6 +4,19 @@ export { createCommandReceiptStoreProxy, createSqliteCommandReceiptStore } from 
 export { createWorkspaceRecordFromSnapshot } from "./workspace-repository";
 export { createThreadService, deriveThreadTitleFromMessage } from "./thread-service";
 export { createRunService } from "./run-service";
+export {
+  clearProviderSessionBinding,
+  createProviderSessionBindingService,
+  getProviderSessionBinding,
+  recordProviderSessionBindingDiagnostic,
+  upsertProviderSessionBinding,
+} from "./provider-session-binding-service";
+export { waitForRuntimeRecovery } from "./runtime-recovery-service";
 export { DEFAULT_WORKSPACE_ID, PRIMARY_THREAD_TITLE } from "./workspace-context";
 export type { WorkspaceDatabase, WorkspaceDatabaseOptions } from "./workspace-db";
 export type { WorkspaceRecord } from "./workspace-types";
+export type {
+  ProviderSessionBindingRecoveryOutcome,
+  ProviderSessionBindingRecoveryReason,
+  ProviderSessionBindingState,
+} from "./provider-session-binding-service";

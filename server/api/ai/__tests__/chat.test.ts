@@ -9,7 +9,14 @@ const getRequestHeaderMock = vi.fn();
 const setResponseStatusMock = vi.fn();
 const getAnalysisMock = vi.fn();
 const codexStreamChatMock = vi.fn();
-let lastSessionKey: { ownerId: string; runId?: string } | undefined;
+let lastSessionKey:
+  | {
+      workspaceId?: string;
+      threadId?: string;
+      runId?: string;
+      purpose?: string;
+    }
+  | undefined;
 
 vi.mock("h3", () => ({
   defineEventHandler: (handler: unknown) => handler,
@@ -22,20 +29,35 @@ vi.mock("../../../services/entity-graph-service", () => ({
   getAnalysis: (...args: unknown[]) => getAnalysisMock(...args),
 }));
 
+vi.mock("../../../services/workspace/provider-session-binding-service", () => ({
+  getProviderSessionBinding: vi.fn(() => null),
+  createProviderSessionBindingService: vi.fn(() => ({
+    getBinding: vi.fn(() => null),
+    upsertBinding: vi.fn((b: unknown) => b),
+    clearBinding: vi.fn(() => false),
+    recordDiagnostic: vi.fn(),
+    recordOutcome: vi.fn((b: unknown) => b),
+  })),
+  clearProviderSessionBinding: vi.fn(() => false),
+  upsertProviderSessionBinding: vi.fn((b: unknown) => b),
+  recordProviderSessionBindingDiagnostic: vi.fn(),
+}));
+
 vi.mock("../../../services/ai/adapter-contract", () => ({
   getRuntimeAdapter: vi.fn(async () => ({
     provider: "codex",
-    createSession(key: { ownerId: string; runId?: string }) {
+    createSession(key: { threadId: string; runId?: string; purpose?: string }) {
       lastSessionKey = key;
       return {
         provider: "codex",
-        key,
+        context: key,
         streamChatTurn: (...args: unknown[]) => codexStreamChatMock(...args),
         runStructuredTurn: vi.fn(),
         getDiagnostics: vi.fn(() => ({
           provider: "codex",
           sessionId: "test-chat-session",
         })),
+        getBinding: vi.fn(() => null),
         dispose: vi.fn(async () => {}),
       };
     },
@@ -111,8 +133,10 @@ describe("/api/ai/chat", () => {
     expect(response.headers.get("X-Thread-Id")).toBe(
       "workspace-1:primary-thread",
     );
-    expect(lastSessionKey).toEqual({
-      ownerId: "workspace-1:primary-thread",
+    expect(lastSessionKey).toMatchObject({
+      workspaceId: "workspace-1",
+      threadId: "workspace-1:primary-thread",
+      purpose: "chat",
     });
 
     const database = getWorkspaceDatabase();

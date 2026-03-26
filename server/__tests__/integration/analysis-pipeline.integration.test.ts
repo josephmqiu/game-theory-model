@@ -26,10 +26,14 @@ vi.mock("../../services/ai/adapter-contract", () => ({
     const isCodex = providerInput === "openai" || providerInput === "codex";
     return {
       provider: isCodex ? "codex" : "claude",
-      createSession(key: { ownerId: string; runId?: string }) {
+      createSession(key: {
+        threadId: string;
+        runId?: string;
+        purpose?: string;
+      }) {
         return {
           provider: isCodex ? "codex" : "claude",
-          key,
+          context: key,
           streamChatTurn: vi.fn(),
           runStructuredTurn<T = unknown>(input: {
             prompt: string;
@@ -59,8 +63,11 @@ vi.mock("../../services/ai/adapter-contract", () => ({
           getDiagnostics: vi.fn(() => ({
             provider: isCodex ? "codex" : "claude",
             sessionId: "analysis-pipeline-session",
-            details: { ownerId: key.ownerId },
+            details: { threadId: key.threadId },
           })),
+          getBinding() {
+            return null;
+          },
           dispose: vi.fn(async () => {}),
         };
       },
@@ -144,10 +151,7 @@ describe("analysis pipeline integration", () => {
 
   it("two sequential phases with prior context coexist in graph", async () => {
     // Phase 1
-    const result1 = await runPhase(
-      "situational-grounding",
-      "Steel trade war",
-    );
+    const result1 = await runPhase("situational-grounding", "Steel trade war");
     expect(result1.success).toBe(true);
     commitPhaseSnapshot({
       phase: "situational-grounding",
@@ -165,11 +169,9 @@ describe("analysis pipeline integration", () => {
     );
 
     // Phase 2 with prior context
-    const result2 = await runPhase(
-      "player-identification",
-      "Steel trade war",
-      { priorEntities: priorContext },
-    );
+    const result2 = await runPhase("player-identification", "Steel trade war", {
+      priorEntities: priorContext,
+    });
     expect(result2.success).toBe(true);
     commitPhaseSnapshot({
       phase: "player-identification",
@@ -193,10 +195,7 @@ describe("analysis pipeline integration", () => {
 
   it("re-run preserves user-edited entities", async () => {
     // Initial run
-    const result1 = await runPhase(
-      "situational-grounding",
-      "Steel trade war",
-    );
+    const result1 = await runPhase("situational-grounding", "Steel trade war");
     commitPhaseSnapshot({
       phase: "situational-grounding",
       runId: "test-run-1",
@@ -216,10 +215,7 @@ describe("analysis pipeline integration", () => {
     );
 
     // Re-run the same phase (different run)
-    const result2 = await runPhase(
-      "situational-grounding",
-      "Steel trade war",
-    );
+    const result2 = await runPhase("situational-grounding", "Steel trade war");
     commitPhaseSnapshot({
       phase: "situational-grounding",
       runId: "test-run-2",
@@ -229,9 +225,7 @@ describe("analysis pipeline integration", () => {
 
     // User-edited entity should survive
     const analysis = entityGraph.getAnalysis();
-    const userEntity = analysis.entities.find(
-      (e) => e.id === targetEntity.id,
-    );
+    const userEntity = analysis.entities.find((e) => e.id === targetEntity.id);
     expect(userEntity).toBeDefined();
     expect(userEntity!.rationale).toBe("User's custom rationale");
     expect(userEntity!.provenance?.source).toBe("user-edited");
@@ -294,10 +288,7 @@ describe("analysis pipeline integration", () => {
 
     try {
       activeRunAnalysisPhase = badMock;
-      const result = await runPhase(
-        "situational-grounding",
-        "Bad data test",
-      );
+      const result = await runPhase("situational-grounding", "Bad data test");
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
     } finally {
@@ -340,9 +331,7 @@ describe("analysis pipeline integration", () => {
 
     // All phases have entities
     for (const phase of phases) {
-      const phaseEntities = analysis.entities.filter(
-        (e) => e.phase === phase,
-      );
+      const phaseEntities = analysis.entities.filter((e) => e.phase === phase);
       const expectedFixture = getPhaseFixture(phase);
       expect(phaseEntities.length).toBe(expectedFixture.entities.length);
     }

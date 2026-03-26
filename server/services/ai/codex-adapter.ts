@@ -18,7 +18,7 @@ import type {
   AnalysisRunOptions,
   RuntimeAdapter,
   RuntimeAdapterSession,
-  RuntimeAdapterSessionKey,
+  RuntimeAdapterSessionContext,
   RuntimeChatTurnInput,
   RuntimeSessionDiagnostics,
   RuntimeStructuredTurnInput,
@@ -26,6 +26,11 @@ import type {
 } from "./adapter-contract";
 import { mapRuntimeModels } from "./adapter-contract";
 import { getCodexProviderSnapshot } from "./codex-health";
+import {
+  createProviderSessionBindingService,
+  type ProviderSessionBindingRecoveryOutcome,
+  type ProviderSessionBindingState,
+} from "../workspace/provider-session-binding-service";
 
 // ── Types ──
 
@@ -34,6 +39,15 @@ interface JsonRpcRequest {
   id: number;
   method: string;
   params?: Record<string, unknown>;
+}
+
+interface CodexSessionState {
+  sessionId: string;
+  context: RuntimeAdapterSessionContext;
+  binding: ProviderSessionBindingState | null;
+  providerSessionId?: string;
+  providerTurnId?: string;
+  recovery?: ProviderSessionBindingRecoveryOutcome;
 }
 
 interface JsonRpcNotification {
@@ -77,6 +91,105 @@ interface AppServerConnection {
 let connection: AppServerConnection | null = null;
 
 const MAX_DIAGNOSTIC_LINES = 25;
+
+function createCodexSessionState(
+  context: RuntimeAdapterSessionContext,
+  binding: ProviderSessionBindingState | null = null,
+): CodexSessionState {
+  return {
+    sessionId: `codex-${context.threadId}-${Math.random().toString(36).slice(2, 10)}`,
+    context,
+    binding,
+    ...(binding?.provider === "codex"
+      ? {
+          providerSessionId: binding.providerSessionId,
+          providerTurnId: binding.codexTurnId,
+        }
+      : {}),
+  };
+}
+
+function getCodexBindingService() {
+  return createProviderSessionBindingService();
+}
+
+function getCodexResumeThreadId(
+  session: CodexSessionState,
+): string | undefined {
+  if (session.context.purpose !== "chat") {
+    return undefined;
+  }
+  if (session.binding?.provider === "codex") {
+    return session.binding.codexThreadId ?? session.binding.providerSessionId;
+  }
+  return session.providerSessionId;
+}
+
+function buildCodexRecoveryOutcome(
+  disposition: ProviderSessionBindingRecoveryOutcome["disposition"],
+  message?: string,
+  reason?: ProviderSessionBindingRecoveryOutcome["reason"],
+): ProviderSessionBindingRecoveryOutcome {
+  return {
+    disposition,
+    ...(message ? { message } : {}),
+    ...(reason ? { reason } : {}),
+    timestamp: Date.now(),
+  };
+}
+
+function persistCodexBinding(session: CodexSessionState): void {
+  if (!session.context.workspaceId || !session.providerSessionId) {
+    return;
+  }
+
+  session.binding = getCodexBindingService().upsertBinding({
+    version: 1,
+    provider: "codex",
+    workspaceId: session.context.workspaceId,
+    threadId: session.context.threadId,
+    purpose: session.context.purpose,
+    ...(session.context.runId ? { runId: session.context.runId } : {}),
+    ...(session.context.phaseTurnId
+      ? { phaseTurnId: session.context.phaseTurnId }
+      : {}),
+    providerSessionId: session.providerSessionId,
+    codexThreadId: session.providerSessionId,
+    ...(session.providerTurnId ? { codexTurnId: session.providerTurnId } : {}),
+    updatedAt: Date.now(),
+    ...(session.recovery ? { lastRecoveryOutcome: session.recovery } : {}),
+  });
+}
+
+function shouldRetryCodexWithoutBinding(errorMessage: string): boolean {
+  return /thread|conversation|not found|invalid|stale|expired|unknown/i.test(
+    errorMessage,
+  );
+}
+
+type CodexBindingService = ReturnType<typeof getCodexBindingService>;
+
+function recordCodexResumeDiag(
+  bindingService: CodexBindingService,
+  session: CodexSessionState,
+  code: "resume-attempt" | "resume-succeeded" | "resume-failed",
+  message: string,
+  providerSessionId?: string,
+  data?: Record<string, unknown>,
+): void {
+  bindingService.recordDiagnostic({
+    code,
+    level: code === "resume-failed" ? "warn" : "info",
+    message,
+    workspaceId: session.context.workspaceId,
+    threadId: session.context.threadId,
+    runId: session.context.runId,
+    phaseTurnId: session.context.phaseTurnId,
+    provider: "codex",
+    providerSessionId,
+    ...(data ? { data } : {}),
+  });
+}
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object"
@@ -689,9 +802,16 @@ export async function* streamChat(
   systemPrompt: string,
   model: string,
   options?: StreamChatOptions,
+  session: CodexSessionState = createCodexSessionState({
+    threadId: options?.runId ?? "codex-chat",
+    ...(options?.runId ? { runId: options.runId } : {}),
+    purpose: "chat",
+  }),
 ): AsyncGenerator<ChatEvent> {
   const runId = options?.runId;
   const timeoutMs = options?.timeoutMs ?? CHAT_TIMEOUT_MS;
+  const bindingService = getCodexBindingService();
+  const resumeThreadId = getCodexResumeThreadId(session);
 
   installChatToolSurface();
 
@@ -713,27 +833,44 @@ export async function* streamChat(
     return;
   }
 
-  // Create a thread
+  if (resumeThreadId) {
+    recordCodexResumeDiag(
+      bindingService,
+      session,
+      "resume-attempt",
+      "Attempting Codex thread resume",
+      resumeThreadId,
+    );
+  }
+
+  // Create or reuse a thread
   let threadId: string;
   let turnId: string | null = null;
-  try {
-    const threadResult = await sendRequest(conn, "thread/start", {
-      developerInstructions: systemPrompt,
-      model,
-    });
-    threadId = extractThreadId(threadResult);
-    serverLog(runId, "codex-adapter", "thread-started", { threadId });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    yield {
-      type: "error",
-      error: createProviderRuntimeError(`Failed to create thread: ${msg}`, {
-        provider: "codex",
-        reason: "unknown",
-        retryable: false,
-      }),
-    };
-    return;
+  if (resumeThreadId) {
+    threadId = resumeThreadId;
+    session.providerSessionId = resumeThreadId;
+  } else {
+    try {
+      const threadResult = await sendRequest(conn, "thread/start", {
+        developerInstructions: systemPrompt,
+        model,
+      });
+      threadId = extractThreadId(threadResult);
+      session.providerSessionId = threadId;
+      persistCodexBinding(session);
+      serverLog(runId, "codex-adapter", "thread-started", { threadId });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      yield {
+        type: "error",
+        error: createProviderRuntimeError(`Failed to create thread: ${msg}`, {
+          provider: "codex",
+          reason: "unknown",
+          retryable: false,
+        }),
+      };
+      return;
+    }
   }
 
   // Abort signal — when the client disconnects, interrupt the turn
@@ -761,6 +898,8 @@ export async function* streamChat(
 
     if (method === "turn/started") {
       turnId = getTurnIdFromParams(params) ?? turnId;
+      session.providerTurnId = turnId ?? undefined;
+      persistCodexBinding(session);
       return;
     }
 
@@ -889,9 +1028,35 @@ export async function* streamChat(
       input: createTurnInput(prompt),
     });
     turnId = extractTurnId(turnResult);
+    session.providerSessionId = threadId;
+    session.providerTurnId = turnId;
+    persistCodexBinding(session);
   } catch (err) {
     removeListener();
     const msg = err instanceof Error ? err.message : String(err);
+    if (resumeThreadId && shouldRetryCodexWithoutBinding(msg)) {
+      recordCodexResumeDiag(
+        bindingService,
+        session,
+        "resume-failed",
+        "Codex rejected the stored thread binding",
+        resumeThreadId,
+        { error: msg },
+      );
+      bindingService.clearBinding(session.context.threadId, {
+        runId: session.context.runId,
+        reason: "provider_rejected_binding",
+      });
+      session.binding = null;
+      session.providerSessionId = undefined;
+      session.providerTurnId = undefined;
+      session.recovery = buildCodexRecoveryOutcome(
+        "started_fresh",
+        "Codex started a fresh thread after the stored thread was rejected",
+      );
+      yield* streamChat(prompt, systemPrompt, model, options, session);
+      return;
+    }
     yield {
       type: "error",
       error: createProviderRuntimeError(`Failed to start turn: ${msg}`, {
@@ -1007,6 +1172,26 @@ export async function* streamChat(
     while (eventQueue.length > 0) {
       yield eventQueue.shift()!;
     }
+
+    if (resumeThreadId) {
+      session.recovery = buildCodexRecoveryOutcome(
+        "resumed",
+        "Codex resumed a persisted thread",
+      );
+      recordCodexResumeDiag(
+        bindingService,
+        session,
+        "resume-succeeded",
+        "Codex thread resume succeeded",
+        resumeThreadId,
+      );
+    } else if (session.providerSessionId) {
+      session.recovery ??= buildCodexRecoveryOutcome(
+        "started_fresh",
+        "Codex started a fresh thread",
+      );
+      persistCodexBinding(session);
+    }
   } finally {
     removeListener();
     if (signal) signal.removeEventListener("abort", onAbort);
@@ -1028,6 +1213,11 @@ export async function runAnalysisPhase<T = unknown>(
   model: string,
   schema: Record<string, unknown>,
   options?: AnalysisRunOptions,
+  session: CodexSessionState = createCodexSessionState({
+    threadId: options?.runId ?? "codex-analysis",
+    ...(options?.runId ? { runId: options.runId } : {}),
+    purpose: "analysis",
+  }),
 ): Promise<T> {
   const runId = options?.runId;
   installAnalysisToolSurface(runId);
@@ -1052,6 +1242,8 @@ export async function runAnalysisPhase<T = unknown>(
       },
     });
     threadId = extractThreadId(threadResult);
+    session.providerSessionId = threadId;
+    persistCodexBinding(session);
     serverLog(runId, "codex-adapter", "analysis-thread-started", { threadId });
 
     // Collect result from turn/completed
@@ -1070,6 +1262,8 @@ export async function runAnalysisPhase<T = unknown>(
 
       if (method === "turn/started") {
         turnId = getTurnIdFromParams(params) ?? turnId;
+        session.providerTurnId = turnId ?? undefined;
+        persistCodexBinding(session);
         return;
       }
 
@@ -1267,6 +1461,8 @@ export async function runAnalysisPhase<T = unknown>(
       );
     }
     turnId = extractTurnId(turnResult);
+    session.providerTurnId = turnId;
+    persistCodexBinding(session);
     serverLog(runId, "codex-adapter", "analysis-turn-started", {
       threadId,
       turnId,
@@ -1403,20 +1599,29 @@ export { filterCodexEnv };
 
 class CodexRuntimeSession implements RuntimeAdapterSession {
   readonly provider = "codex" as const;
-  readonly key: RuntimeAdapterSessionKey;
-  private readonly sessionId: string;
+  readonly context: RuntimeAdapterSessionContext;
+  private readonly state: CodexSessionState;
 
-  constructor(key: RuntimeAdapterSessionKey) {
-    this.key = key;
-    this.sessionId = `codex-${key.ownerId}-${Math.random().toString(36).slice(2, 10)}`;
+  constructor(
+    context: RuntimeAdapterSessionContext,
+    binding: ProviderSessionBindingState | null = null,
+  ) {
+    this.context = context;
+    this.state = createCodexSessionState(context, binding);
   }
 
   streamChatTurn(input: RuntimeChatTurnInput): AsyncGenerator<ChatEvent> {
-    return streamChat(input.prompt, input.systemPrompt, input.model, {
-      runId: input.runId,
-      timeoutMs: input.timeoutMs,
-      signal: input.signal,
-    });
+    return streamChat(
+      input.prompt,
+      input.systemPrompt,
+      input.model,
+      {
+        runId: input.runId,
+        timeoutMs: input.timeoutMs,
+        signal: input.signal,
+      },
+      this.state,
+    );
   }
 
   runStructuredTurn<T = unknown>(
@@ -1433,12 +1638,15 @@ class CodexRuntimeSession implements RuntimeAdapterSession {
         webSearch: input.webSearch,
         onActivity: input.onActivity,
       },
+      this.state,
     );
   }
 
   getDiagnostics(): RuntimeSessionDiagnostics {
     const details: Record<string, unknown> = {
-      ownerId: this.key.ownerId,
+      workspaceId: this.context.workspaceId,
+      threadId: this.context.threadId,
+      purpose: this.context.purpose,
     };
     if (connection) {
       details.stdoutTail = connection.diagnostics.stdout;
@@ -1448,10 +1656,18 @@ class CodexRuntimeSession implements RuntimeAdapterSession {
 
     return {
       provider: "codex",
-      sessionId: this.sessionId,
-      ...(this.key.runId ? { runId: this.key.runId } : {}),
+      sessionId: this.state.sessionId,
+      ...(this.context.runId ? { runId: this.context.runId } : {}),
+      ...(this.state.providerSessionId
+        ? { providerSessionId: this.state.providerSessionId }
+        : {}),
+      ...(this.state.recovery ? { recovery: this.state.recovery } : {}),
       details,
     };
+  }
+
+  getBinding(): ProviderSessionBindingState | null {
+    return this.state.binding;
   }
 
   async dispose(): Promise<void> {
@@ -1461,8 +1677,11 @@ class CodexRuntimeSession implements RuntimeAdapterSession {
 
 export const codexRuntimeAdapter: RuntimeAdapter = {
   provider: "codex",
-  createSession(key: RuntimeAdapterSessionKey): RuntimeAdapterSession {
-    return new CodexRuntimeSession(key);
+  createSession(
+    context: RuntimeAdapterSessionContext,
+    binding?: ProviderSessionBindingState | null,
+  ): RuntimeAdapterSession {
+    return new CodexRuntimeSession(context, binding ?? null);
   },
   async listModels() {
     const snapshot = await getCodexProviderSnapshot();

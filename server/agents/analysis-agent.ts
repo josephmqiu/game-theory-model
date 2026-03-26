@@ -39,7 +39,10 @@ import type { LoopbackTriggerType } from "../services/analysis-tools";
 import { analysisRuntimeConfig } from "../config/analysis-runtime";
 import { resolveAnalysisRuntime } from "../config/analysis-runtime-resolver";
 import * as runtimeStatus from "../services/runtime-status";
-import { getWorkspaceDatabase } from "../services/workspace";
+import {
+  clearProviderSessionBinding,
+  getWorkspaceDatabase,
+} from "../services/workspace";
 import { createRunLogger, timer } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
 import type {
@@ -122,6 +125,16 @@ interface ActiveRun {
   promptProvenance: ReturnType<typeof createRunPromptProvenance>;
 }
 
+function clearAnalysisRunBinding(
+  run: Pick<ActiveRun, "runId" | "threadId">,
+): void {
+  clearProviderSessionBinding(run.threadId, {
+    runId: run.runId,
+    expectedPurpose: "analysis",
+    reason: "process_terminated",
+  });
+}
+
 // ── Constants ──
 
 type SupportedPhase = SupportedAnalysisPhase;
@@ -162,7 +175,7 @@ async function loadSynthesisAdapter(
       createSession(key) {
         return {
           provider: "claude",
-          key,
+          context: key,
           streamChatTurn: async function* () {
             throw new Error("Test adapter does not support chat turns");
           },
@@ -179,8 +192,11 @@ async function loadSynthesisAdapter(
             return {
               provider: "claude",
               sessionId: "test-synthesis-adapter",
-              details: { ownerId: key.ownerId },
+              details: { threadId: key.threadId },
             };
+          },
+          getBinding() {
+            return null;
           },
           async dispose() {},
         };
@@ -628,6 +644,8 @@ async function executeSinglePhase(
     try {
       result = await Promise.race([
         runPhase(phase, topic, {
+          workspaceId: run.workspaceId,
+          threadId: run.threadId,
           priorEntities: priorContext,
           promptBundle: {
             system: phasePromptBundle.system,
@@ -766,6 +784,8 @@ async function executeSinglePhase(
 
           const retryResult = await Promise.race([
             runPhase(phase, topic, {
+              workspaceId: run.workspaceId,
+              threadId: run.threadId,
               priorEntities: priorContext,
               promptBundle: {
                 system: retryPromptBundle.system,
@@ -1496,8 +1516,10 @@ export async function runFull(
             runId: run.runId,
             aiCaller: async (graphSummary: string) => {
               const session = adapter.createSession({
-                ownerId: run.runId,
+                workspaceId: run.workspaceId,
+                threadId: run.threadId,
                 runId: run.runId,
+                purpose: "analysis",
               });
               try {
                 return await session.runStructuredTurn({
@@ -1536,6 +1558,9 @@ export async function runFull(
       // Drain any remaining queued edits
       drainEditQueue();
       run.activePhase = null;
+      if (run.status !== "running") {
+        clearAnalysisRunBinding(run);
+      }
       // Flush logger before clearing run state
       try {
         await run.logger.flush();
@@ -1680,6 +1705,7 @@ export function onProgress(
 export function markOrphanedRunsFailed(): void {
   if (activeRun && activeRun.status === "running") {
     const runId = activeRun.runId;
+    clearAnalysisRunBinding(activeRun);
     activeRun.status = "failed";
     activeRun.error = "Run interrupted (app restart)";
     activeRun.activePhase = null;

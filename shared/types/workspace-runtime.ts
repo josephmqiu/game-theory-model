@@ -150,6 +150,19 @@ export type WorkspaceTransportDiagnosticCode =
   | "reconnect-open"
   | "close";
 
+export type WorkspaceRecoveryDiagnosticCode =
+  | "recovery-scan-started"
+  | "recovery-scan-completed"
+  | "recovery-binding-found"
+  | "recovery-binding-missing"
+  | "resume-attempt"
+  | "resume-succeeded"
+  | "resume-failed"
+  | "fallback-selected"
+  | "binding-upserted"
+  | "binding-cleared"
+  | "run-recovery-failed";
+
 export interface WorkspaceTransportDiagnostic {
   id: string;
   source: "client" | "server";
@@ -163,8 +176,24 @@ export interface WorkspaceTransportDiagnostic {
   data?: Record<string, unknown>;
 }
 
-export interface WorkspaceRuntimeDiagnosticsSnapshot {
-  recent: WorkspaceTransportDiagnostic[];
-  byConnectionId?: WorkspaceTransportDiagnostic[];
+export interface WorkspaceRecoveryDiagnostic {
+  id: string;
+  source: "server";
+  code: WorkspaceRecoveryDiagnosticCode;
+  level: "info" | "warn" | "error";
+  timestamp: number;
+  message: string;
+  workspaceId?: string;
+  threadId?: string;
+  runId?: string;
+  phaseTurnId?: string;
+  provider?: string;
+  providerSessionId?: string;
+  data?: Record<string, unknown>;
 }
 
+export interface WorkspaceRuntimeDiagnosticsSnapshot {
+  recent: WorkspaceTransportDiagnostic[];
+  recoveryRecent: WorkspaceRecoveryDiagnostic[];
+  byConnectionId?: WorkspaceTransportDiagnostic[];
+}

@@ -5,6 +5,7 @@ import { parseJsonColumn, stringifyJson } from "./sqlite-json";
 export interface RunRepository {
   getRunState(id: string): RunState | undefined;
   listRunsByThreadId(threadId: string): RunState[];
+  listRunsByStatus(status: RunState["status"]): RunState[];
   upsertRunState(run: RunState): RunState;
   clear(): void;
 }
@@ -24,6 +25,12 @@ export function createRunRepository(db: DatabaseSync): RunRepository {
     `SELECT run_json
      FROM runs
      WHERE thread_id = $threadId
+     ORDER BY updated_at DESC, id ASC`,
+  );
+  const listByStatusStatement = db.prepare(
+    `SELECT run_json
+     FROM runs
+     WHERE status = $status
      ORDER BY updated_at DESC, id ASC`,
   );
   const upsertStatement = db.prepare(
@@ -127,6 +134,11 @@ export function createRunRepository(db: DatabaseSync): RunRepository {
     listRunsByThreadId(threadId) {
       return listStatement
         .all({ $threadId: threadId })
+        .map((row) => mapRunRow(row));
+    },
+    listRunsByStatus(status) {
+      return listByStatusStatement
+        .all({ $status: status })
         .map((row) => mapRunRow(row));
     },
     upsertRunState(run) {

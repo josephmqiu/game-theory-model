@@ -10,6 +10,7 @@ import {
   createThreadService,
   deriveThreadTitleFromMessage,
 } from "../workspace/thread-service";
+import { getProviderSessionBinding } from "../workspace/provider-session-binding-service";
 import { createProcessRuntimeError } from "../../../shared/types/runtime-error";
 import { trimChatHistory } from "../../../shared/utils/trim-chat-history";
 import type { ChatEvent } from "../../../shared/types/events";
@@ -388,10 +389,15 @@ export async function createChatResponse(
         }
 
         const adapter = await getRuntimeAdapter(request.provider);
-        const session = adapter.createSession({
-          ownerId: threadContext.threadId,
-          ...(runId ? { runId } : {}),
-        });
+        const session = adapter.createSession(
+          {
+            workspaceId: threadContext.workspaceId,
+            threadId: threadContext.threadId,
+            ...(runId ? { runId } : {}),
+            purpose: "chat",
+          },
+          getProviderSessionBinding(threadContext.threadId),
+        );
 
         const effectiveSystemPrompt =
           request.provider === "anthropic" &&
@@ -469,6 +475,25 @@ export async function createChatResponse(
             }
           }
         } finally {
+          const diagnostics = session.getDiagnostics();
+          const recovery = diagnostics.recovery;
+          if (recovery) {
+            threadService.recordActivity({
+              workspaceId: threadContext.workspaceId,
+              threadId: threadContext.threadId,
+              scope: "chat-turn",
+              kind: "note",
+              message:
+                recovery.disposition === "resumed"
+                  ? `${request.provider === "openai" ? "Codex app-server" : "Claude Code"} resumed persisted provider session`
+                  : (recovery.message ??
+                    `${request.provider === "openai" ? "Codex app-server" : "Claude Code"} started a fresh provider session`),
+              status:
+                recovery.disposition === "fallback" ? "failed" : "completed",
+              producer: "chat-service",
+              occurredAt: recovery.timestamp,
+            });
+          }
           await session.dispose();
         }
 

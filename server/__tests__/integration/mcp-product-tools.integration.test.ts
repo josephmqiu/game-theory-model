@@ -14,10 +14,14 @@ vi.mock("../../services/ai/adapter-contract", () => ({
     const isCodex = providerInput === "openai" || providerInput === "codex";
     return {
       provider: isCodex ? "codex" : "claude",
-      createSession(key: { ownerId: string; runId?: string }) {
+      createSession(key: {
+        threadId: string;
+        runId?: string;
+        purpose?: string;
+      }) {
         return {
           provider: isCodex ? "codex" : "claude",
-          key,
+          context: key,
           streamChatTurn: vi.fn(),
           runStructuredTurn: vi.fn(async () => ({
             entities: [],
@@ -26,8 +30,11 @@ vi.mock("../../services/ai/adapter-contract", () => ({
           getDiagnostics: vi.fn(() => ({
             provider: isCodex ? "codex" : "claude",
             sessionId: "mcp-product-tools-session",
-            details: { ownerId: key.ownerId },
+            details: { threadId: key.threadId },
           })),
+          getBinding() {
+            return null;
+          },
           dispose: vi.fn(async () => {}),
         };
       },
@@ -177,10 +184,7 @@ describe("MCP product tools integration", () => {
   });
 
   it("handleToolCall returns error for unknown tool", async () => {
-    const result = await productTools.handleToolCall(
-      "nonexistent_tool",
-      {},
-    );
+    const result = await productTools.handleToolCall("nonexistent_tool", {});
     expect(result.isError).toBe(true);
     expect(result.text).toContain("Unknown tool");
   });

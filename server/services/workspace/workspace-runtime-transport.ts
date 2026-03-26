@@ -18,6 +18,14 @@ import { getWorkspaceDatabase } from "./workspace-db";
 import { createThreadService } from "./thread-service";
 import { buildWorkspaceRuntimeSnapshotCore } from "./workspace-runtime-query";
 import {
+  _resetWorkspaceRecoveryDiagnosticsForTest,
+  listWorkspaceRecoveryDiagnostics,
+} from "./runtime-recovery-diagnostics";
+import {
+  _resetRuntimeRecoveryForTest,
+  waitForRuntimeRecovery,
+} from "./runtime-recovery-service";
+import {
   getWorkspaceRuntimeChannelRevisions,
   listWorkspaceRuntimeReplayPushes,
   onWorkspaceRuntimePush,
@@ -152,6 +160,7 @@ async function handleHello(
   peerState: PeerState,
   envelope: WorkspaceRuntimeClientHello,
 ) {
+  await waitForRuntimeRecovery();
   let bootstrap;
   try {
     bootstrap = buildBootstrap(envelope, peerState.connectionId);
@@ -447,6 +456,7 @@ export function getWorkspaceRuntimeDiagnosticsSnapshot(
 ): WorkspaceRuntimeDiagnosticsSnapshot {
   return {
     recent: [...recentDiagnostics],
+    recoveryRecent: listWorkspaceRecoveryDiagnostics(),
     ...(connectionId
       ? {
           byConnectionId: [
@@ -461,6 +471,8 @@ export function _resetWorkspaceRuntimeTransportForTest(): void {
   recentDiagnostics.splice(0, recentDiagnostics.length);
   diagnosticsByConnectionId.clear();
   peerStates.clear();
+  _resetWorkspaceRecoveryDiagnosticsForTest();
+  _resetRuntimeRecoveryForTest();
 }
 
 onWorkspaceRuntimePush((push) => {

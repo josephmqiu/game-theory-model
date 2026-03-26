@@ -565,10 +565,14 @@ vi.mock("../ai/adapter-contract", () => ({
       : mockClaudeRunAnalysisPhase;
     return {
       provider: isCodex ? "codex" : "claude",
-      createSession(key: { ownerId: string; runId?: string }) {
+      createSession(key: {
+        threadId: string;
+        runId?: string;
+        purpose?: string;
+      }) {
         return {
           provider: isCodex ? "codex" : "claude",
-          key,
+          context: key,
           streamChatTurn: vi.fn(),
           runStructuredTurn<T = unknown>(input: {
             prompt: string;
@@ -598,8 +602,11 @@ vi.mock("../ai/adapter-contract", () => ({
           getDiagnostics: vi.fn(() => ({
             provider: isCodex ? "codex" : "claude",
             sessionId: "test-analysis-service-session",
-            details: { ownerId: key.ownerId },
+            details: { threadId: key.threadId },
           })),
+          getBinding() {
+            return null;
+          },
           dispose: vi.fn(async () => {}),
         };
       },

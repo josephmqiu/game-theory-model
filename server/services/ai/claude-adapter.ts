@@ -6,7 +6,7 @@ import type {
   AnalysisRunOptions,
   RuntimeAdapter,
   RuntimeAdapterSession,
-  RuntimeAdapterSessionKey,
+  RuntimeAdapterSessionContext,
   RuntimeChatTurnInput,
   RuntimeSessionDiagnostics,
   RuntimeStructuredTurnInput,
@@ -39,22 +39,167 @@ import {
 } from "../../mcp/product-tools";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 import { getClaudeProviderSnapshot } from "./claude-health";
+import {
+  createProviderSessionBindingService,
+  type ProviderSessionBindingRecoveryOutcome,
+  type ProviderSessionBindingState,
+} from "../workspace/provider-session-binding-service";
 
 type ClaudeAnalysisMode = "structured" | "json-fallback";
 
 interface ClaudeSessionState {
   sessionId: string;
-  key: RuntimeAdapterSessionKey;
+  context: RuntimeAdapterSessionContext;
+  providerSessionId?: string;
+  binding: ProviderSessionBindingState | null;
+  recovery?: ProviderSessionBindingRecoveryOutcome;
   debugFile?: string;
 }
 
 function createClaudeSessionState(
-  key: RuntimeAdapterSessionKey,
+  context: RuntimeAdapterSessionContext,
+  binding: ProviderSessionBindingState | null = null,
 ): ClaudeSessionState {
   return {
-    sessionId: `claude-${key.ownerId}-${Math.random().toString(36).slice(2, 10)}`,
-    key,
+    sessionId: `claude-${context.threadId}-${Math.random().toString(36).slice(2, 10)}`,
+    context,
+    binding,
+    ...(binding?.provider === "claude"
+      ? { providerSessionId: binding.providerSessionId }
+      : {}),
   };
+}
+
+function getClaudeBindingService() {
+  return createProviderSessionBindingService();
+}
+
+function captureClaudeProviderSessionId(
+  message: unknown,
+  session: ClaudeSessionState,
+): string | undefined {
+  if (!message || typeof message !== "object") {
+    return session.providerSessionId;
+  }
+
+  const record = message as Record<string, unknown>;
+  const nestedMessage =
+    record.message && typeof record.message === "object"
+      ? (record.message as Record<string, unknown>)
+      : null;
+  const candidate =
+    typeof record.session_id === "string"
+      ? record.session_id
+      : typeof nestedMessage?.session_id === "string"
+        ? nestedMessage.session_id
+        : undefined;
+
+  if (!candidate || candidate === session.providerSessionId) {
+    return session.providerSessionId;
+  }
+
+  session.providerSessionId = candidate;
+  if (!session.context.workspaceId) {
+    return candidate;
+  }
+
+  const bindingService = getClaudeBindingService();
+  session.binding = bindingService.upsertBinding({
+    version: 1,
+    provider: "claude",
+    workspaceId: session.context.workspaceId,
+    threadId: session.context.threadId,
+    purpose: session.context.purpose,
+    ...(session.context.runId ? { runId: session.context.runId } : {}),
+    ...(session.context.phaseTurnId
+      ? { phaseTurnId: session.context.phaseTurnId }
+      : {}),
+    providerSessionId: candidate,
+    claudeSessionId: candidate,
+    updatedAt: Date.now(),
+    ...(session.recovery ? { lastRecoveryOutcome: session.recovery } : {}),
+  });
+  return candidate;
+}
+
+function getClaudeResumeSessionId(
+  session: ClaudeSessionState,
+): string | undefined {
+  if (session.context.purpose !== "chat") {
+    return undefined;
+  }
+  if (session.binding?.provider === "claude") {
+    return session.binding.claudeSessionId;
+  }
+  return session.providerSessionId;
+}
+
+function buildClaudeRecoveryOutcome(
+  disposition: ProviderSessionBindingRecoveryOutcome["disposition"],
+  message?: string,
+  reason?: ProviderSessionBindingRecoveryOutcome["reason"],
+): ProviderSessionBindingRecoveryOutcome {
+  return {
+    disposition,
+    ...(message ? { message } : {}),
+    ...(reason ? { reason } : {}),
+    timestamp: Date.now(),
+  };
+}
+
+type ClaudeBindingService = ReturnType<typeof getClaudeBindingService>;
+
+function recordClaudeResumeDiag(
+  bindingService: ClaudeBindingService,
+  session: ClaudeSessionState,
+  code: "resume-attempt" | "resume-succeeded" | "resume-failed",
+  message: string,
+  providerSessionId?: string,
+  data?: Record<string, unknown>,
+): void {
+  bindingService.recordDiagnostic({
+    code,
+    level: code === "resume-failed" ? "warn" : "info",
+    message,
+    workspaceId: session.context.workspaceId,
+    threadId: session.context.threadId,
+    runId: session.context.runId,
+    phaseTurnId: session.context.phaseTurnId,
+    provider: "claude",
+    providerSessionId,
+    ...(data ? { data } : {}),
+  });
+}
+
+function handleClaudeResumeFailure(
+  session: ClaudeSessionState,
+  bindingService: ClaudeBindingService,
+  resumeSessionId: string,
+  errorMessage: string,
+): void {
+  recordClaudeResumeDiag(
+    bindingService,
+    session,
+    "resume-failed",
+    "Claude Code session resume failed",
+    resumeSessionId,
+    { error: errorMessage },
+  );
+  bindingService.clearBinding(session.context.threadId, {
+    workspaceId: session.context.workspaceId,
+    runId: session.context.runId,
+    phaseTurnId: session.context.phaseTurnId,
+    provider: "claude",
+    providerSessionId: resumeSessionId,
+    reason: "provider_rejected_binding",
+    message: "Cleared stale Claude Code session binding after resume failure",
+  });
+  session.binding = null;
+  session.providerSessionId = undefined;
+  session.recovery = buildClaudeRecoveryOutcome(
+    "started_fresh",
+    "Claude Code started a fresh provider session after stored session resume failed",
+  );
 }
 
 function isClaudeWebSearchTool(toolName: unknown): boolean {
@@ -82,6 +227,12 @@ function parsePartialJsonRecord(text: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+function shouldRetryClaudeWithoutResume(errorMessage: string): boolean {
+  return /resume|session|conversation|not found|invalid|stale|expired/i.test(
+    errorMessage,
+  );
 }
 
 // Re-export McpSdkServerConfigWithInstance so callers don't import the SDK directly
@@ -378,6 +529,7 @@ const CHAT_TIMEOUT_MS = analysisRuntimeConfig.claude.chatTimeoutMs;
 async function* streamClaudeChatTurn(
   input: RuntimeChatTurnInput,
   session: ClaudeSessionState,
+  allowResumeRetry = true,
 ): AsyncGenerator<ChatEvent> {
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
   const { buildClaudeAgentEnv, getClaudeAgentDebugFilePath } =
@@ -389,6 +541,8 @@ async function* streamClaudeChatTurn(
   const claudePath = resolveClaudeCli();
   const timeoutMs = input.timeoutMs ?? CHAT_TIMEOUT_MS;
   session.debugFile = debugFile ?? undefined;
+  const bindingService = getClaudeBindingService();
+  const resumeSessionId = getClaudeResumeSessionId(session);
 
   const chatMcp = await createChatMcpServer();
   const allowedTools = [
@@ -397,6 +551,16 @@ async function* streamClaudeChatTurn(
     ),
     "WebSearch",
   ];
+
+  if (resumeSessionId) {
+    recordClaudeResumeDiag(
+      bindingService,
+      session,
+      "resume-attempt",
+      "Attempting Claude Code session resume",
+      resumeSessionId,
+    );
+  }
 
   const q = query({
     prompt: input.prompt,
@@ -410,9 +574,10 @@ async function* streamClaudeChatTurn(
       includePartialMessages: true,
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
-      persistSession: false,
+      persistSession: true,
       settingSources: [],
       plugins: [],
+      ...(resumeSessionId ? { resume: resumeSessionId } : {}),
       env,
       ...(debugFile ? { debugFile } : {}),
       ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
@@ -453,6 +618,7 @@ async function* streamClaudeChatTurn(
 
   try {
     for await (const message of q) {
+      captureClaudeProviderSessionId(message, session);
       if (message.type === "stream_event") {
         const ev = message.event;
         if (ev.type === "content_block_delta") {
@@ -555,10 +721,41 @@ async function* streamClaudeChatTurn(
     } else if (!gotResult) {
       yield { type: "turn_complete" };
     }
+
+    if (resumeSessionId) {
+      session.recovery = buildClaudeRecoveryOutcome(
+        "resumed",
+        "Claude Code resumed a persisted session",
+      );
+      recordClaudeResumeDiag(
+        bindingService,
+        session,
+        "resume-succeeded",
+        "Claude Code session resume succeeded",
+        resumeSessionId,
+      );
+    } else if (session.providerSessionId) {
+      session.recovery = buildClaudeRecoveryOutcome(
+        "started_fresh",
+        "Claude Code started a fresh provider session",
+      );
+      if (session.binding) {
+        bindingService.recordOutcome(session.binding, session.recovery);
+      }
+    }
   } catch (err) {
     // Suppress errors caused by abort (client disconnect)
     if (aborted) return;
     const msg = err instanceof Error ? err.message : String(err);
+    if (
+      resumeSessionId &&
+      allowResumeRetry &&
+      shouldRetryClaudeWithoutResume(msg)
+    ) {
+      handleClaudeResumeFailure(session, bindingService, resumeSessionId, msg);
+      yield* streamClaudeChatTurn(input, session, false);
+      return;
+    }
     yield {
       type: "error",
       error: createProcessRuntimeError(msg, {
@@ -639,6 +836,7 @@ function buildAnalysisQuery(
   options?: AnalysisRunOptions,
   debugFile?: string,
   claudePath?: string,
+  resumeSessionId?: string,
 ) {
   return query({
     prompt: createStreamingPrompt(prompt),
@@ -650,9 +848,10 @@ function buildAnalysisQuery(
       mcpServers: { analysis: readOnlyMcp as any },
       includePartialMessages: true,
       permissionMode: "dontAsk",
-      persistSession: false,
+      persistSession: true,
       settingSources: [],
       plugins: [],
+      ...(resumeSessionId ? { resume: resumeSessionId } : {}),
       ...(mode === "structured"
         ? { outputFormat: { type: "json_schema" as const, schema } }
         : {}),
@@ -667,6 +866,7 @@ async function runClaudeAnalysisAttempt<T>(
   q: { close: () => void } & AsyncIterable<any>,
   mode: ClaudeAnalysisMode,
   model: string,
+  session: ClaudeSessionState,
   options?: AnalysisRunOptions,
 ): Promise<T | string> {
   try {
@@ -681,6 +881,7 @@ async function runClaudeAnalysisAttempt<T>(
     });
 
     for await (const message of q) {
+      captureClaudeProviderSessionId(message, session);
       if (options?.signal?.aborted) {
         serverWarn(options?.runId, "claude-adapter", "analysis-query-aborted", {
           mode,
@@ -866,12 +1067,24 @@ async function runClaudeStructuredTurn<T = unknown>(
   const debugFile = getClaudeAgentDebugFilePath();
   const claudePath = resolveClaudeCli();
   session.debugFile = debugFile ?? undefined;
+  const bindingService = getClaudeBindingService();
+  const resumeSessionId = getClaudeResumeSessionId(session);
   const readOnlyMcp = await createAnalysisMcpServer(input.runId);
   const allowedTools = ANALYSIS_TOOL_NAMES.map(
     (toolName) => `mcp__${ANALYSIS_MCP_SERVER_NAME}__${toolName}`,
   );
   if (input.webSearch !== false) {
     allowedTools.push("WebSearch");
+  }
+
+  if (resumeSessionId) {
+    recordClaudeResumeDiag(
+      bindingService,
+      session,
+      "resume-attempt",
+      "Attempting Claude Code session resume",
+      resumeSessionId,
+    );
   }
 
   const runAttempt = async (
@@ -897,10 +1110,11 @@ async function runClaudeStructuredTurn<T = unknown>(
       },
       debugFile,
       claudePath,
+      resumeSessionId,
     );
 
     if (!input.signal) {
-      return runClaudeAnalysisAttempt<T>(q, mode, input.model, {
+      return runClaudeAnalysisAttempt<T>(q, mode, input.model, session, {
         runId: input.runId,
         signal: input.signal,
         webSearch: input.webSearch,
@@ -911,7 +1125,7 @@ async function runClaudeStructuredTurn<T = unknown>(
     const onAbort = () => q.close();
     input.signal.addEventListener("abort", onAbort, { once: true });
     try {
-      return await runClaudeAnalysisAttempt<T>(q, mode, input.model, {
+      return await runClaudeAnalysisAttempt<T>(q, mode, input.model, session, {
         runId: input.runId,
         signal: input.signal,
         webSearch: input.webSearch,
@@ -923,10 +1137,45 @@ async function runClaudeStructuredTurn<T = unknown>(
   };
 
   try {
-    return (await runAttempt("structured", input.systemPrompt)) as T;
+    const result = (await runAttempt("structured", input.systemPrompt)) as T;
+    if (resumeSessionId) {
+      session.recovery = buildClaudeRecoveryOutcome(
+        "resumed",
+        "Claude Code resumed a persisted session",
+      );
+      recordClaudeResumeDiag(
+        bindingService,
+        session,
+        "resume-succeeded",
+        "Claude Code session resume succeeded",
+        resumeSessionId,
+      );
+      if (session.binding) {
+        bindingService.recordOutcome(session.binding, session.recovery);
+      }
+    } else if (session.binding) {
+      session.recovery = buildClaudeRecoveryOutcome(
+        "started_fresh",
+        "Claude Code started a fresh provider session",
+      );
+      bindingService.recordOutcome(session.binding, session.recovery);
+    }
+    return result;
   } catch (error) {
     const primaryMessage =
       error instanceof Error ? error.message : String(error);
+    if (resumeSessionId && shouldRetryClaudeWithoutResume(primaryMessage)) {
+      handleClaudeResumeFailure(
+        session,
+        bindingService,
+        resumeSessionId,
+        primaryMessage,
+      );
+      const freshSession = createClaudeSessionState(session.context, null);
+      freshSession.debugFile = session.debugFile;
+      freshSession.recovery = session.recovery;
+      return runClaudeStructuredTurn<T>(input, freshSession);
+    }
     serverWarn(input.runId, "claude-adapter", "analysis-query-failed", {
       mode: "structured",
       model: input.model,
@@ -970,12 +1219,15 @@ async function runClaudeStructuredTurn<T = unknown>(
 
 class ClaudeRuntimeSession implements RuntimeAdapterSession {
   readonly provider = "claude" as const;
-  readonly key: RuntimeAdapterSessionKey;
+  readonly context: RuntimeAdapterSessionContext;
   private readonly state: ClaudeSessionState;
 
-  constructor(key: RuntimeAdapterSessionKey) {
-    this.key = key;
-    this.state = createClaudeSessionState(key);
+  constructor(
+    context: RuntimeAdapterSessionContext,
+    binding: ProviderSessionBindingState | null = null,
+  ) {
+    this.context = context;
+    this.state = createClaudeSessionState(context, binding);
   }
 
   streamChatTurn(input: RuntimeChatTurnInput): AsyncGenerator<ChatEvent> {
@@ -992,12 +1244,22 @@ class ClaudeRuntimeSession implements RuntimeAdapterSession {
     return {
       provider: "claude",
       sessionId: this.state.sessionId,
-      ...(this.key.runId ? { runId: this.key.runId } : {}),
+      ...(this.context.runId ? { runId: this.context.runId } : {}),
+      ...(this.state.providerSessionId
+        ? { providerSessionId: this.state.providerSessionId }
+        : {}),
       ...(this.state.debugFile ? { logPath: this.state.debugFile } : {}),
+      ...(this.state.recovery ? { recovery: this.state.recovery } : {}),
       details: {
-        ownerId: this.key.ownerId,
+        workspaceId: this.context.workspaceId,
+        threadId: this.context.threadId,
+        purpose: this.context.purpose,
       },
     };
+  }
+
+  getBinding(): ProviderSessionBindingState | null {
+    return this.state.binding;
   }
 
   async dispose(): Promise<void> {
@@ -1008,8 +1270,11 @@ class ClaudeRuntimeSession implements RuntimeAdapterSession {
 
 export const claudeRuntimeAdapter: RuntimeAdapter = {
   provider: "claude",
-  createSession(key: RuntimeAdapterSessionKey): RuntimeAdapterSession {
-    return new ClaudeRuntimeSession(key);
+  createSession(
+    context: RuntimeAdapterSessionContext,
+    binding?: ProviderSessionBindingState | null,
+  ): RuntimeAdapterSession {
+    return new ClaudeRuntimeSession(context, binding ?? null);
   },
   async listModels() {
     const snapshot = await getClaudeProviderSnapshot();
@@ -1027,8 +1292,9 @@ export async function* streamChat(
   options?: StreamChatOptions,
 ): AsyncGenerator<ChatEvent> {
   const session = claudeRuntimeAdapter.createSession({
-    ownerId: options?.runId ?? "claude-chat",
+    threadId: options?.runId ?? "claude-chat",
     ...(options?.runId ? { runId: options.runId } : {}),
+    purpose: "chat",
   });
 
   try {
@@ -1053,8 +1319,9 @@ export async function runAnalysisPhase<T = unknown>(
   options?: AnalysisRunOptions,
 ): Promise<T> {
   const session = claudeRuntimeAdapter.createSession({
-    ownerId: options?.runId ?? "claude-analysis",
+    threadId: options?.runId ?? "claude-analysis",
     ...(options?.runId ? { runId: options.runId } : {}),
+    purpose: "analysis",
   });
 
   try {

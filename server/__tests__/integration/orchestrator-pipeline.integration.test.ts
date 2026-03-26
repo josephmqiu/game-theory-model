@@ -27,10 +27,14 @@ vi.mock("../../services/ai/adapter-contract", () => ({
     const isCodex = providerInput === "openai" || providerInput === "codex";
     return {
       provider: isCodex ? "codex" : "claude",
-      createSession(key: { ownerId: string; runId?: string }) {
+      createSession(key: {
+        threadId: string;
+        runId?: string;
+        purpose?: string;
+      }) {
         return {
           provider: isCodex ? "codex" : "claude",
-          key,
+          context: key,
           streamChatTurn: vi.fn(),
           runStructuredTurn<T = unknown>(input: {
             prompt: string;
@@ -60,8 +64,11 @@ vi.mock("../../services/ai/adapter-contract", () => ({
           getDiagnostics: vi.fn(() => ({
             provider: isCodex ? "codex" : "claude",
             sessionId: "orchestrator-pipeline-session",
-            details: { ownerId: key.ownerId },
+            details: { threadId: key.threadId },
           })),
+          getBinding() {
+            return null;
+          },
           dispose: vi.fn(async () => {}),
         };
       },
@@ -75,6 +82,31 @@ vi.mock("../../services/ai/adapter-contract", () => ({
       })),
     };
   }),
+}));
+
+vi.mock("../../services/workspace/provider-session-binding-service", () => ({
+  getProviderSessionBinding: vi.fn(() => null),
+  createProviderSessionBindingService: vi.fn(() => ({
+    getBinding: vi.fn(() => null),
+    upsertBinding: vi.fn((b: unknown) => b),
+    clearBinding: vi.fn(() => false),
+    recordDiagnostic: vi.fn(),
+    recordOutcome: vi.fn((b: unknown) => b),
+  })),
+  clearProviderSessionBinding: vi.fn(() => false),
+  upsertProviderSessionBinding: vi.fn((b: unknown) => b),
+  recordProviderSessionBindingDiagnostic: vi.fn(),
+}));
+
+vi.mock("../../services/workspace/runtime-recovery-service", () => ({
+  waitForRuntimeRecovery: vi.fn(async () => {}),
+  _resetRuntimeRecoveryForTest: vi.fn(),
+}));
+
+vi.mock("../../services/workspace/runtime-recovery-diagnostics", () => ({
+  recordWorkspaceRecoveryDiagnostic: vi.fn(),
+  listWorkspaceRecoveryDiagnostics: vi.fn(() => []),
+  _resetWorkspaceRecoveryDiagnosticsForTest: vi.fn(),
 }));
 
 vi.mock("../../utils/ai-logger", () => ({

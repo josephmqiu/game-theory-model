@@ -572,6 +572,75 @@ describe("claude-adapter", () => {
         output: [{ text: "[]" }],
       });
     });
+
+    it("uses a persisted Claude session binding to resume later chat turns", async () => {
+      const { claudeRuntimeAdapter } = await import("../claude-adapter");
+
+      mockQuery.mockImplementation(() => {
+        let done = false;
+        return {
+          close: mockQueryClose,
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                if (!done) {
+                  done = true;
+                  return {
+                    done: false,
+                    value: {
+                      type: "result",
+                      subtype: "success",
+                      is_error: false,
+                      result: "ok",
+                    },
+                  };
+                }
+                return { done: true, value: undefined };
+              },
+            };
+          },
+        };
+      });
+
+      const session = claudeRuntimeAdapter.createSession(
+        {
+          threadId: "thread-1",
+          purpose: "chat",
+        },
+        {
+          version: 1,
+          provider: "claude",
+          workspaceId: "workspace-1",
+          threadId: "thread-1",
+          purpose: "chat",
+          providerSessionId: "claude-session-123",
+          claudeSessionId: "claude-session-123",
+          updatedAt: Date.now(),
+        },
+      );
+
+      const events: ChatEvent[] = [];
+      for await (const event of session.streamChatTurn({
+        prompt: "resume me",
+        systemPrompt: "system",
+        model: "claude-sonnet-4-6",
+      })) {
+        events.push(event);
+      }
+
+      expect(events).toContainEqual({ type: "turn_complete" });
+      expect(mockQuery).toHaveBeenCalledOnce();
+      expect(mockQuery.mock.calls[0][0].options.resume).toBe(
+        "claude-session-123",
+      );
+      expect(session.getDiagnostics().recovery).toEqual(
+        expect.objectContaining({
+          disposition: "resumed",
+        }),
+      );
+
+      await session.dispose();
+    });
   });
 
   describe("runAnalysisPhase", () => {

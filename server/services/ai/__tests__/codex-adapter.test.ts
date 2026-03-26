@@ -48,6 +48,11 @@ vi.mock("node:child_process", () => ({
     }
     return mockChild;
   }),
+  spawnSync: vi.fn(() => ({
+    stdout: "/usr/bin/codex\n",
+    stderr: "",
+    status: 0,
+  })),
 }));
 
 vi.mock("../../../utils/codex-client", () => ({
@@ -600,6 +605,78 @@ describe("codex-adapter", () => {
         type: "text_delta",
         content: "wrong thread",
       });
+    });
+
+    it("reuses a persisted Codex thread binding for later chat turns", async () => {
+      const { codexRuntimeAdapter, _resetConnection } =
+        await import("../codex-adapter");
+      _resetConnection();
+
+      setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id, "turn-resumed-1");
+          queueMicrotask(() => {
+            emitNotification("item/agentMessage/delta", {
+              delta: "resumed ",
+              threadId: "thread-resume-1",
+              turnId: "turn-resumed-1",
+            });
+            emitTurnCompleted("thread-resume-1", "turn-resumed-1");
+          });
+        }
+      });
+
+      const session = codexRuntimeAdapter.createSession(
+        {
+          threadId: "thread-local-1",
+          purpose: "chat",
+        },
+        {
+          version: 1,
+          provider: "codex",
+          workspaceId: "workspace-1",
+          threadId: "thread-local-1",
+          purpose: "chat",
+          providerSessionId: "thread-resume-1",
+          codexThreadId: "thread-resume-1",
+          updatedAt: Date.now(),
+        },
+      );
+
+      const events: ChatEvent[] = [];
+      for await (const event of session.streamChatTurn({
+        prompt: "hello",
+        systemPrompt: "system",
+        model: "gpt-4o",
+      })) {
+        events.push(event);
+      }
+
+      const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
+      const serializedCalls = calls.map((call) => call[0]);
+      expect(serializedCalls.some((call) => call.includes('"thread/start"'))).toBe(
+        false,
+      );
+
+      const turnStartReq = JSON.parse(
+        serializedCalls.find((call) => call.includes('"turn/start"'))!.trim(),
+      );
+      expect(turnStartReq.params.threadId).toBe("thread-resume-1");
+      expect(events).toContainEqual({
+        type: "text_delta",
+        content: "resumed ",
+      });
+      expect(session.getDiagnostics().recovery).toEqual(
+        expect.objectContaining({
+          disposition: "resumed",
+        }),
+      );
+
+      await session.dispose();
     });
   });
 

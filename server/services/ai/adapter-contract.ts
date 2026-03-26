@@ -12,6 +12,10 @@ import {
   createProviderRuntimeError,
 } from "../../../shared/types/runtime-error";
 import type { AnalysisActivityCallback } from "./analysis-activity";
+import type {
+  ProviderSessionBindingRecoveryOutcome,
+  ProviderSessionBindingState,
+} from "../workspace/provider-session-binding-service";
 
 export type { RuntimeProvider } from "../../../shared/types/analysis-runtime";
 
@@ -31,9 +35,14 @@ export interface AnalysisRunOptions {
   onActivity?: AnalysisActivityCallback;
 }
 
-export interface RuntimeAdapterSessionKey {
-  ownerId: string;
+export type RuntimeSessionPurpose = "chat" | "analysis" | "recovery";
+
+export interface RuntimeAdapterSessionContext {
+  workspaceId?: string;
+  threadId: string;
   runId?: string;
+  phaseTurnId?: string;
+  purpose: RuntimeSessionPurpose;
 }
 
 export interface RuntimeChatTurnInput {
@@ -62,22 +71,28 @@ export interface RuntimeSessionDiagnostics {
   provider: RuntimeProvider;
   sessionId: string;
   runId?: string;
+  providerSessionId?: string;
   logPath?: string;
+  recovery?: ProviderSessionBindingRecoveryOutcome;
   details?: Record<string, unknown>;
 }
 
 export interface RuntimeAdapterSession {
   provider: RuntimeProvider;
-  key: RuntimeAdapterSessionKey;
+  context: RuntimeAdapterSessionContext;
   streamChatTurn(input: RuntimeChatTurnInput): AsyncGenerator<ChatEvent>;
   runStructuredTurn<T = unknown>(input: RuntimeStructuredTurnInput): Promise<T>;
   getDiagnostics(): RuntimeSessionDiagnostics;
+  getBinding(): ProviderSessionBindingState | null;
   dispose(): Promise<void>;
 }
 
 export interface RuntimeAdapter {
   provider: RuntimeProvider;
-  createSession(key: RuntimeAdapterSessionKey): RuntimeAdapterSession;
+  createSession(
+    context: RuntimeAdapterSessionContext,
+    binding?: ProviderSessionBindingState | null,
+  ): RuntimeAdapterSession;
   listModels(): Promise<RuntimeModelInfo[]>;
   checkHealth(): Promise<ProviderHealthState>;
 }
@@ -89,7 +104,7 @@ export function createBaseCapabilities(provider: RuntimeProvider) {
     toolCalls: true,
     webSearch: true,
     imageInput: provider === "claude",
-    threadResume: provider === "codex",
+    threadResume: provider === "claude" || provider === "codex",
   };
 }
 

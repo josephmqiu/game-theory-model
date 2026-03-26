@@ -55,7 +55,7 @@ async function loadAnalysisAdapter(provider?: string): Promise<RuntimeAdapter> {
       createSession(key) {
         return {
           provider: "claude",
-          key,
+          context: key,
           streamChatTurn: async function* () {
             throw new Error("Test adapter does not support chat turns");
           },
@@ -75,8 +75,11 @@ async function loadAnalysisAdapter(provider?: string): Promise<RuntimeAdapter> {
             return {
               provider: "claude",
               sessionId: "test-adapter-session",
-              details: { ownerId: key.ownerId },
+              details: { threadId: key.threadId },
             };
+          },
+          getBinding() {
+            return null;
           },
           async dispose() {},
         };
@@ -114,6 +117,8 @@ interface PhaseRuntimeContext {
 }
 
 export interface PhaseContext {
+  workspaceId?: string;
+  threadId?: string;
   priorEntities?: string;
   revisionRetryInstruction?: string;
   revisionSystemPrompt?: string;
@@ -1902,8 +1907,11 @@ export async function runPhase(
   try {
     const adapter = await loadAnalysisAdapter(context?.provider);
     const session = adapter.createSession({
-      ownerId: context?.runId ?? `phase-${phase}`,
+      workspaceId: context?.workspaceId,
+      threadId: context?.threadId ?? context?.runId ?? `phase-${phase}`,
       ...(context?.runId ? { runId: context.runId } : {}),
+      ...(context?.phaseTurnId ? { phaseTurnId: context.phaseTurnId } : {}),
+      purpose: "analysis",
     });
     try {
       adapterResult = await session.runStructuredTurn({
