@@ -123,6 +123,7 @@ describe("domain-event-store", () => {
     const events = database.eventStore.appendEvents([
       ...(context.createdThreadEvent ? [context.createdThreadEvent] : []),
       {
+        kind: "explicit" as const,
         type: "run.created",
         workspaceId: context.workspaceId,
         threadId: context.threadId,
@@ -148,6 +149,7 @@ describe("domain-event-store", () => {
         producer: "test",
       },
       {
+        kind: "explicit" as const,
         type: "run.status.changed",
         workspaceId: context.workspaceId,
         threadId: context.threadId,
@@ -223,6 +225,7 @@ describe("domain-event-store", () => {
     expect(() =>
       database.eventStore.appendEvents([
         {
+          kind: "run" as const,
           type: "phase.completed",
           runId: "run-1",
           payload: {
@@ -250,6 +253,7 @@ describe("domain-event-store", () => {
 
     database.eventStore.appendEvents([
       {
+        kind: "explicit" as const,
         type: "phase.started",
         workspaceId: context.workspaceId,
         threadId: context.threadId,
@@ -266,6 +270,7 @@ describe("domain-event-store", () => {
         producer: "test",
       },
       {
+        kind: "explicit" as const,
         type: "phase.activity.recorded",
         workspaceId: context.workspaceId,
         threadId: context.threadId,
@@ -280,6 +285,7 @@ describe("domain-event-store", () => {
         producer: "test",
       },
       {
+        kind: "explicit" as const,
         type: "phase.completed",
         workspaceId: context.workspaceId,
         threadId: context.threadId,
@@ -293,6 +299,7 @@ describe("domain-event-store", () => {
         producer: "test",
       },
       {
+        kind: "explicit" as const,
         type: "phase.started",
         workspaceId: context.workspaceId,
         threadId: context.threadId,
@@ -310,6 +317,7 @@ describe("domain-event-store", () => {
         producer: "test",
       },
       {
+        kind: "explicit" as const,
         type: "phase.activity.recorded",
         workspaceId: context.workspaceId,
         threadId: context.threadId,
@@ -325,6 +333,7 @@ describe("domain-event-store", () => {
         producer: "test",
       },
       {
+        kind: "explicit" as const,
         type: "phase.completed",
         workspaceId: context.workspaceId,
         threadId: context.threadId,
@@ -338,6 +347,7 @@ describe("domain-event-store", () => {
         producer: "test",
       },
       {
+        kind: "explicit" as const,
         type: "run.completed",
         workspaceId: context.workspaceId,
         threadId: context.threadId,
@@ -354,6 +364,7 @@ describe("domain-event-store", () => {
         producer: "test",
       },
       {
+        kind: "explicit" as const,
         type: "run.status.changed",
         workspaceId: context.workspaceId,
         threadId: context.threadId,
@@ -428,6 +439,7 @@ describe("domain-event-store", () => {
 
     database.eventStore.appendEvents([
       {
+        kind: "explicit" as const,
         type: "run.created",
         workspaceId: context.workspaceId,
         threadId: context.threadId,
@@ -449,6 +461,7 @@ describe("domain-event-store", () => {
         producer: "test",
       },
       {
+        kind: "explicit" as const,
         type: "run.status.changed",
         workspaceId: context.workspaceId,
         threadId: context.threadId,
@@ -487,6 +500,7 @@ describe("domain-event-store", () => {
 
     database.eventStore.appendEvents([
       {
+        kind: "explicit" as const,
         type: "run.completed",
         workspaceId: context.workspaceId,
         threadId: context.threadId,
@@ -523,6 +537,7 @@ describe("domain-event-store", () => {
 
     database.eventStore.appendEvents([
       {
+        kind: "explicit" as const,
         type: "phase.started",
         workspaceId: context.workspaceId,
         threadId: context.threadId,
@@ -539,6 +554,7 @@ describe("domain-event-store", () => {
         producer: "test",
       },
       {
+        kind: "explicit" as const,
         type: "run.failed",
         workspaceId: context.workspaceId,
         threadId: context.threadId,
@@ -602,6 +618,7 @@ describe("domain-event-store", () => {
     database.eventStore.appendEvents([
       ...(context.createdThreadEvent ? [context.createdThreadEvent] : []),
       {
+        kind: "explicit" as const,
         type: "message.recorded",
         workspaceId: context.workspaceId,
         threadId: context.threadId,
@@ -616,6 +633,7 @@ describe("domain-event-store", () => {
         producer: "test",
       },
       {
+        kind: "explicit" as const,
         type: "thread.activity.recorded",
         workspaceId: context.workspaceId,
         threadId: context.threadId,
@@ -633,6 +651,7 @@ describe("domain-event-store", () => {
         producer: "test",
       },
       {
+        kind: "explicit" as const,
         type: "message.recorded",
         workspaceId: context.workspaceId,
         threadId: context.threadId,

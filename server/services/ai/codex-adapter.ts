@@ -27,10 +27,15 @@ import type {
 import { mapRuntimeModels } from "./adapter-contract";
 import { getCodexProviderSnapshot } from "./codex-health";
 import {
-  createProviderSessionBindingService,
   type ProviderSessionBindingRecoveryOutcome,
   type ProviderSessionBindingState,
 } from "../workspace/provider-session-binding-service";
+import {
+  getBindingService,
+  buildRecoveryOutcome,
+  recordResumeDiag,
+  buildHistoryInjectedPrompt,
+} from "./adapter-session-utils";
 
 // ── Types ──
 
@@ -110,7 +115,7 @@ function createCodexSessionState(
 }
 
 function getCodexBindingService() {
-  return createProviderSessionBindingService();
+  return getBindingService();
 }
 
 function getCodexResumeThreadId(
@@ -120,19 +125,6 @@ function getCodexResumeThreadId(
     return session.binding.codexThreadId ?? session.binding.providerSessionId;
   }
   return session.providerSessionId;
-}
-
-function buildCodexRecoveryOutcome(
-  disposition: ProviderSessionBindingRecoveryOutcome["disposition"],
-  message?: string,
-  reason?: ProviderSessionBindingRecoveryOutcome["reason"],
-): ProviderSessionBindingRecoveryOutcome {
-  return {
-    disposition,
-    ...(message ? { message } : {}),
-    ...(reason ? { reason } : {}),
-    timestamp: Date.now(),
-  };
 }
 
 function persistCodexBinding(session: CodexSessionState): void {
@@ -162,30 +154,6 @@ function shouldRetryCodexWithoutBinding(errorMessage: string): boolean {
   return /thread|conversation|not found|invalid|stale|expired|unknown/i.test(
     errorMessage,
   );
-}
-
-type CodexBindingService = ReturnType<typeof getCodexBindingService>;
-
-function recordCodexResumeDiag(
-  bindingService: CodexBindingService,
-  session: CodexSessionState,
-  code: "resume-attempt" | "resume-succeeded" | "resume-failed",
-  message: string,
-  providerSessionId?: string,
-  data?: Record<string, unknown>,
-): void {
-  bindingService.recordDiagnostic({
-    code,
-    level: code === "resume-failed" ? "warn" : "info",
-    message,
-    workspaceId: session.context.workspaceId,
-    threadId: session.context.threadId,
-    runId: session.context.runId,
-    phaseTurnId: session.context.phaseTurnId,
-    provider: "codex",
-    providerSessionId,
-    ...(data ? { data } : {}),
-  });
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -328,20 +296,6 @@ function buildCodexTurnFailureMessage(
     : `Codex turn failed: ${summary}`;
 }
 
-function normalizeAnalysisError(error: unknown): Error {
-  const message = error instanceof Error ? error.message : String(error);
-  if (message === "Aborted") {
-    return new Error("Aborted");
-  }
-  if (
-    message.startsWith("Codex turn failed:") ||
-    message.startsWith("Failed to restore chat MCP config:")
-  ) {
-    return error instanceof Error ? error : new Error(message);
-  }
-  return new Error(buildCodexTurnFailureMessage(message));
-}
-
 function logSendRequestFailure(
   runId: string | undefined,
   event: string,
@@ -452,8 +406,8 @@ function handleIncomingLine(conn: AppServerConnection, line: string): void {
     for (const cb of conn.notificationCallbacks) {
       try {
         cb(parsed.method, params);
-      } catch {
-        // Notification handlers must not crash the line parser
+      } catch (err) {
+        console.warn("[codex-adapter] notification handler error:", err);
       }
     }
   }
@@ -502,18 +456,6 @@ function installToolSurface(
   serverLog(context?.runId, "codex-adapter", "mcp-config-written", {
     toolNames,
   });
-}
-
-function installAnalysisToolSurface(
-  toolNames: readonly string[],
-  context?: {
-    workspaceId?: string;
-    threadId?: string;
-    runId?: string;
-    phaseTurnId?: string;
-  },
-): void {
-  installToolSurface(toolNames, context);
 }
 
 function installChatToolSurface(): void {
@@ -853,9 +795,10 @@ export async function* streamChat(
   }
 
   if (resumeThreadId) {
-    recordCodexResumeDiag(
+    recordResumeDiag(
       bindingService,
-      session,
+      session.context,
+      "codex",
       "resume-attempt",
       "Attempting Codex thread resume",
       resumeThreadId,
@@ -1054,9 +997,10 @@ export async function* streamChat(
     removeListener();
     const msg = err instanceof Error ? err.message : String(err);
     if (resumeThreadId && shouldRetryCodexWithoutBinding(msg)) {
-      recordCodexResumeDiag(
+      recordResumeDiag(
         bindingService,
-        session,
+        session.context,
+        "codex",
         "resume-failed",
         "Codex rejected the stored thread binding",
         resumeThreadId,
@@ -1069,7 +1013,7 @@ export async function* streamChat(
       session.binding = null;
       session.providerSessionId = undefined;
       session.providerTurnId = undefined;
-      session.recovery = buildCodexRecoveryOutcome(
+      session.recovery = buildRecoveryOutcome(
         "started_fresh",
         "Codex started a fresh thread after the stored thread was rejected",
       );
@@ -1193,19 +1137,20 @@ export async function* streamChat(
     }
 
     if (resumeThreadId) {
-      session.recovery = buildCodexRecoveryOutcome(
+      session.recovery = buildRecoveryOutcome(
         "resumed",
         "Codex resumed a persisted thread",
       );
-      recordCodexResumeDiag(
+      recordResumeDiag(
         bindingService,
-        session,
+        session.context,
+        "codex",
         "resume-succeeded",
         "Codex thread resume succeeded",
         resumeThreadId,
       );
     } else if (session.providerSessionId) {
-      session.recovery ??= buildCodexRecoveryOutcome(
+      session.recovery ??= buildRecoveryOutcome(
         "started_fresh",
         "Codex started a fresh thread",
       );
@@ -1247,7 +1192,7 @@ export async function runAnalysisPhase<T = unknown>(
       ),
     ),
   );
-  installAnalysisToolSurface(allowedToolNames, {
+  installToolSurface(allowedToolNames, {
     workspaceId: session.context.workspaceId,
     threadId: session.context.threadId,
     runId,
@@ -1255,11 +1200,8 @@ export async function runAnalysisPhase<T = unknown>(
   });
 
   const conn = await startAppServer(runId);
-  let restoreError: Error | null = null;
-  let primaryError: Error | null = null;
   let threadId = "";
   let turnId: string | null = null;
-  let parsedResult: T | null = null;
 
   try {
     await reloadMcpServerConfig(conn, runId);
@@ -1583,44 +1525,23 @@ export async function runAnalysisPhase<T = unknown>(
         throw new Error("Analysis phase returned empty result");
       }
 
-      if (typeof result === "string") {
-        parsedResult = JSON.parse(result) as T;
-      } else {
-        parsedResult = result as T;
-      }
+      const parsedResult: T =
+        typeof result === "string" ? (JSON.parse(result) as T) : (result as T);
+      return parsedResult;
     } finally {
       removeListener();
     }
-  } catch (error) {
-    primaryError = normalizeAnalysisError(error);
   } finally {
     try {
       installChatToolSurface();
       await reloadMcpServerConfig(conn, runId);
       serverLog(runId, "codex-adapter", "analysis-mcp-restored");
     } catch (err) {
-      restoreError =
-        err instanceof Error
-          ? err
-          : new Error(`Failed to restore chat MCP config: ${String(err)}`);
       serverWarn(runId, "codex-adapter", "mcp-restore-failed", {
-        message: restoreError.message,
+        message: err instanceof Error ? err.message : String(err),
       });
-      if (!primaryError) {
-        primaryError = restoreError;
-      }
     }
   }
-
-  if (primaryError) {
-    throw primaryError;
-  }
-
-  if (parsedResult === null) {
-    throw new Error("Analysis phase completed without parsed result");
-  }
-
-  return parsedResult;
 }
 
 // ── Exports for testing ──
@@ -1645,13 +1566,10 @@ class CodexRuntimeSession implements RuntimeAdapterSession {
     // prompt so the model has context. Resumed sessions already have the full
     // conversation in the Codex thread state.
     const resumeThreadId = getCodexResumeThreadId(this.state);
-    let effectiveSystemPrompt = input.systemPrompt;
-    if (!resumeThreadId && input.messages && input.messages.length > 0) {
-      const history = input.messages
-        .map((m) => `${m.role}: ${m.content}`)
-        .join("\n\n");
-      effectiveSystemPrompt = `${input.systemPrompt}\n\n## Conversation History\n\n${history}`;
-    }
+    const effectiveSystemPrompt =
+      !resumeThreadId && input.messages && input.messages.length > 0
+        ? buildHistoryInjectedPrompt(input.systemPrompt, input.messages)
+        : input.systemPrompt;
 
     return streamChat(
       input.prompt,

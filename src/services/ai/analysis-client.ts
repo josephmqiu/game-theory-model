@@ -439,8 +439,3 @@ export function _resetForTest(): void {
   }
   useRunStatusStore.getState().resetForTest();
 }
-
-// Handle entity_snapshot from chat SSE stream
-export function handleChatEntitySnapshot(analysis: Analysis): void {
-  applyAnalysisSnapshot(analysis);
-}

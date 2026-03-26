@@ -3,6 +3,7 @@ import {
   createSessionRuntimeError,
   type RuntimeError,
 } from "../../../shared/types/runtime-error";
+import type { MethodologyPhase } from "../../../shared/types/methodology";
 import * as entityGraphService from "../entity-graph-service";
 import * as runtimeStatus from "../runtime-status";
 import { getWorkspaceDatabase } from "./workspace-db";
@@ -21,7 +22,7 @@ let startupRecoveryPromise: Promise<void> | null = null;
 function createRecoveryFailure(
   run: {
     provider: string | null;
-    activePhase: string | null;
+    activePhase: MethodologyPhase | null;
   },
   reason: ProviderSessionBindingRecoveryReason,
   providerSessionId?: string,
@@ -139,7 +140,7 @@ function appendRecoveryFailure(input: {
     workspaceId: string;
     threadId: string;
     provider: string | null;
-    activePhase: string | null;
+    activePhase: MethodologyPhase | null;
     progress: { completed: number; total: number };
     latestPhaseTurnId?: string;
   };
@@ -175,6 +176,7 @@ function appendRecoveryFailure(input: {
 
   getWorkspaceDatabase().eventStore.appendEvents([
     {
+      kind: "explicit" as const,
       type: "thread.activity.recorded",
       workspaceId: input.run.workspaceId,
       threadId: input.run.threadId,
@@ -191,20 +193,21 @@ function appendRecoveryFailure(input: {
       producer: "runtime-recovery-service",
     },
     {
+      kind: "explicit" as const,
       type: "run.failed",
       workspaceId: input.run.workspaceId,
       threadId: input.run.threadId,
       runId: input.run.id,
       payload: {
-        activePhase: input.run.activePhase as any,
+        activePhase: input.run.activePhase,
         latestPhaseTurnId: input.run.latestPhaseTurnId,
-        failedPhase: input.run.activePhase as any,
+        failedPhase: input.run.activePhase ?? undefined,
         error: failure,
         finishedAt,
         summary: {
           statusMessage: summaryMessage,
           ...(input.run.activePhase
-            ? { failedPhase: input.run.activePhase as any }
+            ? { failedPhase: input.run.activePhase }
             : {}),
           completedPhases: input.run.progress.completed,
         },
@@ -213,6 +216,7 @@ function appendRecoveryFailure(input: {
       producer: "runtime-recovery-service",
     },
     {
+      kind: "explicit" as const,
       type: "run.status.changed",
       workspaceId: input.run.workspaceId,
       threadId: input.run.threadId,
@@ -222,14 +226,14 @@ function appendRecoveryFailure(input: {
         activePhase: null,
         progress: input.run.progress,
         ...(input.run.activePhase
-          ? { failedPhase: input.run.activePhase as any }
+          ? { failedPhase: input.run.activePhase }
           : {}),
         failure,
         finishedAt,
         summary: {
           statusMessage: summaryMessage,
           ...(input.run.activePhase
-            ? { failedPhase: input.run.activePhase as any }
+            ? { failedPhase: input.run.activePhase }
             : {}),
           completedPhases: input.run.progress.completed,
         },

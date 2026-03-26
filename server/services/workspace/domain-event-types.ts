@@ -206,23 +206,46 @@ export type AnyDomainEvent = {
   [K in DomainEventType]: DomainEvent<K>;
 }[DomainEventType];
 
+interface DomainEventInputBase<TType extends DomainEventType> {
+  id?: string;
+  type: TType;
+  payload: DomainEventPayloadMap[TType];
+  commandId?: string;
+  receiptId?: string;
+  correlationId?: string;
+  causationId?: string;
+  causedByEventId?: string;
+  producer?: string;
+  occurredAt?: number;
+  schemaVersion?: number;
+}
+
+export interface DomainEventInputWithContext<
+  TType extends DomainEventType = DomainEventType,
+> extends DomainEventInputBase<TType> {
+  kind: "explicit";
+  workspaceId: string;
+  threadId: string;
+  runId?: string;
+}
+
+export interface DomainEventInputWithRunContext<
+  TType extends DomainEventType = DomainEventType,
+> extends DomainEventInputBase<TType> {
+  kind: "run";
+  runId: string;
+  workspaceId?: undefined;
+  threadId?: undefined;
+}
+
 export type DomainEventInput<TType extends DomainEventType = DomainEventType> =
-  {
-    id?: string;
-    type: TType;
-    payload: DomainEventPayloadMap[TType];
-    workspaceId?: string;
-    threadId?: string;
-    runId?: string;
-    commandId?: string;
-    receiptId?: string;
-    correlationId?: string;
-    causationId?: string;
-    causedByEventId?: string;
-    producer?: string;
-    occurredAt?: number;
-    schemaVersion?: number;
-  };
+  | DomainEventInputWithContext<TType>
+  | DomainEventInputWithRunContext<TType>;
+
+/** Bare event without context — used by wrappers that inject context before appending. */
+export type DomainEventInputBare<
+  TType extends DomainEventType = DomainEventType,
+> = DomainEventInputBase<TType>;
 
 export type AnyDomainEventInput = {
   [K in DomainEventType]: DomainEventInput<K>;

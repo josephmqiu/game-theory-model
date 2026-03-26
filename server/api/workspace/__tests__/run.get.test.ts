@@ -31,6 +31,7 @@ function seedRun() {
 
   database.eventStore.appendEvents([
     {
+      kind: "explicit" as const,
       type: "run.created",
       workspaceId: thread.workspaceId,
       threadId: thread.id,
@@ -75,6 +76,7 @@ function seedRun() {
       producer: "test",
     },
     {
+      kind: "explicit" as const,
       type: "phase.started",
       workspaceId: thread.workspaceId,
       threadId: thread.id,
@@ -112,6 +114,7 @@ function seedRun() {
       producer: "test",
     },
     {
+      kind: "explicit" as const,
       type: "phase.activity.recorded",
       workspaceId: thread.workspaceId,
       threadId: thread.id,
@@ -127,6 +130,7 @@ function seedRun() {
       producer: "test",
     },
     {
+      kind: "explicit" as const,
       type: "phase.completed",
       workspaceId: thread.workspaceId,
       threadId: thread.id,
@@ -145,6 +149,7 @@ function seedRun() {
       producer: "test",
     },
     {
+      kind: "explicit" as const,
       type: "run.completed",
       workspaceId: thread.workspaceId,
       threadId: thread.id,

@@ -46,10 +46,22 @@ import {
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 import { getClaudeProviderSnapshot } from "./claude-health";
 import {
-  createProviderSessionBindingService,
   type ProviderSessionBindingRecoveryOutcome,
   type ProviderSessionBindingState,
 } from "../workspace/provider-session-binding-service";
+import {
+  getBindingService,
+  type BindingService,
+  buildRecoveryOutcome,
+  recordResumeDiag,
+  buildHistoryInjectedPrompt,
+} from "./adapter-session-utils";
+import {
+  narrowSdkResult,
+  narrowContentBlock,
+  extractMessageContent,
+  type SdkStreamMessage,
+} from "./claude-sdk-types";
 
 type ClaudeAnalysisMode = "structured" | "json-fallback";
 
@@ -77,7 +89,7 @@ function createClaudeSessionState(
 }
 
 function getClaudeBindingService() {
-  return createProviderSessionBindingService();
+  return getBindingService();
 }
 
 function captureClaudeProviderSessionId(
@@ -137,42 +149,7 @@ function getClaudeResumeSessionId(
   return session.providerSessionId;
 }
 
-function buildClaudeRecoveryOutcome(
-  disposition: ProviderSessionBindingRecoveryOutcome["disposition"],
-  message?: string,
-  reason?: ProviderSessionBindingRecoveryOutcome["reason"],
-): ProviderSessionBindingRecoveryOutcome {
-  return {
-    disposition,
-    ...(message ? { message } : {}),
-    ...(reason ? { reason } : {}),
-    timestamp: Date.now(),
-  };
-}
-
-type ClaudeBindingService = ReturnType<typeof getClaudeBindingService>;
-
-function recordClaudeResumeDiag(
-  bindingService: ClaudeBindingService,
-  session: ClaudeSessionState,
-  code: "resume-attempt" | "resume-succeeded" | "resume-failed",
-  message: string,
-  providerSessionId?: string,
-  data?: Record<string, unknown>,
-): void {
-  bindingService.recordDiagnostic({
-    code,
-    level: code === "resume-failed" ? "warn" : "info",
-    message,
-    workspaceId: session.context.workspaceId,
-    threadId: session.context.threadId,
-    runId: session.context.runId,
-    phaseTurnId: session.context.phaseTurnId,
-    provider: "claude",
-    providerSessionId,
-    ...(data ? { data } : {}),
-  });
-}
+type ClaudeBindingService = BindingService;
 
 function handleClaudeResumeFailure(
   session: ClaudeSessionState,
@@ -180,9 +157,10 @@ function handleClaudeResumeFailure(
   resumeSessionId: string,
   errorMessage: string,
 ): void {
-  recordClaudeResumeDiag(
+  recordResumeDiag(
     bindingService,
-    session,
+    session.context,
+    "claude",
     "resume-failed",
     "Claude Code session resume failed",
     resumeSessionId,
@@ -199,7 +177,7 @@ function handleClaudeResumeFailure(
   });
   session.binding = null;
   session.providerSessionId = undefined;
-  session.recovery = buildClaudeRecoveryOutcome(
+  session.recovery = buildRecoveryOutcome(
     "started_fresh",
     "Claude Code started a fresh provider session after stored session resume failed",
   );
@@ -346,9 +324,16 @@ export async function createChatMcpServer() {
         content: [
           {
             type: "text" as const,
-            text: await handleCreateEntity(args as any),
+            text: await handleCreateEntity({
+              type: args.type,
+              phase: args.phase,
+              data: args.data,
+              confidence: args.confidence,
+              rationale: args.rationale,
+              revision: args.revision,
+            }),
           },
-        ], // eslint-disable-line @typescript-eslint/no-explicit-any
+        ],
       }),
     ),
     tool(
@@ -362,9 +347,12 @@ export async function createChatMcpServer() {
         content: [
           {
             type: "text" as const,
-            text: await handleUpdateEntity(args as any),
+            text: await handleUpdateEntity({
+              id: args.id,
+              updates: args.updates,
+            }),
           },
-        ], // eslint-disable-line @typescript-eslint/no-explicit-any
+        ],
       }),
     ),
     tool(
@@ -393,9 +381,14 @@ export async function createChatMcpServer() {
         content: [
           {
             type: "text" as const,
-            text: await handleCreateRelationship(args as any),
+            text: await handleCreateRelationship({
+              type: args.type,
+              fromId: args.fromId,
+              toId: args.toId,
+              metadata: args.metadata,
+            }),
           },
-        ], // eslint-disable-line @typescript-eslint/no-explicit-any
+        ],
       }),
     ),
     tool(
@@ -406,9 +399,9 @@ export async function createChatMcpServer() {
         content: [
           {
             type: "text" as const,
-            text: await handleDeleteRelationship(args as any),
+            text: await handleDeleteRelationship({ id: args.id }),
           },
-        ], // eslint-disable-line @typescript-eslint/no-explicit-any
+        ],
       }),
     ),
     tool(
@@ -660,9 +653,10 @@ async function* streamClaudeChatTurn(
   ];
 
   if (resumeSessionId) {
-    recordClaudeResumeDiag(
+    recordResumeDiag(
       bindingService,
-      session,
+      session.context,
+      "claude",
       "resume-attempt",
       "Attempting Claude Code session resume",
       resumeSessionId,
@@ -672,13 +666,10 @@ async function* streamClaudeChatTurn(
   // For non-resumed sessions, prepend conversation history into the system
   // prompt so the model has context. Resumed sessions already have the full
   // conversation in the SDK's persisted state.
-  let effectiveSystemPrompt = input.systemPrompt;
-  if (!resumeSessionId && input.messages && input.messages.length > 0) {
-    const history = input.messages
-      .map((m) => `${m.role}: ${m.content}`)
-      .join("\n\n");
-    effectiveSystemPrompt = `${input.systemPrompt}\n\n## Conversation History\n\n${history}`;
-  }
+  const effectiveSystemPrompt =
+    !resumeSessionId && input.messages && input.messages.length > 0
+      ? buildHistoryInjectedPrompt(input.systemPrompt, input.messages)
+      : input.systemPrompt;
 
   const q = query({
     prompt: input.prompt,
@@ -745,26 +736,24 @@ async function* streamClaudeChatTurn(
           }
           // thinking deltas are silently consumed (not part of ChatEvent schema)
         } else if (ev.type === "content_block_start") {
-          // Detect tool_use block start
-          if (
-            "content_block" in ev &&
-            (ev.content_block as any)?.type === "tool_use"
-          ) {
-            const block = ev.content_block as any;
-            yield {
-              type: "tool_call_start",
-              toolName: block.name ?? "unknown",
-              input: block.input ?? {},
-            };
+          if ("content_block" in ev) {
+            const block = narrowContentBlock(ev.content_block);
+            if (block.type === "tool_use") {
+              yield {
+                type: "tool_call_start",
+                toolName: block.name ?? "unknown",
+                input: block.input ?? {},
+              };
+            }
           }
         }
       } else if (message.type === "assistant") {
         // Track last assistant text for fallback
-        const content =
-          (message as any).message?.content ?? (message as any).content;
-        if (Array.isArray(content)) {
+        const content = extractMessageContent(message);
+        if (content) {
           // Extract tool results from content blocks
-          for (const block of content) {
+          for (const raw of content) {
+            const block = narrowContentBlock(raw);
             if (block.type === "tool_use") {
               // tool_use blocks in assistant message indicate tool invocation;
               // the result comes from tool_result blocks in subsequent user messages,
@@ -773,31 +762,27 @@ async function* streamClaudeChatTurn(
             } else if (block.type === "tool_result") {
               yield {
                 type: "tool_call_result",
-                toolName: (block as any).tool_name ?? "unknown",
-                output: (block as any).content ?? block,
+                toolName: block.name ?? "unknown",
+                output: block.content ?? raw,
               };
             }
           }
           const text = content
-            .filter((b: any) => b.type === "text")
-            .map((b: any) => b.text)
+            .map((b) => narrowContentBlock(b))
+            .filter((b) => b.type === "text")
+            .map((b) => b.text ?? "")
             .join("");
           if (text) lastAssistantText = text;
         }
       } else if (message.type === "result") {
         gotResult = true;
-        const isError =
-          "is_error" in message && Boolean((message as any).is_error);
-        if (message.subtype === "success" && !isError) {
+        const result = narrowSdkResult(message);
+        if (message.subtype === "success" && !result.is_error) {
           yield { type: "turn_complete" };
         } else {
-          const errors =
-            "errors" in message ? ((message as any).errors as string[]) : [];
-          const resultText =
-            "result" in message ? String((message as any).result ?? "") : "";
           const msg =
-            errors.join("; ") ||
-            resultText ||
+            (result.errors ?? []).join("; ") ||
+            (result.result ?? "") ||
             `Query ended with: ${message.subtype}`;
           yield {
             type: "error",
@@ -841,19 +826,20 @@ async function* streamClaudeChatTurn(
     }
 
     if (resumeSessionId) {
-      session.recovery = buildClaudeRecoveryOutcome(
+      session.recovery = buildRecoveryOutcome(
         "resumed",
         "Claude Code resumed a persisted session",
       );
-      recordClaudeResumeDiag(
+      recordResumeDiag(
         bindingService,
-        session,
+        session.context,
+        "claude",
         "resume-succeeded",
         "Claude Code session resume succeeded",
         resumeSessionId,
       );
     } else if (session.providerSessionId) {
-      session.recovery = buildClaudeRecoveryOutcome(
+      session.recovery = buildRecoveryOutcome(
         "started_fresh",
         "Claude Code started a fresh provider session",
       );
@@ -981,7 +967,7 @@ function buildAnalysisQuery(
 }
 
 async function runClaudeAnalysisAttempt<T>(
-  q: { close: () => void } & AsyncIterable<any>,
+  q: { close: () => void } & AsyncIterable<SdkStreamMessage>,
   mode: ClaudeAnalysisMode,
   model: string,
   session: ClaudeSessionState,
@@ -1047,59 +1033,55 @@ async function runClaudeAnalysisAttempt<T>(
             }
           }
         }
-        if (
-          ev?.type === "content_block_start" &&
-          ((ev.content_block as any)?.type === "tool_use" ||
-            (ev.content_block as any)?.type === "server_tool_use")
-        ) {
-          const toolName = (ev.content_block as any)?.name ?? "unknown";
-          const input = (ev.content_block as any)?.input;
-          const query = isClaudeWebSearchTool(toolName)
-            ? getWebSearchQueryFromToolInput(input)
-            : undefined;
-          if (typeof ev.index === "number") {
-            toolInputStates.set(ev.index, {
+        if (ev?.type === "content_block_start") {
+          const block = narrowContentBlock(ev.content_block);
+          if (block.type === "tool_use" || block.type === "server_tool_use") {
+            const toolName = block.name ?? "unknown";
+            const input = block.input;
+            const query = isClaudeWebSearchTool(toolName)
+              ? getWebSearchQueryFromToolInput(input)
+              : undefined;
+            if (typeof ev.index === "number") {
+              toolInputStates.set(ev.index, {
+                toolName,
+                partialJson: "",
+                ...(query ? { lastQuery: query } : {}),
+              });
+            }
+            options?.onActivity?.({
+              kind: isClaudeWebSearchTool(toolName) ? "web-search" : "tool",
+              message: `Using ${getClaudeActivityToolLabel(toolName)}`,
+              ...(isClaudeWebSearchTool(toolName)
+                ? {}
+                : { toolName: getClaudeActivityToolLabel(toolName) }),
+              ...(query ? { query } : {}),
+            });
+            serverLog(options?.runId, "claude-adapter", "analysis-tool-call", {
+              mode,
               toolName,
-              partialJson: "",
-              ...(query ? { lastQuery: query } : {}),
+              ...(query ? { query } : {}),
             });
           }
-          options?.onActivity?.({
-            kind: isClaudeWebSearchTool(toolName) ? "web-search" : "tool",
-            message: `Using ${getClaudeActivityToolLabel(toolName)}`,
-            ...(isClaudeWebSearchTool(toolName)
-              ? {}
-              : { toolName: getClaudeActivityToolLabel(toolName) }),
-            ...(query ? { query } : {}),
-          });
-          serverLog(options?.runId, "claude-adapter", "analysis-tool-call", {
-            mode,
-            toolName,
-            ...(query ? { query } : {}),
-          });
         }
       }
 
       if (message.type === "result") {
-        const isError =
-          "is_error" in message && Boolean((message as any).is_error);
-        const textResult =
-          "result" in message ? String((message as any).result ?? "") : "";
-        const structured = (message as any).structured_output;
-        const errors =
-          "errors" in message ? ((message as any).errors as string[]) : [];
+        const result = narrowSdkResult(message);
+        const textResult = result.result ?? "";
+        const structured = result.structured_output;
+        const errors = result.errors ?? [];
 
         serverLog(options?.runId, "claude-adapter", "analysis-query-result", {
           mode,
           model,
           subtype: message.subtype,
-          isError,
+          isError: result.is_error ?? false,
           hasStructuredOutput: structured !== undefined,
           hasTextResult: textResult.length > 0,
           errorCount: errors.length,
         });
 
-        if (message.subtype === "success" && !isError) {
+        if (message.subtype === "success" && !result.is_error) {
           if (mode === "structured") {
             if (structured !== undefined) {
               return structured as T;
@@ -1208,9 +1190,10 @@ async function runClaudeStructuredTurn<T = unknown>(
   }
 
   if (resumeSessionId) {
-    recordClaudeResumeDiag(
+    recordResumeDiag(
       bindingService,
-      session,
+      session.context,
+      "claude",
       "resume-attempt",
       "Attempting Claude Code session resume",
       resumeSessionId,
@@ -1269,13 +1252,14 @@ async function runClaudeStructuredTurn<T = unknown>(
   try {
     const result = (await runAttempt("structured", input.systemPrompt)) as T;
     if (resumeSessionId) {
-      session.recovery = buildClaudeRecoveryOutcome(
+      session.recovery = buildRecoveryOutcome(
         "resumed",
         "Claude Code resumed a persisted session",
       );
-      recordClaudeResumeDiag(
+      recordResumeDiag(
         bindingService,
-        session,
+        session.context,
+        "claude",
         "resume-succeeded",
         "Claude Code session resume succeeded",
         resumeSessionId,
@@ -1284,7 +1268,7 @@ async function runClaudeStructuredTurn<T = unknown>(
         bindingService.recordOutcome(session.binding, session.recovery);
       }
     } else if (session.binding) {
-      session.recovery = buildClaudeRecoveryOutcome(
+      session.recovery = buildRecoveryOutcome(
         "started_fresh",
         "Claude Code started a fresh provider session",
       );

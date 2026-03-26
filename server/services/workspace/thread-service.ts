@@ -110,7 +110,8 @@ function parseThreadMessageState(
 ): ThreadMessageState {
   try {
     return JSON.parse(raw) as ThreadMessageState;
-  } catch {
+  } catch (err) {
+    console.warn("[thread-service] failed to parse thread message state:", err);
     return fallback;
   }
 }
@@ -189,6 +190,7 @@ export function createThreadService(
       const occurredAt = input.occurredAt ?? Date.now();
       database.eventStore.appendEvents([
         {
+          kind: "explicit" as const,
           type: "thread.renamed",
           workspaceId: input.workspaceId,
           threadId: input.threadId,
@@ -221,6 +223,7 @@ export function createThreadService(
       const occurredAt = input.occurredAt ?? Date.now();
       database.eventStore.appendEvents([
         {
+          kind: "explicit" as const,
           type: "thread.deleted",
           workspaceId: input.workspaceId,
           threadId: input.threadId,
@@ -276,6 +279,7 @@ export function createThreadService(
       const messageId = input.messageId ?? `msg-${nanoid()}`;
       database.eventStore.appendEvents([
         {
+          kind: "explicit" as const,
           type: "message.recorded",
           workspaceId: input.workspaceId,
           threadId: input.threadId,
@@ -319,6 +323,7 @@ export function createThreadService(
       const activityId = input.activityId ?? `activity-${nanoid()}`;
       const [event] = database.eventStore.appendEvents([
         {
+          kind: "explicit" as const,
           type: "thread.activity.recorded",
           workspaceId: input.workspaceId,
           threadId: input.threadId,

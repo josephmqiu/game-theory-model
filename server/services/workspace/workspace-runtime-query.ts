@@ -57,7 +57,11 @@ function parseThreadMessageState(
 ): ThreadMessageState {
   try {
     return JSON.parse(raw) as ThreadMessageState;
-  } catch {
+  } catch (err) {
+    console.warn(
+      "[workspace-runtime-query] failed to parse thread message state:",
+      err,
+    );
     return fallback;
   }
 }

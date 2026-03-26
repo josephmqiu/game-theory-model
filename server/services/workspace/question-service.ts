@@ -53,6 +53,7 @@ export function createPendingQuestion(
   const db = getWorkspaceDatabase();
   db.eventStore.appendEvents([
     {
+      kind: "explicit" as const,
       type: "question.created",
       workspaceId: input.workspaceId,
       threadId: input.threadId,
@@ -68,6 +69,7 @@ export function createPendingQuestion(
       occurredAt: now,
     },
     {
+      kind: "explicit" as const,
       type: "thread.activity.recorded",
       workspaceId: input.workspaceId,
       threadId: input.threadId,
@@ -143,10 +145,19 @@ export function resolveQuestion(input: ResolveQuestionInput): void {
   }
 
   const thread = db.threads.getThreadState(existing.question.threadId);
-  const workspaceId = thread?.workspaceId;
+  if (!thread) {
+    serverWarn(
+      undefined,
+      "question-service",
+      `Thread "${existing.question.threadId}" not found for question "${input.questionId}"`,
+    );
+    return;
+  }
+  const workspaceId = thread.workspaceId;
 
   db.eventStore.appendEvents([
     {
+      kind: "explicit" as const,
       type: "question.resolved",
       workspaceId,
       threadId: existing.question.threadId,
@@ -161,6 +172,7 @@ export function resolveQuestion(input: ResolveQuestionInput): void {
       occurredAt: now,
     },
     {
+      kind: "explicit" as const,
       type: "thread.activity.recorded",
       workspaceId,
       threadId: existing.question.threadId,

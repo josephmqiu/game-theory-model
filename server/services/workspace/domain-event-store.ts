@@ -510,13 +510,16 @@ export function createDomainEventStore(input: {
 
         for (const rawEvent of events) {
           const recordedAt = Date.now();
-          let workspaceId = rawEvent.workspaceId;
-          let threadId = rawEvent.threadId;
+          let workspaceId: string | undefined;
+          let threadId: string | undefined;
 
-          if (rawEvent.runId && (!workspaceId || !threadId)) {
+          if (rawEvent.kind === "run") {
             const resolved = resolveRunContext(repositories, rawEvent.runId);
-            workspaceId ??= resolved.workspaceId;
-            threadId ??= resolved.threadId;
+            workspaceId = resolved.workspaceId;
+            threadId = resolved.threadId;
+          } else {
+            workspaceId = rawEvent.workspaceId;
+            threadId = rawEvent.threadId;
           }
 
           if (!workspaceId || !threadId) {
@@ -594,6 +597,7 @@ export function createDomainEventStore(input: {
         createdThreadEvent: resolved.threadExists
           ? undefined
           : {
+              kind: "explicit" as const,
               type: "thread.created",
               workspaceId: resolved.workspaceId,
               threadId: resolved.threadId,

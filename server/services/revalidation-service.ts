@@ -26,7 +26,7 @@ import { commitPhaseSnapshot } from "./revision-diff";
 import { createRunLogger, serverWarn, timer } from "../utils/ai-logger";
 import type {
   AnyDomainEventInput,
-  DomainEventInput,
+  DomainEventInputBare,
 } from "./workspace/domain-event-types";
 import { nanoid } from "nanoid";
 import type { RunSummaryState } from "../../shared/types/workspace-state";
@@ -98,13 +98,14 @@ function emitProgress(event: AnalysisProgressEvent): void {
 
 function appendRevalidationEvents(
   runId: string,
-  events: DomainEventInput[],
+  events: DomainEventInputBare[],
 ): void {
   getWorkspaceDatabase().eventStore.appendEvents(
     events.map(
       (event) =>
         ({
           ...event,
+          kind: "run" as const,
           runId,
           producer: "revalidation-service",
         }) as AnyDomainEventInput,
@@ -282,6 +283,7 @@ export function revalidate(
       ? [threadContext.createdThreadEvent]
       : []),
     {
+      kind: "explicit" as const,
       type: "run.created",
       workspaceId: threadContext.workspaceId,
       threadId: threadContext.threadId,
@@ -303,6 +305,7 @@ export function revalidate(
       producer: "revalidation-service",
     },
     {
+      kind: "explicit" as const,
       type: "run.status.changed",
       workspaceId: threadContext.workspaceId,
       threadId: threadContext.threadId,
@@ -363,7 +366,10 @@ async function executeRevalidation(
     phaseTurnCounts[p] = turnIndex;
     const phaseTurnId = `phase-turn-${nanoid()}`;
     latestPhaseTurnId = phaseTurnId;
-    const existingBinding = getProviderSessionBinding(runState.threadId, "analysis");
+    const existingBinding = getProviderSessionBinding(
+      runState.threadId,
+      "analysis",
+    );
     if (existingBinding) {
       upsertProviderSessionBinding({
         ...existingBinding,

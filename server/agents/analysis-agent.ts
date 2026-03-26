@@ -56,7 +56,7 @@ import {
 } from "../services/synthesis-service";
 import type {
   AnyDomainEventInput,
-  DomainEventInput,
+  DomainEventInputBare,
 } from "../services/workspace/domain-event-types";
 import { nanoid } from "nanoid";
 import type { RunSummaryState } from "../../shared/types/workspace-state";
@@ -325,13 +325,14 @@ function emitPhaseActivity(
 function appendRunLifecycleEvents(
   run: Pick<ActiveRun, "runId" | "workspaceId" | "threadId">,
   producer: string,
-  events: DomainEventInput[],
+  events: DomainEventInputBare[],
 ): void {
   getWorkspaceDatabase().eventStore.appendEvents(
     events.map(
       (event) =>
         ({
           ...event,
+          kind: "explicit" as const,
           workspaceId: run.workspaceId,
           threadId: run.threadId,
           runId: run.runId,
@@ -1052,6 +1053,7 @@ export async function runFull(
         ? [resolvedThreadContext.createdThreadEvent]
         : []),
       {
+        kind: "explicit" as const,
         type: "run.created",
         workspaceId: resolvedThreadContext.workspaceId,
         threadId: resolvedThreadContext.threadId,
@@ -1077,6 +1079,7 @@ export async function runFull(
         producer: persistenceContext.producer ?? "analysis-agent",
       },
       {
+        kind: "explicit" as const,
         type: "run.status.changed",
         workspaceId: resolvedThreadContext.workspaceId,
         threadId: resolvedThreadContext.threadId,
