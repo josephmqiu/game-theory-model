@@ -245,18 +245,20 @@ function tableExists(db: DatabaseSync, tableName: string): boolean {
 }
 
 function providerSessionBindingsNeedMigration(db: DatabaseSync): boolean {
-  return tableExists(db, "provider_session_bindings") &&
-    !getColumnNames(db, "provider_session_bindings").has("purpose");
+  return (
+    tableExists(db, "provider_session_bindings") &&
+    !getColumnNames(db, "provider_session_bindings").has("purpose")
+  );
 }
 
-function migrateProviderSessionBindingsToPurposeKey(
-  db: DatabaseSync,
-): void {
+function migrateProviderSessionBindingsToPurposeKey(db: DatabaseSync): void {
   if (!providerSessionBindingsNeedMigration(db)) {
     return;
   }
 
   db.exec(`
+    BEGIN TRANSACTION;
+
     ALTER TABLE provider_session_bindings RENAME TO provider_session_bindings_legacy;
 
     CREATE TABLE provider_session_bindings (
@@ -296,6 +298,8 @@ function migrateProviderSessionBindingsToPurposeKey(
     FROM provider_session_bindings_legacy;
 
     DROP TABLE provider_session_bindings_legacy;
+
+    COMMIT;
   `);
 }
 
@@ -350,24 +354,14 @@ function ensureProjectionColumns(db: DatabaseSync): void {
     "summary_status_message",
     "summary_status_message TEXT",
   );
-  ensureColumn(
-    db,
-    "runs",
-    "summary_failed_phase",
-    "summary_failed_phase TEXT",
-  );
+  ensureColumn(db, "runs", "summary_failed_phase", "summary_failed_phase TEXT");
   ensureColumn(
     db,
     "runs",
     "summary_completed_phases",
     "summary_completed_phases INTEGER NOT NULL DEFAULT 0",
   );
-  ensureColumn(
-    db,
-    "runs",
-    "prompt_analysis_type",
-    "prompt_analysis_type TEXT",
-  );
+  ensureColumn(db, "runs", "prompt_analysis_type", "prompt_analysis_type TEXT");
   ensureColumn(
     db,
     "runs",
@@ -381,12 +375,7 @@ function ensureProjectionColumns(db: DatabaseSync): void {
     "prompt_template_set_identity TEXT",
   );
   ensureColumn(db, "runs", "prompt_pack_id", "prompt_pack_id TEXT");
-  ensureColumn(
-    db,
-    "runs",
-    "prompt_pack_version",
-    "prompt_pack_version TEXT",
-  );
+  ensureColumn(db, "runs", "prompt_pack_version", "prompt_pack_version TEXT");
   ensureColumn(db, "runs", "prompt_pack_mode", "prompt_pack_mode TEXT");
   ensureColumn(
     db,

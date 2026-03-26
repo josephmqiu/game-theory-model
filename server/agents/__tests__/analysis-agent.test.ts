@@ -57,6 +57,11 @@ const mockRunPhase = vi.fn<
     topic: string,
     context?: {
       phaseBrief?: string;
+      promptBundle?: {
+        system: string;
+        user: string;
+        toolPolicy?: unknown;
+      };
       revisionRetryInstruction?: string;
       provider?: string;
       model?: string;
@@ -1566,9 +1571,12 @@ describe("analysis-orchestrator", () => {
       expect(mockRunPhase).toHaveBeenCalledTimes(10);
       expect(mockRunPhase.mock.calls[1][0]).toBe("player-identification");
       expect(mockRunPhase.mock.calls[2][0]).toBe("player-identification");
-      expect(mockRunPhase.mock.calls[2][2]?.revisionRetryInstruction).toContain(
-        "appeared truncated",
-      );
+      // Retry instruction is baked into promptBundle, not passed as a separate field
+      const retryCtx = mockRunPhase.mock.calls[2][2] as
+        | { promptBundle?: { user: string }; revisionRetryInstruction?: string }
+        | undefined;
+      expect(retryCtx?.revisionRetryInstruction).toBeUndefined();
+      expect(retryCtx?.promptBundle?.user).toContain("appeared truncated");
       expect(mockCommitPhaseSnapshot).toHaveBeenCalledTimes(10);
       expect(mockCommitPhaseSnapshot.mock.calls[2][0]).toMatchObject({
         allowLargeReductionCommit: true,
@@ -1900,6 +1908,97 @@ describe("analysis-orchestrator", () => {
       expect(secondBaselineContext?.phaseBrief).toContain("fact-1");
       expect(secondBaselineContext?.phaseBrief).not.toContain("game-1");
       expect(secondBaselineContext?.phaseBrief).not.toContain("scenario-1");
+    });
+  });
+
+  // ── promptBundle propagation ──
+
+  describe("promptBundle propagation", () => {
+    it("passes promptBundle to runPhase for every phase", async () => {
+      mockRunPhase
+        .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
+        .mockResolvedValueOnce(makePhaseResult("player-identification"))
+        .mockResolvedValueOnce(makePhaseResult("baseline-model"))
+        .mockResolvedValueOnce(makePhaseResult("historical-game"))
+        .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
+        .mockResolvedValueOnce(makePhaseResult("assumptions"))
+        .mockResolvedValueOnce(makePhaseResult("elimination"))
+        .mockResolvedValueOnce(makePhaseResult("scenarios"))
+        .mockResolvedValueOnce(makePhaseResult("meta-check"));
+
+      await orchestrator.runFull("Test topic");
+      await flushAsync();
+
+      expect(mockRunPhase).toHaveBeenCalledTimes(9);
+
+      for (let i = 0; i < 9; i++) {
+        const context = mockRunPhase.mock.calls[i][2] as
+          | { promptBundle?: { system: string; user: string } }
+          | undefined;
+        expect(context?.promptBundle).toBeDefined();
+        expect(typeof context?.promptBundle?.system).toBe("string");
+        expect(typeof context?.promptBundle?.user).toBe("string");
+        expect(context?.promptBundle?.system.length).toBeGreaterThan(0);
+        expect(context?.promptBundle?.user.length).toBeGreaterThan(0);
+      }
+    });
+
+    it("does not pass revisionRetryInstruction on truncation retry when promptBundle is provided", async () => {
+      let callCount = 0;
+      mockCommitPhaseSnapshot.mockImplementation(
+        ({
+          entities,
+          relationships,
+        }: {
+          entities: PhaseOutputEntity[];
+          relationships: Array<{ type: string }>;
+        }) => {
+          callCount++;
+          // First call to commitPhaseSnapshot for phase 1 returns retry_required
+          if (callCount === 1) {
+            return {
+              status: "retry_required" as const,
+              retryMessage: "Entity count mismatch",
+              originalAiEntityCount: 3,
+              returnedAiEntityCount: 1,
+            };
+          }
+          return {
+            status: "applied" as const,
+            summary: {
+              entitiesCreated: entities.filter((e) => e.id === null).length,
+              entitiesUpdated: entities.filter((e) => e.id !== null).length,
+              entitiesDeleted: 0,
+              relationshipsCreated: relationships.length,
+              relationshipsDeleted: 0,
+              currentPhaseEntityIds: [],
+            },
+          };
+        },
+      );
+
+      // First call succeeds (triggers retry), retry also succeeds
+      mockRunPhase
+        .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
+        .mockResolvedValueOnce(makePhaseResult("situational-grounding")) // retry
+        .mockResolvedValueOnce(makePhaseResult("player-identification"))
+        .mockResolvedValueOnce(makePhaseResult("baseline-model"))
+        .mockResolvedValueOnce(makePhaseResult("historical-game"))
+        .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
+        .mockResolvedValueOnce(makePhaseResult("assumptions"))
+        .mockResolvedValueOnce(makePhaseResult("elimination"))
+        .mockResolvedValueOnce(makePhaseResult("scenarios"))
+        .mockResolvedValueOnce(makePhaseResult("meta-check"));
+
+      await orchestrator.runFull("Test topic");
+      await flushAsync();
+
+      // The retry call (index 1) should have a promptBundle but NOT revisionRetryInstruction
+      const retryContext = mockRunPhase.mock.calls[1][2] as
+        | { promptBundle?: unknown; revisionRetryInstruction?: string }
+        | undefined;
+      expect(retryContext?.promptBundle).toBeDefined();
+      expect(retryContext?.revisionRetryInstruction).toBeUndefined();
     });
   });
 });

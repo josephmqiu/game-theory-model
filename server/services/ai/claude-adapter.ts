@@ -245,6 +245,12 @@ export type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-
 /**
  * Build an in-process MCP server exposing the chat-mode product tools.
  * Uses createSdkMcpServer() + tool() from the Agent SDK.
+ *
+ * Chat tools intentionally omit AnalysisToolContext — there is no active
+ * analysis run during chat, so read-only tools (getEntity, queryEntities,
+ * queryRelationships) operate on the global entity graph without run
+ * attribution. requestLoopback writes to the __unassigned__ run key,
+ * which is harmless — the orchestrator only reads triggers keyed by runId.
  */
 export async function createChatMcpServer() {
   const { createSdkMcpServer, tool } =
@@ -437,12 +443,16 @@ export async function createAnalysisMcpServer(
   const { z } = await import("zod/v4");
 
   const normalizedContext =
-    typeof contextOrRunId === "string" ? { runId: contextOrRunId } : contextOrRunId;
+    typeof contextOrRunId === "string"
+      ? { runId: contextOrRunId }
+      : contextOrRunId;
   const toolContext: AnalysisToolContext = {
     ...(normalizedContext.workspaceId
       ? { workspaceId: normalizedContext.workspaceId }
       : {}),
-    ...(normalizedContext.threadId ? { threadId: normalizedContext.threadId } : {}),
+    ...(normalizedContext.threadId
+      ? { threadId: normalizedContext.threadId }
+      : {}),
     ...(normalizedContext.runId ? { runId: normalizedContext.runId } : {}),
     ...(normalizedContext.phaseTurnId
       ? { phaseTurnId: normalizedContext.phaseTurnId }

@@ -179,11 +179,7 @@ describe("prompt-pack-registry", () => {
       source: {
         kind: "filesystem",
         path: expect.stringContaining(
-          join(
-            DEFAULT_ANALYSIS_TYPE,
-            DEFAULT_PROMPT_PACK_MODE,
-            "pack.json",
-          ),
+          join(DEFAULT_ANALYSIS_TYPE, DEFAULT_PROMPT_PACK_MODE, "pack.json"),
         ),
       },
     });
@@ -291,5 +287,44 @@ describe("prompt-pack-registry", () => {
     ).toThrow(
       `Unsupported prompt template for phase "revalidation" and variant "initial" in pack "${DEFAULT_PROMPT_PACK_ID}@${DEFAULT_PROMPT_PACK_VERSION}".`,
     );
+  });
+
+  it("rejects path traversal in template file paths", () => {
+    const root = mkdtempSync(join(tmpdir(), "prompt-pack-traversal-"));
+    tempRoots.push(root);
+
+    const manifestDir = join(
+      root,
+      DEFAULT_ANALYSIS_TYPE,
+      DEFAULT_PROMPT_PACK_MODE,
+    );
+    mkdirSync(manifestDir, { recursive: true });
+
+    const manifest = {
+      analysisType: DEFAULT_ANALYSIS_TYPE,
+      mode: DEFAULT_PROMPT_PACK_MODE,
+      id: "traversal-test",
+      version: "1.0.0",
+      templateFiles: [
+        {
+          phase: "situational-grounding",
+          variant: "initial",
+          path: "../../etc/passwd",
+        },
+      ],
+    };
+    writeFileSync(
+      join(manifestDir, "pack.json"),
+      JSON.stringify(manifest),
+      "utf8",
+    );
+
+    expect(() =>
+      resolvePromptPack({
+        analysisType: DEFAULT_ANALYSIS_TYPE,
+        mode: DEFAULT_PROMPT_PACK_MODE,
+        roots: { packagedRoot: root },
+      }),
+    ).toThrow(/Path traversal detected/);
   });
 });

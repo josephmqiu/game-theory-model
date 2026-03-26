@@ -41,67 +41,18 @@ import type { RunLogger } from "../utils/ai-logger";
 import type { AnalysisActivityCallback } from "./ai/analysis-activity";
 import type { AnalysisEffortLevel } from "../../shared/types/analysis-runtime";
 import type { PromptPackToolPolicy } from "../../shared/types/prompt-pack";
-import type {
-  RuntimeAdapter,
-  RuntimeStructuredTurnInput,
-} from "./ai/adapter-contract";
-import { getRuntimeAdapter } from "./ai/adapter-contract";
+import type { RuntimeAdapter } from "./ai/adapter-contract";
+import { loadRuntimeAdapter } from "./ai/adapter-loader";
 import { buildPhasePromptBundle } from "./analysis-prompt-provenance";
 import { getProviderSessionBinding } from "./workspace";
 
 async function loadAnalysisAdapter(provider?: string): Promise<RuntimeAdapter> {
-  if (process.env.GAME_THEORY_ANALYSIS_TEST_MODE === "1") {
-    const mod = await import("./ai/test-adapter");
-    return {
-      provider: "claude",
-      createSession(key) {
-        return {
-          provider: "claude",
-          context: key,
-          streamChatTurn: async function* () {
-            throw new Error("Test adapter does not support chat turns");
-          },
-          runStructuredTurn<T = unknown>(input: RuntimeStructuredTurnInput) {
-            return mod.runAnalysisPhase<T>(
-              input.prompt,
-              input.systemPrompt,
-              input.model,
-              input.schema,
-              {
-                signal: input.signal,
-                onActivity: input.onActivity,
-              },
-            );
-          },
-          getDiagnostics() {
-            return {
-              provider: "claude",
-              sessionId: "test-adapter-session",
-              details: { threadId: key.threadId },
-            };
-          },
-          getBinding() {
-            return null;
-          },
-          async dispose() {},
-        };
-      },
-      async listModels() {
-        return [];
-      },
-      async checkHealth() {
-        return {
-          provider: "claude",
-          status: "healthy",
-          reason: null,
-          checkedAt: Date.now(),
-          checks: [],
-        };
-      },
-    };
-  }
-
-  return getRuntimeAdapter(provider as "anthropic" | "openai" | undefined);
+  return loadRuntimeAdapter({
+    provider,
+    testStubLabel: "test-adapter-session",
+    supportsChatTurns: false,
+    forwardActivity: true,
+  });
 }
 
 // ── Public types ──
@@ -1917,16 +1868,18 @@ export async function runPhase(
   let adapterResult: unknown;
   try {
     const adapter = await loadAnalysisAdapter(context?.provider);
-    const session = adapter.createSession({
-      workspaceId: context?.workspaceId,
-      threadId: context?.threadId ?? context?.runId ?? `phase-${phase}`,
-      ...(context?.runId ? { runId: context.runId } : {}),
-      ...(context?.phaseTurnId ? { phaseTurnId: context.phaseTurnId } : {}),
-      purpose: "analysis",
-    },
-    context?.threadId
-      ? getProviderSessionBinding(context.threadId, "analysis")
-      : null);
+    const session = adapter.createSession(
+      {
+        workspaceId: context?.workspaceId,
+        threadId: context?.threadId ?? context?.runId ?? `phase-${phase}`,
+        ...(context?.runId ? { runId: context.runId } : {}),
+        ...(context?.phaseTurnId ? { phaseTurnId: context.phaseTurnId } : {}),
+        purpose: "analysis",
+      },
+      context?.threadId
+        ? getProviderSessionBinding(context.threadId, "analysis")
+        : null,
+    );
     try {
       adapterResult = await session.runStructuredTurn({
         prompt: user,

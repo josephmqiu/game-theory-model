@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import type { MethodologyPhase } from "../../shared/types/methodology";
@@ -29,7 +29,11 @@ function defaultFilesystemRoot(): string {
   return join(homedir(), ".gta", "analysis-types");
 }
 
-function manifestPathFor(root: string, analysisType: string, mode: PromptPackMode): string {
+function manifestPathFor(
+  root: string,
+  analysisType: string,
+  mode: PromptPackMode,
+): string {
   return join(root, analysisType, mode, "pack.json");
 }
 
@@ -76,7 +80,11 @@ function normalizeTemplateFile(
   }
 
   return {
-    phase: assertStringField(value.phase, "templateFiles[].phase", manifestPath) as MethodologyPhase,
+    phase: assertStringField(
+      value.phase,
+      "templateFiles[].phase",
+      manifestPath,
+    ) as MethodologyPhase,
     variant: assertStringField(
       value.variant,
       "templateFiles[].variant",
@@ -97,7 +105,9 @@ function normalizePromptPackManifest(
   }
 
   const templateFiles = Array.isArray(raw.templateFiles)
-    ? raw.templateFiles.map((entry) => normalizeTemplateFile(entry, manifestPath))
+    ? raw.templateFiles.map((entry) =>
+        normalizeTemplateFile(entry, manifestPath),
+      )
     : null;
 
   if (!templateFiles || templateFiles.length === 0) {
@@ -117,8 +127,7 @@ function normalizePromptPackManifest(
     version: assertStringField(raw.version, "version", manifestPath),
     source: isRecord(raw.source)
       ? {
-          kind:
-            raw.source.kind === "filesystem" ? "filesystem" : "bundled",
+          kind: raw.source.kind === "filesystem" ? "filesystem" : "bundled",
           ...(typeof raw.source.path === "string" &&
           raw.source.path.trim().length > 0
             ? { path: raw.source.path }
@@ -135,8 +144,10 @@ function normalizePromptPackManifest(
                   enabledAnalysisTools: Array.isArray(
                     phase.toolPolicy.enabledAnalysisTools,
                   )
-                    ? phase.toolPolicy.enabledAnalysisTools
-                        .filter((tool): tool is string => typeof tool === "string" && tool.trim().length > 0)
+                    ? phase.toolPolicy.enabledAnalysisTools.filter(
+                        (tool): tool is string =>
+                          typeof tool === "string" && tool.trim().length > 0,
+                      )
                     : [],
                   ...(typeof phase.toolPolicy.webSearch === "boolean"
                     ? { webSearch: phase.toolPolicy.webSearch }
@@ -149,7 +160,11 @@ function normalizePromptPackManifest(
               : { enabledAnalysisTools: [] };
 
             return {
-              phase: assertStringField(phase.phase, "phases[].phase", manifestPath) as MethodologyPhase,
+              phase: assertStringField(
+                phase.phase,
+                "phases[].phase",
+                manifestPath,
+              ) as MethodologyPhase,
               objective: assertStringField(
                 phase.objective,
                 "phases[].objective",
@@ -217,8 +232,15 @@ function loadPackFromManifest(
   );
   const manifestDir = dirname(manifestPath);
 
+  const resolvedManifestDir = resolve(manifestDir);
   const templates = manifest.templateFiles.map((templateFile) => {
     const templatePath = join(manifestDir, templateFile.path);
+    const resolvedTemplatePath = resolve(templatePath);
+    if (!resolvedTemplatePath.startsWith(resolvedManifestDir + sep)) {
+      throw new Error(
+        `Path traversal detected in template "${templateFile.path}" in manifest "${manifestPath}".`,
+      );
+    }
     if (!existsSync(templatePath)) {
       throw new Error(
         `Prompt-pack template file not found at "${templatePath}" for manifest "${manifestPath}".`,

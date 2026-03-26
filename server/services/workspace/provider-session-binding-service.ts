@@ -92,10 +92,10 @@ function parseBindingJson(
         workspaceId: parsed.workspaceId,
         threadId: parsed.threadId,
         purpose: parsed.purpose ?? fallback.purpose,
-        ...(parsed.runId ?? fallback.runId
+        ...((parsed.runId ?? fallback.runId)
           ? { runId: parsed.runId ?? fallback.runId ?? undefined }
           : {}),
-        ...(parsed.phaseTurnId ?? fallback.phaseTurnId
+        ...((parsed.phaseTurnId ?? fallback.phaseTurnId)
           ? {
               phaseTurnId:
                 parsed.phaseTurnId ?? fallback.phaseTurnId ?? undefined,
@@ -105,7 +105,9 @@ function parseBindingJson(
         ...(parsed.claudeSessionId
           ? { claudeSessionId: parsed.claudeSessionId }
           : {}),
-        ...(parsed.codexThreadId ? { codexThreadId: parsed.codexThreadId } : {}),
+        ...(parsed.codexThreadId
+          ? { codexThreadId: parsed.codexThreadId }
+          : {}),
         ...(parsed.codexTurnId ? { codexTurnId: parsed.codexTurnId } : {}),
         updatedAt: parsed.updatedAt,
         ...(parsed.lastRecoveryOutcome
@@ -209,7 +211,6 @@ export function clearProviderSessionBinding(
     workspaceId?: string;
     runId?: string;
     reason?: ProviderSessionBindingRecoveryReason;
-    expectedPurpose?: ProviderSessionBindingPurpose;
     purpose?: ProviderSessionBindingPurpose;
     phaseTurnId?: string;
     provider?: RuntimeProvider;
@@ -217,15 +218,12 @@ export function clearProviderSessionBinding(
     message?: string;
   } = {},
 ): boolean {
-  const purpose = options.purpose ?? options.expectedPurpose ?? "chat";
+  const purpose = options.purpose ?? "chat";
   const existing = getProviderSessionBinding(threadId, purpose);
   if (!existing) {
     return false;
   }
   if (options.runId && existing.runId && existing.runId !== options.runId) {
-    return false;
-  }
-  if (options.expectedPurpose && existing.purpose !== options.expectedPurpose) {
     return false;
   }
 

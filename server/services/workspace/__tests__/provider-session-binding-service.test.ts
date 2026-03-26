@@ -6,9 +6,8 @@ import type { ThreadState } from "../../../../shared/types/workspace-state";
 let testDatabase: WorkspaceDatabase;
 
 vi.mock("../workspace-db", async () => {
-  const actual = await vi.importActual<typeof import("../workspace-db")>(
-    "../workspace-db",
-  );
+  const actual =
+    await vi.importActual<typeof import("../workspace-db")>("../workspace-db");
   return {
     ...actual,
     getWorkspaceDatabase: () => testDatabase,
@@ -143,7 +142,6 @@ describe("provider-session-binding-service", () => {
     expect(
       clearProviderSessionBinding("thread-1", {
         purpose: "analysis",
-        expectedPurpose: "analysis",
         runId: "run-analysis",
       }),
     ).toBe(true);

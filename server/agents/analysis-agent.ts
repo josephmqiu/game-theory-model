@@ -48,11 +48,8 @@ import {
 } from "../services/workspace";
 import { createRunLogger, timer } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
-import type {
-  RuntimeAdapter,
-  RuntimeStructuredTurnInput,
-} from "../services/ai/adapter-contract";
-import { getRuntimeAdapter } from "../services/ai/adapter-contract";
+import type { RuntimeAdapter } from "../services/ai/adapter-contract";
+import { loadRuntimeAdapter } from "../services/ai/adapter-loader";
 import {
   synthesizeReport,
   SYNTHESIS_SYSTEM_PROMPT,
@@ -134,7 +131,6 @@ function clearAnalysisRunBinding(
   clearProviderSessionBinding(run.threadId, {
     runId: run.runId,
     purpose: "analysis",
-    expectedPurpose: "analysis",
     reason: "process_terminated",
   });
 }
@@ -167,60 +163,35 @@ const TRIGGER_TARGET_PHASE: Record<LoopbackTriggerType, MethodologyPhase> = {
 const PHASE_TIMEOUT_MS = analysisRuntimeConfig.orchestrator.phaseTimeoutMs;
 const RUN_TIMEOUT_MS = analysisRuntimeConfig.orchestrator.runTimeoutMs;
 
+function createPhaseTimeout(ms: number, abort: AbortController) {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const promise = new Promise<PhaseResult>((_, reject) => {
+    timer = setTimeout(() => {
+      abort.abort();
+      reject(new Error("Phase timeout"));
+    }, ms);
+  });
+  return {
+    promise,
+    clear() {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    },
+  };
+}
+
 // ── Synthesis adapter ──
 
 async function loadSynthesisAdapter(
   provider?: string,
 ): Promise<RuntimeAdapter> {
-  if (process.env.GAME_THEORY_ANALYSIS_TEST_MODE === "1") {
-    const mod = await import("../services/ai/test-adapter");
-    return {
-      provider: "claude",
-      createSession(key) {
-        return {
-          provider: "claude",
-          context: key,
-          streamChatTurn: async function* () {
-            throw new Error("Test adapter does not support chat turns");
-          },
-          runStructuredTurn<T = unknown>(input: RuntimeStructuredTurnInput) {
-            return mod.runAnalysisPhase<T>(
-              input.prompt,
-              input.systemPrompt,
-              input.model,
-              input.schema,
-              { signal: input.signal },
-            );
-          },
-          getDiagnostics() {
-            return {
-              provider: "claude",
-              sessionId: "test-synthesis-adapter",
-              details: { threadId: key.threadId },
-            };
-          },
-          getBinding() {
-            return null;
-          },
-          async dispose() {},
-        };
-      },
-      async listModels() {
-        return [];
-      },
-      async checkHealth() {
-        return {
-          provider: "claude",
-          status: "healthy",
-          reason: null,
-          checkedAt: Date.now(),
-          checks: [],
-        };
-      },
-    };
-  }
-
-  return getRuntimeAdapter(provider as "anthropic" | "openai" | undefined);
+  return loadRuntimeAdapter({
+    provider,
+    testStubLabel: "test-synthesis-adapter",
+    supportsChatTurns: false,
+  });
 }
 
 /** JSON Schema for synthesis structured output — mirrors analysisReportDataSchema */
@@ -605,13 +576,7 @@ async function executeSinglePhase(
 
     // Per-phase timeout via AbortController
     const phaseAbort = new AbortController();
-    let phaseTimer: ReturnType<typeof setTimeout> | null = null;
-    const phaseTimeoutPromise = new Promise<PhaseResult>((_, reject) => {
-      phaseTimer = setTimeout(() => {
-        phaseAbort.abort();
-        reject(new Error("Phase timeout"));
-      }, PHASE_TIMEOUT_MS);
-    });
+    let phaseTimeout = createPhaseTimeout(PHASE_TIMEOUT_MS, phaseAbort);
 
     // Also abort if external signal fires
     const onExternalAbort = () => phaseAbort.abort();
@@ -658,10 +623,10 @@ async function executeSinglePhase(
             });
           },
         }),
-        phaseTimeoutPromise,
+        phaseTimeout.promise,
       ]);
     } catch (err) {
-      if (phaseTimer) clearTimeout(phaseTimer);
+      phaseTimeout.clear();
       externalSignal?.removeEventListener("abort", onExternalAbort);
 
       if (externalSignal?.aborted) {
@@ -698,7 +663,7 @@ async function executeSinglePhase(
       }
       continue;
     } finally {
-      if (phaseTimer) clearTimeout(phaseTimer);
+      phaseTimeout.clear();
       externalSignal?.removeEventListener("abort", onExternalAbort);
     }
 
@@ -760,17 +725,20 @@ async function executeSinglePhase(
             },
           ]);
 
+          // Fresh timeout for the truncation retry — the primary timeout was already cleared.
+          phaseTimeout = createPhaseTimeout(PHASE_TIMEOUT_MS, phaseAbort);
+
           const retryResult = await Promise.race([
             runPhase(phase, topic, {
               workspaceId: run.workspaceId,
               threadId: run.threadId,
               phaseBrief: phaseBrief.phaseBrief,
+              // retryMessage is already embedded in retryPromptBundle via buildPhasePromptBundle
               promptBundle: {
                 system: retryPromptBundle.system,
                 user: retryPromptBundle.user,
                 toolPolicy: retryPromptBundle.toolPolicy,
               },
-              revisionRetryInstruction: commitResult.retryMessage,
               provider: run.provider,
               model: run.model,
               runtime: run.runtime,
@@ -802,8 +770,10 @@ async function executeSinglePhase(
                 });
               },
             }),
-            phaseTimeoutPromise,
+            phaseTimeout.promise,
           ]);
+
+          phaseTimeout.clear();
 
           if (!retryResult.success) {
             result = retryResult;
@@ -1430,6 +1400,9 @@ export async function runFull(
           }
         }
 
+        // Reset convergence counter on forward progress — passCount guards
+        // against oscillation, not accumulation of independent loopback triggers.
+        passCount = 0;
         phaseIndex++;
       }
 
