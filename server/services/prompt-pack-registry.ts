@@ -13,7 +13,6 @@ import type {
   ResolvedPromptPack,
   ResolvedPromptTemplate,
 } from "../../shared/types/prompt-pack";
-import { DEFAULT_PROMPT_PACK_MODE } from "../../shared/types/prompt-pack";
 import { hashText } from "../utils/hash-text";
 
 export interface PromptPackResolutionRoots {
@@ -55,18 +54,24 @@ function assertStringField(
   );
 }
 
+const VALID_PROMPT_PACK_MODES: ReadonlySet<string> = new Set([
+  "analysis-runtime",
+  "synthesis",
+  "chat",
+]);
+
 function assertPromptPackMode(
   value: unknown,
   manifestPath: string,
 ): PromptPackMode {
   const mode = assertStringField(value, "mode", manifestPath);
-  if (mode !== DEFAULT_PROMPT_PACK_MODE) {
+  if (!VALID_PROMPT_PACK_MODES.has(mode)) {
     throw new Error(
       `Unsupported prompt-pack mode "${mode}" in manifest "${manifestPath}".`,
     );
   }
 
-  return mode;
+  return mode as PromptPackMode;
 }
 
 function normalizeTemplateFile(
@@ -84,7 +89,7 @@ function normalizeTemplateFile(
       value.phase,
       "templateFiles[].phase",
       manifestPath,
-    ) as MethodologyPhase,
+    ),
     variant: assertStringField(
       value.variant,
       "templateFiles[].variant",
@@ -335,6 +340,36 @@ export function resolveAnalysisPromptTemplate(input: {
   if (!template) {
     throw new Error(
       `Unsupported prompt template for phase "${input.phase}" and variant "${input.variant}" in pack "${pack.id}@${pack.version}".`,
+    );
+  }
+
+  return {
+    ...template,
+    pack,
+  };
+}
+
+export function resolvePromptTemplate(input: {
+  analysisType: string;
+  mode: PromptPackMode;
+  templateId: string;
+  variant: PromptTemplateVariant;
+  roots?: PromptPackResolutionRoots;
+}): ResolvedPromptTemplate & { pack: ResolvedPromptPack } {
+  const pack = resolvePromptPack({
+    analysisType: input.analysisType,
+    mode: input.mode,
+    ...(input.roots ? { roots: input.roots } : {}),
+  });
+  const template = pack.templates.find(
+    (candidate) =>
+      candidate.phase === input.templateId &&
+      candidate.variant === input.variant,
+  );
+
+  if (!template) {
+    throw new Error(
+      `Unsupported prompt template for templateId "${input.templateId}" and variant "${input.variant}" in pack "${pack.id}@${pack.version}".`,
     );
   }
 

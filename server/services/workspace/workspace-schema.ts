@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const WORKSPACE_SCHEMA_VERSION = 5;
+export const WORKSPACE_SCHEMA_VERSION = 7;
 
 const BASE_SCHEMA_SQL = `
 PRAGMA foreign_keys = ON;
@@ -192,6 +192,80 @@ CREATE INDEX IF NOT EXISTS idx_domain_events_run_sequence ON domain_events(run_i
 CREATE INDEX IF NOT EXISTS idx_domain_events_command_id ON domain_events(command_id);
 CREATE INDEX IF NOT EXISTS idx_domain_events_caused_by_event_id ON domain_events(caused_by_event_id);
 CREATE INDEX IF NOT EXISTS idx_phase_turn_summaries_run_id ON phase_turn_summaries(run_id);
+
+-- Entity graph persistence (v6)
+CREATE TABLE IF NOT EXISTS graph_entities (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  analysis_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  phase TEXT NOT NULL,
+  confidence TEXT NOT NULL,
+  source TEXT NOT NULL,
+  stale INTEGER NOT NULL DEFAULT 0,
+  "group" TEXT,
+  provenance_source TEXT,
+  provenance_run_id TEXT,
+  entity_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS graph_relationships (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  analysis_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  from_entity_id TEXT NOT NULL,
+  to_entity_id TEXT NOT NULL,
+  relationship_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS graph_phase_states (
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  analysis_id TEXT NOT NULL,
+  phase TEXT NOT NULL,
+  status TEXT NOT NULL,
+  phase_state_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (workspace_id, analysis_id, phase)
+);
+
+CREATE TABLE IF NOT EXISTS graph_analysis_metadata (
+  analysis_id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  topic TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_graph_entities_workspace ON graph_entities(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_graph_entities_analysis ON graph_entities(analysis_id);
+CREATE INDEX IF NOT EXISTS idx_graph_entities_phase ON graph_entities(workspace_id, phase);
+CREATE INDEX IF NOT EXISTS idx_graph_entities_stale ON graph_entities(workspace_id, stale) WHERE stale = 1;
+CREATE INDEX IF NOT EXISTS idx_graph_relationships_workspace ON graph_relationships(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_graph_relationships_analysis ON graph_relationships(analysis_id);
+CREATE INDEX IF NOT EXISTS idx_graph_relationships_from ON graph_relationships(from_entity_id);
+CREATE INDEX IF NOT EXISTS idx_graph_relationships_to ON graph_relationships(to_entity_id);
+CREATE INDEX IF NOT EXISTS idx_graph_analysis_metadata_workspace ON graph_analysis_metadata(workspace_id);
+
+-- Pending questions (v7)
+CREATE TABLE IF NOT EXISTS pending_questions (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  run_id TEXT,
+  phase TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  question_json TEXT NOT NULL,
+  answer_json TEXT,
+  created_at INTEGER NOT NULL,
+  resolved_at INTEGER,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pending_questions_thread ON pending_questions(thread_id, status);
 `;
 
 function getUserVersion(db: DatabaseSync): number {
@@ -475,6 +549,8 @@ export function initializeWorkspaceSchema(db: DatabaseSync): void {
     if (currentVersion < 5) {
       migrateProviderSessionBindingsToPurposeKey(db);
     }
+    // v6: graph tables created via CREATE TABLE IF NOT EXISTS — no data migration.
+    // v7: pending_questions table created via CREATE TABLE IF NOT EXISTS — no data migration.
     recordMigration(db, WORKSPACE_SCHEMA_VERSION);
   }
 }

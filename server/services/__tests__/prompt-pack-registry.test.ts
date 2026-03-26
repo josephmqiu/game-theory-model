@@ -11,6 +11,7 @@ import {
 import {
   resolveAnalysisPromptTemplate,
   resolvePromptPack,
+  resolvePromptTemplate,
 } from "../prompt-pack-registry";
 
 function createPackFixtureRoot(
@@ -286,6 +287,142 @@ describe("prompt-pack-registry", () => {
       }),
     ).toThrow(
       `Unsupported prompt template for phase "revalidation" and variant "initial" in pack "${DEFAULT_PROMPT_PACK_ID}@${DEFAULT_PROMPT_PACK_VERSION}".`,
+    );
+  });
+
+  it("resolves the bundled synthesis prompt pack from disk", () => {
+    const pack = resolvePromptPack({
+      analysisType: DEFAULT_ANALYSIS_TYPE,
+      mode: "synthesis",
+    });
+
+    expect(pack).toMatchObject({
+      analysisType: DEFAULT_ANALYSIS_TYPE,
+      mode: "synthesis",
+      id: "game-theory/synthesis-default",
+      version: "2026-03-25.1",
+      source: { kind: "bundled" },
+    });
+    expect(pack.templates.length).toBeGreaterThanOrEqual(1);
+    const systemTemplate = pack.templates.find(
+      (t) => t.phase === "system" && t.variant === "initial",
+    );
+    expect(systemTemplate).toBeDefined();
+    expect(systemTemplate!.text).toContain("executive_summary");
+    expect(systemTemplate!.text).toContain("entity_references");
+  });
+
+  it("resolves the bundled chat prompt pack with both templates", () => {
+    const pack = resolvePromptPack({
+      analysisType: DEFAULT_ANALYSIS_TYPE,
+      mode: "chat",
+    });
+
+    expect(pack).toMatchObject({
+      analysisType: DEFAULT_ANALYSIS_TYPE,
+      mode: "chat",
+      id: "game-theory/chat-default",
+      version: "2026-03-25.1",
+      source: { kind: "bundled" },
+    });
+    expect(pack.templates.length).toBe(2);
+
+    const withAnalysis = pack.templates.find(
+      (t) => t.phase === "system-with-analysis",
+    );
+    const emptyCanvas = pack.templates.find(
+      (t) => t.phase === "system-empty-canvas",
+    );
+    expect(withAnalysis).toBeDefined();
+    expect(withAnalysis!.text).toContain("entity graph analysis");
+    expect(emptyCanvas).toBeDefined();
+    expect(emptyCanvas!.text).toContain("canvas is currently blank");
+  });
+
+  it("resolves a template by generic templateId via resolvePromptTemplate", () => {
+    const result = resolvePromptTemplate({
+      analysisType: DEFAULT_ANALYSIS_TYPE,
+      mode: "synthesis",
+      templateId: "system",
+      variant: "initial",
+    });
+
+    expect(result.templateIdentity).toBe(
+      "game-theory/synthesis-default:system:initial",
+    );
+    expect(result.templateHash).toEqual(expect.any(String));
+    expect(result.text).toContain("executive_summary");
+    expect(result.pack.id).toBe("game-theory/synthesis-default");
+  });
+
+  it("resolvePromptTemplate works for chat mode templates", () => {
+    const withAnalysis = resolvePromptTemplate({
+      analysisType: DEFAULT_ANALYSIS_TYPE,
+      mode: "chat",
+      templateId: "system-with-analysis",
+      variant: "initial",
+    });
+    const emptyCanvas = resolvePromptTemplate({
+      analysisType: DEFAULT_ANALYSIS_TYPE,
+      mode: "chat",
+      templateId: "system-empty-canvas",
+      variant: "initial",
+    });
+
+    expect(withAnalysis.templateIdentity).toBe(
+      "game-theory/chat-default:system-with-analysis:initial",
+    );
+    expect(emptyCanvas.templateIdentity).toBe(
+      "game-theory/chat-default:system-empty-canvas:initial",
+    );
+  });
+
+  it("filesystem overrides work for synthesis mode", () => {
+    const filesystemRoot = makeTempRoot("prompt-pack-synth-override-");
+    tempRoots.push(filesystemRoot);
+
+    const manifestDir = join(
+      filesystemRoot,
+      DEFAULT_ANALYSIS_TYPE,
+      "synthesis",
+    );
+    const promptsDir = join(manifestDir, "prompts", "system");
+    mkdirSync(promptsDir, { recursive: true });
+
+    writeFileSync(
+      join(promptsDir, "initial.md"),
+      "Custom synthesis prompt with executive_summary",
+      "utf8",
+    );
+    writeFileSync(
+      join(manifestDir, "pack.json"),
+      JSON.stringify({
+        analysisType: DEFAULT_ANALYSIS_TYPE,
+        mode: "synthesis",
+        id: "game-theory/synthesis-custom",
+        version: "2026-03-25.99",
+        source: { kind: "filesystem" },
+        templateFiles: [
+          {
+            phase: "system",
+            variant: "initial",
+            path: "prompts/system/initial.md",
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const pack = resolvePromptPack({
+      analysisType: DEFAULT_ANALYSIS_TYPE,
+      mode: "synthesis",
+      roots: { filesystemRoot },
+    });
+
+    expect(pack.id).toBe("game-theory/synthesis-custom");
+    expect(pack.source.kind).toBe("filesystem");
+    expect(pack.templates[0].text).toBe(
+      "Custom synthesis prompt with executive_summary",
     );
   });
 

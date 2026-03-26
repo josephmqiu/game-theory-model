@@ -61,7 +61,7 @@ const defaultHandlers: CommandHandlerMap = {
     return { aborted: true, runId: activeStatus.runId };
   },
   async "analysis.reset"(command) {
-    entityGraphService.newAnalysis(command.topic);
+    entityGraphService.newAnalysis(command.topic, command.workspaceId);
     const analysis = entityGraphService.getAnalysis();
     const now = Date.now();
     getWorkspaceDatabase().workspaces.upsertWorkspace(

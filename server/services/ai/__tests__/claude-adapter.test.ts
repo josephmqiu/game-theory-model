@@ -109,7 +109,7 @@ describe("claude-adapter", () => {
           name: "game-theory-analysis",
         }),
       );
-      expect(mockTool).toHaveBeenCalledTimes(4);
+      expect(mockTool).toHaveBeenCalledTimes(ANALYSIS_TOOL_NAMES.length);
 
       const registeredNames = mockTool.mock.calls.map(
         (call: unknown[]) => call[0],
@@ -797,9 +797,15 @@ describe("claude-adapter", () => {
         };
       });
 
-      await runAnalysisPhase("analyze", "sys", "model", { type: "object" }, {
-        onActivity,
-      });
+      await runAnalysisPhase(
+        "analyze",
+        "sys",
+        "model",
+        { type: "object" },
+        {
+          onActivity,
+        },
+      );
 
       expect(onActivity).toHaveBeenCalledWith({
         kind: "tool",
@@ -851,9 +857,15 @@ describe("claude-adapter", () => {
         };
       });
 
-      await runAnalysisPhase("analyze", "sys", "model", { type: "object" }, {
-        onActivity,
-      });
+      await runAnalysisPhase(
+        "analyze",
+        "sys",
+        "model",
+        { type: "object" },
+        {
+          onActivity,
+        },
+      );
 
       expect(onActivity).toHaveBeenCalledWith({
         kind: "web-search",
@@ -916,9 +928,15 @@ describe("claude-adapter", () => {
         };
       });
 
-      await runAnalysisPhase("analyze", "sys", "model", { type: "object" }, {
-        onActivity,
-      });
+      await runAnalysisPhase(
+        "analyze",
+        "sys",
+        "model",
+        { type: "object" },
+        {
+          onActivity,
+        },
+      );
 
       expect(onActivity.mock.calls).toContainEqual([
         {
@@ -978,9 +996,15 @@ describe("claude-adapter", () => {
         };
       });
 
-      await runAnalysisPhase("analyze", "sys", "model", { type: "object" }, {
-        onActivity,
-      });
+      await runAnalysisPhase(
+        "analyze",
+        "sys",
+        "model",
+        { type: "object" },
+        {
+          onActivity,
+        },
+      );
 
       expect(onActivity).toHaveBeenCalledWith({
         kind: "web-search",
@@ -1019,9 +1043,15 @@ describe("claude-adapter", () => {
         };
       });
 
-      await runAnalysisPhase("analyze", "sys", "model", { type: "object" }, {
-        webSearch: false,
-      });
+      await runAnalysisPhase(
+        "analyze",
+        "sys",
+        "model",
+        { type: "object" },
+        {
+          webSearch: false,
+        },
+      );
 
       expect(mockQuery.mock.calls[0][0].options.allowedTools).toEqual(
         ANALYSIS_TOOL_NAMES.map(
@@ -1227,10 +1257,18 @@ describe("claude-adapter", () => {
       }));
 
       await expect(
-        runAnalysisPhase("analyze", "sys", "haiku", { type: "object" }, {
-          runId: "run-2",
-        }),
-      ).rejects.toThrow("Claude structured output ended without terminal result");
+        runAnalysisPhase(
+          "analyze",
+          "sys",
+          "haiku",
+          { type: "object" },
+          {
+            runId: "run-2",
+          },
+        ),
+      ).rejects.toThrow(
+        "Claude structured output ended without terminal result",
+      );
 
       expect(mockQuery).toHaveBeenCalledTimes(1);
       expect(serverWarnMock).not.toHaveBeenCalledWith(
@@ -1259,10 +1297,16 @@ describe("claude-adapter", () => {
       }));
 
       await expect(
-        runAnalysisPhase("analyze", "sys", "default", { type: "object" }, {
-          runId: "run-3",
-          signal: controller.signal,
-        }),
+        runAnalysisPhase(
+          "analyze",
+          "sys",
+          "default",
+          { type: "object" },
+          {
+            runId: "run-3",
+            signal: controller.signal,
+          },
+        ),
       ).rejects.toThrow("Aborted");
 
       expect(mockQuery).toHaveBeenCalledTimes(1);
@@ -1308,9 +1352,15 @@ describe("claude-adapter", () => {
         }));
 
       await expect(
-        runAnalysisPhase("analyze", "sys", "sonnet", { type: "object" }, {
-          runId: "run-4",
-        }),
+        runAnalysisPhase(
+          "analyze",
+          "sys",
+          "sonnet",
+          { type: "object" },
+          {
+            runId: "run-4",
+          },
+        ),
       ).rejects.toThrow(
         "Claude structured-output attempt failed (Claude structured output ended without terminal result); JSON fallback failed: Fallback failed",
       );

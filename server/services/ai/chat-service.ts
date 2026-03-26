@@ -15,6 +15,11 @@ import { createProcessRuntimeError } from "../../../shared/types/runtime-error";
 import { trimChatHistory } from "../../../shared/utils/trim-chat-history";
 import type { ChatEvent } from "../../../shared/types/events";
 import { getRuntimeAdapter } from "./adapter-contract";
+import { resolvePromptTemplate } from "../prompt-pack-registry";
+import {
+  DEFAULT_ANALYSIS_TYPE,
+  CHAT_PROMPT_PACK_MODE,
+} from "../../../shared/types/prompt-pack";
 
 export const ALLOWED_PROVIDERS = ["anthropic", "openai"] as const;
 const KEEPALIVE_INTERVAL_MS = 15_000;
@@ -146,19 +151,16 @@ function buildServerChatSystemPrompt(): string {
   const hasCanvasAnalysis =
     analysis.topic.trim().length > 0 || analysis.entities.length > 0;
 
-  const basePrompt = hasCanvasAnalysis
-    ? `You are a game theory analyst assistant. You help the user understand the entity graph analysis displayed on the canvas.
-
-You have access to the current analysis context including entities (facts, players, objectives, games, strategies, payoffs, institutional rules, escalation rungs), their relationships, and which methodology phases are complete.
-
-Answer questions about the analysis, explain game-theoretic concepts, and help the user interpret the results. Do not start or rerun analysis unless the user explicitly asks you to do so or clearly confirms they are ready. Be concise and precise.`
-    : `You are a game theory analyst assistant. The canvas is currently blank.
-
-Help the user figure out what they want to analyze. Clarify the situation, identify the likely actors, decisions, incentives, and strategic conflict, and suggest concise next questions when useful.
-
-Do not start or rerun analysis unless the user explicitly asks you to do so or clearly confirms they are ready to run it.
-
-Be concise, practical, and collaborative.`;
+  const templateId = hasCanvasAnalysis
+    ? "system-with-analysis"
+    : "system-empty-canvas";
+  const resolved = resolvePromptTemplate({
+    analysisType: DEFAULT_ANALYSIS_TYPE,
+    mode: CHAT_PROMPT_PACK_MODE,
+    templateId,
+    variant: "initial",
+  });
+  const basePrompt = resolved.text;
 
   const phaseStatuses = analysis.phases
     .map((phaseStatus) => `${phaseStatus.phase}: ${phaseStatus.status}`)

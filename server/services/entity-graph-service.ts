@@ -1,6 +1,6 @@
 // Canonical server-side entity store for the Game Theory Analyzer.
-// Module-level singleton matching the Zustand pattern — no class.
-// The Zustand entity-graph-store will become a client-side projection of this.
+// SQLite-backed write-through cache scoped to the active workspace.
+// The Zustand entity-graph-store is a client-side projection of this.
 
 import { nanoid } from "nanoid";
 import type {
@@ -23,10 +23,14 @@ import {
   normalizePhaseStates,
   upsertPhaseStatus,
 } from "../../src/types/methodology";
+import { getWorkspaceDatabase } from "./workspace";
+import type { EntityGraphRepository } from "./workspace/entity-graph-repository";
 
 // ── Module-level state ──
 
 let analysis: Analysis = createEmptyAnalysis("");
+let _workspaceId: string | null = null;
+let _analysisId: string | null = null;
 let _isDirty = false;
 let _revision = 0;
 let _fileName: string | null = null;
@@ -34,6 +38,28 @@ let _filePath: string | null = null;
 let _fileHandle: FileSystemFileHandle | null = null;
 
 const listeners = new Set<(event: AnalysisMutationEvent) => void>();
+
+// ── SQLite backing ──
+
+let _repoOverride: EntityGraphRepository | null = null;
+
+function getRepo(): EntityGraphRepository {
+  return _repoOverride ?? getWorkspaceDatabase().entityGraph;
+}
+
+function hasWorkspaceContext(): boolean {
+  return _workspaceId !== null && _analysisId !== null;
+}
+
+function persistEntity(entity: AnalysisEntity): void {
+  if (!hasWorkspaceContext()) return;
+  getRepo().upsertEntity(_workspaceId!, _analysisId!, entity);
+}
+
+function persistRelationship(rel: AnalysisRelationship): void {
+  if (!hasWorkspaceContext()) return;
+  getRepo().upsertRelationship(_workspaceId!, _analysisId!, rel);
+}
 
 // ── Helpers ──
 
@@ -114,10 +140,76 @@ function entitySourceForProvenance(
   }
 }
 
+// ── Initialization ──
+
+/**
+ * Hydrate the in-memory cache from SQLite for the given workspace.
+ * Called during app startup / workspace open.
+ */
+export function initializeFromDatabase(workspaceId: string): void {
+  const repo = getRepo();
+  const meta = repo.getAnalysisMetadata(workspaceId);
+
+  if (!meta) {
+    // No existing analysis in DB — start empty but set workspace context
+    _workspaceId = workspaceId;
+    _analysisId = analysis.id;
+    return;
+  }
+
+  const entities = repo.listEntities(meta.analysisId);
+  const relationships = repo.listRelationships(meta.analysisId);
+  const phases = repo.listPhaseStates(meta.analysisId);
+
+  const restored: Analysis = {
+    id: meta.analysisId,
+    name: meta.name,
+    topic: meta.topic,
+    entities,
+    relationships,
+    phases,
+  };
+
+  _workspaceId = workspaceId;
+  _analysisId = meta.analysisId;
+  analysis = normalizeAnalysis(restored);
+  _isDirty = false;
+  _revision = 0;
+  _fileName = null;
+  _filePath = null;
+  _fileHandle = null;
+
+  serverLog(undefined, "entity-graph", "initialized-from-database", {
+    workspaceId,
+    analysisId: meta.analysisId,
+    entityCount: entities.length,
+    relationshipCount: relationships.length,
+  });
+}
+
+export function getWorkspaceId(): string | null {
+  return _workspaceId;
+}
+
+export function getAnalysisId(): string | null {
+  return _analysisId;
+}
+
 // ── Core API ──
 
-export function newAnalysis(topic: string): void {
+export function newAnalysis(topic: string, workspaceId?: string): void {
+  const newId = nanoid();
   analysis = createEmptyAnalysis(topic);
+  analysis.id = newId;
+
+  _workspaceId = workspaceId ?? _workspaceId;
+  _analysisId = newId;
+
+  // Persist to SQLite (replaceAnalysis includes metadata insert)
+  if (_workspaceId) {
+    getRepo().replaceAnalysis(_workspaceId, analysis);
+  }
+
   _isDirty = false;
   _fileName = null;
   _filePath = null;
@@ -131,9 +223,21 @@ export function loadAnalysis(
     fileName?: string;
     filePath?: string;
     fileHandle?: FileSystemFileHandle;
+    workspaceId?: string;
   },
 ): void {
   analysis = normalizeAnalysis(loaded);
+  _analysisId = loaded.id;
+
+  if (source?.workspaceId) {
+    _workspaceId = source.workspaceId;
+  }
+
+  // Persist to SQLite (replaceAnalysis includes metadata insert)
+  if (_workspaceId) {
+    getRepo().replaceAnalysis(_workspaceId, analysis);
+  }
+
   _isDirty = false;
   _fileName = source?.fileName ?? null;
   _filePath = source?.filePath ?? null;
@@ -153,9 +257,6 @@ export function createEntity(
     phase?: string;
   },
 ): AnalysisEntity {
-  // Dedup: if an entity with this data already exists by matching id, skip
-  // But since we generate new IDs, dedup by checking if the exact same entity
-  // was already added (caller may pass an entity with an id field via spread)
   const id = nanoid();
 
   const fullProvenance: EntityProvenance = {
@@ -175,6 +276,10 @@ export function createEntity(
   // Dedup by ID — if somehow a duplicate sneaks through
   const existingIds = new Set(analysis.entities.map((e) => e.id));
   if (!existingIds.has(entity.id)) {
+    // SQLite first
+    persistEntity(entity);
+
+    // In-memory update
     analysis = {
       ...analysis,
       entities: [...analysis.entities, entity],
@@ -228,6 +333,10 @@ export function createRelationship(
       : {}),
   };
 
+  // SQLite first
+  persistRelationship(relationship);
+
+  // In-memory update
   analysis = {
     ...analysis,
     relationships: [...analysis.relationships, relationship],
@@ -272,6 +381,10 @@ export function updateEntity(
     provenance: newProvenance,
   };
 
+  // SQLite first
+  persistEntity(updated);
+
+  // In-memory update
   analysis = {
     ...analysis,
     entities: analysis.entities.map((e) => (e.id === id ? updated : e)),
@@ -306,6 +419,10 @@ export function updateRelationship(
     id, // preserve original ID
   };
 
+  // SQLite first
+  persistRelationship(updated);
+
+  // In-memory update
   analysis = {
     ...analysis,
     relationships: analysis.relationships.map((r) =>
@@ -322,6 +439,12 @@ export function removeRelationship(id: string): boolean {
   const relationship = analysis.relationships.find((r) => r.id === id);
   if (!relationship) return false;
 
+  // SQLite first
+  if (hasWorkspaceContext()) {
+    getRepo().deleteRelationship(id);
+  }
+
+  // In-memory update
   analysis = {
     ...analysis,
     relationships: analysis.relationships.filter((r) => r.id !== id),
@@ -360,6 +483,12 @@ export function getRelationships(filters?: {
 export function markStale(entityIds: string[]): void {
   if (entityIds.length === 0) return;
 
+  // SQLite first
+  if (hasWorkspaceContext()) {
+    getRepo().updateStaleFlags(entityIds, true);
+  }
+
+  // In-memory update
   const idSet = new Set(entityIds);
   analysis = {
     ...analysis,
@@ -374,6 +503,12 @@ export function markStale(entityIds: string[]): void {
 export function clearStale(entityIds: string[]): void {
   if (entityIds.length === 0) return;
 
+  // SQLite first
+  if (hasWorkspaceContext()) {
+    getRepo().updateStaleFlags(entityIds, false);
+  }
+
+  // In-memory update
   const idSet = new Set(entityIds);
   analysis = {
     ...analysis,
@@ -400,6 +535,13 @@ export function removeEntity(id: string): boolean {
     .filter((r) => r.fromEntityId === id || r.toEntityId === id)
     .map((r) => r.id);
 
+  // SQLite first
+  if (hasWorkspaceContext()) {
+    getRepo().deleteRelationshipsByEntityIds([id]);
+    getRepo().deleteEntity(id);
+  }
+
+  // In-memory update
   analysis = {
     ...analysis,
     entities: analysis.entities.filter((e) => e.id !== id),
@@ -440,6 +582,14 @@ export function removePhaseEntities(
     (r) => !removedIds.has(r.fromEntityId) && !removedIds.has(r.toEntityId),
   );
 
+  // SQLite first
+  if (hasWorkspaceContext() && removedIds.size > 0) {
+    const ids = Array.from(removedIds);
+    getRepo().deleteRelationshipsByEntityIds(ids);
+    getRepo().deleteEntitiesByIds(ids);
+  }
+
+  // In-memory update
   analysis = {
     ...analysis,
     entities: remaining,
@@ -453,14 +603,30 @@ export function setPhaseStatus(
   phase: MethodologyPhase,
   status: PhaseStatus,
 ): void {
+  const newPhases = upsertPhaseStatus(
+    analysis.phases,
+    analysis.entities,
+    phase,
+    status,
+  );
+
+  // SQLite first — persist the updated phase state
+  if (hasWorkspaceContext()) {
+    const updatedPhase = newPhases.find((p) => p.phase === phase);
+    if (updatedPhase) {
+      getRepo().upsertPhaseState(
+        _workspaceId!,
+        _analysisId!,
+        phase,
+        updatedPhase,
+      );
+    }
+  }
+
+  // In-memory update
   analysis = {
     ...analysis,
-    phases: upsertPhaseStatus(
-      analysis.phases,
-      analysis.entities,
-      phase,
-      status,
-    ),
+    phases: newPhases,
   };
   mutate();
   emit({ type: "state_changed" });
@@ -529,10 +695,18 @@ export function onMutation(
 /** Reset all module state. Only for use in tests. */
 export function _resetForTest(): void {
   analysis = createEmptyAnalysis("");
+  _workspaceId = null;
+  _analysisId = null;
   _isDirty = false;
   _revision = 0;
   _fileName = null;
   _filePath = null;
   _fileHandle = null;
+  _repoOverride = null;
   listeners.clear();
+}
+
+/** Override the repository for testing. Only for use in tests. */
+export function _setRepoForTest(repo: EntityGraphRepository | null): void {
+  _repoOverride = repo;
 }

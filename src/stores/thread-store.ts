@@ -6,6 +6,7 @@ import type {
   ThreadMessageState,
   ThreadState,
 } from "../../shared/types/workspace-state";
+import type { PendingQuestionState } from "../../shared/types/user-input";
 import type { ChatMessage } from "@/services/ai/ai-types";
 import type {
   WorkspaceRuntimeBootstrap,
@@ -31,6 +32,8 @@ interface ThreadStoreState {
   latestRun: RunState | null;
   latestPhaseTurns: PhaseTurnSummaryState[];
   overlayMessages: ChatMessage[];
+  pendingQuestions: PendingQuestionState[];
+  activeQuestionIndex: number;
   isLoading: boolean;
   isCreating: boolean;
   error?: string;
@@ -59,6 +62,12 @@ interface ThreadStoreState {
     >,
   ) => void;
   updateLastOverlayAssistantMessage: (content: string) => void;
+  setPendingQuestions: (questions: PendingQuestionState[]) => void;
+  resolveQuestion: (
+    questionId: string,
+    answer: { selectedOptions?: number[]; customText?: string },
+  ) => void;
+  clearPendingQuestions: () => void;
 }
 
 function readStoredThreadSelections(): Record<string, string> {
@@ -275,6 +284,8 @@ function applyThreadDetailPush(
         }
       : null;
 
+    const serverPendingQuestions = push.payload.detail?.pendingQuestions ?? [];
+
     return {
       activeThreadDetail,
       overlayMessages: shouldClearOverlayMessages(
@@ -283,6 +294,15 @@ function applyThreadDetailPush(
       )
         ? []
         : state.overlayMessages,
+      ...(serverPendingQuestions.length > 0
+        ? {
+            pendingQuestions: serverPendingQuestions,
+            activeQuestionIndex:
+              state.pendingQuestions.length === 0
+                ? 0
+                : state.activeQuestionIndex,
+          }
+        : {}),
       error: undefined,
     };
   });
@@ -315,6 +335,8 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
   latestRun: null,
   latestPhaseTurns: [],
   overlayMessages: [],
+  pendingQuestions: [],
+  activeQuestionIndex: 0,
   isLoading: false,
   isCreating: false,
   error: undefined,
@@ -417,6 +439,8 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
       latestRun: null,
       latestPhaseTurns: [],
       overlayMessages: [],
+      pendingQuestions: [],
+      activeQuestionIndex: 0,
       error: undefined,
     });
 
@@ -510,6 +534,8 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
       latestRun: null,
       latestPhaseTurns: [],
       overlayMessages: [],
+      pendingQuestions: [],
+      activeQuestionIndex: 0,
       isLoading: false,
       isCreating: false,
       error: undefined,
@@ -552,6 +578,56 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
 
       return { overlayMessages };
     });
+  },
+
+  setPendingQuestions(questions) {
+    set({
+      pendingQuestions: questions,
+      activeQuestionIndex: 0,
+    });
+  },
+
+  resolveQuestion(questionId, answer) {
+    const state = get();
+    const workspaceId = state.workspaceId;
+    const threadId = state.activeThreadId;
+
+    set((prev) => {
+      const nextQuestions = prev.pendingQuestions.map((pq) =>
+        pq.question.id === questionId
+          ? {
+              ...pq,
+              status: "resolved" as const,
+              answer: {
+                questionId,
+                ...answer,
+                resolvedAt: Date.now(),
+              },
+            }
+          : pq,
+      );
+      const nextIndex = nextQuestions.findIndex(
+        (pq) => pq.status === "pending",
+      );
+      return {
+        pendingQuestions: nextQuestions,
+        activeQuestionIndex:
+          nextIndex >= 0 ? nextIndex : prev.activeQuestionIndex,
+      };
+    });
+
+    if (workspaceId && threadId) {
+      void workspaceRuntimeClient.sendRequest("question.resolve", {
+        workspaceId,
+        threadId,
+        questionId,
+        ...answer,
+      });
+    }
+  },
+
+  clearPendingQuestions() {
+    set({ pendingQuestions: [], activeQuestionIndex: 0 });
   },
 }));
 

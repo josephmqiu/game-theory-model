@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { useAIStore } from "@/stores/ai-store";
 import type { PanelCorner } from "@/stores/ai-store";
 import { useThreadStore } from "@/stores/thread-store";
+import { QuestionCard } from "./question-card";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useAgentSettingsStore } from "@/stores/agent-settings-store";
 import { useRunStatusStore } from "@/stores/run-status-store";
@@ -110,6 +111,24 @@ function buildAnalysisTerminalMessage(
 
 function isToolMessage(id: string): boolean {
   return id.startsWith("tool-");
+}
+
+function formatQuestionAnswer(pq: {
+  question: { options?: Array<{ label: string }> };
+  answer?: { selectedOptions?: number[]; customText?: string };
+}): string {
+  if (!pq.answer) return "";
+  const parts: string[] = [];
+  if (pq.answer.selectedOptions?.length && pq.question.options) {
+    const labels = pq.answer.selectedOptions
+      .map((i) => pq.question.options![i]?.label)
+      .filter(Boolean);
+    parts.push(labels.join(", "));
+  }
+  if (pq.answer.customText) {
+    parts.push(pq.answer.customText);
+  }
+  return parts.join(" — ") || "(no answer)";
 }
 
 type ToolStatus = "running" | "done" | "error";
@@ -336,6 +355,9 @@ export default function AIChatPanel({
   const threadError = useThreadStore((s) => s.error);
   const selectThread = useThreadStore((s) => s.selectThread);
   const createThread = useThreadStore((s) => s.createThread);
+  const pendingQuestions = useThreadStore((s) => s.pendingQuestions);
+  const activeQuestionIndex = useThreadStore((s) => s.activeQuestionIndex);
+  const resolveQuestion = useThreadStore((s) => s.resolveQuestion);
   const providers = useAgentSettingsStore((s) => s.providers);
   const providersHydrated = useAgentSettingsStore((s) => s.isHydrated);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
@@ -346,7 +368,11 @@ export default function AIChatPanel({
 
   const noAvailableModels = !isLoadingModels && availableModels.length === 0;
   const canUseModel = !isLoadingModels && availableModels.length > 0;
-  const canSendMessage = canUseModel && !isStreaming && !!input.trim();
+  const hasActivePendingQuestion = pendingQuestions.some(
+    (pq) => pq.status === "pending",
+  );
+  const canSendMessage =
+    canUseModel && !isStreaming && !hasActivePendingQuestion && !!input.trim();
   const isDocked = presentation === "docked";
   const isAnalysisMode = mode === "analysis";
   const previousAnalysisIdRef = useRef<string | null>(null);
@@ -708,7 +734,9 @@ export default function AIChatPanel({
   const emptyStateHint = t("analysis.chatEmptyHint");
   const inputPlaceholder = isStreaming
     ? t("ai.generating")
-    : t("analysis.chatInputPlaceholder");
+    : hasActivePendingQuestion
+      ? "Answer the question above first"
+      : t("analysis.chatInputPlaceholder");
   const displayTitle = activeThreadTitle || t("analysis.title");
 
   return (
@@ -928,6 +956,32 @@ export default function AIChatPanel({
               />
             ),
           )
+        )}
+        {/* Pending questions */}
+        {pendingQuestions.length > 0 && (
+          <div className="flex flex-col gap-2 mt-2">
+            {pendingQuestions.map((pq, idx) => {
+              if (idx > activeQuestionIndex) return null;
+              const isPending =
+                pq.status === "pending" && idx === activeQuestionIndex;
+              const resolvedAnswer = pq.answer
+                ? formatQuestionAnswer(pq)
+                : undefined;
+              return (
+                <QuestionCard
+                  key={pq.question.id}
+                  question={pq.question}
+                  questionIndex={idx}
+                  totalQuestions={pendingQuestions.length}
+                  isPending={isPending}
+                  resolvedAnswer={resolvedAnswer}
+                  onResolve={(questionId, answer) =>
+                    resolveQuestion(questionId, answer)
+                  }
+                />
+              );
+            })}
+          </div>
         )}
         <div ref={messagesEndRef} />
       </div>

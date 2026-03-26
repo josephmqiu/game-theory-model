@@ -52,7 +52,7 @@ import type { RuntimeAdapter } from "../services/ai/adapter-contract";
 import { loadRuntimeAdapter } from "../services/ai/adapter-loader";
 import {
   synthesizeReport,
-  SYNTHESIS_SYSTEM_PROMPT,
+  getSynthesisSystemPrompt,
 } from "../services/synthesis-service";
 import type {
   AnyDomainEventInput,
@@ -1114,7 +1114,7 @@ export async function runFull(
 
   // Reset the graph only after the run lock is held so losing concurrent
   // requests cannot wipe the canvas before acquireRun rejects them.
-  entityGraphService.newAnalysis(topic);
+  entityGraphService.newAnalysis(topic, activeRun.workspaceId);
 
   logger.log("orchestrator", "analysis-start", {
     mode: "analysis",
@@ -1476,7 +1476,7 @@ export async function runFull(
               try {
                 return await session.runStructuredTurn({
                   prompt: graphSummary,
-                  systemPrompt: SYNTHESIS_SYSTEM_PROMPT,
+                  systemPrompt: getSynthesisSystemPrompt(),
                   model,
                   schema: SYNTHESIS_OUTPUT_SCHEMA,
                   runId: run.runId,

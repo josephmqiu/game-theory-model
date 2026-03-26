@@ -12,6 +12,7 @@ export const CHAT_TOOL_NAMES = [
   "delete_relationship",
   "rerun_phases",
   "abort_analysis",
+  "ask_user",
 ] as const;
 
 export const ANALYSIS_TOOL_NAMES = [
@@ -19,6 +20,7 @@ export const ANALYSIS_TOOL_NAMES = [
   "query_entities",
   "query_relationships",
   "request_loopback",
+  "ask_user",
 ] as const;
 
 export type ChatToolName = (typeof CHAT_TOOL_NAMES)[number];

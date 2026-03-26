@@ -5,6 +5,7 @@ import type {
 } from "./entity";
 import type { RunStatus } from "./api";
 import type { RuntimeError } from "./runtime-error";
+import type { UserInputQuestion } from "./user-input";
 
 export interface PhaseSummary {
   entitiesCreated: number;
@@ -116,11 +117,17 @@ export interface ChatErrorEvent {
   error: RuntimeError;
 }
 
+export interface ChatUserInputRequestedEvent {
+  type: "user_input_requested";
+  questions: UserInputQuestion[];
+}
+
 export type ChatEvent =
   | ChatTextDeltaEvent
   | ChatToolCallStartEvent
   | ChatToolCallResultEvent
   | ChatToolCallErrorEvent
+  | ChatUserInputRequestedEvent
   | ChatTurnCompleteEvent
   | ChatErrorEvent;
 
@@ -155,6 +162,7 @@ const CHAT_EVENT_TYPES = new Set([
   "tool_call_start",
   "tool_call_result",
   "tool_call_error",
+  "user_input_requested",
   "turn_complete",
   "error",
 ]);

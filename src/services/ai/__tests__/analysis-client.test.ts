@@ -6,90 +6,68 @@ import type {
   AnalysisEntity,
   AnalysisRelationship,
 } from "@/types/entity";
-import type { AnalysisStateResponse, RunStatus } from "../../../../shared/types/api";
+import type {
+  AnalysisStateResponse,
+  RunStatus,
+} from "../../../../shared/types/api";
+import type {
+  WorkspaceRuntimeBootstrapEnvelope,
+  WorkspaceRuntimePushEnvelope,
+} from "../../../../shared/types/workspace-runtime";
 import { createValidationRuntimeError } from "../../../../shared/types/runtime-error";
 
 const originalFetch = globalThis.fetch;
-const originalEventSource = globalThis.EventSource;
 
-class MockEventSource {
-  static instances: MockEventSource[] = [];
+// Mock workspace-runtime-client — capture the subscribe listener so tests can
+// simulate WebSocket push and bootstrap events.
 
-  readonly url: string;
-  readyState = 0;
-  closed = false;
-  private listeners = new Map<string, Set<(event: unknown) => void>>();
+type RuntimeListener = (
+  envelope: WorkspaceRuntimeBootstrapEnvelope | WorkspaceRuntimePushEnvelope,
+) => void;
 
-  constructor(url: string) {
-    this.url = url;
-    MockEventSource.instances.push(this);
-  }
+let wsListener: RuntimeListener | null = null;
+const unsubscribeSpy = vi.fn(() => {
+  wsListener = null;
+});
 
-  static reset(): void {
-    MockEventSource.instances = [];
-  }
+vi.mock("../workspace-runtime-client", () => ({
+  workspaceRuntimeClient: {
+    subscribe: (listener: RuntimeListener) => {
+      wsListener = listener;
+      return unsubscribeSpy;
+    },
+    getDiagnostics: () => [],
+    resetForTest: vi.fn(),
+  },
+}));
 
-  static latest(): MockEventSource {
-    const latest = MockEventSource.instances.at(-1);
-    if (!latest) {
-      throw new Error("No EventSource instance");
-    }
-    return latest;
-  }
-
-  addEventListener(type: string, listener: (event: unknown) => void): void {
-    const listeners = this.listeners.get(type) ?? new Set();
-    listeners.add(listener);
-    this.listeners.set(type, listeners);
-  }
-
-  removeEventListener(type: string, listener: (event: unknown) => void): void {
-    const listeners = this.listeners.get(type);
-    if (!listeners) {
-      return;
-    }
-
-    listeners.delete(listener);
-    if (listeners.size === 0) {
-      this.listeners.delete(type);
-    }
-  }
-
-  close(): void {
-    this.closed = true;
-    this.readyState = 2;
-  }
-
-  listenerCount(type: string): number {
-    return this.listeners.get(type)?.size ?? 0;
-  }
-
-  emitOpen(): void {
-    this.readyState = 1;
-    this.listeners.get("open")?.forEach((listener) => listener({}));
-  }
-
-  emitMessage(payload: unknown): void {
-    this.listeners.get("message")?.forEach((listener) =>
-      listener({
-        data: typeof payload === "string" ? payload : JSON.stringify(payload),
-      }),
+function emitWsPush(envelope: WorkspaceRuntimePushEnvelope): void {
+  if (!wsListener) {
+    throw new Error(
+      "No WS listener registered — call hydrateAnalysisState first",
     );
   }
-
-  emitError(): void {
-    this.listeners.get("error")?.forEach((listener) => listener({}));
-  }
+  wsListener(envelope);
 }
 
-function deferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
+function emitWsBootstrap(): void {
+  if (!wsListener) {
+    throw new Error(
+      "No WS listener registered — call hydrateAnalysisState first",
+    );
+  }
+  wsListener({
+    type: "bootstrap",
+    payload: {
+      workspaceId: "ws-1",
+      threads: [],
+      activeThreadDetail: null,
+      latestRun: null,
+      latestPhaseTurns: [],
+      channelRevisions: {},
+      serverConnectionId: "conn-1",
+    },
+  } satisfies WorkspaceRuntimeBootstrapEnvelope);
 }
 
 function makeEntity(id: string): AnalysisEntity {
@@ -191,11 +169,6 @@ async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
 }
 
-async function advanceTimersByTimeAsync(ms: number): Promise<void> {
-  vi.advanceTimersByTime(ms);
-  await flushMicrotasks();
-}
-
 async function waitFor(assertion: () => void, attempts = 20): Promise<void> {
   let lastError: unknown;
 
@@ -231,9 +204,8 @@ async function loadModules() {
 describe("analysis-client", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    MockEventSource.reset();
-    globalThis.EventSource =
-      MockEventSource as unknown as typeof globalThis.EventSource;
+    wsListener = null;
+    unsubscribeSpy.mockClear();
     globalThis.fetch = originalFetch;
   });
 
@@ -246,23 +218,17 @@ describe("analysis-client", () => {
     }
 
     globalThis.fetch = originalFetch;
-    if (originalEventSource) {
-      globalThis.EventSource = originalEventSource;
-    } else {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      delete (globalThis as any).EventSource;
-    }
-    MockEventSource.reset();
-    vi.useRealTimers();
+    wsListener = null;
   });
 
-  it("buffers live events during initial recovery and replays newer revisions after the snapshot", async () => {
-    const entity = makeEntity("entity-buffered");
+  it("drops WS events before hydration and applies events after", async () => {
+    const entity = makeEntity("entity-after-hydrate");
     const relationship = makeRelationship("rel-1", entity.id, entity.id);
-    const stateRequest = deferred<Response>();
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       if (input === "/api/ai/state") {
-        return stateRequest.promise;
+        return Promise.resolve(
+          stateResponse(makeAnalysis(), makeRunStatus(), 1),
+        );
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
@@ -271,53 +237,30 @@ describe("analysis-client", () => {
     const { client, useEntityGraphStore, useRunStatusStore } =
       await loadModules();
 
-    const hydratePromise = client.hydrateAnalysisState();
-    const source = MockEventSource.latest();
+    await client.hydrateAnalysisState();
+    expect(useRunStatusStore.getState().connectionState).toBe("CONNECTED");
 
-    source.emitMessage({
-      channel: "mutation",
+    // Events after hydration should be applied
+    emitWsPush({
+      type: "push",
+      channel: "analysis-mutation",
       revision: 2,
-      type: "entity_created",
-      entity,
+      scope: { workspaceId: "ws-1" },
+      payload: { event: { type: "entity_created", entity } },
     });
-    source.emitMessage({
-      channel: "mutation",
+    emitWsPush({
+      type: "push",
+      channel: "analysis-mutation",
       revision: 3,
-      type: "relationship_created",
-      relationship,
+      scope: { workspaceId: "ws-1" },
+      payload: {
+        event: { type: "relationship_created", relationship },
+      },
     });
-    source.emitMessage({
-      channel: "progress",
-      revision: 4,
-      type: "phase_activity",
-      phase: "situational-grounding",
-      runId: "run-1",
-      kind: "note",
-      message: "Researching evidence.",
-    });
-
-    stateRequest.resolve(
-      stateResponse(
-        makeAnalysis(),
-        makeRunStatus({
-          status: "running",
-          kind: "analysis",
-          runId: "run-1",
-          activePhase: "situational-grounding",
-        }),
-        1,
-      ),
-    );
-
-    await hydratePromise;
 
     const state = useEntityGraphStore.getState();
     expect(state.analysis.entities).toEqual([entity]);
     expect(state.analysis.relationships).toEqual([relationship]);
-    expect(useRunStatusStore.getState().phaseActivityText).toBe(
-      "Researching evidence.",
-    );
-    expect(useRunStatusStore.getState().connectionState).toBe("CONNECTED");
   });
 
   it("routes status and progress events through the run-status store and legacy listeners", async () => {
@@ -339,45 +282,65 @@ describe("analysis-client", () => {
 
     await client.hydrateAnalysisState();
 
-    const source = MockEventSource.latest();
-    source.emitOpen();
-    source.emitMessage({
-      channel: "status",
+    emitWsPush({
+      type: "push",
+      channel: "analysis-status",
       revision: 2,
-      ...makeRunStatus({
-        status: "running",
-        kind: "analysis",
-        runId: "run-progress",
-        activePhase: "situational-grounding",
-      }),
+      scope: { workspaceId: "ws-1" },
+      payload: {
+        runStatus: makeRunStatus({
+          status: "running",
+          kind: "analysis",
+          runId: "run-progress",
+          activePhase: "situational-grounding",
+        }),
+      },
     });
-    source.emitMessage({
-      channel: "progress",
+    emitWsPush({
+      type: "push",
+      channel: "analysis-progress",
       revision: 3,
-      type: "phase_started",
-      phase: "situational-grounding",
-      runId: "run-progress",
+      scope: { workspaceId: "ws-1" },
+      payload: {
+        event: {
+          type: "phase_started",
+          phase: "situational-grounding",
+          runId: "run-progress",
+        },
+      },
     });
-    source.emitMessage({
-      channel: "progress",
+    emitWsPush({
+      type: "push",
+      channel: "analysis-progress",
       revision: 4,
-      type: "phase_activity",
-      phase: "situational-grounding",
-      runId: "run-progress",
-      kind: "note",
-      message: "Researching evidence.",
+      scope: { workspaceId: "ws-1" },
+      payload: {
+        event: {
+          type: "phase_activity",
+          phase: "situational-grounding",
+          runId: "run-progress",
+          kind: "note",
+          message: "Researching evidence.",
+        },
+      },
     });
-    source.emitMessage({
-      channel: "progress",
+    emitWsPush({
+      type: "push",
+      channel: "analysis-progress",
       revision: 5,
-      type: "phase_completed",
-      phase: "situational-grounding",
-      runId: "run-progress",
-      summary: {
-        entitiesCreated: 0,
-        relationshipsCreated: 0,
-        entitiesUpdated: 0,
-        durationMs: 10,
+      scope: { workspaceId: "ws-1" },
+      payload: {
+        event: {
+          type: "phase_completed",
+          phase: "situational-grounding",
+          runId: "run-progress",
+          summary: {
+            entitiesCreated: 0,
+            relationshipsCreated: 0,
+            entitiesUpdated: 0,
+            durationMs: 10,
+          },
+        },
       },
     });
 
@@ -412,17 +375,21 @@ describe("analysis-client", () => {
 
     await client.hydrateAnalysisState();
 
-    const source = MockEventSource.latest();
-    source.emitOpen();
-    source.emitMessage({
-      channel: "progress",
+    emitWsPush({
+      type: "push",
+      channel: "analysis-progress",
       revision: 2,
-      type: "phase_activity",
-      phase: "situational-grounding",
-      runId: "run-progress",
-      kind: "web-search",
-      message: "Using WebSearch",
-      query: "US China tariff history 2025",
+      scope: { workspaceId: "ws-1" },
+      payload: {
+        event: {
+          type: "phase_activity",
+          phase: "situational-grounding",
+          runId: "run-progress",
+          kind: "web-search",
+          message: "Using WebSearch",
+          query: "US China tariff history 2025",
+        },
+      },
     });
 
     expect(useRunStatusStore.getState().phaseActivityText).toBe(
@@ -465,24 +432,18 @@ describe("analysis-client", () => {
 
     await client.hydrateAnalysisState();
 
-    const source = MockEventSource.latest();
-    source.emitMessage({
-      channel: "progress",
-      revision: 2,
-      type: "phase_activity",
-      phase: "situational-grounding",
-      runId: "run-2",
-      kind: "note",
-      message: "Researching evidence.",
-    });
-    source.emitMessage({
-      channel: "mutation",
+    emitWsPush({
+      type: "push",
+      channel: "analysis-mutation",
       revision: 3,
-      type: "state_changed",
+      scope: { workspaceId: "ws-1" },
+      payload: { event: { type: "state_changed" } },
     });
 
     await waitFor(() => {
-      expect(useEntityGraphStore.getState().analysis.entities).toEqual([entity]);
+      expect(useEntityGraphStore.getState().analysis.entities).toEqual([
+        entity,
+      ]);
     });
 
     expect(useRunStatusStore.getState().runStatus).toMatchObject({
@@ -493,54 +454,36 @@ describe("analysis-client", () => {
     expect(useRunStatusStore.getState().phaseActivityText).toBeNull();
   });
 
-  it("recycles the EventSource and recovers on heartbeat timeout", async () => {
-    vi.useFakeTimers();
+  it("re-hydrates analysis state on WS reconnect (bootstrap event)", async () => {
+    const entity = makeEntity("entity-reconnect");
+    let stateCallCount = 0;
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       if (input === "/api/ai/state") {
-        const callCount = fetchMock.mock.calls.filter(
-          ([value]) => value === "/api/ai/state",
-        ).length;
+        stateCallCount += 1;
         return Promise.resolve(
-          callCount === 1
-            ? stateResponse(
-                makeAnalysis(),
-                makeRunStatus({
-                  status: "running",
-                  kind: "analysis",
-                  runId: "run-heartbeat",
-                }),
-                1,
-              )
-            : stateResponse(
-                makeAnalysis([makeEntity("entity-recovered")]),
-                makeRunStatus(),
-                2,
-              ),
+          stateCallCount === 1
+            ? stateResponse(makeAnalysis(), makeRunStatus(), 1)
+            : stateResponse(makeAnalysis([entity]), makeRunStatus(), 2),
         );
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    const { client, useRunStatusStore } = await loadModules();
+    const { client, useEntityGraphStore, useRunStatusStore } =
+      await loadModules();
 
     await client.hydrateAnalysisState();
-    const firstSource = MockEventSource.latest();
-    firstSource.emitOpen();
+    expect(useEntityGraphStore.getState().analysis.entities).toEqual([]);
 
-    vi.setSystemTime(Date.now() + 31_000);
-    await advanceTimersByTimeAsync(31_000);
-    await vi.runOnlyPendingTimersAsync();
+    // Simulate WS reconnect
+    emitWsBootstrap();
+
     await waitFor(() => {
-      expect(MockEventSource.instances).toHaveLength(2);
+      expect(useEntityGraphStore.getState().analysis.entities).toEqual([
+        entity,
+      ]);
     });
-
-    expect(firstSource.closed).toBe(true);
-    expect(firstSource.listenerCount("open")).toBe(0);
-    expect(firstSource.listenerCount("message")).toBe(0);
-    expect(firstSource.listenerCount("error")).toBe(0);
-    expect(MockEventSource.instances).toHaveLength(2);
-    expect(fetchMock).toHaveBeenCalledWith("/api/ai/state");
     expect(useRunStatusStore.getState().connectionState).toBe("CONNECTED");
   });
 
@@ -554,7 +497,9 @@ describe("analysis-client", () => {
         );
       }
       if (input === "/api/ai/state") {
-        return Promise.resolve(stateResponse(makeAnalysis(), makeRunStatus(), 1));
+        return Promise.resolve(
+          stateResponse(makeAnalysis(), makeRunStatus(), 1),
+        );
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
@@ -599,7 +544,9 @@ describe("analysis-client", () => {
         );
       }
       if (input === "/api/ai/state") {
-        return Promise.resolve(stateResponse(makeAnalysis(), makeRunStatus(), 1));
+        return Promise.resolve(
+          stateResponse(makeAnalysis(), makeRunStatus(), 1),
+        );
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
@@ -702,44 +649,22 @@ describe("analysis-client", () => {
     );
   });
 
-  it("keeps retrying recovery after hitting the disconnected threshold", async () => {
-    vi.useFakeTimers();
-    const recoveredEntity = makeEntity("entity-recovered-after-disconnect");
-    let stateAttempts = 0;
+  it("cleans up WS subscription on _resetForTest", async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       if (input === "/api/ai/state") {
-        stateAttempts += 1;
-        if (stateAttempts <= 5) {
-          return Promise.reject(new Error(`state failed ${stateAttempts}`));
-        }
         return Promise.resolve(
-          stateResponse(makeAnalysis([recoveredEntity]), makeRunStatus(), 6),
+          stateResponse(makeAnalysis(), makeRunStatus(), 1),
         );
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    const { client, useEntityGraphStore, useRunStatusStore } =
-      await loadModules();
+    const { client } = await loadModules();
+    await client.hydrateAnalysisState();
+    expect(wsListener).not.toBeNull();
 
-    await expect(client.hydrateAnalysisState()).rejects.toThrow("state failed 1");
-
-    for (const delayMs of [1_000, 2_000, 4_000, 8_000]) {
-      await advanceTimersByTimeAsync(delayMs);
-      await flushMicrotasks();
-    }
-
-    expect(useRunStatusStore.getState().connectionState).toBe("DISCONNECTED");
-
-    await advanceTimersByTimeAsync(16_000);
-    await flushMicrotasks();
-
-    await waitFor(() => {
-      expect(useRunStatusStore.getState().connectionState).toBe("CONNECTED");
-      expect(useEntityGraphStore.getState().analysis.entities).toEqual([
-        recoveredEntity,
-      ]);
-    });
+    client._resetForTest();
+    expect(unsubscribeSpy).toHaveBeenCalled();
   });
 });

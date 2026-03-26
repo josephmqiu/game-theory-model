@@ -9,6 +9,10 @@ const abortMock = vi.fn();
 
 vi.mock("../../../services/entity-graph-service", () => ({
   getAnalysis: () => getAnalysisMock(),
+  initializeFromDatabase: vi.fn(),
+  getStaleEntityIds: vi.fn(() => []),
+  getWorkspaceId: vi.fn(() => null),
+  getAnalysisId: vi.fn(() => null),
 }));
 
 vi.mock("../../../agents/analysis-agent", () => ({
@@ -19,6 +23,7 @@ vi.mock("../../../agents/analysis-agent", () => ({
 vi.mock("../../../services/runtime-status", () => ({
   getSnapshot: () => getSnapshotMock(),
   getRevision: () => getRevisionMock(),
+  hydrateDeferredStaleIds: vi.fn(),
 }));
 
 function createAnalysis(): Analysis {

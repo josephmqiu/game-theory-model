@@ -2,7 +2,7 @@ import type { MethodologyPhase } from "./methodology";
 
 export type PromptPackId = string;
 export type PromptPackVersion = string;
-export type PromptPackMode = "analysis-runtime";
+export type PromptPackMode = "analysis-runtime" | "synthesis" | "chat";
 export type PromptTemplateVariant = "initial" | "revision";
 
 export interface PromptPackSourceRef {
@@ -24,13 +24,13 @@ export interface PromptPackPhaseConfig {
 }
 
 export interface PromptTemplateDefinition {
-  phase: MethodologyPhase;
+  phase: string;
   variant: PromptTemplateVariant;
   text: string;
 }
 
 export interface PromptTemplateFileDefinition {
-  phase: MethodologyPhase;
+  phase: string;
   variant: PromptTemplateVariant;
   path: string;
 }
@@ -76,3 +76,5 @@ export const DEFAULT_PROMPT_PACK_ID = "game-theory/default" as const;
 export const DEFAULT_PROMPT_PACK_VERSION = "2026-03-25.1" as const;
 export const DEFAULT_PROMPT_PACK_MODE: PromptPackMode = "analysis-runtime";
 export const DEFAULT_ANALYSIS_TYPE = "game-theory" as const;
+export const SYNTHESIS_PROMPT_PACK_MODE: PromptPackMode = "synthesis";
+export const CHAT_PROMPT_PACK_MODE: PromptPackMode = "chat";

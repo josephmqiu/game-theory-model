@@ -6,6 +6,7 @@ import type {
 } from "../../../shared/types/events";
 import type { MethodologyPhase } from "../../../shared/types/methodology";
 import type { RuntimeError } from "../../../shared/types/runtime-error";
+import type { UserInputOption } from "../../../shared/types/user-input";
 import type {
   ActivityScope,
   ActivityStatus,
@@ -29,6 +30,8 @@ export const DOMAIN_EVENT_TYPES = [
   "run.completed",
   "run.failed",
   "run.cancelled",
+  "question.created",
+  "question.resolved",
 ] as const;
 
 export type DomainEventType = (typeof DOMAIN_EVENT_TYPES)[number];
@@ -134,6 +137,21 @@ export interface RunCancelledEventPayload {
   summary: RunSummaryState;
 }
 
+export interface QuestionCreatedEventPayload {
+  questionId: string;
+  header: string;
+  question: string;
+  options?: UserInputOption[];
+  multiSelect?: boolean;
+}
+
+export interface QuestionResolvedEventPayload {
+  questionId: string;
+  selectedOptions?: number[];
+  customText?: string;
+  resolvedAt: number;
+}
+
 export interface DomainEventPayloadMap {
   "thread.created": ThreadCreatedEventPayload;
   "run.created": RunCreatedEventPayload;
@@ -146,6 +164,8 @@ export interface DomainEventPayloadMap {
   "run.completed": RunCompletedEventPayload;
   "run.failed": RunFailedEventPayload;
   "run.cancelled": RunCancelledEventPayload;
+  "question.created": QuestionCreatedEventPayload;
+  "question.resolved": QuestionResolvedEventPayload;
 }
 
 export interface DomainEventMetadata {
@@ -174,22 +194,23 @@ export type AnyDomainEvent = {
   [K in DomainEventType]: DomainEvent<K>;
 }[DomainEventType];
 
-export type DomainEventInput<TType extends DomainEventType = DomainEventType> = {
-  id?: string;
-  type: TType;
-  payload: DomainEventPayloadMap[TType];
-  workspaceId?: string;
-  threadId?: string;
-  runId?: string;
-  commandId?: string;
-  receiptId?: string;
-  correlationId?: string;
-  causationId?: string;
-  causedByEventId?: string;
-  producer?: string;
-  occurredAt?: number;
-  schemaVersion?: number;
-};
+export type DomainEventInput<TType extends DomainEventType = DomainEventType> =
+  {
+    id?: string;
+    type: TType;
+    payload: DomainEventPayloadMap[TType];
+    workspaceId?: string;
+    threadId?: string;
+    runId?: string;
+    commandId?: string;
+    receiptId?: string;
+    correlationId?: string;
+    causationId?: string;
+    causedByEventId?: string;
+    producer?: string;
+    occurredAt?: number;
+    schemaVersion?: number;
+  };
 
 export type AnyDomainEventInput = {
   [K in DomainEventType]: DomainEventInput<K>;

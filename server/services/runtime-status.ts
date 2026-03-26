@@ -222,7 +222,12 @@ export function acquireRun(
 
   if (kind === "analysis" && deferredStaleIds.size > 0) {
     deferredStaleIds.clear();
-    serverLog(runId, "runtime-status", "deferred-cleared-on-analysis-start", {});
+    serverLog(
+      runId,
+      "runtime-status",
+      "deferred-cleared-on-analysis-start",
+      {},
+    );
   }
 
   activeRun = { kind, runId };
@@ -406,11 +411,16 @@ export function deferRevalidation(
 
 export function revealDeferredRevalidationPrompt(reason: string): boolean {
   if (snapshot.status !== "idle" || deferredStaleIds.size === 0) {
-    serverWarn(snapshot.runId ?? undefined, "runtime-status", "deferred-reveal-ignored", {
-      reason,
-      status: snapshot.status,
-      deferredStaleCount: deferredStaleIds.size,
-    });
+    serverWarn(
+      snapshot.runId ?? undefined,
+      "runtime-status",
+      "deferred-reveal-ignored",
+      {
+        reason,
+        status: snapshot.status,
+        deferredStaleCount: deferredStaleIds.size,
+      },
+    );
     return false;
   }
 
@@ -429,9 +439,10 @@ export function revealDeferredRevalidationPrompt(reason: string): boolean {
   return true;
 }
 
-export function dismiss(
-  runId?: string,
-): { dismissed: boolean; deferredRevalidationPending: boolean } {
+export function dismiss(runId?: string): {
+  dismissed: boolean;
+  deferredRevalidationPending: boolean;
+} {
   if (snapshot.status === "running") {
     serverWarn(runId, "runtime-status", "dismiss-ignored", {
       reason: "run-active",
@@ -446,8 +457,8 @@ export function dismiss(
 
   if (runId) {
     if (
-      (snapshot.status === "failed" || snapshot.status === "cancelled")
-      && snapshot.runId === runId
+      (snapshot.status === "failed" || snapshot.status === "cancelled") &&
+      snapshot.runId === runId
     ) {
       snapshot = createIdleSnapshot();
       snapshot.deferredRevalidationPending = false;
@@ -523,6 +534,26 @@ export function getDeferredRevalidationIds(): string[] {
 
 export function hasDeferredRevalidationIds(): boolean {
   return deferredStaleIds.size > 0;
+}
+
+/**
+ * Hydrate deferred stale IDs from persisted entity stale flags on startup.
+ * Called after entity-graph-service.initializeFromDatabase().
+ */
+export function hydrateDeferredStaleIds(staleEntityIds: string[]): void {
+  if (staleEntityIds.length === 0) return;
+
+  for (const id of staleEntityIds) {
+    deferredStaleIds.add(id);
+  }
+
+  if (snapshot.status === "idle") {
+    snapshot = { ...snapshot, deferredRevalidationPending: true };
+  }
+
+  serverLog(undefined, "runtime-status", "deferred-hydrated-from-db", {
+    count: staleEntityIds.length,
+  });
 }
 
 export function _resetForTest(): void {

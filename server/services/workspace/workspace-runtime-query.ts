@@ -1,5 +1,6 @@
 import type { WorkspaceRuntimeBootstrap } from "../../../shared/types/workspace-runtime";
 import type { MessageRepository } from "./message-repository";
+import type { QuestionRepository } from "./question-repository";
 import type { RunRepository } from "./run-repository";
 import type { ActivityRepository } from "./activity-repository";
 import type { PhaseTurnSummaryRepository } from "./phase-turn-summary-repository";
@@ -16,6 +17,7 @@ export interface WorkspaceRuntimeQueryDatabase {
   activities: ActivityRepository;
   runs: RunRepository;
   phaseTurnSummaries: PhaseTurnSummaryRepository;
+  questions?: QuestionRepository;
 }
 
 interface WorkspaceRuntimeSnapshotCore {
@@ -73,6 +75,10 @@ function getThreadDetail(
     return null;
   }
 
+  const pendingQuestions = database.questions
+    ? database.questions.listByThreadId(threadId, "pending")
+    : [];
+
   return {
     thread,
     messages: database.messages
@@ -89,6 +95,7 @@ function getThreadDetail(
         }),
       ),
     activities: database.activities.listActivitiesByThreadId(threadId),
+    ...(pendingQuestions.length > 0 ? { pendingQuestions } : {}),
   };
 }
 

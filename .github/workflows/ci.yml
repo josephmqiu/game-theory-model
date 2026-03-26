@@ -44,8 +44,5 @@ jobs:
       - name: Prepare smoke artifacts
         run: bun run test:smoke:prepare
 
-      - name: Run SSE smoke test
-        run: bun run smoke-tests/sse.ts
-
       - name: Run MCP smoke test
         run: bun run smoke-tests/mcp.ts

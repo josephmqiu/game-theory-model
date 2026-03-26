@@ -41,6 +41,7 @@ import {
   handleDeleteRelationship,
   handleRerunPhases,
   handleAbortAnalysis,
+  handleAskUser,
 } from "../../mcp/product-tools";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 import { getClaudeProviderSnapshot } from "./claude-health";
@@ -423,6 +424,30 @@ export async function createChatMcpServer() {
     tool("abort_analysis", "Abort the active analysis", {}, async () => ({
       content: [{ type: "text" as const, text: await handleAbortAnalysis() }],
     })),
+    tool(
+      "ask_user",
+      "Ask the user clarifying questions about assumptions, motivations, or boundaries",
+      {
+        questions: z.array(
+          z.object({
+            header: z.string().optional(),
+            question: z.string(),
+            options: z
+              .array(
+                z.object({
+                  label: z.string(),
+                  description: z.string().optional(),
+                }),
+              )
+              .optional(),
+            multiSelect: z.boolean().optional(),
+          }),
+        ),
+      },
+      async (args) => ({
+        content: [{ type: "text" as const, text: await handleAskUser(args) }],
+      }),
+    ),
   ];
 
   return createSdkMcpServer({
@@ -539,6 +564,35 @@ export async function createAnalysisMcpServer(
               text: JSON.stringify(requestLoopback(args, toolContext)),
             },
           ],
+        }),
+      ),
+    );
+  }
+
+  if (requestedToolSet.has("ask_user")) {
+    tools.push(
+      tool(
+        "ask_user",
+        "Ask the user clarifying questions about assumptions, motivations, or boundaries",
+        {
+          questions: z.array(
+            z.object({
+              header: z.string().optional(),
+              question: z.string(),
+              options: z
+                .array(
+                  z.object({
+                    label: z.string(),
+                    description: z.string().optional(),
+                  }),
+                )
+                .optional(),
+              multiSelect: z.boolean().optional(),
+            }),
+          ),
+        },
+        async (args) => ({
+          content: [{ type: "text" as const, text: await handleAskUser(args) }],
         }),
       ),
     );

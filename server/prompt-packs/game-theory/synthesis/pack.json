@@ -1,0 +1,16 @@
+{
+  "analysisType": "game-theory",
+  "mode": "synthesis",
+  "id": "game-theory/synthesis-default",
+  "version": "2026-03-25.1",
+  "source": {
+    "kind": "bundled"
+  },
+  "templateFiles": [
+    {
+      "phase": "system",
+      "variant": "initial",
+      "path": "prompts/system/initial.md"
+    }
+  ]
+}

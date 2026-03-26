@@ -14,6 +14,7 @@ import type { MethodologyPhase } from "../../shared/types/methodology";
 import type { RelationshipType } from "../../shared/types/entity";
 import * as analysisOrchestrator from "../agents/analysis-agent";
 import * as revalidationService from "../services/revalidation-service";
+import * as questionService from "../services/workspace/question-service";
 import { ALL_PHASES, V1_PHASES } from "../../src/types/methodology";
 import { submitCommand } from "../services/command-handlers";
 
@@ -98,6 +99,55 @@ export const ANALYSIS_MODE_TOOL_DEFINITIONS = [
         },
       },
       required: ["trigger_type", "justification"],
+    },
+  },
+  {
+    name: "ask_user",
+    description:
+      "Ask the user one or more clarifying questions. Use when you need human input about assumptions, actor motivations, scenario boundaries, or analytical choices. The tool blocks until the user answers all questions.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        questions: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              header: {
+                type: "string",
+                description:
+                  "Short label for the question (e.g. 'Clarification needed')",
+              },
+              question: {
+                type: "string",
+                description: "The question text to present to the user",
+              },
+              options: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    label: { type: "string", description: "Option label" },
+                    description: {
+                      type: "string",
+                      description: "Optional description of the option",
+                    },
+                  },
+                  required: ["label"],
+                },
+                description: "Optional predefined answer choices",
+              },
+              multiSelect: {
+                type: "boolean",
+                description: "Allow selecting multiple options (default false)",
+              },
+            },
+            required: ["question"],
+          },
+          description: "One or more questions to ask the user",
+        },
+      },
+      required: ["questions"],
     },
   },
 ] as const satisfies readonly ToolDefinition[];
@@ -368,11 +418,14 @@ export function handleQueryEntities(args: {
   stale?: boolean;
 }): string {
   return JSON.stringify(
-    queryEntities({
-      phase: args.phase,
-      type: args.type,
-      stale: args.stale,
-    }, resolveToolContext()),
+    queryEntities(
+      {
+        phase: args.phase,
+        type: args.type,
+        stale: args.stale,
+      },
+      resolveToolContext(),
+    ),
   );
 }
 
@@ -381,10 +434,13 @@ export function handleQueryRelationships(args: {
   entityId?: string;
 }): string {
   return JSON.stringify(
-    queryRelationships({
-      type: args.type,
-      entityId: args.entityId,
-    }, resolveToolContext()),
+    queryRelationships(
+      {
+        type: args.type,
+        entityId: args.entityId,
+      },
+      resolveToolContext(),
+    ),
   );
 }
 
@@ -555,6 +611,55 @@ export async function handleAbortAnalysis(): Promise<string> {
   return JSON.stringify(receipt.result);
 }
 
+export async function handleAskUser(args: {
+  questions: Array<{
+    header?: string;
+    question: string;
+    options?: Array<{ label: string; description?: string }>;
+    multiSelect?: boolean;
+  }>;
+}): Promise<string> {
+  const context = resolveToolContext();
+  if (!context.workspaceId || !context.threadId) {
+    return JSON.stringify({
+      error: "Cannot ask user without workspace/thread context",
+    });
+  }
+
+  const results: Array<{
+    questionId: string;
+    question: string;
+    answer: { selectedOptions?: number[]; customText?: string };
+  }> = [];
+
+  for (const q of args.questions) {
+    const pending = questionService.createPendingQuestion({
+      workspaceId: context.workspaceId,
+      threadId: context.threadId,
+      runId: context.runId,
+      phase: undefined,
+      header: q.header ?? "Clarification needed",
+      question: q.question,
+      options: q.options,
+      multiSelect: q.multiSelect,
+      producer: "mcp:ask_user",
+    });
+
+    const answer = await questionService.waitForAnswer(pending.question.id);
+
+    results.push({
+      questionId: pending.question.id,
+      question: q.question,
+      answer: {
+        selectedOptions: answer.selectedOptions,
+        customText: answer.customText,
+      },
+    });
+  }
+
+  return JSON.stringify({ answers: results });
+}
+
 export async function handleToolCall(
   name: string,
   args: Record<string, unknown> | undefined,
@@ -616,6 +721,11 @@ export async function handleToolCall(
         };
       case "abort_analysis":
         return { text: await handleAbortAnalysis(), isError: false };
+      case "ask_user":
+        return {
+          text: await handleAskUser(toolArgs as never),
+          isError: false,
+        };
       default:
         throw new Error(`Unknown tool: ${name}`);
     }

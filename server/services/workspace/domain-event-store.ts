@@ -22,6 +22,7 @@ import type { RunRepository } from "./run-repository";
 import type { ThreadRepository } from "./thread-repository";
 import type { WorkspaceRepository } from "./workspace-repository";
 import type { MessageRepository } from "./message-repository";
+import type { QuestionRepository } from "./question-repository";
 import {
   PRIMARY_THREAD_TITLE,
   resolveThreadContext,
@@ -34,6 +35,7 @@ interface DomainProjectorDependencies {
   runs: RunRepository;
   activities: ActivityRepository;
   phaseTurnSummaries: PhaseTurnSummaryRepository;
+  questions?: QuestionRepository;
 }
 
 export interface ResolvedDomainContext {
@@ -412,6 +414,35 @@ function projectEvent(
       }
       return;
     }
+    case "question.created": {
+      if (repositories.questions) {
+        repositories.questions.upsertPendingQuestion(event.workspaceId, {
+          id: event.payload.questionId,
+          threadId: event.threadId,
+          runId: event.runId ?? undefined,
+          header: event.payload.header,
+          question: event.payload.question,
+          options: event.payload.options,
+          multiSelect: event.payload.multiSelect,
+          createdAt: event.occurredAt,
+        });
+      }
+      return;
+    }
+    case "question.resolved": {
+      if (repositories.questions) {
+        repositories.questions.resolvePendingQuestion(
+          event.payload.questionId,
+          {
+            questionId: event.payload.questionId,
+            selectedOptions: event.payload.selectedOptions,
+            customText: event.payload.customText,
+            resolvedAt: event.payload.resolvedAt,
+          },
+        );
+      }
+      return;
+    }
   }
 }
 
@@ -441,6 +472,7 @@ export function createDomainEventStore(input: {
   activities: ActivityRepository;
   phaseTurnSummaries: PhaseTurnSummaryRepository;
   domainEvents: DomainEventRepository;
+  questions?: QuestionRepository;
 }): DomainEventStore {
   const repositories: DomainProjectorDependencies = {
     threads: input.threads,
@@ -448,6 +480,7 @@ export function createDomainEventStore(input: {
     runs: input.runs,
     activities: input.activities,
     phaseTurnSummaries: input.phaseTurnSummaries,
+    questions: input.questions,
   };
 
   return {
@@ -520,6 +553,7 @@ export function createDomainEventStore(input: {
           activities: input.activities,
           runs: input.runs,
           phaseTurnSummaries: input.phaseTurnSummaries,
+          questions: input.questions,
         },
         persisted,
       );

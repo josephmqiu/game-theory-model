@@ -1,0 +1,21 @@
+{
+  "analysisType": "game-theory",
+  "mode": "chat",
+  "id": "game-theory/chat-default",
+  "version": "2026-03-25.1",
+  "source": {
+    "kind": "bundled"
+  },
+  "templateFiles": [
+    {
+      "phase": "system-with-analysis",
+      "variant": "initial",
+      "path": "prompts/system-with-analysis/initial.md"
+    },
+    {
+      "phase": "system-empty-canvas",
+      "variant": "initial",
+      "path": "prompts/system-empty-canvas/initial.md"
+    }
+  ]
+}

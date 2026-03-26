@@ -3,7 +3,7 @@ import * as entityGraphService from "../entity-graph-service";
 import {
   serializeGraphSummary,
   synthesizeReport,
-  SYNTHESIS_SYSTEM_PROMPT,
+  getSynthesisSystemPrompt,
 } from "../synthesis-service";
 import type { AnalysisEntity } from "../../../shared/types/entity";
 
@@ -42,12 +42,12 @@ beforeEach(() => {
 // ── Tests ──
 
 describe("synthesis system prompt", () => {
-  it("provides AI instructions for generating executive analysis reports from entity graphs", () => {
-    expect(typeof SYNTHESIS_SYSTEM_PROMPT).toBe("string");
-    expect(SYNTHESIS_SYSTEM_PROMPT.length).toBeGreaterThan(0);
-    // The prompt must instruct the AI about the key report fields
-    expect(SYNTHESIS_SYSTEM_PROMPT).toContain("executive_summary");
-    expect(SYNTHESIS_SYSTEM_PROMPT).toContain("entity_references");
+  it("loads from prompt-pack registry and contains key report field instructions", () => {
+    const prompt = getSynthesisSystemPrompt();
+    expect(typeof prompt).toBe("string");
+    expect(prompt.length).toBeGreaterThan(0);
+    expect(prompt).toContain("executive_summary");
+    expect(prompt).toContain("entity_references");
   });
 });
 

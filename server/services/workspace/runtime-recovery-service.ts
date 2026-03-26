@@ -3,7 +3,10 @@ import {
   createSessionRuntimeError,
   type RuntimeError,
 } from "../../../shared/types/runtime-error";
+import * as entityGraphService from "../entity-graph-service";
+import * as runtimeStatus from "../runtime-status";
 import { getWorkspaceDatabase } from "./workspace-db";
+import { resolveWorkspaceId } from "./workspace-context";
 import {
   clearProviderSessionBinding,
   getProviderSessionBinding,
@@ -262,6 +265,17 @@ function appendRecoveryFailure(input: {
 
 async function runStartupRecovery(): Promise<void> {
   const database = getWorkspaceDatabase();
+
+  // Hydrate the entity graph from SQLite before any consumers read it.
+  const workspaceId = resolveWorkspaceId(database.workspaces);
+  entityGraphService.initializeFromDatabase(workspaceId);
+
+  // Hydrate deferred stale IDs from persisted entity stale flags.
+  const staleIds = entityGraphService.getStaleEntityIds();
+  if (staleIds.length > 0) {
+    runtimeStatus.hydrateDeferredStaleIds(staleIds);
+  }
+
   const runningRuns = database.runs.listRunsByStatus("running");
 
   recordRecoveryLog({

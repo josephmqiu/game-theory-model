@@ -5,11 +5,17 @@ import type {
   ThreadMessageState,
   ThreadState,
 } from "./workspace-state";
+import type { AnalysisMutationEvent, AnalysisProgressEvent } from "./events";
+import type { RunStatus } from "./api";
+import type { PendingQuestionState } from "./user-input";
 
 export type WorkspaceRuntimeChannel =
   | "threads"
   | "thread-detail"
-  | "run-detail";
+  | "run-detail"
+  | "analysis-mutation"
+  | "analysis-status"
+  | "analysis-progress";
 
 export interface WorkspaceRuntimeScope {
   workspaceId: string;
@@ -24,6 +30,7 @@ export interface WorkspaceRuntimeThreadDetail {
   thread: ThreadState;
   messages: ThreadMessageState[];
   activities: ActivityEntry[];
+  pendingQuestions?: PendingQuestionState[];
 }
 
 export interface WorkspaceRuntimeRunDetail {
@@ -60,10 +67,25 @@ export interface WorkspaceRuntimeRunDetailPushPayload {
   latestPhaseTurns: PhaseTurnSummaryState[];
 }
 
+export interface WorkspaceRuntimeAnalysisMutationPayload {
+  event: AnalysisMutationEvent;
+}
+
+export interface WorkspaceRuntimeAnalysisStatusPayload {
+  runStatus: RunStatus;
+}
+
+export interface WorkspaceRuntimeAnalysisProgressPayload {
+  event: AnalysisProgressEvent;
+}
+
 export interface WorkspaceRuntimePushPayloadMap {
   threads: WorkspaceRuntimeThreadsPushPayload;
   "thread-detail": WorkspaceRuntimeThreadDetailPushPayload;
   "run-detail": WorkspaceRuntimeRunDetailPushPayload;
+  "analysis-mutation": WorkspaceRuntimeAnalysisMutationPayload;
+  "analysis-status": WorkspaceRuntimeAnalysisStatusPayload;
+  "analysis-progress": WorkspaceRuntimeAnalysisProgressPayload;
 }
 
 export interface WorkspaceRuntimeClientHello {
@@ -79,8 +101,17 @@ export interface WorkspaceRuntimeCreateThreadRequestPayload {
   title?: string;
 }
 
+export interface WorkspaceRuntimeResolveQuestionPayload {
+  workspaceId: string;
+  threadId: string;
+  questionId: string;
+  selectedOptions?: number[];
+  customText?: string;
+}
+
 export interface WorkspaceRuntimeRequestPayloadMap {
   "workspace.thread.create": WorkspaceRuntimeCreateThreadRequestPayload;
+  "question.resolve": WorkspaceRuntimeResolveQuestionPayload;
 }
 
 export type WorkspaceRuntimeRequestKind =

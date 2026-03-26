@@ -1,13 +1,11 @@
 // src/services/ai/analysis-client.ts
-// Renderer-side analysis client. Communicates with server via HTTP/SSE ONLY.
+// Renderer-side analysis client. Communicates with server via HTTP and receives
+// real-time events through the workspace-runtime WebSocket transport.
 // NEVER imports Node.js modules or server-side services.
 
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useCanvasStore } from "@/stores/canvas-store";
-import {
-  useRunStatusStore,
-  type ConnectionState,
-} from "@/stores/run-status-store";
+import { useRunStatusStore } from "@/stores/run-status-store";
 import type {
   AbortAnalysisResponse,
   AnalysisStateResponse,
@@ -17,13 +15,17 @@ import type {
   AnalysisMutationEvent,
   AnalysisPhaseActivityKind,
   AnalysisProgressEvent,
-  AnalysisStreamEnvelope,
 } from "../../../shared/types/events";
+import type {
+  WorkspaceRuntimeBootstrapEnvelope,
+  WorkspaceRuntimePushEnvelope,
+} from "../../../shared/types/workspace-runtime";
 import type { Analysis } from "../../../shared/types/entity";
 import type { AnalysisRuntimeOverrides } from "../../../shared/types/analysis-runtime";
 import i18n from "@/i18n";
 import { getEntityCardMetrics } from "@/services/entity/entity-card-metrics";
 import { formatPhaseActivityNote } from "./phase-activity-format";
+import { workspaceRuntimeClient } from "./workspace-runtime-client";
 
 export interface AnalysisPhaseActivityEvent {
   type: "phase_activity";
@@ -41,27 +43,11 @@ export type AnalysisProgressStreamEvent =
 
 type ProgressCallback = (event: AnalysisProgressStreamEvent) => void;
 
-type StreamEnvelope = AnalysisStreamEnvelope;
-
-type EventStreamManagerWindow = Window & {
-  __eventStreamManager?: EventStreamManager;
-};
-
-declare global {
-  interface Window {
-    __eventStreamManager?: EventStreamManager;
-  }
-}
-
-const HEARTBEAT_TIMEOUT_MS = 30_000;
-const HEARTBEAT_CHECK_INTERVAL_MS = 5_000;
-const MAX_BUFFERED_EVENTS = 1_000;
-const MAX_RECOVERY_FAILURES = 5;
-const RECOVERY_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
-
 let currentController: AbortController | null = null;
 let progressListeners: ProgressCallback[] = [];
 let abortRequested = false;
+let unsubscribeWs: (() => void) | null = null;
+let hydrated = false;
 
 function notifyProgress(event: AnalysisProgressStreamEvent): void {
   progressListeners.forEach((cb) => cb(event));
@@ -181,13 +167,6 @@ function applyMutationEvent(event: AnalysisMutationEvent): boolean {
   }
 }
 
-function stripEnvelope(
-  envelope: Exclude<StreamEnvelope, { channel: "ping" }>,
-): AnalysisProgressStreamEvent | AnalysisMutationEvent | RunStatus {
-  const { channel: _channel, revision: _revision, ...payload } = envelope;
-  return payload;
-}
-
 function applySnapshot(state: AnalysisStateResponse): void {
   abortRequested = false;
   applyAnalysisSnapshot(state.analysis);
@@ -199,354 +178,74 @@ function applySnapshot(state: AnalysisStateResponse): void {
   });
 }
 
-function getRecoveryDelayMs(failureCount: number): number {
-  return (
-    RECOVERY_BACKOFF_MS[
-      Math.min(failureCount - 1, RECOVERY_BACKOFF_MS.length - 1)
-    ] ?? 30_000
-  );
-}
+// ── WebSocket transport integration ──
 
-function getWindow(): EventStreamManagerWindow | null {
-  if (typeof window === "undefined") {
-    return null;
+function handleWsPush(envelope: WorkspaceRuntimePushEnvelope): void {
+  if (!hydrated) {
+    return;
   }
-  return window as EventStreamManagerWindow;
+
+  switch (envelope.channel) {
+    case "analysis-mutation": {
+      const typed =
+        envelope as WorkspaceRuntimePushEnvelope<"analysis-mutation">;
+      const shouldRecover = applyMutationEvent(typed.payload.event);
+      if (shouldRecover) {
+        void recoverFromStateChange();
+      }
+      return;
+    }
+    case "analysis-status": {
+      const typed = envelope as WorkspaceRuntimePushEnvelope<"analysis-status">;
+      applyRunStatus(typed.payload.runStatus);
+      return;
+    }
+    case "analysis-progress": {
+      const typed =
+        envelope as WorkspaceRuntimePushEnvelope<"analysis-progress">;
+      applyProgressEvent(typed.payload.event as AnalysisProgressStreamEvent);
+      return;
+    }
+  }
 }
 
-class EventStreamManager {
-  private eventSource: EventSource | null = null;
-  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-  private recoveryRetryTimer: ReturnType<typeof setTimeout> | null = null;
-  private recoveryPromise: Promise<AnalysisStateResponse> | null = null;
-  private bufferedEvents: StreamEnvelope[] = [];
-  private bufferOverflowed = false;
-  private recoveryFailures = 0;
-  private disposed = false;
-  private lastPingAt = Date.now();
-  private readonly handleEventSourceOpen = () => {
-    if (this.disposed) {
-      return;
-    }
-
-    this.lastPingAt = Date.now();
-    if (this.getConnectionState() === "DISCONNECTED") {
-      this.recoveryFailures = 0;
-      void this.recover("eventsource-open").catch(() => {});
-      return;
-    }
-
-    if (this.getConnectionState() === "CONNECTING") {
-      this.setConnectionState("CONNECTED");
-    }
-  };
-  private readonly handleEventSourceMessage = (event: Event) => {
-    if (this.disposed) {
-      return;
-    }
-    this.handleMessageEvent(String((event as MessageEvent).data ?? ""));
-  };
-  private readonly handleEventSourceError = () => {
-    if (this.disposed || this.getConnectionState() === "RECOVERING") {
-      return;
-    }
-    void this.recover("eventsource-error", { recycleEventSource: true }).catch(
-      () => {},
+async function recoverFromStateChange(): Promise<void> {
+  try {
+    const state = await fetchAnalysisState();
+    applySnapshot(state);
+  } catch (e) {
+    console.warn(
+      "[analysis-client] state-recovery-failed",
+      e instanceof Error ? e.message : e,
     );
-  };
-
-  constructor() {
-    this.setConnectionState("RECOVERING");
-    this.openEventSource({ preserveConnectionState: true });
-    this.startHeartbeatMonitor();
-    void this.recover("initial-load").catch(() => {});
-  }
-
-  hydrate(): Promise<AnalysisStateResponse> {
-    if (!this.eventSource) {
-      this.openEventSource({ preserveConnectionState: true });
-    }
-    return this.recover("manual-hydrate");
-  }
-
-  resetForTest(): void {
-    this.dispose();
-    this.bufferedEvents = [];
-    this.bufferOverflowed = false;
-    this.recoveryFailures = 0;
-    this.lastPingAt = Date.now();
-    this.disposed = false;
-    this.recoveryPromise = null;
-    this.openEventSource({ preserveConnectionState: true });
-    this.startHeartbeatMonitor();
-    this.setConnectionState("RECOVERING");
-    void this.recover("test-reset").catch(() => {});
-  }
-
-  dispose(): void {
-    this.disposed = true;
-    this.clearRecoveryRetryTimer();
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
-    }
-    this.detachEventSourceListeners();
-    this.eventSource?.close();
-    this.eventSource = null;
-    this.recoveryPromise = null;
-  }
-
-  private getConnectionState(): ConnectionState {
-    return useRunStatusStore.getState().connectionState;
-  }
-
-  private setConnectionState(connectionState: ConnectionState): void {
-    useRunStatusStore.getState().setConnectionState(connectionState);
-  }
-
-  private startHeartbeatMonitor(): void {
-    if (this.heartbeatInterval) {
-      return;
-    }
-
-    this.heartbeatInterval = setInterval(() => {
-      if (this.disposed || !this.eventSource) {
-        return;
-      }
-
-      const connectionState = this.getConnectionState();
-      if (connectionState !== "CONNECTED" && connectionState !== "CONNECTING") {
-        return;
-      }
-
-      if (Date.now() - this.lastPingAt <= HEARTBEAT_TIMEOUT_MS) {
-        return;
-      }
-
-      void this.recover("heartbeat-timeout", {
-        recycleEventSource: true,
-      }).catch(() => {});
-    }, HEARTBEAT_CHECK_INTERVAL_MS);
-  }
-
-  private clearRecoveryRetryTimer(): void {
-    if (!this.recoveryRetryTimer) {
-      return;
-    }
-    clearTimeout(this.recoveryRetryTimer);
-    this.recoveryRetryTimer = null;
-  }
-
-  private detachEventSourceListeners(
-    eventSource: EventSource | null = this.eventSource,
-  ): void {
-    if (!eventSource) {
-      return;
-    }
-
-    eventSource.removeEventListener("open", this.handleEventSourceOpen);
-    eventSource.removeEventListener("message", this.handleEventSourceMessage);
-    eventSource.removeEventListener("error", this.handleEventSourceError);
-  }
-
-  private scheduleRecoveryRetry(): void {
-    if (this.disposed) {
-      return;
-    }
-
-    this.clearRecoveryRetryTimer();
-    const delayMs = getRecoveryDelayMs(this.recoveryFailures);
-    this.recoveryRetryTimer = setTimeout(() => {
-      this.recoveryRetryTimer = null;
-      void this.recover("retry").catch(() => {});
-    }, delayMs);
-  }
-
-  private openEventSource(options?: {
-    preserveConnectionState?: boolean;
-  }): void {
-    if (this.disposed) {
-      return;
-    }
-
-    if (this.eventSource) {
-      this.detachEventSourceListeners();
-      this.eventSource.close();
-    }
-    this.lastPingAt = Date.now();
-    if (!options?.preserveConnectionState) {
-      this.setConnectionState("CONNECTING");
-    }
-
-    const eventSource = new EventSource("/api/ai/events");
-    this.eventSource = eventSource;
-
-    eventSource.addEventListener("open", this.handleEventSourceOpen);
-    eventSource.addEventListener("message", this.handleEventSourceMessage);
-    eventSource.addEventListener("error", this.handleEventSourceError);
-  }
-
-  private bufferEvent(envelope: StreamEnvelope): void {
-    if (this.bufferOverflowed) {
-      return;
-    }
-
-    if (this.bufferedEvents.length >= MAX_BUFFERED_EVENTS) {
-      this.bufferedEvents = [];
-      this.bufferOverflowed = true;
-      return;
-    }
-
-    this.bufferedEvents.push(envelope);
-  }
-
-  private handleMessageEvent(raw: string): void {
-    let envelope: StreamEnvelope;
-
-    try {
-      envelope = JSON.parse(raw) as StreamEnvelope;
-    } catch (_error) {
-      console.warn("[analysis-client] malformed-sse-json", raw.slice(0, 200));
-      return;
-    }
-
-    if (envelope.channel === "ping") {
-      this.lastPingAt = Date.now();
-    }
-
-    const connectionState = this.getConnectionState();
-    if (
-      connectionState === "RECOVERING" ||
-      connectionState === "DISCONNECTED"
-    ) {
-      this.bufferEvent(envelope);
-      return;
-    }
-
-    this.applyEnvelope(envelope);
-  }
-
-  private applyEnvelope(envelope: StreamEnvelope): void {
-    switch (envelope.channel) {
-      case "ping":
-        this.lastPingAt = Date.now();
-        return;
-
-      case "status":
-        applyRunStatus(stripEnvelope(envelope) as RunStatus);
-        return;
-
-      case "progress":
-        applyProgressEvent(
-          stripEnvelope(envelope) as AnalysisProgressStreamEvent,
-        );
-        return;
-
-      case "mutation": {
-        const shouldRecover = applyMutationEvent(
-          stripEnvelope(envelope) as AnalysisMutationEvent,
-        );
-        if (shouldRecover) {
-          void this.recover("state-changed").catch(() => {});
-        }
-        return;
-      }
-    }
-  }
-
-  private async replayBufferedEvents(snapshotRevision: number): Promise<void> {
-    if (this.bufferOverflowed) {
-      this.bufferedEvents = [];
-      this.bufferOverflowed = false;
-      return;
-    }
-
-    while (this.bufferedEvents.length > 0) {
-      const pendingEvents = this.bufferedEvents;
-      this.bufferedEvents = [];
-
-      for (const envelope of pendingEvents) {
-        if (
-          typeof envelope.revision === "number" &&
-          envelope.revision <= snapshotRevision
-        ) {
-          continue;
-        }
-        this.applyEnvelope(envelope);
-      }
-
-      if (this.bufferOverflowed) {
-        this.bufferedEvents = [];
-        this.bufferOverflowed = false;
-        return;
-      }
-    }
-  }
-
-  private recover(
-    _reason: string,
-    options?: { recycleEventSource?: boolean },
-  ): Promise<AnalysisStateResponse> {
-    if (this.disposed) {
-      return Promise.reject(new Error("EventStreamManager disposed"));
-    }
-
-    if (options?.recycleEventSource || !this.eventSource) {
-      this.setConnectionState("RECOVERING");
-      this.openEventSource({ preserveConnectionState: true });
-    } else {
-      this.setConnectionState("RECOVERING");
-    }
-
-    this.clearRecoveryRetryTimer();
-
-    if (this.recoveryPromise) {
-      return this.recoveryPromise;
-    }
-
-    this.recoveryPromise = (async () => {
-      try {
-        const state = await fetchAnalysisState();
-        this.recoveryFailures = 0;
-        applySnapshot(state);
-        await this.replayBufferedEvents(state.revision);
-        this.lastPingAt = Date.now();
-        this.setConnectionState("CONNECTED");
-        return state;
-      } catch (e) {
-        this.recoveryFailures += 1;
-        console.warn(
-          "[analysis-client] state-recovery-failed",
-          e instanceof Error ? e.message : e,
-        );
-
-        if (this.recoveryFailures >= MAX_RECOVERY_FAILURES) {
-          this.setConnectionState("DISCONNECTED");
-        }
-        this.scheduleRecoveryRetry();
-
-        throw e;
-      } finally {
-        this.recoveryPromise = null;
-      }
-    })();
-
-    return this.recoveryPromise;
   }
 }
 
-function getEventStreamManager(): EventStreamManager | null {
-  const windowRef = getWindow();
-  if (!windowRef) {
-    return null;
+function handleWsEnvelope(
+  envelope: WorkspaceRuntimeBootstrapEnvelope | WorkspaceRuntimePushEnvelope,
+): void {
+  if (envelope.type === "bootstrap" && hydrated) {
+    // WebSocket reconnected — re-hydrate analysis state from the server.
+    useRunStatusStore.getState().setConnectionState("RECOVERING");
+    void recoverFromStateChange().then(() => {
+      useRunStatusStore.getState().setConnectionState("CONNECTED");
+    });
+    return;
   }
 
-  if (!windowRef.__eventStreamManager) {
-    windowRef.__eventStreamManager = new EventStreamManager();
+  if (envelope.type === "push") {
+    handleWsPush(envelope);
   }
-
-  return windowRef.__eventStreamManager;
 }
+
+function ensureWsSubscription(): void {
+  if (unsubscribeWs) {
+    return;
+  }
+  unsubscribeWs = workspaceRuntimeClient.subscribe(handleWsEnvelope);
+}
+
+// ── Public API ──
 
 export function onProgress(cb: ProgressCallback): () => void {
   progressListeners.push(cb);
@@ -604,12 +303,27 @@ export function abort(): void {
 }
 
 export async function hydrateAnalysisState(): Promise<AnalysisStateResponse | null> {
-  const manager = getEventStreamManager();
-  if (!manager) {
+  if (typeof window === "undefined") {
     return null;
   }
 
-  return manager.hydrate();
+  ensureWsSubscription();
+  useRunStatusStore.getState().setConnectionState("RECOVERING");
+
+  try {
+    const state = await fetchAnalysisState();
+    applySnapshot(state);
+    hydrated = true;
+    useRunStatusStore.getState().setConnectionState("CONNECTED");
+    return state;
+  } catch (e) {
+    console.warn(
+      "[analysis-client] hydration-failed",
+      e instanceof Error ? e.message : e,
+    );
+    useRunStatusStore.getState().setConnectionState("DISCONNECTED");
+    return null;
+  }
 }
 
 export async function startAnalysis(
@@ -622,7 +336,7 @@ export async function startAnalysis(
     throw new Error("Analysis already running");
   }
 
-  getEventStreamManager();
+  ensureWsSubscription();
 
   const controller = new AbortController();
   currentController = controller;
@@ -718,13 +432,12 @@ export function _resetForTest(): void {
   currentController = null;
   progressListeners = [];
   abortRequested = false;
-  useRunStatusStore.getState().resetForTest();
-  const manager = getWindow()?.__eventStreamManager;
-  manager?.dispose();
-  const windowRef = getWindow();
-  if (windowRef) {
-    delete windowRef.__eventStreamManager;
+  hydrated = false;
+  if (unsubscribeWs) {
+    unsubscribeWs();
+    unsubscribeWs = null;
   }
+  useRunStatusStore.getState().resetForTest();
 }
 
 // Handle entity_snapshot from chat SSE stream

@@ -13,9 +13,13 @@ import { createRunRepository } from "./run-repository";
 import { createThreadRepository } from "./thread-repository";
 import { createWorkspaceRepository } from "./workspace-repository";
 import { createSqliteCommandReceiptStore } from "./command-receipt-repository";
+import { createEntityGraphRepository } from "./entity-graph-repository";
+import { createQuestionRepository } from "./question-repository";
 import type { ActivityRepository } from "./activity-repository";
 import type { DomainEventRepository } from "./domain-event-repository";
 import type { DomainEventStore } from "./domain-event-store";
+import type { EntityGraphRepository } from "./entity-graph-repository";
+import type { QuestionRepository } from "./question-repository";
 import type { MessageRepository } from "./message-repository";
 import type { PhaseTurnSummaryRepository } from "./phase-turn-summary-repository";
 import type { ProviderSessionBindingRepository } from "./provider-session-binding-repository";
@@ -38,6 +42,8 @@ export interface WorkspaceDatabase {
   runs: RunRepository;
   phaseTurnSummaries: PhaseTurnSummaryRepository;
   domainEvents: DomainEventRepository;
+  entityGraph: EntityGraphRepository;
+  questions: QuestionRepository;
   eventStore: DomainEventStore;
   providerSessionBindings: ProviderSessionBindingRepository;
   commandReceipts: CommandReceiptStore;
@@ -73,6 +79,8 @@ export function createWorkspaceDatabase(
   const domainEvents = createDomainEventRepository(db);
   const providerSessionBindings = createProviderSessionBindingRepository(db);
   const commandReceipts = createSqliteCommandReceiptStore(db);
+  const entityGraph = createEntityGraphRepository(db);
+  const questions = createQuestionRepository(db);
   const eventStore = createDomainEventStore({
     db,
     workspaces,
@@ -82,6 +90,7 @@ export function createWorkspaceDatabase(
     activities,
     phaseTurnSummaries,
     domainEvents,
+    questions,
   });
 
   return {
@@ -94,6 +103,8 @@ export function createWorkspaceDatabase(
     runs,
     phaseTurnSummaries,
     domainEvents,
+    entityGraph,
+    questions,
     eventStore,
     providerSessionBindings,
     commandReceipts,

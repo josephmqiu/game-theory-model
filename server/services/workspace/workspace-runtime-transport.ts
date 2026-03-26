@@ -16,6 +16,7 @@ import type {
 } from "../../../shared/types/workspace-runtime";
 import { getWorkspaceDatabase } from "./workspace-db";
 import { createThreadService } from "./thread-service";
+import * as questionService from "./question-service";
 import { buildWorkspaceRuntimeSnapshotCore } from "./workspace-runtime-query";
 import {
   _resetWorkspaceRecoveryDiagnosticsForTest,
@@ -30,6 +31,7 @@ import {
   listWorkspaceRuntimeReplayPushes,
   onWorkspaceRuntimePush,
 } from "./workspace-runtime-publisher";
+import { onAnalysisBroadcast } from "./analysis-event-bridge";
 
 const MAX_RECENT_DIAGNOSTICS = 200;
 const MAX_CONNECTION_DIAGNOSTICS = 50;
@@ -55,6 +57,19 @@ const createThreadRequestSchema = z.object({
   payload: z.object({
     workspaceId: z.string().trim().min(1),
     title: z.string().trim().optional(),
+  }),
+});
+
+const resolveQuestionRequestSchema = z.object({
+  type: z.literal("request"),
+  requestId: z.string().trim().min(1),
+  kind: z.literal("question.resolve"),
+  payload: z.object({
+    workspaceId: z.string().trim().min(1),
+    threadId: z.string().trim().min(1),
+    questionId: z.string().trim().min(1),
+    selectedOptions: z.array(z.number().int().nonnegative()).optional(),
+    customText: z.string().optional(),
   }),
 });
 
@@ -236,10 +251,94 @@ async function handleHello(
   }
 }
 
+async function handleResolveQuestion(
+  peerState: PeerState,
+  envelope: WorkspaceRuntimeRequest,
+) {
+  const parsed = resolveQuestionRequestSchema.safeParse(envelope);
+  if (!parsed.success) {
+    sendEnvelope(peerState.peer, {
+      type: "response",
+      requestId: envelope.requestId,
+      ok: false,
+      error: "Invalid question.resolve payload",
+    });
+    return;
+  }
+
+  recordDiagnostic({
+    code: "request-received",
+    level: "info",
+    message: "Received question.resolve request",
+    connectionId: peerState.connectionId,
+    workspaceId: parsed.data.payload.workspaceId,
+    threadId: parsed.data.payload.threadId,
+    data: {
+      kind: parsed.data.kind,
+      requestId: parsed.data.requestId,
+      questionId: parsed.data.payload.questionId,
+    },
+  });
+
+  try {
+    questionService.resolveQuestion({
+      questionId: parsed.data.payload.questionId,
+      selectedOptions: parsed.data.payload.selectedOptions,
+      customText: parsed.data.payload.customText,
+    });
+
+    sendEnvelope(peerState.peer, {
+      type: "response",
+      requestId: parsed.data.requestId,
+      ok: true,
+      result: { questionId: parsed.data.payload.questionId },
+    });
+    recordDiagnostic({
+      code: "request-completed",
+      level: "info",
+      message: "Completed question.resolve request",
+      connectionId: peerState.connectionId,
+      workspaceId: parsed.data.payload.workspaceId,
+      threadId: parsed.data.payload.threadId,
+      data: {
+        kind: parsed.data.kind,
+        requestId: parsed.data.requestId,
+      },
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to resolve question";
+    sendEnvelope(peerState.peer, {
+      type: "response",
+      requestId: parsed.data.requestId,
+      ok: false,
+      error: message,
+    });
+    recordDiagnostic({
+      code: "request-failed",
+      level: "error",
+      message: "question.resolve request failed",
+      connectionId: peerState.connectionId,
+      workspaceId: parsed.data.payload.workspaceId,
+      threadId: parsed.data.payload.threadId,
+      data: {
+        kind: parsed.data.kind,
+        requestId: parsed.data.requestId,
+        error: message,
+      },
+    });
+  }
+}
+
 async function handleRequest(
   peerState: PeerState,
   envelope: WorkspaceRuntimeRequest,
 ) {
+  if (envelope.kind === "question.resolve") {
+    await handleResolveQuestion(peerState, envelope);
+    return;
+  }
+
   if (envelope.kind !== "workspace.thread.create") {
     const unsupportedResponse: WorkspaceRuntimeResponse = {
       type: "response",
@@ -516,6 +615,35 @@ onWorkspaceRuntimePush((push) => {
       data: {
         channel: push.channel,
         revision: push.revision,
+      },
+    });
+  }
+});
+
+// Analysis events are broadcast to ALL connected peers (no workspace/thread
+// scoping — matches the former SSE endpoint's broadcast semantics).
+onAnalysisBroadcast((broadcast) => {
+  for (const peerState of peerStates.values()) {
+    if (!peerState.workspaceId) {
+      continue;
+    }
+
+    sendEnvelope(peerState.peer, {
+      type: "push",
+      channel: broadcast.channel,
+      revision: broadcast.revision,
+      scope: { workspaceId: peerState.workspaceId },
+      payload: broadcast.payload,
+    });
+    recordDiagnostic({
+      code: "push-sent",
+      level: "info",
+      message: `Sent analysis broadcast: ${broadcast.channel}`,
+      connectionId: peerState.connectionId,
+      workspaceId: peerState.workspaceId,
+      data: {
+        channel: broadcast.channel,
+        revision: broadcast.revision,
       },
     });
   }

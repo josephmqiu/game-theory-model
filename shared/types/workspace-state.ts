@@ -132,6 +132,16 @@ export interface PhaseTurnPromptProvenance {
   doneCondition: string;
 }
 
+export interface TemplatePromptProvenance {
+  promptPackId: string;
+  promptPackVersion: string;
+  promptPackMode: PromptPackMode;
+  promptPackSource: PromptPackSourceRef;
+  templateIdentity: string;
+  templateHash: string;
+  effectivePromptHash: string;
+}
+
 export interface PhaseTurnActivitySummary {
   lastKind: AnalysisPhaseActivityKind;
   lastMessage: string;

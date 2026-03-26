@@ -70,6 +70,11 @@ function normalizeChunk(
   if (t === "turn_complete") {
     return { kind: "done" };
   }
+  if (t === "user_input_requested") {
+    // Questions arrive via WebSocket thread-detail push, not the SSE stream.
+    // If this event does appear in the stream, it's a no-op here.
+    return null;
+  }
 
   // error — legacy uses `content`, ChatEvent uses `message`
   if (t === "error") {
@@ -348,7 +353,6 @@ export function useChatHandlers() {
             );
           }
         }
-
       }
 
       if (terminalErrorMessage && !abortController.signal.aborted) {
