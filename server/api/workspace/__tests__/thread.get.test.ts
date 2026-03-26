@@ -101,4 +101,53 @@ describe("/api/workspace/thread", () => {
     expect(result).toEqual({ error: "Thread not found" });
     expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 404);
   });
+
+  it("returns 403 when workspaceId does not match the thread", async () => {
+    const database = getWorkspaceDatabase();
+    const threadService = createThreadService(database);
+    const thread = threadService.createThread({
+      workspaceId: "workspace-1",
+      title: "Scoped thread",
+      producer: "test",
+      occurredAt: 100,
+    });
+
+    getQueryMock.mockReturnValue({
+      threadId: thread.id,
+      workspaceId: "workspace-other",
+    });
+
+    const route = (await import("../thread.get")).default;
+    const result = await route({} as never);
+
+    expect(result).toEqual({
+      error: "Thread does not belong to the requested workspace",
+    });
+    expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 403);
+  });
+
+  it("returns thread detail when workspaceId matches", async () => {
+    const database = getWorkspaceDatabase();
+    const threadService = createThreadService(database);
+    const thread = threadService.createThread({
+      workspaceId: "workspace-1",
+      title: "Matching thread",
+      producer: "test",
+      occurredAt: 100,
+    });
+
+    getQueryMock.mockReturnValue({
+      threadId: thread.id,
+      workspaceId: "workspace-1",
+    });
+
+    const route = (await import("../thread.get")).default;
+    const result = await route({} as never);
+
+    expect(result).toMatchObject({
+      workspaceId: "workspace-1",
+      thread: expect.objectContaining({ id: thread.id }),
+    });
+    expect(setResponseStatusMock).not.toHaveBeenCalled();
+  });
 });

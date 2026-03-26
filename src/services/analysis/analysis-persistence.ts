@@ -442,7 +442,14 @@ export async function loadAnalysisFromText(
       fileHandle: source?.fileHandle ?? undefined,
     });
   await syncWorkspaceState(workspace, source);
-  await useThreadStore.getState().hydrateWorkspace(workspace.id);
+  try {
+    await useThreadStore.getState().hydrateWorkspace(workspace.id);
+  } catch (error) {
+    console.warn(
+      "[analysis-persistence] thread hydration failed, continuing without threads:",
+      error,
+    );
+  }
 }
 
 export async function initializeWorkspacePersistence(): Promise<void> {
@@ -452,7 +459,14 @@ export async function initializeWorkspacePersistence(): Promise<void> {
     filePath: null,
     fileHandle: null,
   });
-  await useThreadStore.getState().hydrateWorkspace(workspace.id);
+  try {
+    await useThreadStore.getState().hydrateWorkspace(workspace.id);
+  } catch (error) {
+    console.warn(
+      "[analysis-persistence] thread hydration failed, continuing without threads:",
+      error,
+    );
+  }
 }
 
 export async function openAnalysisFromPath(filePath: string): Promise<boolean> {

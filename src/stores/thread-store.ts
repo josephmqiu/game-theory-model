@@ -35,6 +35,7 @@ interface ThreadStoreState {
   hydrateWorkspace: (workspaceId: string) => Promise<void>;
   refreshThreads: () => Promise<void>;
   refreshActiveThreadDetail: () => Promise<void>;
+  refreshAndClearOverlay: () => Promise<void>;
   selectThread: (threadId: string) => Promise<void>;
   createThread: (title?: string) => Promise<void>;
   setActiveThreadIdentity: (identity: {
@@ -70,7 +71,10 @@ function readStoredThreadSelections(): Record<string, string> {
   }
 }
 
-function writeStoredThreadSelection(workspaceId: string, threadId: string): void {
+function writeStoredThreadSelection(
+  workspaceId: string,
+  threadId: string,
+): void {
   if (typeof window === "undefined") {
     return;
   }
@@ -93,11 +97,17 @@ function getStoredThreadSelection(workspaceId: string): string | undefined {
   return readStoredThreadSelections()[workspaceId];
 }
 
+// Resolve which thread to activate on workspace load.
+// Priority: stored selection > newest (threads are ORDER BY updated_at DESC
+// from the server, so threads[0] is most recently active) > primary thread.
 function resolveRestoredThreadId(
   threads: ThreadState[],
   storedThreadId?: string,
 ): string | undefined {
-  if (storedThreadId && threads.some((thread) => thread.id === storedThreadId)) {
+  if (
+    storedThreadId &&
+    threads.some((thread) => thread.id === storedThreadId)
+  ) {
     return storedThreadId;
   }
 
@@ -112,8 +122,11 @@ function toThreadDetailState(detail: ThreadDetailResponse): ThreadDetailState {
   };
 }
 
-async function loadThreadDetail(threadId: string): Promise<ThreadDetailState> {
-  const detail = await fetchThreadDetail(threadId);
+async function loadThreadDetail(
+  threadId: string,
+  workspaceId?: string,
+): Promise<ThreadDetailState> {
+  const detail = await fetchThreadDetail(threadId, workspaceId);
   return toThreadDetailState(detail);
 }
 
@@ -154,7 +167,10 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
       });
 
       if (nextActiveThreadId) {
-        const detail = await loadThreadDetail(nextActiveThreadId);
+        const detail = await loadThreadDetail(
+          nextActiveThreadId,
+          response.workspaceId,
+        );
         set({
           activeThreadDetail: detail,
         });
@@ -166,7 +182,8 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
         activeThreadId: undefined,
         activeThreadDetail: null,
         isLoading: false,
-        error: error instanceof Error ? error.message : "Failed to load threads.",
+        error:
+          error instanceof Error ? error.message : "Failed to load threads.",
       });
     }
   },
@@ -212,10 +229,26 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
       return;
     }
 
-    const detail = await loadThreadDetail(activeThreadId);
+    const detail = await loadThreadDetail(activeThreadId, get().workspaceId);
     set({
       workspaceId: detail.thread.workspaceId,
       activeThreadDetail: detail,
+      error: undefined,
+    });
+  },
+
+  async refreshAndClearOverlay() {
+    const activeThreadId = get().activeThreadId;
+    if (!activeThreadId) {
+      set({ activeThreadDetail: null, overlayMessages: [] });
+      return;
+    }
+
+    const detail = await loadThreadDetail(activeThreadId, get().workspaceId);
+    set({
+      workspaceId: detail.thread.workspaceId,
+      activeThreadDetail: detail,
+      overlayMessages: [],
       error: undefined,
     });
   },
@@ -230,7 +263,7 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
     });
 
     try {
-      const detail = await loadThreadDetail(threadId);
+      const detail = await loadThreadDetail(threadId, workspaceId);
       set({
         workspaceId: detail.thread.workspaceId,
         activeThreadDetail: detail,
@@ -240,7 +273,8 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
     } catch (error) {
       set({
         activeThreadDetail: null,
-        error: error instanceof Error ? error.message : "Failed to load thread.",
+        error:
+          error instanceof Error ? error.message : "Failed to load thread.",
       });
       if (workspaceId) {
         await get().refreshThreads();
@@ -261,12 +295,18 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
 
     try {
       const response = await createThreadRequest({ workspaceId, title });
-      const detail = await loadThreadDetail(response.thread.id);
+      const detail = await loadThreadDetail(
+        response.thread.id,
+        response.workspaceId,
+      );
       set((state) => ({
         workspaceId: response.workspaceId,
         activeThreadId: response.thread.id,
         activeThreadDetail: detail,
-        threads: [response.thread, ...state.threads.filter((thread) => thread.id !== response.thread.id)],
+        threads: [
+          response.thread,
+          ...state.threads.filter((thread) => thread.id !== response.thread.id),
+        ],
         overlayMessages: [],
         isCreating: false,
         error: undefined,
@@ -275,7 +315,8 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
     } catch (error) {
       set({
         isCreating: false,
-        error: error instanceof Error ? error.message : "Failed to create thread.",
+        error:
+          error instanceof Error ? error.message : "Failed to create thread.",
       });
     }
   },

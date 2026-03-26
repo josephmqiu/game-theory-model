@@ -1,9 +1,13 @@
 import { defineEventHandler, getQuery, setResponseStatus } from "h3";
 import { z } from "zod";
-import { createThreadService, getWorkspaceDatabase } from "../../services/workspace";
+import {
+  createThreadService,
+  getWorkspaceDatabase,
+} from "../../services/workspace";
 
 const threadQuerySchema = z.object({
   threadId: z.string().trim().min(1),
+  workspaceId: z.string().trim().min(1).optional(),
 });
 
 export default defineEventHandler((event) => {
@@ -19,6 +23,14 @@ export default defineEventHandler((event) => {
   if (!detail) {
     setResponseStatus(event, 404);
     return { error: "Thread not found" };
+  }
+
+  if (
+    parsed.data.workspaceId &&
+    detail.workspaceId !== parsed.data.workspaceId
+  ) {
+    setResponseStatus(event, 403);
+    return { error: "Thread does not belong to the requested workspace" };
   }
 
   return detail;

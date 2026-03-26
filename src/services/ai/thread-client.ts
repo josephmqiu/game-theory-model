@@ -40,8 +40,13 @@ export async function fetchThreads(
 
 export async function fetchThreadDetail(
   threadId: string,
+  workspaceId?: string,
 ): Promise<ThreadDetailResponse> {
-  const query = new URLSearchParams({ threadId });
+  const params: Record<string, string> = { threadId };
+  if (workspaceId) {
+    params.workspaceId = workspaceId;
+  }
+  const query = new URLSearchParams(params);
   const response = await fetch(`/api/workspace/thread?${query.toString()}`);
   return parseJsonResponse<ThreadDetailResponse>(response);
 }

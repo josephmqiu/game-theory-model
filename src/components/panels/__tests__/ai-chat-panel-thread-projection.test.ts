@@ -1,30 +1,83 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { projectThreadMessagesToChatMessages } from "@/services/ai/thread-projection";
+import type { ThreadMessageState } from "../../../../shared/types/workspace-state";
 
-const aiChatPanelPath = join(
-  process.cwd(),
-  "src/components/panels/ai-chat-panel.tsx",
-);
+describe("projectThreadMessagesToChatMessages", () => {
+  it("maps thread messages to chat messages preserving role and content", () => {
+    const threadMessages: ThreadMessageState[] = [
+      {
+        id: "msg-1",
+        workspaceId: "ws-1",
+        threadId: "thread-1",
+        role: "user",
+        content: "Analyze the situation",
+        createdAt: 100,
+        updatedAt: 100,
+      },
+      {
+        id: "msg-2",
+        workspaceId: "ws-1",
+        threadId: "thread-1",
+        role: "assistant",
+        content: "Here is the analysis",
+        createdAt: 200,
+        updatedAt: 200,
+      },
+    ];
 
-describe("AIChatPanel thread projection wiring", () => {
-  it("renders from projected thread detail and overlay messages instead of ai-store history", () => {
-    const source = readFileSync(aiChatPanelPath, "utf8");
+    const result = projectThreadMessagesToChatMessages(threadMessages);
 
-    expect(source).toContain("useThreadStore");
-    expect(source).toContain("projectThreadMessagesToChatMessages");
-    expect(source).toContain("activeThreadDetail?.messages");
-    expect(source).toContain("overlayMessages");
-    expect(source).not.toContain("const messages = useAIStore((s) => s.messages)");
-    expect(source).not.toContain("const chatTitle = useAIStore((s) => s.chatTitle)");
+    expect(result).toEqual([
+      {
+        id: "msg-1",
+        role: "user",
+        content: "Analyze the situation",
+        timestamp: 100,
+        attachments: undefined,
+      },
+      {
+        id: "msg-2",
+        role: "assistant",
+        content: "Here is the analysis",
+        timestamp: 200,
+        attachments: undefined,
+      },
+    ]);
   });
 
-  it("creates a server-owned thread for the new chat action and lists threads for switching", () => {
-    const source = readFileSync(aiChatPanelPath, "utf8");
+  it("returns empty array for empty input", () => {
+    expect(projectThreadMessagesToChatMessages([])).toEqual([]);
+  });
 
-    expect(source).toContain("const createThread = useThreadStore");
-    expect(source).toContain("const selectThread = useThreadStore");
-    expect(source).toContain("threads.map((thread) =>");
-    expect(source).toContain("onClick={() => void createThread()}");
+  it("projects attachments with estimated size", () => {
+    const threadMessages: ThreadMessageState[] = [
+      {
+        id: "msg-3",
+        workspaceId: "ws-1",
+        threadId: "thread-1",
+        role: "user",
+        content: "See attached",
+        createdAt: 300,
+        updatedAt: 300,
+        attachments: [
+          {
+            name: "file.png",
+            mediaType: "image/png",
+            data: "AQID",
+          },
+        ],
+      },
+    ];
+
+    const result = projectThreadMessagesToChatMessages(threadMessages);
+
+    expect(result[0].attachments).toHaveLength(1);
+    expect(result[0].attachments![0]).toMatchObject({
+      id: "msg-3-attachment-0",
+      name: "file.png",
+      mediaType: "image/png",
+      data: "AQID",
+    });
+    expect(result[0].attachments![0].size).toBeGreaterThan(0);
   });
 });

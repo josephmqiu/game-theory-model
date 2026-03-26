@@ -222,9 +222,11 @@ export function useChatHandlers() {
             case "thinking": {
               chatThinking += chunk.content;
               const thinkingStep = `<step title="Thinking">${chatThinking}</step>`;
-              useThreadStore.getState().updateLastOverlayAssistantMessage(
-                thinkingStep + (accumulated ? `\n${accumulated}` : ""),
-              );
+              useThreadStore
+                .getState()
+                .updateLastOverlayAssistantMessage(
+                  thinkingStep + (accumulated ? `\n${accumulated}` : ""),
+                );
               break;
             }
             case "text": {
@@ -232,9 +234,11 @@ export function useChatHandlers() {
               const thinkingPrefix = chatThinking
                 ? `<step title="Thinking">${chatThinking}</step>\n`
                 : "";
-              useThreadStore.getState().updateLastOverlayAssistantMessage(
-                thinkingPrefix + accumulated,
-              );
+              useThreadStore
+                .getState()
+                .updateLastOverlayAssistantMessage(
+                  thinkingPrefix + accumulated,
+                );
               break;
             }
             case "tool_start": {
@@ -295,9 +299,9 @@ export function useChatHandlers() {
             case "error": {
               accumulated += `\n\n**Error:** ${chunk.content}`;
               terminalErrorMessage = chunk.content;
-              useThreadStore.getState().updateLastOverlayAssistantMessage(
-                accumulated,
-              );
+              useThreadStore
+                .getState()
+                .updateLastOverlayAssistantMessage(accumulated);
               break;
             }
             case "done":
@@ -312,9 +316,9 @@ export function useChatHandlers() {
           console.error("[chat] stream-error:", errMsg);
           accumulated = `**Error:** ${errMsg}`;
           terminalErrorMessage = errMsg;
-          useThreadStore.getState().updateLastOverlayAssistantMessage(
-            accumulated,
-          );
+          useThreadStore
+            .getState()
+            .updateLastOverlayAssistantMessage(accumulated);
         }
       } finally {
         useAIStore.getState().setAbortController(null);
@@ -347,14 +351,15 @@ export function useChatHandlers() {
 
         try {
           await useThreadStore.getState().refreshThreads();
-          await useThreadStore.getState().refreshActiveThreadDetail();
+          await useThreadStore.getState().refreshAndClearOverlay();
         } catch (error) {
           terminalErrorMessage =
-            error instanceof Error ? error.message : "Failed to refresh thread.";
+            error instanceof Error
+              ? error.message
+              : "Failed to refresh thread.";
         }
       }
 
-      useThreadStore.getState().clearOverlayMessages();
       if (terminalErrorMessage && !abortController.signal.aborted) {
         useThreadStore.getState().addOverlayMessage({
           id: `overlay-error-${nanoid(6)}`,
