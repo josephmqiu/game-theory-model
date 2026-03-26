@@ -465,7 +465,10 @@ describe("analysis-orchestrator", () => {
       promptProvenance: {
         analysisType: "game-theory",
         activePhases: ["situational-grounding", "player-identification"],
-        templateSetIdentity: "game-theory:phase-prompts",
+        promptPackId: "game-theory/default",
+        promptPackVersion: "2026-03-25.1",
+        promptPackMode: "analysis-runtime",
+        templateSetIdentity: "game-theory/default",
       },
       logCorrelation: {
         logFileName: `${runId}.jsonl`,
@@ -481,16 +484,26 @@ describe("analysis-orchestrator", () => {
           phase: "situational-grounding",
           turnIndex: 1,
           promptProvenance: expect.objectContaining({
+            promptPackId: "game-theory/default",
+            promptPackVersion: "2026-03-25.1",
+            promptPackMode: "analysis-runtime",
             phase: "situational-grounding",
             variant: "initial",
+            templateIdentity:
+              "game-theory/default:situational-grounding:initial",
           }),
         }),
         expect.objectContaining({
           phase: "player-identification",
           turnIndex: 1,
           promptProvenance: expect.objectContaining({
+            promptPackId: "game-theory/default",
+            promptPackVersion: "2026-03-25.1",
+            promptPackMode: "analysis-runtime",
             phase: "player-identification",
             variant: "initial",
+            templateIdentity:
+              "game-theory/default:player-identification:initial",
           }),
         }),
       ]),

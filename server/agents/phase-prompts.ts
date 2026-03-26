@@ -1,4 +1,8 @@
 import type { MethodologyPhase } from "../../shared/types/methodology";
+import type {
+  PromptPackDefinition,
+  PromptTemplateDefinition,
+} from "../../shared/types/prompt-pack";
 
 /**
  * System prompts for methodology Phases 1-4 and 6-10.
@@ -1648,7 +1652,7 @@ RELATIONSHIPS:
 
 // ── Registries ──
 
-type PromptPhase = Extract<
+export type PromptPhase = Extract<
   MethodologyPhase,
   | "situational-grounding"
   | "player-identification"
@@ -1680,4 +1684,34 @@ export const REVISION_PROMPTS: Partial<Record<PromptPhase, string>> = {
   elimination: PHASE_8_REVISION_PROMPT,
   scenarios: PHASE_9_REVISION_PROMPT,
   "meta-check": PHASE_10_REVISION_PROMPT,
+};
+
+function createPromptTemplates(): PromptTemplateDefinition[] {
+  const templates: PromptTemplateDefinition[] = [];
+
+  for (const phase of Object.keys(PHASE_PROMPTS) as PromptPhase[]) {
+    templates.push({
+      phase,
+      variant: "initial",
+      text: PHASE_PROMPTS[phase],
+    });
+    templates.push({
+      phase,
+      variant: "revision",
+      text: REVISION_PROMPTS[phase] ?? PHASE_PROMPTS[phase],
+    });
+  }
+
+  return templates;
+}
+
+export const GAME_THEORY_ANALYSIS_PROMPT_PACK: PromptPackDefinition = {
+  analysisType: "game-theory",
+  mode: "analysis-runtime",
+  id: "game-theory/default",
+  version: "2026-03-25.1",
+  source: {
+    kind: "bundled",
+  },
+  templates: createPromptTemplates(),
 };

@@ -322,7 +322,10 @@ describe("thread-store", () => {
           promptProvenance: {
             analysisType: "game-theory",
             activePhases: ["situational-grounding"],
-            templateSetIdentity: "game-theory:phase-prompts",
+            promptPackId: "game-theory/default",
+            promptPackVersion: "2026-03-25.1",
+            promptPackMode: "analysis-runtime",
+            templateSetIdentity: "game-theory/default",
             templateSetHash: "template-set-hash",
           },
           logCorrelation: {

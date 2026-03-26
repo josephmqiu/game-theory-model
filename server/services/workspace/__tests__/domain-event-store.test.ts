@@ -22,7 +22,10 @@ function createRunPromptProvenance(): RunPromptProvenance {
   return {
     analysisType: "game-theory",
     activePhases: ["situational-grounding", "player-identification"],
-    templateSetIdentity: "game-theory:phase-prompts",
+    promptPackId: "game-theory/default",
+    promptPackVersion: "2026-03-25.1",
+    promptPackMode: "analysis-runtime",
+    templateSetIdentity: "game-theory/default",
     templateSetHash: "template-set-hash",
   };
 }
@@ -32,8 +35,11 @@ function createPhasePromptProvenance(
   variant: PhaseTurnPromptProvenance["variant"] = "initial",
 ): PhaseTurnPromptProvenance {
   return {
+    promptPackId: "game-theory/default",
+    promptPackVersion: "2026-03-25.1",
+    promptPackMode: "analysis-runtime",
     phase,
-    templateIdentity: `game-theory:${phase}:${variant}`,
+    templateIdentity: `game-theory/default:${phase}:${variant}`,
     templateHash: `${phase}-template-hash`,
     effectivePromptHash: `${phase}-${variant}-effective-hash`,
     variant,

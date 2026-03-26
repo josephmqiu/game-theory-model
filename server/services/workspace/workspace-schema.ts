@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const WORKSPACE_SCHEMA_VERSION = 3;
+export const WORKSPACE_SCHEMA_VERSION = 4;
 
 const BASE_SCHEMA_SQL = `
 PRAGMA foreign_keys = ON;
@@ -72,6 +72,9 @@ CREATE TABLE IF NOT EXISTS runs (
   summary_completed_phases INTEGER NOT NULL DEFAULT 0,
   prompt_analysis_type TEXT,
   prompt_active_phases_json TEXT,
+  prompt_pack_id TEXT,
+  prompt_pack_version TEXT,
+  prompt_pack_mode TEXT,
   prompt_template_set_identity TEXT,
   prompt_template_set_hash TEXT,
   latest_phase_turn_id TEXT,
@@ -148,6 +151,9 @@ CREATE TABLE IF NOT EXISTS phase_turn_summaries (
   phase TEXT NOT NULL,
   turn_index INTEGER NOT NULL,
   status TEXT NOT NULL,
+  prompt_pack_id TEXT,
+  prompt_pack_version TEXT,
+  prompt_pack_mode TEXT,
   prompt_template_identity TEXT,
   prompt_template_hash TEXT,
   prompt_effective_prompt_hash TEXT,
@@ -302,6 +308,14 @@ function ensureProjectionColumns(db: DatabaseSync): void {
     "prompt_template_set_identity",
     "prompt_template_set_identity TEXT",
   );
+  ensureColumn(db, "runs", "prompt_pack_id", "prompt_pack_id TEXT");
+  ensureColumn(
+    db,
+    "runs",
+    "prompt_pack_version",
+    "prompt_pack_version TEXT",
+  );
+  ensureColumn(db, "runs", "prompt_pack_mode", "prompt_pack_mode TEXT");
   ensureColumn(
     db,
     "runs",
@@ -328,6 +342,24 @@ function ensureProjectionColumns(db: DatabaseSync): void {
   ensureColumn(db, "activities", "scope", "scope TEXT");
   ensureColumn(db, "activities", "status", "status TEXT");
 
+  ensureColumn(
+    db,
+    "phase_turn_summaries",
+    "prompt_pack_id",
+    "prompt_pack_id TEXT",
+  );
+  ensureColumn(
+    db,
+    "phase_turn_summaries",
+    "prompt_pack_version",
+    "prompt_pack_version TEXT",
+  );
+  ensureColumn(
+    db,
+    "phase_turn_summaries",
+    "prompt_pack_mode",
+    "prompt_pack_mode TEXT",
+  );
   ensureColumn(
     db,
     "phase_turn_summaries",

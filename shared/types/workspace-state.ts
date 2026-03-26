@@ -1,6 +1,7 @@
 import type { RunKind } from "./api";
 import type { AnalysisPhaseActivityKind, PhaseSummary } from "./events";
 import type { MethodologyPhase } from "./methodology";
+import type { PromptPackMode } from "./prompt-pack";
 import type { RuntimeError } from "./runtime-error";
 
 export type ThreadTerminalStatus = "completed" | "failed" | "cancelled";
@@ -52,6 +53,9 @@ export interface RunSummaryState {
 export interface RunPromptProvenance {
   analysisType: "game-theory";
   activePhases: MethodologyPhase[];
+  promptPackId: string;
+  promptPackVersion: string;
+  promptPackMode: PromptPackMode;
   templateSetIdentity: string;
   templateSetHash: string;
 }
@@ -109,6 +113,9 @@ export interface ActivityEntry {
 export type PhaseTurnStatus = "running" | "completed" | "failed" | "cancelled";
 
 export interface PhaseTurnPromptProvenance {
+  promptPackId: string;
+  promptPackVersion: string;
+  promptPackMode: PromptPackMode;
   phase: MethodologyPhase;
   templateIdentity: string;
   templateHash: string;

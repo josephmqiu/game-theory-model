@@ -1,7 +1,7 @@
-import { createRequire } from "node:module";
 import type { RuntimeProvider } from "../../../shared/types/analysis-runtime";
 import { serverLog } from "../../utils/ai-logger";
 import { recordWorkspaceRecoveryDiagnostic } from "./runtime-recovery-diagnostics";
+import { getWorkspaceDatabase } from "./workspace-db";
 
 export type ProviderSessionBindingPurpose = "chat" | "analysis" | "recovery";
 
@@ -58,15 +58,6 @@ interface ProviderSessionBindingDiagnostic {
   provider?: RuntimeProvider;
   providerSessionId?: string;
   data?: Record<string, unknown>;
-}
-
-const require = createRequire(import.meta.url);
-
-function loadWorkspaceDatabase() {
-  const workspaceDb = require("./workspace-db") as {
-    getWorkspaceDatabase: typeof import("./workspace-db").getWorkspaceDatabase;
-  };
-  return workspaceDb.getWorkspaceDatabase();
 }
 
 function parseBindingJson(
@@ -136,7 +127,7 @@ function parseBindingJson(
 export function getProviderSessionBinding(
   threadId: string,
 ): ProviderSessionBindingState | null {
-  const record = loadWorkspaceDatabase().providerSessionBindings.getBinding(
+  const record = getWorkspaceDatabase().providerSessionBindings.getBinding(
     threadId,
   );
   if (!record) {
@@ -161,7 +152,7 @@ export function upsertProviderSessionBinding(
     version: 1 as const,
     updatedAt: binding.updatedAt,
   };
-  loadWorkspaceDatabase().providerSessionBindings.upsertBinding({
+  getWorkspaceDatabase().providerSessionBindings.upsertBinding({
     threadId: next.threadId,
     workspaceId: next.workspaceId,
     provider: next.provider,
@@ -221,7 +212,7 @@ export function clearProviderSessionBinding(
     return false;
   }
 
-  loadWorkspaceDatabase().providerSessionBindings.deleteBinding(threadId);
+  getWorkspaceDatabase().providerSessionBindings.deleteBinding(threadId);
   serverLog(options.runId, "provider-session-binding", "binding-cleared", {
     workspaceId: existing.workspaceId,
     threadId,

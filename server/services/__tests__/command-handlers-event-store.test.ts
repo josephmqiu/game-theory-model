@@ -53,7 +53,10 @@ describe("command-handlers durable run start", () => {
       promptProvenance: {
         analysisType: "game-theory",
         activePhases: expect.arrayContaining(["situational-grounding"]),
-        templateSetIdentity: "game-theory:phase-prompts",
+        promptPackId: "game-theory/default",
+        promptPackVersion: "2026-03-25.1",
+        promptPackMode: "analysis-runtime",
+        templateSetIdentity: "game-theory/default",
         templateSetHash: expect.any(String),
       },
       logCorrelation: {

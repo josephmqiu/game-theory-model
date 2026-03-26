@@ -4,8 +4,11 @@ import type {
   PhaseTurnPromptProvenance,
   RunPromptProvenance,
 } from "../../shared/types/workspace-state";
-import { PHASE_PROMPTS, REVISION_PROMPTS } from "../agents/phase-prompts";
 import type { AnalysisEffortLevel } from "../../shared/types/analysis-runtime";
+import {
+  resolveAnalysisPromptTemplate,
+  resolvePromptPack,
+} from "./prompt-pack-registry";
 
 type SupportedPromptPhase = Extract<
   MethodologyPhase,
@@ -19,8 +22,6 @@ type SupportedPromptPhase = Extract<
   | "scenarios"
   | "meta-check"
 >;
-
-const TEMPLATE_SET_IDENTITY = "game-theory:phase-prompts";
 
 function hashText(input: string): string {
   return createHash("sha256").update(input).digest("hex");
@@ -66,20 +67,27 @@ function buildAnalysisEffortGuidance(
 export function createRunPromptProvenance(
   activePhases: MethodologyPhase[],
 ): RunPromptProvenance {
-  const supportedPhases = activePhases.filter(
-    (phase): phase is SupportedPromptPhase => phase in PHASE_PROMPTS,
+  const promptPack = resolvePromptPack({
+    analysisType: "game-theory",
+    mode: "analysis-runtime",
+  });
+  const supportedInitialPhases = new Set(
+    promptPack.templates
+      .filter((template) => template.variant === "initial")
+      .map((template) => template.phase),
   );
-  const templateSetHash = hashText(
-    supportedPhases
-      .map((phase) => `${phase}:${hashText(PHASE_PROMPTS[phase])}`)
-      .join("|"),
+  const supportedPhases = activePhases.filter(
+    (phase): phase is SupportedPromptPhase => supportedInitialPhases.has(phase),
   );
 
   return {
     analysisType: "game-theory",
-    activePhases,
-    templateSetIdentity: TEMPLATE_SET_IDENTITY,
-    templateSetHash,
+    activePhases: supportedPhases,
+    promptPackId: promptPack.id,
+    promptPackVersion: promptPack.version,
+    promptPackMode: promptPack.mode,
+    templateSetIdentity: promptPack.id,
+    templateSetHash: promptPack.packHash,
   };
 }
 
@@ -95,11 +103,7 @@ export function buildPhasePromptBundle(input: {
   user: string;
   promptProvenance: PhaseTurnPromptProvenance;
 } {
-  if (!(input.phase in PHASE_PROMPTS)) {
-    throw new Error(`Unsupported prompt phase: ${input.phase}`);
-  }
   const phase = input.phase as SupportedPromptPhase;
-  const systemPrompt = input.revisionSystemPrompt ?? PHASE_PROMPTS[phase];
   const parts = [
     `Analyze the following topic:\n\n${input.topic}`,
     [
@@ -129,18 +133,24 @@ export function buildPhasePromptBundle(input: {
     input.revisionSystemPrompt || input.revisionRetryInstruction
       ? "revision"
       : "initial";
-  const templatePrompt =
-    variant === "revision" && REVISION_PROMPTS[phase]
-      ? REVISION_PROMPTS[phase]
-      : PHASE_PROMPTS[phase];
+  const resolvedTemplate = resolveAnalysisPromptTemplate({
+    analysisType: "game-theory",
+    mode: "analysis-runtime",
+    phase,
+    variant,
+  });
+  const systemPrompt = input.revisionSystemPrompt ?? resolvedTemplate.text;
 
   return {
     system: systemPrompt,
     user: userPrompt,
     promptProvenance: {
+      promptPackId: resolvedTemplate.pack.id,
+      promptPackVersion: resolvedTemplate.pack.version,
+      promptPackMode: resolvedTemplate.pack.mode,
       phase,
-      templateIdentity: `game-theory:${phase}:${variant}`,
-      templateHash: hashText(templatePrompt),
+      templateIdentity: resolvedTemplate.templateIdentity,
+      templateHash: resolvedTemplate.templateHash,
       effectivePromptHash: hashText(`${systemPrompt}\n\n${userPrompt}`),
       variant,
     },

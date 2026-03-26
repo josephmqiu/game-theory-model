@@ -72,6 +72,9 @@ describe("workspace database", () => {
         "summary_completed_phases",
         "prompt_analysis_type",
         "prompt_active_phases_json",
+        "prompt_pack_id",
+        "prompt_pack_version",
+        "prompt_pack_mode",
         "prompt_template_set_identity",
         "prompt_template_set_hash",
         "latest_phase_turn_id",
@@ -85,6 +88,9 @@ describe("workspace database", () => {
       .map((row) => String(row.name));
     expect(phaseTurnColumns).toEqual(
       expect.arrayContaining([
+        "prompt_pack_id",
+        "prompt_pack_version",
+        "prompt_pack_mode",
         "prompt_template_identity",
         "prompt_template_hash",
         "prompt_effective_prompt_hash",

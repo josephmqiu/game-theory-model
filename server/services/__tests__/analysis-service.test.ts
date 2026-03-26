@@ -1193,7 +1193,7 @@ describe("analysis-service", () => {
     it("builds prompt without prior context", async () => {
       const { buildPhasePromptBundle } =
         await import("../analysis-prompt-provenance");
-      const { system, user } = buildPhasePromptBundle({
+      const { system, user, promptProvenance } = buildPhasePromptBundle({
         phase: "situational-grounding",
         topic: "US-China trade war",
         effortLevel: "medium",
@@ -1210,6 +1210,14 @@ describe("analysis-service", () => {
       expect(user).toContain('Effort level: "medium"');
       expect(user).toContain("Preserve the current expected level of depth");
       expect(user).not.toContain("Prior phase");
+      expect(promptProvenance).toMatchObject({
+        promptPackId: "game-theory/default",
+        promptPackVersion: "2026-03-25.1",
+        promptPackMode: "analysis-runtime",
+        phase: "situational-grounding",
+        variant: "initial",
+        templateIdentity: "game-theory/default:situational-grounding:initial",
+      });
     });
 
     it("builds prompt with prior context", async () => {
@@ -1266,6 +1274,36 @@ describe("analysis-service", () => {
       expect(user).toContain(
         "Spend more attention on edge cases and competing explanations.",
       );
+    });
+
+    it("keeps pack identity stable for revision prompts", async () => {
+      const { buildPhasePromptBundle, createRunPromptProvenance } =
+        await import("../analysis-prompt-provenance");
+      const runProvenance = createRunPromptProvenance([
+        "historical-game",
+        "formal-modeling",
+      ]);
+      const { promptProvenance } = buildPhasePromptBundle({
+        phase: "historical-game",
+        topic: "US-China trade war",
+        revisionRetryInstruction: "Re-check the historical pattern.",
+        effortLevel: "medium",
+      });
+
+      expect(runProvenance).toMatchObject({
+        promptPackId: "game-theory/default",
+        promptPackVersion: "2026-03-25.1",
+        promptPackMode: "analysis-runtime",
+        templateSetIdentity: "game-theory/default",
+      });
+      expect(promptProvenance).toMatchObject({
+        promptPackId: "game-theory/default",
+        promptPackVersion: "2026-03-25.1",
+        promptPackMode: "analysis-runtime",
+        phase: "historical-game",
+        variant: "revision",
+        templateIdentity: "game-theory/default:historical-game:revision",
+      });
     });
   });
 
