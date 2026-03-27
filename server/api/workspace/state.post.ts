@@ -3,7 +3,6 @@ import { z } from "zod";
 import * as entityGraphService from "../../services/entity-graph-service";
 import {
   createCanonicalWorkspaceRecord,
-  createWorkspaceRecordFromSnapshot,
   getWorkspaceDatabase,
 } from "../../services/workspace";
 
@@ -73,39 +72,19 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Derive entity data from canonical graph tables when the service
-  // is initialized for this workspace. Otherwise fall back to raw snapshot
-  // (covers initial empty workspace creation before graph service is ready).
-  const serviceWorkspaceId = entityGraphService.getWorkspaceId();
-  const useCanonical = serviceWorkspaceId === ws.id;
-
-  let record;
-  if (useCanonical) {
-    record = getWorkspaceDatabase().workspaces.upsertWorkspace(
-      createCanonicalWorkspaceRecord({
-        id: ws.id,
-        name: ws.name,
-        analysisType: ws.analysisType,
-        filePath: filePath ?? null,
-        analysis: entityGraphService.getAnalysis(),
-        nonEntityFields,
-        createdAt: ws.createdAt,
-        updatedAt: ws.updatedAt,
-      }),
-    );
-  } else {
-    record = getWorkspaceDatabase().workspaces.upsertWorkspace(
-      createWorkspaceRecordFromSnapshot({
-        id: ws.id,
-        name: ws.name,
-        analysisType: ws.analysisType,
-        filePath: filePath ?? null,
-        snapshot,
-        createdAt: ws.createdAt,
-        updatedAt: ws.updatedAt,
-      }),
-    );
-  }
+  // Entity data lives exclusively in graph_entities / graph_relationships
+  // tables. workspace_json stores only non-entity metadata (layout, threads, etc.).
+  const record = getWorkspaceDatabase().workspaces.upsertWorkspace(
+    createCanonicalWorkspaceRecord({
+      id: ws.id,
+      name: ws.name,
+      analysisType: ws.analysisType,
+      filePath: filePath ?? null,
+      nonEntityFields,
+      createdAt: ws.createdAt,
+      updatedAt: ws.updatedAt,
+    }),
+  );
 
   return {
     workspace: {

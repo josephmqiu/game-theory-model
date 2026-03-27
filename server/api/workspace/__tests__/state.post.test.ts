@@ -87,10 +87,13 @@ describe("/api/workspace/state", () => {
       getWorkspaceDatabase().workspaces.getWorkspace("workspace-1");
     expect(stored).toBeDefined();
     expect(stored?.filePath).toBe("/tmp/trade-war.gta");
-    expect(JSON.parse(stored?.workspaceJson ?? "{}")).toMatchObject({
+    const json = JSON.parse(stored?.workspaceJson ?? "{}");
+    expect(json).toMatchObject({
       id: "workspace-1",
       analysisType: "game-theory",
     });
+    // Entity data must NOT be stored in workspace_json — it lives in graph tables
+    expect(json.analysis).toBeUndefined();
   });
 
   it("derives entity data from canonical graph tables when service is initialized", async () => {
@@ -155,10 +158,8 @@ describe("/api/workspace/state", () => {
       getWorkspaceDatabase().workspaces.getWorkspace("workspace-1");
     const json = JSON.parse(stored?.workspaceJson ?? "{}");
 
-    // Entity data should come from canonical source, not from request
-    expect(json.analysis.id).toBe("canonical-analysis");
-    expect(json.analysis.entities).toHaveLength(1);
-    expect(json.analysis.entities[0].id).toBe("e1");
+    // Entity data must NOT be stored in workspace_json — it lives in graph tables
+    expect(json.analysis).toBeUndefined();
 
     // Non-entity data should come from request snapshot
     expect(json.layout).toEqual({ e1: { x: 100, y: 200, pinned: true } });

@@ -59,7 +59,8 @@ describe("GET /api/workspace/export-snapshot", () => {
   it("returns canonical entities from entity-graph-service", async () => {
     getWorkspaceIdMock.mockReturnValue("ws-1");
 
-    // Store a workspace record with different entities in workspace_json
+    // Store a workspace record with only non-entity metadata in workspace_json
+    // (entity data lives exclusively in graph tables)
     getWorkspaceDatabase().workspaces.upsertWorkspace(
       createWorkspaceRecordFromSnapshot({
         id: "ws-1",
@@ -71,14 +72,6 @@ describe("GET /api/workspace/export-snapshot", () => {
           analysisType: "game-theory",
           createdAt: 100,
           updatedAt: 200,
-          analysis: {
-            id: "stale-analysis",
-            name: "Stale",
-            topic: "stale",
-            entities: [],
-            relationships: [],
-            phases: [],
-          },
           layout: { e1: { x: 50, y: 75, pinned: true } },
           threads: [{ id: "t1" }],
           artifacts: [],

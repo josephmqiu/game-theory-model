@@ -69,7 +69,6 @@ const defaultHandlers: CommandHandlerMap = {
         id: command.workspaceId ?? analysis.id,
         name: analysis.name,
         analysisType: "game-theory",
-        analysis,
         nonEntityFields: { layout: {} },
         createdAt: now,
         updatedAt: now,

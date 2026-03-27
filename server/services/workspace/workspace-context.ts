@@ -14,21 +14,17 @@ export interface ResolvedThreadContext {
   threadExists: boolean;
 }
 
-function createWorkspaceSnapshot(id: string, name: string, now: number): unknown {
+function createWorkspaceSnapshot(
+  id: string,
+  name: string,
+  now: number,
+): unknown {
   return {
     id,
     name,
     analysisType: "game-theory",
     createdAt: now,
     updatedAt: now,
-    analysis: {
-      id: `${id}-analysis`,
-      name,
-      topic: "",
-      entities: [],
-      relationships: [],
-      phases: [],
-    },
     layout: {},
     threads: [],
     artifacts: [],
@@ -95,7 +91,8 @@ export function resolveThreadContext(
     return {
       workspaceId,
       threadId: requestedThreadId,
-      threadTitle: existing?.title ?? input.threadTitle?.trim() ?? requestedThreadId,
+      threadTitle:
+        existing?.title ?? input.threadTitle?.trim() ?? requestedThreadId,
       threadExists: existing !== undefined,
     };
   }

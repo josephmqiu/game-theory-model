@@ -1,7 +1,18 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { Analysis } from "../../../shared/types/entity";
 import { stringifyJson, toNullableText } from "./sqlite-json";
 import type { WorkspaceRecord } from "./workspace-types";
+
+/**
+ * Strip entity data (`analysis`) from a snapshot before persisting to
+ * workspace_json. Entity data lives exclusively in graph_entities /
+ * graph_relationships tables — workspace_json stores only non-entity metadata.
+ */
+function stripEntityData(snapshot: unknown): unknown {
+  if (!snapshot || typeof snapshot !== "object") return snapshot;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { analysis, ...rest } = snapshot as Record<string, unknown>;
+  return rest;
+}
 
 export interface WorkspaceRepository {
   getWorkspace(id: string): WorkspaceRecord | undefined;
@@ -98,15 +109,15 @@ export function createWorkspaceRecordFromSnapshot(input: {
     name: input.name,
     analysisType: input.analysisType,
     filePath: toNullableText(input.filePath),
-    workspaceJson: stringifyJson(input.snapshot),
+    workspaceJson: stringifyJson(stripEntityData(input.snapshot)),
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now,
   };
 }
 
 /**
- * Build a WorkspaceRecord where entity data is guaranteed to come from the
- * canonical `analysis` parameter (should be entityGraphService.getAnalysis()).
+ * Build a WorkspaceRecord with only non-entity metadata in workspace_json.
+ * Entity data lives exclusively in graph_entities / graph_relationships tables.
  * Non-entity fields (layout, threads, etc.) come from `nonEntityFields`.
  */
 export function createCanonicalWorkspaceRecord(input: {
@@ -114,7 +125,6 @@ export function createCanonicalWorkspaceRecord(input: {
   name: string;
   analysisType: string;
   filePath?: string | null;
-  analysis: Readonly<Analysis>;
   nonEntityFields: {
     layout?: unknown;
     threads?: unknown[];
@@ -126,13 +136,12 @@ export function createCanonicalWorkspaceRecord(input: {
   updatedAt?: number;
 }): WorkspaceRecord {
   const now = Date.now();
-  const snapshot = {
+  const metadata = {
     id: input.id,
     name: input.name,
     analysisType: input.analysisType,
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now,
-    analysis: input.analysis,
     layout: input.nonEntityFields.layout ?? {},
     threads: input.nonEntityFields.threads ?? [],
     artifacts: input.nonEntityFields.artifacts ?? [],
@@ -144,7 +153,7 @@ export function createCanonicalWorkspaceRecord(input: {
     name: input.name,
     analysisType: input.analysisType,
     filePath: toNullableText(input.filePath),
-    workspaceJson: stringifyJson(snapshot),
+    workspaceJson: stringifyJson(metadata),
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now,
   };
