@@ -17,6 +17,7 @@ import type {
 import { getWorkspaceDatabase } from "./workspace-db";
 import { createThreadService } from "./thread-service";
 import * as questionService from "./question-service";
+import { startChatTurn } from "../ai/chat-service";
 import { buildWorkspaceRuntimeSnapshotCore } from "./workspace-runtime-query";
 import {
   _resetWorkspaceRecoveryDiagnosticsForTest,
@@ -32,6 +33,11 @@ import {
   onWorkspaceRuntimePush,
 } from "./workspace-runtime-publisher";
 import { onAnalysisBroadcast } from "./analysis-event-bridge";
+import {
+  _resetWorkspaceRuntimeChatPublisherForTest,
+  onWorkspaceRuntimeChatPush,
+  publishWorkspaceRuntimeChatEvent,
+} from "./workspace-runtime-chat-publisher";
 
 const MAX_RECENT_DIAGNOSTICS = 200;
 const MAX_CONNECTION_DIAGNOSTICS = 50;
@@ -94,11 +100,41 @@ const deleteThreadRequestSchema = z.object({
   }),
 });
 
+const chatTurnStartRequestSchema = z.object({
+  type: z.literal("request"),
+  requestId: z.string().trim().min(1),
+  kind: z.literal("chat.turn.start"),
+  payload: z.object({
+    workspaceId: z.string().trim().min(1),
+    threadId: z.string().trim().min(1).optional(),
+    threadTitle: z.string().trim().min(1).optional(),
+    correlationId: z.string().trim().min(1),
+    message: z.object({
+      content: z.string(),
+      attachments: z
+        .array(
+          z.object({
+            name: z.string(),
+            mediaType: z.string(),
+            data: z.string(),
+          }),
+        )
+        .optional(),
+    }),
+    provider: z.enum(["claude", "codex"]),
+    model: z.string().trim().min(1),
+    thinkingMode: z.enum(["adaptive", "disabled", "enabled"]).optional(),
+    thinkingBudgetTokens: z.number().positive().optional(),
+    effort: z.enum(["low", "medium", "high", "max"]).optional(),
+  }),
+});
+
 interface PeerState {
   connectionId: string;
   peer: WebSocketPeer;
   workspaceId?: string;
   activeThreadId?: string;
+  activeChatCorrelations: Set<string>;
 }
 
 const recentDiagnostics: WorkspaceTransportDiagnostic[] = [];
@@ -351,6 +387,106 @@ async function handleResolveQuestion(
   }
 }
 
+async function handleChatTurnStart(
+  peerState: PeerState,
+  envelope: WorkspaceRuntimeRequest,
+) {
+  const parsed = chatTurnStartRequestSchema.safeParse(envelope);
+  if (!parsed.success) {
+    sendEnvelope(peerState.peer, {
+      type: "response",
+      requestId: envelope.requestId,
+      ok: false,
+      error: "Invalid chat.turn.start payload",
+    });
+    return;
+  }
+
+  recordDiagnostic({
+    code: "request-received",
+    level: "info",
+    message: "Received chat.turn.start request",
+    connectionId: peerState.connectionId,
+    workspaceId: parsed.data.payload.workspaceId,
+    threadId: parsed.data.payload.threadId ?? peerState.activeThreadId,
+    data: {
+      kind: parsed.data.kind,
+      requestId: parsed.data.requestId,
+      correlationId: parsed.data.payload.correlationId,
+      provider: parsed.data.payload.provider,
+      model: parsed.data.payload.model,
+    },
+  });
+
+  try {
+    const started = await startChatTurn(parsed.data.payload, {
+      correlationId: parsed.data.payload.correlationId,
+      producer: "workspace-runtime-transport",
+      onEvent: (chatEvent, context) => {
+        publishWorkspaceRuntimeChatEvent({
+          workspaceId: context.workspaceId,
+          threadId: context.threadId,
+          correlationId: context.correlationId,
+          event: chatEvent,
+        });
+      },
+    });
+
+    peerState.activeChatCorrelations.add(started.correlationId);
+
+    started.completion.finally(() => {
+      peerState.activeChatCorrelations.delete(started.correlationId);
+    });
+
+    sendEnvelope(peerState.peer, {
+      type: "response",
+      requestId: parsed.data.requestId,
+      ok: true,
+      result: {
+        workspaceId: started.workspaceId,
+        threadId: started.threadId,
+        correlationId: started.correlationId,
+      },
+    });
+    recordDiagnostic({
+      code: "request-completed",
+      level: "info",
+      message: "Accepted chat.turn.start request",
+      connectionId: peerState.connectionId,
+      workspaceId: started.workspaceId,
+      threadId: started.threadId,
+      data: {
+        kind: parsed.data.kind,
+        requestId: parsed.data.requestId,
+        correlationId: started.correlationId,
+      },
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to start chat turn";
+    sendEnvelope(peerState.peer, {
+      type: "response",
+      requestId: parsed.data.requestId,
+      ok: false,
+      error: message,
+    });
+    recordDiagnostic({
+      code: "request-failed",
+      level: "error",
+      message: "chat.turn.start request failed",
+      connectionId: peerState.connectionId,
+      workspaceId: parsed.data.payload.workspaceId,
+      threadId: parsed.data.payload.threadId ?? peerState.activeThreadId,
+      data: {
+        kind: parsed.data.kind,
+        requestId: parsed.data.requestId,
+        correlationId: parsed.data.payload.correlationId,
+        error: message,
+      },
+    });
+  }
+}
+
 function handleSyncRequest(
   peerState: PeerState,
   envelope: WorkspaceRuntimeRequest,
@@ -445,6 +581,11 @@ async function handleRequest(
     return;
   }
 
+  if (envelope.kind === "chat.turn.start") {
+    await handleChatTurnStart(peerState, envelope);
+    return;
+  }
+
   const service = createThreadService(getWorkspaceDatabase());
 
   switch (envelope.kind) {
@@ -525,6 +666,7 @@ export function openWorkspaceRuntimeConnection(peer: WebSocketPeer): void {
   const peerState: PeerState = {
     connectionId: peer.id,
     peer,
+    activeChatCorrelations: new Set(),
   };
   peerStates.set(peer.id, peerState);
 
@@ -607,6 +749,7 @@ export function closeWorkspaceRuntimeConnection(
   });
 
   diagnosticsByConnectionId.delete(peerState.connectionId);
+  peerState.activeChatCorrelations.clear();
   peerStates.delete(peer.id);
 }
 
@@ -648,6 +791,7 @@ export function _resetWorkspaceRuntimeTransportForTest(): void {
   recentDiagnostics.splice(0, recentDiagnostics.length);
   diagnosticsByConnectionId.clear();
   peerStates.clear();
+  _resetWorkspaceRuntimeChatPublisherForTest();
   _resetWorkspaceRecoveryDiagnosticsForTest();
   _resetRuntimeRecoveryForTest();
 }
@@ -693,6 +837,58 @@ onWorkspaceRuntimePush((push) => {
       data: {
         channel: push.channel,
         revision: push.revision,
+      },
+    });
+  }
+});
+
+onWorkspaceRuntimeChatPush((push) => {
+  let delivered = 0;
+
+  for (const peerState of peerStates.values()) {
+    if (peerState.workspaceId !== push.scope.workspaceId) {
+      continue;
+    }
+
+    if (!peerState.activeChatCorrelations.has(push.payload.correlationId)) {
+      continue;
+    }
+
+    sendEnvelope(peerState.peer, push);
+    delivered += 1;
+    recordDiagnostic({
+      code: "push-sent",
+      level: "info",
+      message: "Sent workspace runtime chat push",
+      connectionId: peerState.connectionId,
+      workspaceId: push.scope.workspaceId,
+      threadId: push.scope.threadId,
+      data: {
+        channel: push.channel,
+        revision: push.revision,
+        correlationId: push.payload.correlationId,
+      },
+    });
+
+    if (
+      push.payload.event.type === "chat.message.complete" ||
+      push.payload.event.type === "chat.message.error"
+    ) {
+      peerState.activeChatCorrelations.delete(push.payload.correlationId);
+    }
+  }
+
+  if (delivered === 0) {
+    recordDiagnostic({
+      code: "push-dropped",
+      level: "warn",
+      message: "No active chat correlation matched runtime chat push",
+      workspaceId: push.scope.workspaceId,
+      threadId: push.scope.threadId,
+      data: {
+        channel: push.channel,
+        revision: push.revision,
+        correlationId: push.payload.correlationId,
       },
     });
   }

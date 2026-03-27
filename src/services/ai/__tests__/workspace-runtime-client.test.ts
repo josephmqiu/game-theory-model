@@ -318,4 +318,118 @@ describe("workspace-runtime-client", () => {
         .some((diagnostic) => diagnostic.code === "response-mismatch"),
     ).toBe(true);
   });
+
+  it("streams chat events for the matching correlationId and ignores unrelated pushes", async () => {
+    const { workspaceRuntimeClient } =
+      await import("../workspace-runtime-client");
+    const bootstrapPromise = workspaceRuntimeClient.bindContext({
+      workspaceId: "workspace-1",
+      activeThreadId: "thread-1",
+    });
+    const socket = MockWebSocket.latest();
+    socket.emitOpen();
+    socket.emitMessage(bootstrapPayload("conn-1"));
+    await bootstrapPromise;
+
+    const onResolvedThread = vi.fn();
+    const consume = (async () => {
+      const events = [];
+      for await (const event of workspaceRuntimeClient.streamChatTurn(
+        {
+          workspaceId: "workspace-1",
+          threadId: "thread-1",
+          correlationId: "corr-1",
+          message: { content: "hello" },
+          provider: "codex",
+          model: "gpt-5.4",
+        },
+        {
+          onResolvedThread,
+        },
+      )) {
+        events.push(event);
+      }
+      return events;
+    })();
+
+    const request = JSON.parse(socket.sent.at(-1) ?? "{}");
+    expect(request).toMatchObject({
+      type: "request",
+      kind: "chat.turn.start",
+      payload: expect.objectContaining({
+        correlationId: "corr-1",
+      }),
+    });
+
+    socket.emitMessage({
+      type: "push",
+      channel: "chat-event",
+      revision: 1,
+      scope: { workspaceId: "workspace-1", threadId: "thread-1" },
+      payload: {
+        correlationId: "other-correlation",
+        event: {
+          type: "chat.message.delta",
+          correlationId: "other-correlation",
+          content: "ignore me",
+        },
+      },
+    });
+    socket.emitMessage({
+      type: "response",
+      requestId: request.requestId,
+      ok: true,
+      result: {
+        workspaceId: "workspace-1",
+        threadId: "thread-1",
+        correlationId: "corr-1",
+      },
+    });
+    socket.emitMessage({
+      type: "push",
+      channel: "chat-event",
+      revision: 1,
+      scope: { workspaceId: "workspace-1", threadId: "thread-1" },
+      payload: {
+        correlationId: "corr-1",
+        event: {
+          type: "chat.message.delta",
+          correlationId: "corr-1",
+          content: "hello ",
+        },
+      },
+    });
+    socket.emitMessage({
+      type: "push",
+      channel: "chat-event",
+      revision: 2,
+      scope: { workspaceId: "workspace-1", threadId: "thread-1" },
+      payload: {
+        correlationId: "corr-1",
+        event: {
+          type: "chat.message.complete",
+          correlationId: "corr-1",
+          content: "hello world",
+        },
+      },
+    });
+
+    await expect(consume).resolves.toEqual([
+      {
+        type: "chat.message.delta",
+        correlationId: "corr-1",
+        content: "hello ",
+      },
+      {
+        type: "chat.message.complete",
+        correlationId: "corr-1",
+        content: "hello world",
+      },
+    ]);
+    expect(onResolvedThread).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      threadId: "thread-1",
+      correlationId: "corr-1",
+    });
+  });
 });

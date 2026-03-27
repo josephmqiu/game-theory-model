@@ -2,6 +2,8 @@ import { nanoid } from "nanoid";
 import type {
   WorkspaceRuntimeBootstrap,
   WorkspaceRuntimeBootstrapEnvelope,
+  WorkspaceRuntimeChatEvent,
+  WorkspaceRuntimeChatTurnStartRequestPayload,
   WorkspaceRuntimeChannel,
   WorkspaceRuntimeClientHello,
   WorkspaceRuntimePushEnvelope,
@@ -29,6 +31,12 @@ interface PendingRequest {
   reject: (reason?: unknown) => void;
   resolve: (value: unknown) => void;
   timeoutId: ReturnType<typeof setTimeout>;
+}
+
+interface ChatTurnStartResult {
+  workspaceId: string;
+  threadId: string;
+  correlationId: string;
 }
 
 function pushBounded<T>(items: T[], value: T, maxSize: number): void {
@@ -389,6 +397,89 @@ class WorkspaceRuntimeClient {
 
       this.ws?.send(JSON.stringify(request));
     });
+  }
+
+  async *streamChatTurn(
+    payload: WorkspaceRuntimeChatTurnStartRequestPayload,
+    options?: {
+      signal?: AbortSignal;
+      onResolvedThread?: (identity: {
+        workspaceId: string;
+        threadId: string;
+        correlationId: string;
+      }) => void;
+    },
+  ): AsyncGenerator<WorkspaceRuntimeChatEvent> {
+    const queue: WorkspaceRuntimeChatEvent[] = [];
+    let terminal = false;
+    let closed = false;
+    let notifyNext: (() => void) | null = null;
+
+    const unsubscribe = this.subscribe((envelope) => {
+      if (envelope.type !== "push" || envelope.channel !== "chat-event") {
+        return;
+      }
+
+      const push = envelope as WorkspaceRuntimePushEnvelope<"chat-event">;
+      if (push.payload.correlationId !== payload.correlationId) {
+        return;
+      }
+
+      queue.push(push.payload.event);
+      if (
+        push.payload.event.type === "chat.message.complete" ||
+        push.payload.event.type === "chat.message.error"
+      ) {
+        terminal = true;
+      }
+      notifyNext?.();
+    });
+
+    const handleAbort = () => {
+      closed = true;
+      notifyNext?.();
+    };
+    options?.signal?.addEventListener("abort", handleAbort, { once: true });
+
+    try {
+      const result = await this.sendRequest<ChatTurnStartResult>(
+        "chat.turn.start",
+        payload,
+      );
+      options?.onResolvedThread?.(result);
+
+      while (!closed) {
+        if (queue.length === 0) {
+          await new Promise<void>((resolve) => {
+            notifyNext = () => {
+              notifyNext = null;
+              resolve();
+            };
+          });
+        }
+
+        while (queue.length > 0) {
+          const next = queue.shift();
+          if (!next) {
+            continue;
+          }
+          yield next;
+          if (
+            next.type === "chat.message.complete" ||
+            next.type === "chat.message.error"
+          ) {
+            return;
+          }
+        }
+
+        if (terminal) {
+          return;
+        }
+      }
+    } finally {
+      options?.signal?.removeEventListener("abort", handleAbort);
+      unsubscribe();
+    }
   }
 
   disconnect(): void {

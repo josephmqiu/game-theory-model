@@ -12,8 +12,8 @@ import {
 } from "../workspace/thread-service";
 import { getProviderSessionBinding } from "../workspace/provider-session-binding-service";
 import { createProcessRuntimeError } from "../../../shared/types/runtime-error";
-import { trimChatHistory } from "../../../shared/utils/trim-chat-history";
 import type { ChatEvent } from "../../../shared/types/events";
+import type { WorkspaceRuntimeChatEvent } from "../../../shared/types/workspace-runtime";
 import { getRuntimeAdapter } from "./adapter-contract";
 import { resolvePromptTemplate } from "../prompt-pack-registry";
 import {
@@ -26,7 +26,8 @@ import {
   normalizeRuntimeProvider,
   type RuntimeProvider,
 } from "../../../shared/types/analysis-runtime";
-const KEEPALIVE_INTERVAL_MS = 15_000;
+import { buildTokenBudgetedChatHistory } from "./chat-history-budget";
+
 export const SENSITIVE_LOG_PATTERN =
   /ANTHROPIC_API_KEY=|Authorization:\s*Bearer|api[_-]?key\s*[:=]/i;
 
@@ -204,17 +205,327 @@ function extractQueryFromToolInput(input: unknown): string | undefined {
   return raw?.trim() || undefined;
 }
 
-export async function createChatResponse(
-  event: H3Event,
+export interface StartChatTurnOptions {
+  runId?: string;
+  correlationId?: string;
+  producer?: string;
+  onEvent?: (
+    event: WorkspaceRuntimeChatEvent,
+    context: {
+      workspaceId: string;
+      threadId: string;
+      correlationId: string;
+    },
+  ) => void;
+}
+
+export interface StartedChatTurn {
+  workspaceId: string;
+  threadId: string;
+  correlationId: string;
+  completion: Promise<void>;
+}
+
+function buildRuntimeChatError(
+  message: string,
+  provider: RuntimeProvider,
+): ReturnType<typeof createProcessRuntimeError> {
+  return createProcessRuntimeError(message, {
+    provider,
+    processState: "failed-to-start",
+    retryable: false,
+  });
+}
+
+async function executeChatTurn(
   request: CanonicalChatRequest,
-  runId?: string,
-): Promise<Response> {
+  options: Required<Pick<StartChatTurnOptions, "correlationId" | "producer">> &
+    Pick<StartChatTurnOptions, "runId" | "onEvent"> & {
+      workspaceId: string;
+      threadId: string;
+      systemPrompt: string;
+      history: Array<{ role: string; content: string }>;
+    },
+): Promise<void> {
+  const threadService = createThreadService();
+  const abortController = new AbortController();
+  const pendingToolMetadata = new Map<string, Array<{ query?: string }>>();
+  let accumulated = "";
+  let attachmentTempDir: string | undefined;
+
+  try {
+    let prompt = request.message.content;
+    if (
+      request.provider === "claude" &&
+      request.message.attachments &&
+      request.message.attachments.length > 0
+    ) {
+      const saved = await saveAttachmentsToTempFiles(
+        request.message.attachments,
+        true,
+      );
+      attachmentTempDir = saved.tempDir;
+      const imageRefs = saved.files
+        .map((file) => {
+          return `First, use the Read tool to read the image file at "${file}". Then analyze it and respond to the user.`;
+        })
+        .join("\n");
+      prompt =
+        imageRefs + "\n\n" + (prompt || "Describe what you see in the image.");
+    }
+
+    const adapter = await getRuntimeAdapter(request.provider);
+    const session = adapter.createSession(
+      {
+        workspaceId: options.workspaceId,
+        threadId: options.threadId,
+        ...(options.runId ? { runId: options.runId } : {}),
+        purpose: "chat",
+      },
+      getProviderSessionBinding(options.threadId, "chat"),
+    );
+
+    const effectiveSystemPrompt =
+      request.provider === "claude" &&
+      request.message.attachments &&
+      request.message.attachments.length > 0
+        ? stripNoToolsRestriction(options.systemPrompt)
+        : options.systemPrompt;
+
+    try {
+      for await (const eventChunk of session.streamChatTurn({
+        prompt,
+        systemPrompt: effectiveSystemPrompt,
+        messages: options.history,
+        model: request.model,
+        runId: options.runId,
+        signal: abortController.signal,
+      })) {
+        if (eventChunk.type === "text_delta") {
+          accumulated += eventChunk.content;
+          options.onEvent?.(
+            {
+              type: "chat.message.delta",
+              correlationId: options.correlationId,
+              content: eventChunk.content,
+            },
+            {
+              workspaceId: options.workspaceId,
+              threadId: options.threadId,
+              correlationId: options.correlationId,
+            },
+          );
+        }
+
+        if (eventChunk.type === "tool_call_start") {
+          const queue = pendingToolMetadata.get(eventChunk.toolName) ?? [];
+          queue.push({
+            query: extractQueryFromToolInput(eventChunk.input),
+          });
+          pendingToolMetadata.set(eventChunk.toolName, queue);
+          options.onEvent?.(
+            {
+              type: "chat.tool.start",
+              correlationId: options.correlationId,
+              toolName: eventChunk.toolName,
+            },
+            {
+              workspaceId: options.workspaceId,
+              threadId: options.threadId,
+              correlationId: options.correlationId,
+            },
+          );
+        }
+
+        if (
+          eventChunk.type === "tool_call_result" ||
+          eventChunk.type === "tool_call_error"
+        ) {
+          const queue = pendingToolMetadata.get(eventChunk.toolName) ?? [];
+          const metadata = queue.shift();
+          if (queue.length === 0) {
+            pendingToolMetadata.delete(eventChunk.toolName);
+          } else {
+            pendingToolMetadata.set(eventChunk.toolName, queue);
+          }
+
+          const query = metadata?.query;
+          const kind = normalizeActivityKind(eventChunk.toolName, query);
+          threadService.recordActivity({
+            workspaceId: options.workspaceId,
+            threadId: options.threadId,
+            scope: "chat-turn",
+            kind,
+            message:
+              eventChunk.type === "tool_call_error"
+                ? `Tool ${eventChunk.toolName} failed: ${eventChunk.error}`
+                : `Used ${eventChunk.toolName}`,
+            status:
+              eventChunk.type === "tool_call_error" ? "failed" : "completed",
+            toolName: eventChunk.toolName,
+            query,
+            producer: options.producer,
+            occurredAt: Date.now(),
+            correlationId: options.correlationId,
+          });
+
+          if (eventChunk.type === "tool_call_error") {
+            options.onEvent?.(
+              {
+                type: "chat.tool.error",
+                correlationId: options.correlationId,
+                toolName: eventChunk.toolName,
+                error: eventChunk.error,
+              },
+              {
+                workspaceId: options.workspaceId,
+                threadId: options.threadId,
+                correlationId: options.correlationId,
+              },
+            );
+          } else {
+            options.onEvent?.(
+              {
+                type: "chat.tool.result",
+                correlationId: options.correlationId,
+                toolName: eventChunk.toolName,
+                output: eventChunk.output,
+              },
+              {
+                workspaceId: options.workspaceId,
+                threadId: options.threadId,
+                correlationId: options.correlationId,
+              },
+            );
+          }
+        }
+
+        if (eventChunk.type === "error") {
+          options.onEvent?.(
+            {
+              type: "chat.message.error",
+              correlationId: options.correlationId,
+              error: eventChunk.error,
+            },
+            {
+              workspaceId: options.workspaceId,
+              threadId: options.threadId,
+              correlationId: options.correlationId,
+            },
+          );
+        }
+      }
+    } finally {
+      const diagnostics = session.getDiagnostics();
+      const recovery = diagnostics.recovery;
+      if (recovery) {
+        threadService.recordActivity({
+          workspaceId: options.workspaceId,
+          threadId: options.threadId,
+          scope: "chat-turn",
+          kind: "note",
+          message:
+            recovery.disposition === "resumed"
+              ? `${request.provider === "codex" ? "Codex app-server" : "Claude Code"} resumed persisted provider session`
+              : (recovery.message ??
+                `${request.provider === "codex" ? "Codex app-server" : "Claude Code"} started a fresh provider session`),
+          status: recovery.disposition === "fallback" ? "failed" : "completed",
+          producer: options.producer,
+          occurredAt: recovery.timestamp,
+          correlationId: options.correlationId,
+        });
+      }
+      await session.dispose();
+    }
+
+    let assistantMessageId: string | undefined;
+    let assistantMessageContent = accumulated;
+    if (accumulated.trim().length > 0) {
+      const assistantMessage = threadService.recordMessage({
+        workspaceId: options.workspaceId,
+        threadId: options.threadId,
+        role: "assistant",
+        content: accumulated,
+        messageId: `msg-${nanoid()}`,
+        occurredAt: Date.now(),
+        producer: options.producer,
+        correlationId: options.correlationId,
+      });
+      assistantMessageId = assistantMessage.id;
+      assistantMessageContent = assistantMessage.content;
+    }
+
+    options.onEvent?.(
+      {
+        type: "chat.message.complete",
+        correlationId: options.correlationId,
+        ...(assistantMessageId ? { messageId: assistantMessageId } : {}),
+        content: assistantMessageContent,
+      },
+      {
+        workspaceId: options.workspaceId,
+        threadId: options.threadId,
+        correlationId: options.correlationId,
+      },
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+
+    if (accumulated.trim().length > 0) {
+      threadService.recordMessage({
+        workspaceId: options.workspaceId,
+        threadId: options.threadId,
+        role: "assistant",
+        content: accumulated,
+        occurredAt: Date.now(),
+        producer: options.producer,
+        correlationId: options.correlationId,
+      });
+    }
+
+    threadService.recordActivity({
+      workspaceId: options.workspaceId,
+      threadId: options.threadId,
+      scope: "chat-turn",
+      kind: "note",
+      message,
+      status: "failed",
+      producer: options.producer,
+      occurredAt: Date.now(),
+      correlationId: options.correlationId,
+    });
+
+    options.onEvent?.(
+      {
+        type: "chat.message.error",
+        correlationId: options.correlationId,
+        error: buildRuntimeChatError(message, request.provider),
+      },
+      {
+        workspaceId: options.workspaceId,
+        threadId: options.threadId,
+        correlationId: options.correlationId,
+      },
+    );
+  } finally {
+    if (attachmentTempDir) {
+      rm(attachmentTempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+}
+
+export async function startChatTurn(
+  request: CanonicalChatRequest,
+  options: StartChatTurnOptions = {},
+): Promise<StartedChatTurn> {
   if (!isAllowedProvider(request.provider)) {
     throw new Error(
       "Missing or unsupported provider. Provider fallback is disabled.",
     );
   }
 
+  const correlationId = options.correlationId?.trim() || `chat-${nanoid()}`;
+  const producer = options.producer ?? "chat-service";
   const threadService = createThreadService();
   const occurredAt = Date.now();
   const derivedThreadTitle =
@@ -226,23 +537,23 @@ export async function createChatResponse(
     workspaceId: request.workspaceId,
     threadId: request.threadId,
     threadTitle: derivedThreadTitle,
-    producer: "chat-service",
+    producer,
     occurredAt,
+    correlationId,
   });
-  const priorMessages = threadService.listMessagesByThreadId(
-    threadContext.threadId,
-  );
+  const priorMessages = threadService.listMessagesByThreadId(threadContext.threadId);
   const historySource = priorMessages.map((message) => ({
     role: message.role,
     content: message.content,
   }));
-  const systemPromptBase = buildServerChatSystemPrompt();
-  const boundedHistory = trimChatHistory(
-    historySource,
-    undefined,
-    undefined,
-    systemPromptBase.length,
-  );
+  const systemPrompt = buildServerChatSystemPrompt();
+  const history = buildTokenBudgetedChatHistory({
+    messages: historySource,
+    provider: request.provider,
+    model: request.model,
+    systemPrompt,
+    nextUserMessage: request.message.content,
+  });
 
   threadService.recordMessage({
     workspaceId: threadContext.workspaceId,
@@ -251,233 +562,115 @@ export async function createChatResponse(
     content: request.message.content,
     attachments: request.message.attachments,
     occurredAt,
-    producer: "chat-service",
+    producer,
+    correlationId,
   });
 
-  const abortController = new AbortController();
-  const pendingToolMetadata = new Map<string, Array<{ query?: string }>>();
+  const completion = executeChatTurn(request, {
+    workspaceId: threadContext.workspaceId,
+    threadId: threadContext.threadId,
+    systemPrompt,
+    history,
+    correlationId,
+    producer,
+    runId: options.runId,
+    onEvent: options.onEvent,
+  });
+
+  return {
+    workspaceId: threadContext.workspaceId,
+    threadId: threadContext.threadId,
+    correlationId,
+    completion,
+  };
+}
+
+export async function createChatResponse(
+  event: H3Event,
+  request: CanonicalChatRequest,
+  runId?: string,
+): Promise<Response> {
+  // Transitional shim: the workspace runtime websocket is the canonical live
+  // transport. Keep this adapter only until all direct callers are removed.
+  type LegacySseChatEvent =
+    | ChatEvent
+    | {
+        type: "done";
+        content: string;
+      };
+
+  const queuedEvents: LegacySseChatEvent[] = [];
+  const waiters: Array<(event: LegacySseChatEvent | null) => void> = [];
+
+  const enqueue = (eventChunk: LegacySseChatEvent | null) => {
+    const waiter = waiters.shift();
+    if (waiter) {
+      waiter(eventChunk);
+      return;
+    }
+    if (eventChunk) {
+      queuedEvents.push(eventChunk);
+    }
+  };
+
+  const started = await startChatTurn(request, {
+    runId,
+    producer: "chat-service",
+    onEvent: (chatEvent) => {
+      switch (chatEvent.type) {
+        case "chat.message.delta":
+          enqueue({ type: "text_delta", content: chatEvent.content });
+          return;
+        case "chat.message.complete":
+          enqueue({ type: "done", content: "" });
+          return;
+        case "chat.message.error":
+          enqueue({ type: "error", error: chatEvent.error });
+          return;
+        default:
+          return;
+      }
+    },
+  });
+
+  started.completion.finally(() => {
+    enqueue(null);
+  });
+
+  const req = event.node?.req;
+  if (req) {
+    req.on("close", () => enqueue(null));
+  }
 
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
-      const pingTimer = setInterval(() => {
-        try {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "ping", content: "" })}\n\n`,
-            ),
-          );
-        } catch {
-          // Stream already closed.
+
+      while (true) {
+        const nextEvent =
+          queuedEvents.shift() ??
+          (await new Promise<LegacySseChatEvent | null>((resolve) => {
+            waiters.push(resolve);
+          }));
+
+        if (!nextEvent) {
+          break;
         }
-      }, KEEPALIVE_INTERVAL_MS);
 
-      let accumulated = "";
-      let attachmentTempDir: string | undefined;
-      const req = event.node?.req;
-      if (req) {
-        req.on("close", () => {
-          abortController.abort();
-        });
-      }
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify(nextEvent)}\n\n`),
+        );
 
-      try {
-        let prompt = request.message.content;
         if (
-          request.provider === "claude" &&
-          request.message.attachments &&
-          request.message.attachments.length > 0
+          nextEvent.type === "turn_complete" ||
+          nextEvent.type === "done" ||
+          nextEvent.type === "error"
         ) {
-          const saved = await saveAttachmentsToTempFiles(
-            request.message.attachments,
-            true,
-          );
-          attachmentTempDir = saved.tempDir;
-          const imageRefs = saved.files
-            .map((file) => {
-              return `First, use the Read tool to read the image file at "${file}". Then analyze it and respond to the user.`;
-            })
-            .join("\n");
-          prompt =
-            imageRefs +
-            "\n\n" +
-            (prompt || "Describe what you see in the image.");
+          break;
         }
-
-        const adapter = await getRuntimeAdapter(request.provider);
-        const session = adapter.createSession(
-          {
-            workspaceId: threadContext.workspaceId,
-            threadId: threadContext.threadId,
-            ...(runId ? { runId } : {}),
-            purpose: "chat",
-          },
-          getProviderSessionBinding(threadContext.threadId, "chat"),
-        );
-
-        const effectiveSystemPrompt =
-          request.provider === "claude" &&
-          request.message.attachments &&
-          request.message.attachments.length > 0
-            ? stripNoToolsRestriction(systemPromptBase)
-            : systemPromptBase;
-
-        try {
-          for await (const eventChunk of session.streamChatTurn({
-            prompt,
-            systemPrompt: effectiveSystemPrompt,
-            messages: boundedHistory,
-            model: request.model,
-            runId,
-            signal: abortController.signal,
-          })) {
-            clearInterval(pingTimer);
-
-            if (eventChunk.type === "text_delta") {
-              accumulated += eventChunk.content;
-            }
-
-            if (eventChunk.type === "tool_call_start") {
-              const queue = pendingToolMetadata.get(eventChunk.toolName) ?? [];
-              queue.push({
-                query: extractQueryFromToolInput(eventChunk.input),
-              });
-              pendingToolMetadata.set(eventChunk.toolName, queue);
-            }
-
-            if (
-              eventChunk.type === "tool_call_result" ||
-              eventChunk.type === "tool_call_error"
-            ) {
-              const queue = pendingToolMetadata.get(eventChunk.toolName) ?? [];
-              const metadata = queue.shift();
-              if (queue.length === 0) {
-                pendingToolMetadata.delete(eventChunk.toolName);
-              } else {
-                pendingToolMetadata.set(eventChunk.toolName, queue);
-              }
-
-              const query = metadata?.query;
-              const kind = normalizeActivityKind(eventChunk.toolName, query);
-              threadService.recordActivity({
-                workspaceId: threadContext.workspaceId,
-                threadId: threadContext.threadId,
-                scope: "chat-turn",
-                kind,
-                message:
-                  eventChunk.type === "tool_call_error"
-                    ? `Tool ${eventChunk.toolName} failed: ${eventChunk.error}`
-                    : `Used ${eventChunk.toolName}`,
-                status:
-                  eventChunk.type === "tool_call_error"
-                    ? "failed"
-                    : "completed",
-                toolName: eventChunk.toolName,
-                query,
-                producer: "chat-service",
-                occurredAt: Date.now(),
-              });
-            }
-
-            if (
-              eventChunk.type === "text_delta" ||
-              eventChunk.type === "tool_call_start" ||
-              eventChunk.type === "tool_call_result" ||
-              eventChunk.type === "tool_call_error" ||
-              eventChunk.type === "error"
-            ) {
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify(eventChunk)}\n\n`),
-              );
-            }
-          }
-        } finally {
-          const diagnostics = session.getDiagnostics();
-          const recovery = diagnostics.recovery;
-          if (recovery) {
-            threadService.recordActivity({
-              workspaceId: threadContext.workspaceId,
-              threadId: threadContext.threadId,
-              scope: "chat-turn",
-              kind: "note",
-              message:
-                recovery.disposition === "resumed"
-                  ? `${request.provider === "codex" ? "Codex app-server" : "Claude Code"} resumed persisted provider session`
-                  : (recovery.message ??
-                    `${request.provider === "codex" ? "Codex app-server" : "Claude Code"} started a fresh provider session`),
-              status:
-                recovery.disposition === "fallback" ? "failed" : "completed",
-              producer: "chat-service",
-              occurredAt: recovery.timestamp,
-            });
-          }
-          await session.dispose();
-        }
-
-        if (accumulated.trim().length > 0) {
-          threadService.recordMessage({
-            workspaceId: threadContext.workspaceId,
-            threadId: threadContext.threadId,
-            role: "assistant",
-            content: accumulated,
-            messageId: `msg-${nanoid()}`,
-            occurredAt: Date.now(),
-            producer: "chat-service",
-          });
-        }
-
-        controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ type: "done", content: "" })}\n\n`,
-          ),
-        );
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Unknown error";
-
-        if (accumulated.trim().length > 0) {
-          threadService.recordMessage({
-            workspaceId: threadContext.workspaceId,
-            threadId: threadContext.threadId,
-            role: "assistant",
-            content: accumulated,
-            occurredAt: Date.now(),
-            producer: "chat-service",
-          });
-        }
-
-        threadService.recordActivity({
-          workspaceId: threadContext.workspaceId,
-          threadId: threadContext.threadId,
-          scope: "chat-turn",
-          kind: "note",
-          message,
-          status: "failed",
-          producer: "chat-service",
-          occurredAt: Date.now(),
-        });
-
-        controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({
-              type: "error",
-              error: createProcessRuntimeError(message, {
-                provider: request.provider,
-                processState: "failed-to-start",
-                retryable: false,
-              }),
-            } satisfies ChatEvent)}\n\n`,
-          ),
-        );
-      } finally {
-        clearInterval(pingTimer);
-        if (attachmentTempDir) {
-          rm(attachmentTempDir, { recursive: true, force: true }).catch(
-            () => {},
-          );
-        }
-        controller.close();
       }
+
+      controller.close();
     },
   });
 
@@ -486,8 +679,8 @@ export async function createChatResponse(
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
-      "X-Workspace-Id": threadContext.workspaceId,
-      "X-Thread-Id": threadContext.threadId,
+      "X-Workspace-Id": started.workspaceId,
+      "X-Thread-Id": started.threadId,
     },
   });
 }

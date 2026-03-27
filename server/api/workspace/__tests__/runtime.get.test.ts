@@ -9,6 +9,53 @@ import { _resetWorkspaceRuntimePublisherForTest } from "../../../services/worksp
 import { _resetWorkspaceRuntimeTransportForTest } from "../../../services/workspace/workspace-runtime-transport";
 
 const getQueryMock = vi.fn();
+const streamChatTurnMock = vi.fn();
+
+vi.mock("../../../services/entity-graph-service", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../services/entity-graph-service")>();
+  return {
+    ...actual,
+    getAnalysis: vi.fn(() => ({
+      entities: [],
+      relationships: [],
+      phases: [],
+      id: "analysis-1",
+      name: "analysis-1",
+      topic: "topic",
+    })),
+  };
+});
+
+vi.mock("../../../services/workspace/provider-session-binding-service", () => ({
+  getProviderSessionBinding: vi.fn(() => null),
+}));
+
+vi.mock("../../../services/ai/adapter-contract", () => ({
+  getRuntimeAdapter: vi.fn(async () => ({
+    provider: "codex",
+    createSession: vi.fn((context: { threadId: string }) => ({
+      provider: "codex",
+      context,
+      streamChatTurn: (...args: unknown[]) => streamChatTurnMock(...args),
+      runStructuredTurn: vi.fn(),
+      getDiagnostics: vi.fn(() => ({
+        provider: "codex",
+        sessionId: "runtime-chat-test",
+      })),
+      getBinding: vi.fn(() => null),
+      dispose: vi.fn(async () => {}),
+    })),
+    listModels: vi.fn(async () => []),
+    checkHealth: vi.fn(async () => ({
+      provider: "codex",
+      status: "healthy",
+      reason: null,
+      checkedAt: Date.now(),
+      checks: [],
+    })),
+  })),
+}));
 
 vi.mock("h3", () => ({
   defineWebSocketHandler: (hooks: unknown) => hooks,
@@ -40,6 +87,10 @@ function wsMessage(payload: unknown) {
 describe("/api/workspace/runtime websocket", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    streamChatTurnMock.mockImplementation(async function* () {
+      yield { type: "text_delta", content: "Hello " };
+      yield { type: "text_delta", content: "world" };
+    });
     resetWorkspaceDatabaseForTest();
     _bindWorkspaceDatabaseForInit(getWorkspaceDatabase);
     _resetWorkspaceRuntimePublisherForTest();
@@ -308,5 +359,126 @@ describe("/api/workspace/runtime websocket", () => {
     expect(peer.sent[0]).not.toMatchObject({
       payload: { activeThreadId: threadA.id },
     });
+  });
+
+  it("accepts chat.turn.start and only pushes live chat events to the matching correlation subscriber", async () => {
+    const route = (await import("../runtime.get")).default as unknown as {
+      open: (peer: FakePeer) => void;
+      message: (
+        peer: FakePeer,
+        message: ReturnType<typeof wsMessage>,
+      ) => Promise<void>;
+    };
+    const peer1 = new FakePeer("conn-1");
+    const peer2 = new FakePeer("conn-2");
+
+    route.open(peer1);
+    route.open(peer2);
+    await route.message(
+      peer1,
+      wsMessage({
+        type: "client_hello",
+        workspaceId: "workspace-1",
+      }),
+    );
+    await route.message(
+      peer2,
+      wsMessage({
+        type: "client_hello",
+        workspaceId: "workspace-1",
+      }),
+    );
+    peer1.sent.splice(0, peer1.sent.length);
+    peer2.sent.splice(0, peer2.sent.length);
+
+    await route.message(
+      peer1,
+      wsMessage({
+        type: "request",
+        requestId: "req-chat-1",
+        kind: "chat.turn.start",
+        payload: {
+          workspaceId: "workspace-1",
+          correlationId: "corr-1",
+          message: {
+            content: "hello",
+          },
+          provider: "codex",
+          model: "gpt-5.4",
+        },
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(
+        peer1.sent.some(
+          (entry) =>
+            entry.type === "response" &&
+            entry.requestId === "req-chat-1" &&
+            entry.ok === true &&
+            (entry.result as { workspaceId?: string; correlationId?: string })
+              ?.workspaceId === "workspace-1" &&
+            (entry.result as { correlationId?: string })?.correlationId ===
+              "corr-1",
+        ),
+      ).toBe(true);
+      expect(
+        peer1.sent.some(
+          (entry) =>
+            entry.type === "push" &&
+            entry.channel === "chat-event" &&
+            (entry.payload as { correlationId?: string; event?: { type?: string; content?: string } })
+              ?.correlationId === "corr-1" &&
+            (entry.payload as { event?: { type?: string; content?: string } })
+              ?.event?.type === "chat.message.delta" &&
+            (entry.payload as { event?: { content?: string } })?.event
+              ?.content === "Hello ",
+        ),
+      ).toBe(true);
+      expect(
+        peer1.sent.some(
+          (entry) =>
+            entry.type === "push" &&
+            entry.channel === "chat-event" &&
+            (entry.payload as { correlationId?: string; event?: { type?: string; content?: string } })
+              ?.correlationId === "corr-1" &&
+            (entry.payload as { event?: { type?: string; content?: string } })
+              ?.event?.type === "chat.message.complete" &&
+            (entry.payload as { event?: { content?: string } })?.event
+              ?.content === "Hello world",
+        ),
+      ).toBe(true);
+    });
+    expect(
+      peer2.sent.some(
+        (entry) => entry.type === "push" && entry.channel === "chat-event",
+      ),
+    ).toBe(false);
+
+    const chatStartResponse = peer1.sent.find(
+      (entry) => entry.type === "response" && entry.requestId === "req-chat-1",
+    ) as { result: { threadId: string } } | undefined;
+    expect(chatStartResponse?.result.threadId).toBeTruthy();
+
+    const peer3 = new FakePeer("conn-3");
+    route.open(peer3);
+    await route.message(
+      peer3,
+      wsMessage({
+        type: "client_hello",
+        workspaceId: "workspace-1",
+        activeThreadId: chatStartResponse?.result.threadId,
+        lastSeenByChannel: {
+          threads: 0,
+          "thread-detail": 0,
+          "run-detail": 0,
+        },
+      }),
+    );
+    expect(
+      peer3.sent.some(
+        (entry) => entry.type === "push" && entry.channel === "chat-event",
+      ),
+    ).toBe(false);
   });
 });

@@ -2,12 +2,13 @@ import { useState, useCallback } from "react";
 import { nanoid } from "nanoid";
 import { useAIStore } from "@/stores/ai-store";
 import { useThreadStore } from "@/stores/thread-store";
-import { streamChat } from "@/services/ai/ai-service";
 import type { ChatMessage as ChatMessageType } from "@/services/ai/ai-types";
 import type { AIStreamChunk } from "@/services/ai/ai-types";
 import { CHAT_STREAM_THINKING_CONFIG } from "@/services/ai/ai-runtime-config";
 import type { AIProviderType } from "@/types/agent-settings";
 import type { ChatEvent } from "@/services/ai/chat-events";
+import type { WorkspaceRuntimeChatEvent } from "../../../shared/types/workspace-runtime";
+import { workspaceRuntimeClient } from "@/services/ai/workspace-runtime-client";
 
 // ---------------------------------------------------------------------------
 // Normalized internal chunk — both legacy AIStreamChunk and new ChatEvent
@@ -30,7 +31,7 @@ export type PendingToolMsgIds = Map<string, string[]>;
  * NormalizedChunk.  Unknown shapes are silently skipped (returns null).
  */
 function normalizeChunk(
-  raw: AIStreamChunk | ChatEvent,
+  raw: AIStreamChunk | ChatEvent | WorkspaceRuntimeChatEvent,
 ): NormalizedChunk | null {
   const t = (raw as { type: string }).type;
 
@@ -69,6 +70,33 @@ function normalizeChunk(
   }
   if (t === "turn_complete") {
     return { kind: "done" };
+  }
+  if (t === "chat.message.delta" && "content" in raw) {
+    return {
+      kind: "text",
+      content: (raw as WorkspaceRuntimeChatEvent & { type: "chat.message.delta" }).content,
+    };
+  }
+  if (t === "chat.message.complete") {
+    return { kind: "done" };
+  }
+  if (t === "chat.tool.start" && "toolName" in raw) {
+    return {
+      kind: "tool_start",
+      toolName: (raw as WorkspaceRuntimeChatEvent & { type: "chat.tool.start" }).toolName,
+    };
+  }
+  if (t === "chat.tool.result" && "toolName" in raw) {
+    const ev = raw as WorkspaceRuntimeChatEvent & { type: "chat.tool.result" };
+    return { kind: "tool_result", toolName: ev.toolName, output: ev.output };
+  }
+  if (t === "chat.tool.error" && "toolName" in raw) {
+    const ev = raw as WorkspaceRuntimeChatEvent & { type: "chat.tool.error" };
+    return { kind: "tool_error", toolName: ev.toolName, error: ev.error };
+  }
+  if (t === "chat.message.error") {
+    const ev = raw as WorkspaceRuntimeChatEvent & { type: "chat.message.error" };
+    return { kind: "error", content: ev.error.message };
   }
   if (t === "user_input_requested") {
     // Questions arrive via WebSocket thread-detail push, not the SSE stream.
@@ -198,22 +226,21 @@ export function useChatHandlers() {
       try {
         let chatThinking = "";
 
-        for await (const rawChunk of streamChat(
-          "",
-          [
-            {
-              role: "user",
+        for await (const rawChunk of workspaceRuntimeClient.streamChatTurn(
+          {
+            workspaceId: threadState.workspaceId ?? "workspace-local-default",
+            threadId: threadState.activeThreadId,
+            correlationId: `chat-${nanoid()}`,
+            message: {
               content: messageText,
             },
-          ],
-          model,
-          CHAT_STREAM_THINKING_CONFIG,
-          currentProvider,
-          abortController.signal,
-          undefined,
+            provider: currentProvider === "codex" ? "codex" : "claude",
+            model,
+            thinkingMode: CHAT_STREAM_THINKING_CONFIG.thinkingMode,
+            effort: CHAT_STREAM_THINKING_CONFIG.effort,
+          },
           {
-            workspaceId: threadState.workspaceId,
-            threadId: threadState.activeThreadId,
+            signal: abortController.signal,
             onResolvedThread: (identity) => {
               useThreadStore.getState().setActiveThreadIdentity(identity);
             },
@@ -301,11 +328,7 @@ export function useChatHandlers() {
               break;
             }
             case "error": {
-              accumulated += `\n\n**Error:** ${chunk.content}`;
               terminalErrorMessage = chunk.content;
-              useThreadStore
-                .getState()
-                .updateLastOverlayAssistantMessage(accumulated);
               break;
             }
             case "done":
