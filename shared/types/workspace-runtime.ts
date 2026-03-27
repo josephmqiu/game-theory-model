@@ -262,6 +262,8 @@ export type WorkspaceTransportDiagnosticCode =
   | "request-completed"
   | "request-failed"
   | "request-timeout"
+  | "request-queued"
+  | "request-flushed"
   | "response-mismatch"
   | "malformed-frame"
   | "push-sent"

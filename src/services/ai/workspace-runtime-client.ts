@@ -33,6 +33,11 @@ interface PendingRequest {
   timeoutId: ReturnType<typeof setTimeout>;
 }
 
+interface QueuedOutboundRequest {
+  requestId: string;
+  json: string;
+}
+
 interface ChatTurnStartResult {
   workspaceId: string;
   threadId: string;
@@ -75,6 +80,7 @@ class WorkspaceRuntimeClient {
   } | null = null;
   private listeners = new Set<RuntimeListener>();
   private pendingRequests = new Map<string, PendingRequest>();
+  private outboundQueue: QueuedOutboundRequest[] = [];
   private latestPushByChannel = new Map<
     WorkspaceRuntimePushEnvelope["channel"],
     WorkspaceRuntimePushEnvelope
@@ -92,6 +98,7 @@ class WorkspaceRuntimeClient {
       threadId: this.desiredContext?.activeThreadId,
     });
     void this.sendHello();
+    this.flushOutboundQueue();
   };
 
   private readonly handleMessage = (event: MessageEvent<string>) => {
@@ -291,6 +298,36 @@ class WorkspaceRuntimeClient {
     this.ws.send(JSON.stringify(hello));
   }
 
+  private flushOutboundQueue(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const toFlush = this.outboundQueue;
+    this.outboundQueue = [];
+
+    for (const item of toFlush) {
+      if (!this.pendingRequests.has(item.requestId)) {
+        continue;
+      }
+
+      this.recordDiagnostic({
+        code: "request-flushed",
+        level: "info",
+        message: "Flushing queued workspace runtime request",
+        connectionId: this.currentConnectionId,
+        workspaceId: this.desiredContext?.workspaceId,
+        threadId: this.desiredContext?.activeThreadId,
+        data: {
+          requestId: item.requestId,
+          kind: this.pendingRequests.get(item.requestId)?.kind,
+        },
+      });
+
+      this.ws.send(item.json);
+    }
+  }
+
   subscribe(listener: RuntimeListener): () => void {
     this.listeners.add(listener);
     return () => {
@@ -345,10 +382,6 @@ class WorkspaceRuntimeClient {
     kind: WorkspaceRuntimeRequestKind,
     payload: WorkspaceRuntimeRequest["payload"],
   ): Promise<T> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error("Workspace runtime websocket is not connected.");
-    }
-
     const requestId = `req-${nanoid()}`;
     const request: WorkspaceRuntimeRequest = {
       type: "request",
@@ -356,11 +389,15 @@ class WorkspaceRuntimeClient {
       kind,
       payload,
     };
+    const json = JSON.stringify(request);
+    const isOpen = this.ws?.readyState === WebSocket.OPEN;
 
     this.recordDiagnostic({
-      code: "request-received",
+      code: isOpen ? "request-received" : "request-queued",
       level: "info",
-      message: "Sending workspace runtime request",
+      message: isOpen
+        ? "Sending workspace runtime request"
+        : "Queueing workspace runtime request (socket not open)",
       connectionId: this.currentConnectionId,
       workspaceId: this.desiredContext?.workspaceId,
       threadId: this.desiredContext?.activeThreadId,
@@ -373,6 +410,9 @@ class WorkspaceRuntimeClient {
     return await new Promise<T>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         this.pendingRequests.delete(requestId);
+        this.outboundQueue = this.outboundQueue.filter(
+          (item) => item.requestId !== requestId,
+        );
         this.recordDiagnostic({
           code: "request-timeout",
           level: "error",
@@ -395,7 +435,11 @@ class WorkspaceRuntimeClient {
         timeoutId,
       });
 
-      this.ws?.send(JSON.stringify(request));
+      if (isOpen) {
+        this.ws!.send(json);
+      } else {
+        this.outboundQueue.push({ requestId, json });
+      }
     });
   }
 
@@ -492,6 +536,7 @@ class WorkspaceRuntimeClient {
       this.pendingBootstrap.reject(new Error("Workspace runtime disconnected"));
       this.pendingBootstrap = null;
     }
+    this.outboundQueue = [];
     for (const pending of this.pendingRequests.values()) {
       clearTimeout(pending.timeoutId);
       pending.reject(new Error("Workspace runtime disconnected"));

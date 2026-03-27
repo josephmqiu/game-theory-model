@@ -432,4 +432,243 @@ describe("workspace-runtime-client", () => {
       correlationId: "corr-1",
     });
   });
+
+  describe("outbound request queueing", () => {
+    it("queues requests when socket is CONNECTING and flushes on open", async () => {
+      const { workspaceRuntimeClient } =
+        await import("../workspace-runtime-client");
+      const bootstrapPromise = workspaceRuntimeClient.bindContext({
+        workspaceId: "workspace-1",
+        activeThreadId: "thread-1",
+      });
+      const socket = MockWebSocket.latest();
+
+      // Socket is still CONNECTING — sendRequest should NOT throw
+      const requestPromise = workspaceRuntimeClient.sendRequest<{
+        thread: { id: string };
+      }>("workspace.thread.create", {
+        workspaceId: "workspace-1",
+        title: "New thread",
+      });
+
+      // Nothing sent yet (socket not open)
+      expect(socket.sent).toHaveLength(0);
+
+      // Open the socket — should flush hello + queued request
+      socket.emitOpen();
+      socket.emitMessage(bootstrapPayload("conn-1"));
+      await bootstrapPromise;
+
+      expect(socket.sent).toHaveLength(2);
+      expect(JSON.parse(socket.sent[0])).toMatchObject({
+        type: "client_hello",
+      });
+      const flushedRequest = JSON.parse(socket.sent[1]);
+      expect(flushedRequest).toMatchObject({
+        type: "request",
+        kind: "workspace.thread.create",
+      });
+
+      // Respond to the request
+      socket.emitMessage({
+        type: "response",
+        requestId: flushedRequest.requestId,
+        ok: true,
+        result: { thread: { id: "thread-2" } },
+      });
+
+      await expect(requestPromise).resolves.toEqual({
+        thread: { id: "thread-2" },
+      });
+    });
+
+    it("rejects queued request on timeout if socket never opens", async () => {
+      const { workspaceRuntimeClient } =
+        await import("../workspace-runtime-client");
+      // Catch bootstrap rejection — it also times out when we advance timers.
+      workspaceRuntimeClient
+        .bindContext({
+          workspaceId: "workspace-1",
+          activeThreadId: "thread-1",
+        })
+        .catch(() => {});
+      const socket = MockWebSocket.latest();
+
+      const requestPromise = workspaceRuntimeClient.sendRequest(
+        "workspace.thread.create",
+        { workspaceId: "workspace-1", title: "New thread" },
+      );
+
+      // Advance past the 10s request timeout
+      vi.advanceTimersByTime(10_000);
+      await expect(requestPromise).rejects.toThrow("timed out");
+
+      // Now open the socket — timed-out request should NOT be flushed
+      socket.emitOpen();
+      expect(socket.sent).toHaveLength(1); // only client_hello
+      expect(JSON.parse(socket.sent[0])).toMatchObject({
+        type: "client_hello",
+      });
+    });
+
+    it("rejects queued requests on disconnect", async () => {
+      const { workspaceRuntimeClient } =
+        await import("../workspace-runtime-client");
+      // Catch bootstrap rejection — disconnect rejects it.
+      workspaceRuntimeClient
+        .bindContext({
+          workspaceId: "workspace-1",
+          activeThreadId: "thread-1",
+        })
+        .catch(() => {});
+
+      const requestPromise = workspaceRuntimeClient.sendRequest(
+        "workspace.thread.create",
+        { workspaceId: "workspace-1", title: "New thread" },
+      );
+
+      workspaceRuntimeClient.disconnect();
+      await expect(requestPromise).rejects.toThrow("disconnected");
+    });
+
+    it("flushes multiple queued requests in FIFO order", async () => {
+      const { workspaceRuntimeClient } =
+        await import("../workspace-runtime-client");
+      const bootstrapPromise = workspaceRuntimeClient.bindContext({
+        workspaceId: "workspace-1",
+        activeThreadId: "thread-1",
+      });
+      const socket = MockWebSocket.latest();
+
+      const p1 = workspaceRuntimeClient.sendRequest("workspace.thread.create", {
+        workspaceId: "workspace-1",
+        title: "First",
+      });
+      const p2 = workspaceRuntimeClient.sendRequest("workspace.thread.rename", {
+        workspaceId: "workspace-1",
+        threadId: "t-1",
+        title: "Second",
+      });
+      const p3 = workspaceRuntimeClient.sendRequest("workspace.thread.delete", {
+        workspaceId: "workspace-1",
+        threadId: "t-2",
+      });
+
+      socket.emitOpen();
+      socket.emitMessage(bootstrapPayload("conn-1"));
+      await bootstrapPromise;
+
+      // sent[0] = client_hello, sent[1..3] = queued requests in order
+      expect(socket.sent).toHaveLength(4);
+      expect(JSON.parse(socket.sent[1])).toMatchObject({
+        kind: "workspace.thread.create",
+      });
+      expect(JSON.parse(socket.sent[2])).toMatchObject({
+        kind: "workspace.thread.rename",
+      });
+      expect(JSON.parse(socket.sent[3])).toMatchObject({
+        kind: "workspace.thread.delete",
+      });
+
+      // Respond to all three
+      for (let i = 1; i <= 3; i++) {
+        const req = JSON.parse(socket.sent[i]);
+        socket.emitMessage({
+          type: "response",
+          requestId: req.requestId,
+          ok: true,
+          result: {},
+        });
+      }
+
+      await expect(p1).resolves.toEqual({});
+      await expect(p2).resolves.toEqual({});
+      await expect(p3).resolves.toEqual({});
+    });
+
+    it("queues requests during reconnect backoff and flushes on reconnect", async () => {
+      const { workspaceRuntimeClient } =
+        await import("../workspace-runtime-client");
+      const bootstrapPromise = workspaceRuntimeClient.bindContext({
+        workspaceId: "workspace-1",
+        activeThreadId: "thread-1",
+      });
+      const firstSocket = MockWebSocket.latest();
+      firstSocket.emitOpen();
+      firstSocket.emitMessage(bootstrapPayload("conn-1"));
+      await bootstrapPromise;
+
+      // Close the socket — triggers reconnect backoff
+      firstSocket.emitClose({ code: 1006, reason: "drop" });
+
+      // Queue a request during the backoff window
+      const requestPromise = workspaceRuntimeClient.sendRequest<{
+        thread: { id: string };
+      }>("workspace.thread.create", {
+        workspaceId: "workspace-1",
+        title: "Queued during reconnect",
+      });
+
+      // Advance past the 1000ms backoff
+      vi.advanceTimersByTime(1000);
+      const secondSocket = MockWebSocket.latest();
+      expect(MockWebSocket.instances).toHaveLength(2);
+
+      secondSocket.emitOpen();
+
+      // sent[0] = client_hello, sent[1] = flushed request
+      expect(secondSocket.sent).toHaveLength(2);
+      const flushedRequest = JSON.parse(secondSocket.sent[1]);
+      expect(flushedRequest).toMatchObject({
+        type: "request",
+        kind: "workspace.thread.create",
+      });
+
+      secondSocket.emitMessage({
+        type: "response",
+        requestId: flushedRequest.requestId,
+        ok: true,
+        result: { thread: { id: "thread-3" } },
+      });
+
+      await expect(requestPromise).resolves.toEqual({
+        thread: { id: "thread-3" },
+      });
+    });
+
+    it("records request-queued and request-flushed diagnostics", async () => {
+      const { workspaceRuntimeClient } =
+        await import("../workspace-runtime-client");
+      const bootstrapPromise = workspaceRuntimeClient.bindContext({
+        workspaceId: "workspace-1",
+        activeThreadId: "thread-1",
+      });
+      const socket = MockWebSocket.latest();
+
+      // Catch — we only care about diagnostics, not the response.
+      workspaceRuntimeClient
+        .sendRequest("workspace.thread.create", {
+          workspaceId: "workspace-1",
+          title: "New thread",
+        })
+        .catch(() => {});
+
+      const diagnosticsBeforeOpen = workspaceRuntimeClient.getDiagnostics();
+      expect(
+        diagnosticsBeforeOpen.some((d) => d.code === "request-queued"),
+      ).toBe(true);
+      expect(
+        diagnosticsBeforeOpen.some((d) => d.code === "request-flushed"),
+      ).toBe(false);
+
+      socket.emitOpen();
+      socket.emitMessage(bootstrapPayload("conn-1"));
+      await bootstrapPromise;
+
+      const diagnosticsAfterOpen = workspaceRuntimeClient.getDiagnostics();
+      expect(
+        diagnosticsAfterOpen.some((d) => d.code === "request-flushed"),
+      ).toBe(true);
+    });
+  });
 });
