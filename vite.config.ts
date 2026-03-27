@@ -1,5 +1,5 @@
 import { defineConfig } from "vite";
-import type { Plugin } from "vite";
+import type { PluginOption } from "vite";
 import { devtools } from "@tanstack/devtools-vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
@@ -18,10 +18,15 @@ const tanstackDevtoolsEventBusPort = process.env
 
 // Nitro opens file handles that prevent Vitest from exiting.
 // Dynamic import avoids loading the module during tests.
-let nitroPlugin: Plugin | undefined;
+//
+// NOTE: Pinned to nitro-nightly because the Nitro 3.0.0 stable release has a
+// different vite plugin API (NitroPluginConfig.config vs direct options) and
+// removes the `features`, `node`, `serverDir` config surface this app depends on.
+// Migration to stable requires a dedicated compatibility spike. See TODOS.md P2.
+let nitroPlugins: PluginOption | undefined;
 if (!isVitest) {
   const { nitro } = await import("nitro/vite");
-  nitroPlugin = nitro({
+  nitroPlugins = nitro({
     features: { websocket: true },
     node: true,
     rollupConfig: {
@@ -29,7 +34,7 @@ if (!isVitest) {
     },
     serverDir: "./server",
     ...(isElectronBuild ? { preset: "node-server" } : {}),
-  });
+  } as any);
 }
 
 const config = defineConfig({
@@ -48,7 +53,7 @@ const config = defineConfig({
           : {}),
       },
     }),
-    ...(nitroPlugin ? [nitroPlugin] : []),
+    nitroPlugins,
     // this is the plugin that enables path aliases
     viteTsConfigPaths({
       projects: ["./tsconfig.json"],

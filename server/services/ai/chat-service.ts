@@ -21,7 +21,10 @@ import {
   CHAT_PROMPT_PACK_MODE,
 } from "../../../shared/types/prompt-pack";
 
-export const ALLOWED_PROVIDERS = ["anthropic", "openai"] as const;
+import {
+  ALLOWED_WIRE_PROVIDERS as ALLOWED_PROVIDERS,
+  isAllowedWireProvider,
+} from "../../../shared/types/analysis-runtime";
 const KEEPALIVE_INTERVAL_MS = 15_000;
 export const SENSITIVE_LOG_PATTERN =
   /ANTHROPIC_API_KEY=|Authorization:\s*Bearer|api[_-]?key\s*[:=]/i;
@@ -83,11 +86,7 @@ export function parseChatRequest(raw: unknown): CanonicalChatRequest {
   return result.data;
 }
 
-function isAllowedProvider(
-  provider: string,
-): provider is (typeof ALLOWED_PROVIDERS)[number] {
-  return (ALLOWED_PROVIDERS as readonly string[]).includes(provider);
-}
+const isAllowedProvider = isAllowedWireProvider;
 
 function buildServerChatSystemPrompt(): string {
   const analysis = entityGraphService.getAnalysis();

@@ -349,10 +349,6 @@ const ja: TranslationKeys = {
   "agents.claudeModels": "Claude モデル",
   "agents.codexCli": "Codex CLI",
   "agents.openaiModels": "OpenAI モデル",
-  "agents.opencode": "OpenCode",
-  "agents.opencodeDesc": "75 以上の LLM プロバイダー",
-  "agents.copilot": "GitHub Copilot",
-  "agents.copilotDesc": "GitHub Copilot モデル",
   "agents.mcpServer": "MCP サーバー",
   "agents.mcpServerStart": "開始",
   "agents.mcpServerStop": "停止",
@@ -467,8 +463,7 @@ const ja: TranslationKeys = {
     "検証またはトランスポートの問題後にフェーズを再試行中。",
   "analysis.activity.default": "フェーズ分析を継続中。",
   "analysis.activity.usingTool": "{{toolName}} を使用中",
-  "analysis.activity.usingWebSearchQuery":
-    "WebSearch を使用中: {{query}}",
+  "analysis.activity.usingWebSearchQuery": "WebSearch を使用中: {{query}}",
   "analysis.activity.agentProgress": "エージェントの進捗",
 
   // ── Analysis Progress ──

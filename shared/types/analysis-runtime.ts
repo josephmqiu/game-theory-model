@@ -71,6 +71,21 @@ export interface RuntimeModelInfo {
   effort: RuntimeModelEffortSupport;
 }
 
+// Wire-level provider names used by the API surface (matches SDK conventions).
+export const ALLOWED_WIRE_PROVIDERS = ["anthropic", "openai"] as const;
+export type AllowedWireProvider = (typeof ALLOWED_WIRE_PROVIDERS)[number];
+
+export const WIRE_PROVIDER_LABELS: Record<AllowedWireProvider, string> = {
+  anthropic: "Claude",
+  openai: "Codex",
+} as const;
+
+export function isAllowedWireProvider(
+  provider: string,
+): provider is AllowedWireProvider {
+  return (ALLOWED_WIRE_PROVIDERS as readonly string[]).includes(provider);
+}
+
 export function normalizeRuntimeProvider(
   provider?: LegacyRuntimeProvider | null,
 ): RuntimeProvider | undefined {

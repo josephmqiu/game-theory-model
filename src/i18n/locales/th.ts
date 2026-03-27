@@ -346,10 +346,6 @@ const th: TranslationKeys = {
   "agents.claudeModels": "โมเดล Claude",
   "agents.codexCli": "Codex CLI",
   "agents.openaiModels": "โมเดล OpenAI",
-  "agents.opencode": "OpenCode",
-  "agents.opencodeDesc": "75+ ผู้ให้บริการ LLM",
-  "agents.copilot": "GitHub Copilot",
-  "agents.copilotDesc": "โมเดล GitHub Copilot",
   "agents.mcpServer": "เซิร์ฟเวอร์ MCP",
   "agents.mcpServerStart": "เริ่ม",
   "agents.mcpServerStop": "หยุด",
@@ -461,8 +457,7 @@ const th: TranslationKeys = {
     "กำลังลองเฟสอีกครั้งหลังจากปัญหาการตรวจสอบหรือการส่งข้อมูล",
   "analysis.activity.default": "กำลังดำเนินการวิเคราะห์เฟส",
   "analysis.activity.usingTool": "กำลังใช้ {{toolName}}",
-  "analysis.activity.usingWebSearchQuery":
-    "กำลังใช้ WebSearch: {{query}}",
+  "analysis.activity.usingWebSearchQuery": "กำลังใช้ WebSearch: {{query}}",
   "analysis.activity.agentProgress": "ความคืบหน้าของเอเจนต์",
 
   // ── Analysis Progress ──

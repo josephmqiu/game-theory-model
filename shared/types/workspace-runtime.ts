@@ -205,7 +205,8 @@ export type WorkspaceRecoveryDiagnosticCode =
   | "fallback-selected"
   | "binding-upserted"
   | "binding-cleared"
-  | "run-recovery-failed";
+  | "run-recovery-failed"
+  | "recovery-questions-dismissed";
 
 export interface WorkspaceTransportDiagnostic {
   id: string;

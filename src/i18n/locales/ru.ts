@@ -359,10 +359,6 @@ const ru: TranslationKeys = {
   "agents.claudeModels": "Модели Claude",
   "agents.codexCli": "Codex CLI",
   "agents.openaiModels": "Модели OpenAI",
-  "agents.opencode": "OpenCode",
-  "agents.opencodeDesc": "75+ провайдеров LLM",
-  "agents.copilot": "GitHub Copilot",
-  "agents.copilotDesc": "Модели GitHub Copilot",
   "agents.mcpServer": "MCP Сервер",
   "agents.mcpServerStart": "Запустить",
   "agents.mcpServerStop": "Остановить",
@@ -484,8 +480,7 @@ const ru: TranslationKeys = {
     "Повторная попытка фазы после ошибки валидации или транспорта.",
   "analysis.activity.default": "Продолжение фазового анализа.",
   "analysis.activity.usingTool": "Использование {{toolName}}",
-  "analysis.activity.usingWebSearchQuery":
-    "Использование WebSearch: {{query}}",
+  "analysis.activity.usingWebSearchQuery": "Использование WebSearch: {{query}}",
   "analysis.activity.agentProgress": "Прогресс агента",
 
   // ── Analysis Progress ──

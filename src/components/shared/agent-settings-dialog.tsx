@@ -32,8 +32,6 @@ import { PHASE_LABELS, V3_PHASES } from "@/types/methodology";
 import type { AnalysisEffortLevel } from "../../../shared/types/analysis-runtime";
 import ClaudeLogo from "@/components/icons/claude-logo";
 import OpenAILogo from "@/components/icons/openai-logo";
-import OpenCodeLogo from "@/components/icons/opencode-logo";
-import CopilotLogo from "@/components/icons/copilot-logo";
 
 // ---------------------------------------------------------------------------
 // Tab type
@@ -53,7 +51,7 @@ const PROVIDER_META: Record<
   {
     label: string;
     descriptionKey: string;
-    agent: "claude-code" | "codex-cli" | "opencode" | "copilot";
+    agent: "claude-code" | "codex-cli";
     Icon: ComponentType<SVGProps<SVGSVGElement>>;
   }
 > = {
@@ -68,18 +66,6 @@ const PROVIDER_META: Record<
     descriptionKey: "agents.openaiModels",
     agent: "codex-cli",
     Icon: OpenAILogo,
-  },
-  opencode: {
-    label: "OpenCode",
-    descriptionKey: "agents.opencodeDesc",
-    agent: "opencode",
-    Icon: OpenCodeLogo,
-  },
-  copilot: {
-    label: "GitHub Copilot",
-    descriptionKey: "agents.copilotDesc",
-    agent: "copilot",
-    Icon: CopilotLogo,
   },
 };
 
@@ -100,9 +86,7 @@ const ANALYSIS_EFFORT_LABEL_KEYS: Record<AnalysisEffortLevel, string> = {
 // API helpers
 // ---------------------------------------------------------------------------
 
-async function connectAgent(
-  agent: "claude-code" | "codex-cli" | "opencode" | "copilot",
-): Promise<{
+async function connectAgent(agent: "claude-code" | "codex-cli"): Promise<{
   connected: boolean;
   models: GroupedModel[];
   error?: string;
@@ -126,9 +110,7 @@ async function connectAgent(
   }
 }
 
-async function installAgent(
-  agent: "claude-code" | "codex-cli" | "opencode" | "copilot",
-): Promise<{
+async function installAgent(agent: "claude-code" | "codex-cli"): Promise<{
   success: boolean;
   error?: string;
   command?: string;

@@ -348,10 +348,6 @@ const tr: TranslationKeys = {
   "agents.claudeModels": "Claude modelleri",
   "agents.codexCli": "Codex CLI",
   "agents.openaiModels": "OpenAI modelleri",
-  "agents.opencode": "OpenCode",
-  "agents.opencodeDesc": "75+ LLM sağlayıcı",
-  "agents.copilot": "GitHub Copilot",
-  "agents.copilotDesc": "GitHub Copilot modelleri",
   "agents.mcpServer": "MCP Sunucu",
   "agents.mcpServerStart": "Başlat",
   "agents.mcpServerStop": "Durdur",
@@ -466,8 +462,7 @@ const tr: TranslationKeys = {
     "Doğrulama veya aktarım sorununun ardından faz yeniden deneniyor.",
   "analysis.activity.default": "Faz analizi devam ediyor.",
   "analysis.activity.usingTool": "{{toolName}} kullanılıyor",
-  "analysis.activity.usingWebSearchQuery":
-    "WebSearch kullanılıyor: {{query}}",
+  "analysis.activity.usingWebSearchQuery": "WebSearch kullanılıyor: {{query}}",
   "analysis.activity.agentProgress": "Ajan ilerlemesi",
 
   // ── Analysis Progress ──

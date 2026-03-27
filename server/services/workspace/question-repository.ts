@@ -22,6 +22,7 @@ export interface QuestionRepository {
     threadId: string,
     statusFilter?: UserInputQuestionStatus,
   ): PendingQuestionState[];
+  listByStatus(status: UserInputQuestionStatus): PendingQuestionState[];
 }
 
 function mapQuestionRow(row: Record<string, unknown>): PendingQuestionState {
@@ -59,6 +60,12 @@ export function createQuestionRepository(db: DatabaseSync): QuestionRepository {
     `SELECT status, question_json, answer_json
      FROM pending_questions
      WHERE thread_id = $threadId AND status = $status
+     ORDER BY created_at ASC`,
+  );
+  const listByStatusStatement = db.prepare(
+    `SELECT status, question_json, answer_json
+     FROM pending_questions
+     WHERE status = $status
      ORDER BY created_at ASC`,
   );
   const upsertStatement = db.prepare(
@@ -149,6 +156,12 @@ export function createQuestionRepository(db: DatabaseSync): QuestionRepository {
       }
       return listByThreadStatement
         .all({ $threadId: threadId })
+        .map((row) => mapQuestionRow(row));
+    },
+
+    listByStatus(status) {
+      return listByStatusStatement
+        .all({ $status: status })
         .map((row) => mapQuestionRow(row));
     },
   };

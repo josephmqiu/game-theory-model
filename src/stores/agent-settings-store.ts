@@ -6,10 +6,7 @@ import type {
   MCPTransportMode,
   GroupedModel,
 } from "@/types/agent-settings";
-import {
-  V3_PHASES,
-  type MethodologyPhase,
-} from "@/types/methodology";
+import { V3_PHASES, type MethodologyPhase } from "@/types/methodology";
 import { MCP_DEFAULT_PORT } from "@/constants/app";
 import { appStorage } from "@/utils/app-storage";
 import { isAllowedProvider } from "@/services/ai/allowed-providers";
@@ -124,7 +121,6 @@ export function buildAnalysisRuntimeOverrides(
   return Object.keys(runtime).length > 0 ? runtime : undefined;
 }
 
-// opencode and copilot are dormant — unreachable via ALLOWED_PROVIDERS
 const DEFAULT_PROVIDERS: Record<AIProviderType, AIProviderConfig> = {
   anthropic: {
     type: "anthropic",
@@ -136,20 +132,6 @@ const DEFAULT_PROVIDERS: Record<AIProviderType, AIProviderConfig> = {
   openai: {
     type: "openai",
     displayName: "Codex CLI",
-    isConnected: false,
-    connectionMethod: null,
-    models: [],
-  },
-  opencode: {
-    type: "opencode",
-    displayName: "OpenCode",
-    isConnected: false,
-    connectionMethod: null,
-    models: [],
-  },
-  copilot: {
-    type: "copilot",
-    displayName: "GitHub Copilot",
     isConnected: false,
     connectionMethod: null,
     models: [],
@@ -176,20 +158,8 @@ const DEFAULT_MCP_INTEGRATIONS: MCPCliIntegration[] = [
     installed: false,
   },
   {
-    tool: "opencode-cli",
-    displayName: "OpenCode CLI",
-    enabled: false,
-    installed: false,
-  },
-  {
     tool: "kiro-cli",
     displayName: "Kiro CLI",
-    enabled: false,
-    installed: false,
-  },
-  {
-    tool: "copilot-cli",
-    displayName: "GitHub Copilot CLI",
     enabled: false,
     installed: false,
   },
@@ -252,8 +222,7 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => ({
 
   setAnalysisWebSearch: (analysisWebSearch) => set({ analysisWebSearch }),
 
-  setAnalysisEffortLevel: (analysisEffortLevel) =>
-    set({ analysisEffortLevel }),
+  setAnalysisEffortLevel: (analysisEffortLevel) => set({ analysisEffortLevel }),
 
   setAnalysisPhaseMode: (analysisPhaseMode) =>
     set((state) => ({
@@ -317,9 +286,8 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => ({
           analysisWebSearch,
           analysisEffortLevel,
           analysisPhaseMode,
-          analysisCustomPhases: normalizeAnalysisCustomPhases(
-            analysisCustomPhases,
-          ),
+          analysisCustomPhases:
+            normalizeAnalysisCustomPhases(analysisCustomPhases),
         }),
       );
     } catch {
@@ -340,17 +308,6 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => ({
             merged[key] = { ...merged[key], ...data.providers[key] };
             // Ensure models array always exists
             if (!Array.isArray(merged[key].models)) merged[key].models = [];
-          }
-        }
-        // Force-disconnect any provider not in ALLOWED_PROVIDERS
-        for (const key of Object.keys(merged) as AIProviderType[]) {
-          if (!isAllowedProvider(key)) {
-            merged[key] = {
-              ...merged[key],
-              isConnected: false,
-              connectionMethod: null,
-              models: [],
-            };
           }
         }
         set({ providers: merged });

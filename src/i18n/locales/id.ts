@@ -348,10 +348,6 @@ const id: TranslationKeys = {
   "agents.claudeModels": "Model Claude",
   "agents.codexCli": "Codex CLI",
   "agents.openaiModels": "Model OpenAI",
-  "agents.opencode": "OpenCode",
-  "agents.opencodeDesc": "75+ penyedia LLM",
-  "agents.copilot": "GitHub Copilot",
-  "agents.copilotDesc": "Model GitHub Copilot",
   "agents.mcpServer": "Server MCP",
   "agents.mcpServerStart": "Mulai",
   "agents.mcpServerStop": "Hentikan",
@@ -467,8 +463,7 @@ const id: TranslationKeys = {
     "Mencoba ulang fase setelah masalah validasi atau transport.",
   "analysis.activity.default": "Melanjutkan analisis fase.",
   "analysis.activity.usingTool": "Menggunakan {{toolName}}",
-  "analysis.activity.usingWebSearchQuery":
-    "Menggunakan WebSearch: {{query}}",
+  "analysis.activity.usingWebSearchQuery": "Menggunakan WebSearch: {{query}}",
   "analysis.activity.agentProgress": "Progres agent",
 
   // ── Analysis Progress ──

@@ -90,7 +90,8 @@ function recordRecoveryLog(input: {
     | "recovery-binding-found"
     | "recovery-binding-missing"
     | "fallback-selected"
-    | "run-recovery-failed";
+    | "run-recovery-failed"
+    | "recovery-questions-dismissed";
   level: "info" | "warn" | "error";
   message: string;
   workspaceId?: string;
@@ -344,12 +345,38 @@ async function runStartupRecovery(): Promise<void> {
     });
   }
 
+  // Dismiss orphaned pending questions — questions whose runs have failed
+  // but whose in-memory resolvers no longer exist after restart.
+  const pendingQuestions = database.questions.listByStatus("pending");
+  let dismissedCount = 0;
+  for (const pq of pendingQuestions) {
+    // If the question's run was running (and just failed above), or if
+    // no run is actively waiting on this question, dismiss it.
+    const questionRunId = pq.question.runId;
+    const isOrphaned =
+      !questionRunId || runningRuns.some((r) => r.id === questionRunId);
+    if (isOrphaned) {
+      database.questions.updateStatus(pq.question.id, "dismissed");
+      dismissedCount += 1;
+    }
+  }
+
+  if (dismissedCount > 0) {
+    recordRecoveryLog({
+      code: "recovery-questions-dismissed",
+      level: "info",
+      message: `Dismissed ${dismissedCount} orphaned pending question(s) from crashed runs`,
+      data: { dismissedCount },
+    });
+  }
+
   recordRecoveryLog({
     code: "recovery-scan-completed",
     level: "info",
     message: "Completed startup recovery scan",
     data: {
       runningRunCount: runningRuns.length,
+      dismissedQuestionCount: dismissedCount,
     },
   });
 }

@@ -905,11 +905,11 @@ describe("analysis-service", () => {
       const result = await runPhase(
         "situational-grounding",
         "US-China trade war",
-        { provider: "copilot" },
+        { provider: "unknown" },
       );
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain("Unknown provider: copilot");
+      expect(result.error).toContain("Unknown provider: unknown");
       expect(mockClaudeRunAnalysisPhase).not.toHaveBeenCalled();
       expect(mockCodexRunAnalysisPhase).not.toHaveBeenCalled();
     });

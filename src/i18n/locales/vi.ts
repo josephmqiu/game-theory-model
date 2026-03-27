@@ -348,10 +348,6 @@ const vi: TranslationKeys = {
   "agents.claudeModels": "Các mô hình Claude",
   "agents.codexCli": "Codex CLI",
   "agents.openaiModels": "Các mô hình OpenAI",
-  "agents.opencode": "OpenCode",
-  "agents.opencodeDesc": "75+ nhà cung cấp LLM",
-  "agents.copilot": "GitHub Copilot",
-  "agents.copilotDesc": "Các mô hình GitHub Copilot",
   "agents.mcpServer": "Máy chủ MCP",
   "agents.mcpServerStart": "Khởi động",
   "agents.mcpServerStop": "Dừng",
@@ -465,8 +461,7 @@ const vi: TranslationKeys = {
     "Đang thử lại giai đoạn sau lỗi xác thực hoặc truyền tải.",
   "analysis.activity.default": "Đang tiếp tục phân tích giai đoạn.",
   "analysis.activity.usingTool": "Đang sử dụng {{toolName}}",
-  "analysis.activity.usingWebSearchQuery":
-    "Đang sử dụng WebSearch: {{query}}",
+  "analysis.activity.usingWebSearchQuery": "Đang sử dụng WebSearch: {{query}}",
   "analysis.activity.agentProgress": "Tiến trình agent",
 
   // ── Analysis Progress ──

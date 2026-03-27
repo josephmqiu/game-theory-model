@@ -352,10 +352,6 @@ const pt: TranslationKeys = {
   "agents.claudeModels": "Modelos Claude",
   "agents.codexCli": "Codex CLI",
   "agents.openaiModels": "Modelos OpenAI",
-  "agents.opencode": "OpenCode",
-  "agents.opencodeDesc": "75+ provedores de LLM",
-  "agents.copilot": "GitHub Copilot",
-  "agents.copilotDesc": "Modelos GitHub Copilot",
   "agents.mcpServer": "Servidor MCP",
   "agents.mcpServerStart": "Iniciar",
   "agents.mcpServerStop": "Parar",
@@ -471,8 +467,7 @@ const pt: TranslationKeys = {
     "Repetindo fase após erro de validação ou transporte.",
   "analysis.activity.default": "Continuando análise de fase.",
   "analysis.activity.usingTool": "Usando {{toolName}}",
-  "analysis.activity.usingWebSearchQuery":
-    "Usando WebSearch: {{query}}",
+  "analysis.activity.usingWebSearchQuery": "Usando WebSearch: {{query}}",
   "analysis.activity.agentProgress": "Progresso do agente",
 
   // ── Analysis Progress ──
