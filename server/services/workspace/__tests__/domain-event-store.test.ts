@@ -694,4 +694,227 @@ describe("domain-event-store", () => {
 
     database.close();
   });
+
+  it("projects run.cancelled onto run state and phase turn", () => {
+    const database = createDatabase();
+    const { context } = appendStartedRun(database);
+
+    database.eventStore.appendEvents([
+      {
+        kind: "explicit" as const,
+        type: "phase.started",
+        workspaceId: context.workspaceId,
+        threadId: context.threadId,
+        runId: "run-1",
+        payload: {
+          phase: "situational-grounding",
+          phaseTurnId: "phase-turn-cancelled",
+          turnIndex: 1,
+          promptProvenance: createPhasePromptProvenance(
+            "situational-grounding",
+          ),
+        },
+        occurredAt: 700,
+        producer: "test",
+      },
+      {
+        kind: "explicit" as const,
+        type: "run.cancelled",
+        workspaceId: context.workspaceId,
+        threadId: context.threadId,
+        runId: "run-1",
+        payload: {
+          activePhase: "situational-grounding",
+          latestPhaseTurnId: "phase-turn-cancelled",
+          finishedAt: 701,
+          summary: {
+            statusMessage: "User cancelled",
+            completedPhases: 0,
+          },
+        },
+        occurredAt: 701,
+        producer: "test",
+      },
+    ]);
+
+    const run = database.runs.getRunState("run-1");
+    expect(run).toMatchObject({
+      status: "cancelled",
+      summary: {
+        statusMessage: "User cancelled",
+      },
+    });
+
+    const phaseTurn = database.phaseTurnSummaries.getPhaseTurnSummary(
+      "phase-turn-cancelled",
+    );
+    expect(phaseTurn).toMatchObject({
+      status: "cancelled",
+    });
+    expect(phaseTurn!.failure).toBeUndefined();
+
+    const thread = database.threads.getThreadState(context.threadId);
+    expect(thread).toMatchObject({
+      latestTerminalStatus: "cancelled",
+    });
+
+    database.close();
+  });
+
+  it("projects question.created into pending questions", () => {
+    const database = createDatabase();
+    const { context } = appendStartedRun(database);
+
+    database.eventStore.appendEvents([
+      {
+        kind: "explicit" as const,
+        type: "question.created",
+        workspaceId: context.workspaceId,
+        threadId: context.threadId,
+        runId: "run-1",
+        payload: {
+          questionId: "q-1",
+          header: "Input needed",
+          question: "Which actors matter most?",
+          options: [{ label: "Option A" }, { label: "Option B" }],
+          multiSelect: false,
+        },
+        occurredAt: 800,
+        producer: "test",
+      },
+    ]);
+
+    const pending = database.questions.getById("q-1");
+    expect(pending).toBeDefined();
+    expect(pending!.status).toBe("pending");
+    expect(pending!.question.header).toBe("Input needed");
+    expect(pending!.question.question).toBe("Which actors matter most?");
+    expect(pending!.question.options).toHaveLength(2);
+
+    database.close();
+  });
+
+  it("projects question.resolved onto existing question", () => {
+    const database = createDatabase();
+    const { context } = appendStartedRun(database);
+
+    database.eventStore.appendEvents([
+      {
+        kind: "explicit" as const,
+        type: "question.created",
+        workspaceId: context.workspaceId,
+        threadId: context.threadId,
+        runId: "run-1",
+        payload: {
+          questionId: "q-1",
+          header: "Input needed",
+          question: "Which actors matter most?",
+          options: [{ label: "Option A" }, { label: "Option B" }],
+          multiSelect: false,
+        },
+        occurredAt: 800,
+        producer: "test",
+      },
+      {
+        kind: "explicit" as const,
+        type: "question.resolved",
+        workspaceId: context.workspaceId,
+        threadId: context.threadId,
+        runId: "run-1",
+        payload: {
+          questionId: "q-1",
+          selectedOptions: [0],
+          customText: "Both are important",
+          resolvedAt: 900,
+        },
+        occurredAt: 900,
+        producer: "test",
+      },
+    ]);
+
+    const resolved = database.questions.getById("q-1");
+    expect(resolved).toBeDefined();
+    expect(resolved!.status).toBe("resolved");
+    expect(resolved!.answer).toBeDefined();
+    expect(resolved!.answer!.selectedOptions).toEqual([0]);
+    expect(resolved!.answer!.customText).toBe("Both are important");
+
+    database.close();
+  });
+
+  it("projects thread.renamed onto thread title", () => {
+    const database = createDatabase();
+    const context = database.eventStore.resolveThreadContext({
+      workspaceId: "workspace-1",
+      threadId: "thread-rename-test",
+      threadTitle: "Original",
+      producer: "test",
+      occurredAt: 100,
+    });
+
+    database.eventStore.appendEvents([
+      ...(context.createdThreadEvent ? [context.createdThreadEvent] : []),
+    ]);
+
+    const threadBefore = database.threads.getThreadState(context.threadId);
+    expect(threadBefore).toBeDefined();
+    expect(threadBefore!.title).toBe("Original");
+
+    database.eventStore.appendEvents([
+      {
+        kind: "explicit" as const,
+        type: "thread.renamed",
+        workspaceId: "workspace-1",
+        threadId: context.threadId,
+        payload: {
+          title: "Renamed Thread",
+        },
+        occurredAt: 200,
+        producer: "test",
+      },
+    ]);
+
+    const threadAfter = database.threads.getThreadState(context.threadId);
+    expect(threadAfter).toBeDefined();
+    expect(threadAfter!.title).toBe("Renamed Thread");
+
+    database.close();
+  });
+
+  it("projects thread.deleted by removing thread state", () => {
+    const database = createDatabase();
+    const context = database.eventStore.resolveThreadContext({
+      workspaceId: "workspace-1",
+      threadId: "thread-delete-test",
+      threadTitle: "Doomed Thread",
+      producer: "test",
+      occurredAt: 100,
+    });
+
+    database.eventStore.appendEvents([
+      ...(context.createdThreadEvent ? [context.createdThreadEvent] : []),
+    ]);
+
+    const threadBefore = database.threads.getThreadState(context.threadId);
+    expect(threadBefore).toBeDefined();
+
+    database.eventStore.appendEvents([
+      {
+        kind: "explicit" as const,
+        type: "thread.deleted",
+        workspaceId: "workspace-1",
+        threadId: context.threadId,
+        payload: {
+          deletedAt: 300,
+        },
+        occurredAt: 300,
+        producer: "test",
+      },
+    ]);
+
+    const threadAfter = database.threads.getThreadState(context.threadId);
+    expect(threadAfter).toBeUndefined();
+
+    database.close();
+  });
 });

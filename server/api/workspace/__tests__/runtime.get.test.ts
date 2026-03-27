@@ -206,7 +206,29 @@ describe("/api/workspace/runtime websocket", () => {
         },
       }),
     );
+    // Query per-connection diagnostics before close (close cleans up the map)
+    getQueryMock.mockReturnValue({ connectionId: "conn-1" });
+    const diagnosticsBeforeClose = diagnosticsRoute({} as never) as {
+      byConnectionId: Array<{ code: string }>;
+    };
+
+    expect(
+      diagnosticsBeforeClose.byConnectionId.map(
+        (diagnostic) => diagnostic.code,
+      ),
+    ).toEqual(expect.arrayContaining(["hello-received", "request-completed"]));
+
     route.close(peer1, { code: 1000, reason: "done" });
+
+    // After close, per-connection diagnostics are cleaned up
+    const diagnosticsAfterClose = diagnosticsRoute({} as never) as {
+      byConnectionId: Array<{ code: string }>;
+      recent: Array<{ code: string }>;
+    };
+    expect(diagnosticsAfterClose.byConnectionId).toEqual([]);
+    expect(diagnosticsAfterClose.recent.map((d) => d.code)).toEqual(
+      expect.arrayContaining(["close"]),
+    );
 
     const peer2 = new FakePeer("conn-2");
     route.open(peer2);
@@ -232,17 +254,6 @@ describe("/api/workspace/runtime websocket", () => {
           replayed: true,
         }),
       ]),
-    );
-
-    getQueryMock.mockReturnValue({ connectionId: "conn-1" });
-    const diagnostics = diagnosticsRoute({} as never) as {
-      byConnectionId: Array<{ code: string }>;
-    };
-
-    expect(
-      diagnostics.byConnectionId.map((diagnostic) => diagnostic.code),
-    ).toEqual(
-      expect.arrayContaining(["hello-received", "request-completed", "close"]),
     );
   });
 

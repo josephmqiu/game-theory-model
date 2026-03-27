@@ -1,6 +1,21 @@
 // Canonical server-side entity store for the Game Theory Analyzer.
 // SQLite-backed write-through cache scoped to the active workspace.
 // The Zustand entity-graph-store is a client-side projection of this.
+//
+// SOURCE OF TRUTH HIERARCHY:
+//
+// 1. graph_entities / graph_relationships / graph_phase_states (SQLite)
+//    — Persistent canonical source.
+// 2. entity-graph-service in-memory `analysis` (this module)
+//    — Write-through cache of (1). Always in sync within a process.
+// 3. workspace_json in workspaces table (SQLite)
+//    — Non-entity metadata (layout, threads, artifacts).
+//    — Entity data derived from (1) at write time. Never read as authoritative.
+// 4. Zustand entity-graph-store (renderer)
+//    — Client projection. Hydrated from (2) via GET /api/ai/state.
+//    — Owns layout. Not authoritative for entities.
+// 5. .gta files (disk)
+//    — Portable snapshot. Entities from (2) at export. On import, flows into (1).
 
 import { nanoid } from "nanoid";
 import type {
@@ -24,6 +39,7 @@ import {
   upsertPhaseStatus,
 } from "../../src/types/methodology";
 import type { EntityGraphRepository } from "./workspace/entity-graph-repository";
+import { getWorkspaceDatabase } from "./workspace/workspace-db";
 
 // ── Module-level state ──
 
@@ -180,7 +196,29 @@ export function initializeFromDatabase(workspaceId: string): void {
   const meta = repo.getAnalysisMetadata(workspaceId);
 
   if (!meta) {
-    // No existing analysis in DB — start empty but set workspace context
+    // No existing analysis in graph tables — check workspace_json for migration
+    try {
+      const db = getWorkspaceDatabase();
+      const record = db?.workspaces?.getWorkspace(workspaceId);
+      if (record?.workspaceJson) {
+        const parsed = JSON.parse(record.workspaceJson);
+        if (
+          parsed?.analysis &&
+          Array.isArray(parsed.analysis.entities) &&
+          parsed.analysis.entities.length > 0
+        ) {
+          loadAnalysis(parsed.analysis, { workspaceId });
+          serverLog(undefined, "entity-graph", "migrated-from-workspace-json", {
+            workspaceId,
+            entityCount: parsed.analysis.entities.length,
+          });
+          return;
+        }
+      }
+    } catch {
+      // workspace DB not available yet — proceed with empty state
+    }
+
     _workspaceId = workspaceId;
     _analysisId = analysis.id;
     return;

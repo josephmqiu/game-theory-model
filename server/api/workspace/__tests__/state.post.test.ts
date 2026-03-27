@@ -13,10 +13,28 @@ vi.mock("h3", () => ({
   setResponseStatus: (...args: unknown[]) => setResponseStatusMock(...args),
 }));
 
+const getWorkspaceIdMock = vi.fn(() => null as string | null);
+const getAnalysisMock = vi.fn(() => ({
+  id: "canonical-analysis",
+  name: "Canonical Analysis",
+  topic: "canonical topic",
+  entities: [] as Record<string, unknown>[],
+  relationships: [] as Record<string, unknown>[],
+  phases: [] as Record<string, unknown>[],
+}));
+const loadAnalysisMock = vi.fn();
+
+vi.mock("../../../services/entity-graph-service", () => ({
+  getWorkspaceId: () => getWorkspaceIdMock(),
+  getAnalysis: () => getAnalysisMock(),
+  loadAnalysis: (...args: unknown[]) => loadAnalysisMock(...args),
+}));
+
 describe("/api/workspace/state", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetWorkspaceDatabaseForTest();
+    getWorkspaceIdMock.mockReturnValue(null);
   });
 
   it("upserts the workspace snapshot into the local database", async () => {
@@ -65,13 +83,119 @@ describe("/api/workspace/state", () => {
       },
     });
 
-    const stored = getWorkspaceDatabase().workspaces.getWorkspace("workspace-1");
+    const stored =
+      getWorkspaceDatabase().workspaces.getWorkspace("workspace-1");
     expect(stored).toBeDefined();
     expect(stored?.filePath).toBe("/tmp/trade-war.gta");
     expect(JSON.parse(stored?.workspaceJson ?? "{}")).toMatchObject({
       id: "workspace-1",
       analysisType: "game-theory",
     });
+  });
+
+  it("derives entity data from canonical graph tables when service is initialized", async () => {
+    // Service reports workspace-1 as active
+    getWorkspaceIdMock.mockReturnValue("workspace-1");
+    getAnalysisMock.mockReturnValue({
+      id: "canonical-analysis",
+      name: "Canonical Analysis",
+      topic: "canonical topic",
+      entities: [
+        {
+          id: "e1",
+          type: "fact",
+          phase: "situational-grounding",
+          data: { type: "fact", content: "canonical fact", category: "action" },
+          confidence: "high",
+          source: "ai",
+          rationale: "from graph tables",
+          revision: 1,
+          stale: false,
+        },
+      ],
+      relationships: [],
+      phases: [],
+    });
+
+    // Renderer sends snapshot with DIFFERENT entities
+    readBodyMock.mockResolvedValue({
+      workspace: {
+        id: "workspace-1",
+        name: "Trade War Workspace",
+        analysisType: "game-theory",
+        createdAt: 100,
+        updatedAt: 200,
+      },
+      snapshot: {
+        id: "workspace-1",
+        name: "Trade War Workspace",
+        analysisType: "game-theory",
+        createdAt: 100,
+        updatedAt: 200,
+        analysis: {
+          id: "stale-analysis",
+          name: "Stale Analysis",
+          topic: "stale topic",
+          entities: [],
+          relationships: [],
+          phases: [],
+        },
+        layout: { e1: { x: 100, y: 200, pinned: true } },
+        threads: [],
+        artifacts: [],
+        checkpointHeaders: [],
+        pendingQuestions: [],
+      },
+    });
+
+    const route = (await import("../state.post")).default;
+    await route({} as never);
+
+    const stored =
+      getWorkspaceDatabase().workspaces.getWorkspace("workspace-1");
+    const json = JSON.parse(stored?.workspaceJson ?? "{}");
+
+    // Entity data should come from canonical source, not from request
+    expect(json.analysis.id).toBe("canonical-analysis");
+    expect(json.analysis.entities).toHaveLength(1);
+    expect(json.analysis.entities[0].id).toBe("e1");
+
+    // Non-entity data should come from request snapshot
+    expect(json.layout).toEqual({ e1: { x: 100, y: 200, pinned: true } });
+  });
+
+  it("loads entities into graph tables in import mode", async () => {
+    getWorkspaceIdMock.mockReturnValue(null); // different workspace
+
+    readBodyMock.mockResolvedValue({
+      workspace: {
+        id: "workspace-2",
+        name: "Imported Workspace",
+        analysisType: "game-theory",
+        createdAt: 100,
+        updatedAt: 200,
+      },
+      snapshot: {
+        analysis: {
+          id: "imported-analysis",
+          name: "Imported",
+          topic: "imported topic",
+          entities: [{ id: "e1", type: "fact" }],
+          relationships: [],
+          phases: [],
+        },
+        layout: {},
+      },
+      import: true,
+    });
+
+    const route = (await import("../state.post")).default;
+    await route({} as never);
+
+    expect(loadAnalysisMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "imported-analysis" }),
+      expect.objectContaining({ workspaceId: "workspace-2" }),
+    );
   });
 
   it("returns 400 for invalid payloads", async () => {

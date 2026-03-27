@@ -31,7 +31,7 @@
         "kiwi-schema": "^0.5.0",
         "lucide-react": "^0.545.0",
         "nanoid": "^5.1.6",
-        "nitro": "npm:nitro-nightly@latest",
+        "nitro": "npm:nitro-nightly@3.0.1-20260217-092337-b28fa21a",
         "paper": "^0.12.18",
         "rbush": "^4.0.1",
         "react": "^19.2.0",

@@ -276,6 +276,38 @@ describe("command-bus", () => {
     expect(receipt.finishedAt).toBeTypeOf("number");
   });
 
+  it("evicts terminal receipts after TTL", async () => {
+    vi.useFakeTimers();
+    try {
+      const bus = createCommandBus({
+        handlers: {
+          "analysis.reset": async () => ({
+            analysis: {} as never,
+            revision: 1,
+          }),
+        },
+      });
+
+      const receipt = await bus.submitCommand({
+        kind: "analysis.reset",
+        topic: "evict-me",
+        commandId: "evict-me",
+        receiptId: "receipt-evict",
+        requestedBy: "test",
+      });
+
+      expect(bus.getReceipt(receipt.commandId)).toBeDefined();
+      expect(bus.getReceiptByReceiptId("receipt-evict")).toBeDefined();
+
+      vi.advanceTimersByTime(5 * 60 * 1000);
+
+      expect(bus.getReceipt(receipt.commandId)).toBeUndefined();
+      expect(bus.getReceiptByReceiptId("receipt-evict")).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not block subsequent commands when a handler fails", async () => {
     let callCount = 0;
     const bus = createCommandBus({

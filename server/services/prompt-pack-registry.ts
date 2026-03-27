@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -14,6 +14,16 @@ import type {
   ResolvedPromptTemplate,
 } from "../../shared/types/prompt-pack";
 import { hashText } from "../utils/hash-text";
+
+interface PromptPackCacheEntry {
+  pack: ResolvedPromptPack;
+  fileMtimes: Array<{ path: string; mtimeMs: number }>;
+}
+const packCache = new Map<string, PromptPackCacheEntry>();
+
+export function clearPromptPackCache(): void {
+  packCache.clear();
+}
 
 export interface PromptPackResolutionRoots {
   packagedRoot?: string;
@@ -226,10 +236,19 @@ function resolvePack(pack: PromptPackDefinition): ResolvedPromptPack {
 function loadPackFromManifest(
   manifestPath: string,
   sourceKind: PromptPackSourceRef["kind"],
-): ResolvedPromptPack {
+): {
+  pack: ResolvedPromptPack;
+  fileMtimes: Array<{ path: string; mtimeMs: number }>;
+} {
   if (!existsSync(manifestPath)) {
     throw new Error(`Prompt-pack manifest not found at "${manifestPath}".`);
   }
+
+  const fileMtimes: Array<{ path: string; mtimeMs: number }> = [];
+  fileMtimes.push({
+    path: manifestPath,
+    mtimeMs: statSync(manifestPath).mtimeMs,
+  });
 
   const manifest = normalizePromptPackManifest(
     JSON.parse(readFileSync(manifestPath, "utf8")) as unknown,
@@ -252,6 +271,11 @@ function loadPackFromManifest(
       );
     }
 
+    fileMtimes.push({
+      path: templatePath,
+      mtimeMs: statSync(templatePath).mtimeMs,
+    });
+
     return {
       phase: templateFile.phase,
       variant: templateFile.variant,
@@ -259,7 +283,7 @@ function loadPackFromManifest(
     };
   });
 
-  return resolvePack({
+  const pack = resolvePack({
     analysisType: manifest.analysisType,
     mode: manifest.mode,
     id: manifest.id,
@@ -271,6 +295,8 @@ function loadPackFromManifest(
     ...(manifest.phases ? { phases: manifest.phases } : {}),
     templates,
   });
+
+  return { pack, fileMtimes };
 }
 
 function tryResolvePromptPackFromRoot(
@@ -284,7 +310,25 @@ function tryResolvePromptPackFromRoot(
     return null;
   }
 
-  return loadPackFromManifest(manifestPath, sourceKind);
+  const cacheKey = `${root}:${analysisType}:${mode}`;
+  const cached = packCache.get(cacheKey);
+  if (cached) {
+    const allFresh = cached.fileMtimes.every((entry) => {
+      try {
+        return statSync(entry.path).mtimeMs === entry.mtimeMs;
+      } catch {
+        return false;
+      }
+    });
+    if (allFresh) {
+      return cached.pack;
+    }
+    packCache.delete(cacheKey);
+  }
+
+  const result = loadPackFromManifest(manifestPath, sourceKind);
+  packCache.set(cacheKey, result);
+  return result.pack;
 }
 
 export function resolvePromptPack(input: {

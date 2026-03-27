@@ -656,6 +656,88 @@ describe("codex-adapter", () => {
       });
     });
 
+    it("suppresses turn_complete when turn/completed carries an error", async () => {
+      const { streamChat, _resetConnection } = await import("../codex-adapter");
+      _resetConnection();
+
+      setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitThreadStartResponse(id);
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id);
+          queueMicrotask(() => {
+            emitTurnCompleted("thread-1", "turn-1", "failed", {
+              message: "Rate limited by provider",
+            });
+          });
+        }
+      });
+
+      const events: ChatEvent[] = [];
+      for await (const event of streamChat("hello", "system", "gpt-4o")) {
+        events.push(event);
+      }
+
+      // When turn/completed carries an error, the turn_complete event is
+      // suppressed (the notification handler skips enqueueEvent when
+      // turnError is set). The generator terminates without a turn_complete.
+      expect(events).not.toContainEqual(
+        expect.objectContaining({ type: "turn_complete" }),
+      );
+    });
+
+    it("ignores turn/completed errors for a different threadId", async () => {
+      const { streamChat, _resetConnection } = await import("../codex-adapter");
+      _resetConnection();
+
+      setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitThreadStartResponse(id);
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id);
+          queueMicrotask(() => {
+            // This error turn/completed targets wrong thread — should be ignored
+            emitTurnCompleted("thread-other", "turn-1", "failed", {
+              message: "Rate limited by provider",
+            });
+            // Then complete normally on the correct thread
+            emitNotification("item/agentMessage/delta", {
+              delta: "all good",
+              threadId: "thread-1",
+              turnId: "turn-1",
+            });
+            emitTurnCompleted();
+          });
+        }
+      });
+
+      const events: ChatEvent[] = [];
+      for await (const event of streamChat("hello", "system", "gpt-4o")) {
+        events.push(event);
+      }
+
+      // Should NOT have an error event since the failed turn/completed was for a different thread
+      const errorEvents = events.filter((e) => e.type === "error");
+      expect(errorEvents).toHaveLength(0);
+
+      // Should have the text delta from the correct thread
+      expect(events).toContainEqual({
+        type: "text_delta",
+        content: "all good",
+      });
+      expect(events).toContainEqual({ type: "turn_complete" });
+    });
+
     it("reuses a persisted Codex thread binding for later chat turns", async () => {
       const { codexRuntimeAdapter, _resetConnection } =
         await import("../codex-adapter");
@@ -1667,6 +1749,82 @@ describe("codex-adapter", () => {
       await expect(
         runAnalysisPhase("analyze", "system", "gpt-4o", {}),
       ).rejects.toThrow(/restore failed/);
+    });
+
+    it("error notification causes fatal failure", async () => {
+      const { runAnalysisPhase, _resetConnection } =
+        await import("../codex-adapter");
+      _resetConnection();
+
+      setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitThreadStartResponse(id);
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id);
+          queueMicrotask(() => {
+            emitErrorNotification({
+              message: "Model refused output schema",
+              additionalDetails: "invalid_json_schema",
+            });
+          });
+        }
+        if (method === "turn/interrupt" && id !== undefined) {
+          emitResponse(id, { ok: true });
+        }
+      });
+
+      await expect(
+        runAnalysisPhase("analyze this", "system", "gpt-4o", {}),
+      ).rejects.toThrow(/Model refused/);
+    });
+
+    it("error notification for wrong threadId is ignored", async () => {
+      const { runAnalysisPhase, _resetConnection } =
+        await import("../codex-adapter");
+      _resetConnection();
+
+      setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitThreadStartResponse(id);
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id);
+          queueMicrotask(() => {
+            // This error notification targets wrong thread — should be ignored
+            emitErrorNotification(
+              { message: "Model refused output schema" },
+              "thread-other",
+              "turn-1",
+            );
+            // Then complete normally
+            emitItemCompleted({
+              id: "agent-msg-1",
+              type: "agentMessage",
+              text: '{"entities":[]}',
+              phase: "final_answer",
+            });
+            emitTurnCompleted();
+          });
+        }
+      });
+
+      // Should resolve successfully since error was for wrong thread
+      const result = await runAnalysisPhase(
+        "analyze this",
+        "system",
+        "gpt-4o",
+        {},
+      );
+      expect(result).toEqual({ entities: [] });
     });
 
     it("keeps the primary turn failure when MCP restore also fails", async () => {

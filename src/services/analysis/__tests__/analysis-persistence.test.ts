@@ -9,6 +9,28 @@ import {
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useThreadStore } from "@/stores/thread-store";
 
+function mockFetchForPersistence(
+  exportSnapshotAnalysis?: Record<string, unknown> | null,
+) {
+  return vi.fn().mockImplementation((url: string) => {
+    if (
+      typeof url === "string" &&
+      url.includes("/api/workspace/export-snapshot")
+    ) {
+      if (exportSnapshotAnalysis) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ analysis: exportSnapshotAnalysis }),
+        });
+      }
+      return Promise.resolve({ ok: false, status: 404 });
+    }
+    // Default: workspace sync endpoint
+    return Promise.resolve({ ok: true, status: 200 });
+  });
+}
+
 describe("analysis-persistence", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -28,13 +50,8 @@ describe("analysis-persistence", () => {
       writable: true,
       value: vi.fn(),
     });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-      }),
-    );
+    // Default: export-snapshot returns null (server unavailable), sync succeeds
+    vi.stubGlobal("fetch", mockFetchForPersistence(null));
   });
 
   afterEach(() => {
@@ -123,8 +140,8 @@ describe("analysis-persistence", () => {
     expect(useEntityGraphStore.getState().isDirty).toBe(true);
   });
 
-  it("creates a v4 workspace save payload", () => {
-    const payload = createAnalysisSavePayload();
+  it("creates a v4 workspace save payload", async () => {
+    const payload = await createAnalysisSavePayload();
     const parsed = JSON.parse(payload.text);
 
     expect(parsed.type).toBe("game-theory-workspace");
@@ -132,6 +149,52 @@ describe("analysis-persistence", () => {
     expect(parsed.workspace.id).toBeTypeOf("string");
     expect(parsed.workspace.analysis).toBeDefined();
     expect(parsed.workspace.layout).toBeDefined();
+  });
+
+  it("uses server entities when export-snapshot is available", async () => {
+    const serverAnalysis = {
+      id: "server-analysis",
+      name: "Server Analysis",
+      topic: "server topic",
+      entities: [
+        {
+          id: "se1",
+          type: "fact",
+          phase: "situational-grounding",
+          data: { type: "fact", content: "server fact", category: "action" },
+          confidence: "high",
+          source: "ai",
+          rationale: "from server",
+          revision: 1,
+          stale: false,
+        },
+      ],
+      relationships: [],
+      phases: [],
+    };
+    vi.stubGlobal("fetch", mockFetchForPersistence(serverAnalysis));
+
+    const payload = await createAnalysisSavePayload();
+    const parsed = JSON.parse(payload.text);
+
+    expect(parsed.workspace.analysis.id).toBe("server-analysis");
+    expect(parsed.workspace.analysis.entities).toHaveLength(1);
+    expect(parsed.workspace.analysis.entities[0].id).toBe("se1");
+  });
+
+  it("falls back to local state when server is unreachable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("Network error")),
+    );
+
+    const state = useEntityGraphStore.getState();
+    const payload = await createAnalysisSavePayload();
+    const parsed = JSON.parse(payload.text);
+
+    // Should use local state from Zustand store
+    expect(parsed.workspace.analysis.topic).toBe("rock vs paper vs scissors");
+    expect(parsed.workspace.analysis.id).toBe(state.analysis.id);
   });
 
   it("loads a legacy v3 file into the current analysis store", async () => {
@@ -189,6 +252,48 @@ describe("analysis-persistence", () => {
     expect(state.filePath).toBe("/tmp/trade-war.gta");
   });
 
+  it("sends import flag when loading a .gta file", async () => {
+    const fetchMock = mockFetchForPersistence(null);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await loadAnalysisFromText(
+      JSON.stringify({
+        type: "game-theory-workspace",
+        version: 4,
+        workspace: {
+          id: "workspace-1",
+          name: "Import Test",
+          analysisType: "game-theory",
+          createdAt: 100,
+          updatedAt: 200,
+          analysis: {
+            id: "a1",
+            name: "Test",
+            topic: "test",
+            entities: [],
+            relationships: [],
+            phases: [],
+          },
+          layout: {},
+          threads: [],
+          artifacts: [],
+          checkpointHeaders: [],
+          pendingQuestions: [],
+        },
+      }),
+      { fileName: "test.gta", filePath: null, fileHandle: null },
+    );
+
+    // Find the sync call (POST to /api/workspace/state)
+    const syncCall = fetchMock.mock.calls.find(
+      (call: unknown[]) =>
+        typeof call[0] === "string" && call[0].includes("/api/workspace/state"),
+    );
+    expect(syncCall).toBeDefined();
+    const body = JSON.parse((syncCall![1] as { body: string }).body);
+    expect(body.import).toBe(true);
+  });
+
   it("preserves loaded workspace metadata across later saves", async () => {
     await loadAnalysisFromText(
       JSON.stringify({
@@ -222,7 +327,7 @@ describe("analysis-persistence", () => {
       },
     );
 
-    const payload = createAnalysisSavePayload();
+    const payload = await createAnalysisSavePayload();
     const parsed = JSON.parse(payload.text);
 
     expect(parsed.workspace.id).toBe("workspace-1");

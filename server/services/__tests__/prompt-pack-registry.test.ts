@@ -9,6 +9,7 @@ import {
   DEFAULT_PROMPT_PACK_VERSION,
 } from "../../../shared/types/prompt-pack";
 import {
+  clearPromptPackCache,
   resolveAnalysisPromptTemplate,
   resolvePromptPack,
   resolvePromptTemplate,
@@ -100,6 +101,7 @@ describe("prompt-pack-registry", () => {
   const tempRoots: string[] = [];
 
   afterEach(() => {
+    clearPromptPackCache();
     while (tempRoots.length > 0) {
       const root = tempRoots.pop();
       if (root) {
@@ -424,6 +426,22 @@ describe("prompt-pack-registry", () => {
     expect(pack.templates[0].text).toBe(
       "Custom synthesis prompt with executive_summary",
     );
+  });
+
+  it("caches resolved packs and invalidates on file change", () => {
+    // First call
+    const pack1 = resolvePromptPack({
+      analysisType: DEFAULT_ANALYSIS_TYPE,
+      mode: DEFAULT_PROMPT_PACK_MODE,
+    });
+
+    // Second call should return same result (cache hit)
+    const pack2 = resolvePromptPack({
+      analysisType: DEFAULT_ANALYSIS_TYPE,
+      mode: DEFAULT_PROMPT_PACK_MODE,
+    });
+
+    expect(pack2.packHash).toBe(pack1.packHash);
   });
 
   it("rejects path traversal in template file paths", () => {

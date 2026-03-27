@@ -30,6 +30,7 @@ interface PickerWindow extends Window {
 const ANALYSIS_FILE_EXTENSION = ".gta";
 const ANALYSIS_FILE_DESCRIPTION = "Game Theory Analyzer Files";
 const WORKSPACE_SYNC_ENDPOINT = "/api/workspace/state";
+const EXPORT_SNAPSHOT_ENDPOINT = "/api/workspace/export-snapshot";
 
 let currentWorkspace: Pick<
   Workspace,
@@ -135,6 +136,7 @@ function buildWorkspaceSnapshot(
 async function syncWorkspaceState(
   workspace: Workspace,
   source?: AnalysisPersistenceSource,
+  importMode = false,
 ): Promise<void> {
   try {
     const response = await fetch(WORKSPACE_SYNC_ENDPOINT, {
@@ -153,6 +155,7 @@ async function syncWorkspaceState(
         snapshot: workspace,
         fileName: source?.fileName ?? null,
         filePath: source?.filePath ?? null,
+        ...(importMode ? { import: true } : {}),
       }),
     });
 
@@ -281,18 +284,50 @@ function buildResolvedLayout(
 
 // ── Persistence ──
 
-export function createAnalysisSavePayload(
+async function fetchCanonicalAnalysis(): Promise<Analysis | null> {
+  try {
+    const response = await fetch(EXPORT_SNAPSHOT_ENDPOINT);
+    if (response.ok) {
+      const snapshot = await response.json();
+      if (snapshot?.analysis) {
+        return snapshot.analysis as Analysis;
+      }
+    }
+  } catch {
+    // server unreachable — caller should fall back to local state
+  }
+  return null;
+}
+
+export async function createAnalysisSavePayload(
   state = useEntityGraphStore.getState(),
-): {
+): Promise<{
   text: string;
   fileName: string;
   workspace: Workspace;
   source: AnalysisFileReference;
-} {
-  const workspace = buildWorkspaceSnapshot(state);
+}> {
+  // Fetch canonical entity data from server; fall back to renderer state
+  const serverAnalysis = await fetchCanonicalAnalysis();
+  const analysis = serverAnalysis ?? state.analysis;
+  if (!serverAnalysis) {
+    console.warn("[export] using local entity state — server unavailable");
+  }
+
+  const fallbackName =
+    analysis.name.trim() || analysis.topic.trim() || "Untitled Workspace";
+
+  const workspace = createWorkspaceFromAnalysis(analysis, state.layout, {
+    id: currentWorkspace?.id ?? analysis.id,
+    name: fallbackName,
+    createdAt: currentWorkspace?.createdAt ?? Date.now(),
+    updatedAt: Date.now(),
+  });
+  rememberWorkspace(workspace);
+
   return {
     text: serializeWorkspaceFile(workspace),
-    fileName: state.fileName ?? createDefaultAnalysisFileName(state.analysis),
+    fileName: state.fileName ?? createDefaultAnalysisFileName(analysis),
     workspace,
     source: {
       fileName: state.fileName,
@@ -303,7 +338,7 @@ export function createAnalysisSavePayload(
 }
 
 export async function saveAnalysisAs(): Promise<boolean> {
-  const payload = createAnalysisSavePayload();
+  const payload = await createAnalysisSavePayload();
 
   try {
     let source: AnalysisPersistenceSource | null = null;
@@ -359,7 +394,7 @@ export async function saveAnalysisAs(): Promise<boolean> {
 }
 
 export async function saveAnalysis(): Promise<boolean> {
-  const payload = createAnalysisSavePayload();
+  const payload = await createAnalysisSavePayload();
 
   try {
     if (payload.source.fileHandle) {
@@ -441,7 +476,7 @@ export async function loadAnalysisFromText(
       filePath: source?.filePath ?? undefined,
       fileHandle: source?.fileHandle ?? undefined,
     });
-  await syncWorkspaceState(workspace, source);
+  await syncWorkspaceState(workspace, source, true); // import mode — load entities into graph tables
   try {
     await useThreadStore.getState().hydrateWorkspace(workspace.id);
   } catch (error) {

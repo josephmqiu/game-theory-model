@@ -11,8 +11,8 @@ import {
   type SubmitCommand,
 } from "./command-bus";
 import {
+  createCanonicalWorkspaceRecord,
   createCommandReceiptStoreProxy,
-  createWorkspaceRecordFromSnapshot,
   getWorkspaceDatabase,
   resetWorkspaceDatabaseForTest,
 } from "./workspace";
@@ -65,14 +65,12 @@ const defaultHandlers: CommandHandlerMap = {
     const analysis = entityGraphService.getAnalysis();
     const now = Date.now();
     getWorkspaceDatabase().workspaces.upsertWorkspace(
-      createWorkspaceRecordFromSnapshot({
+      createCanonicalWorkspaceRecord({
         id: command.workspaceId ?? analysis.id,
         name: analysis.name,
         analysisType: "game-theory",
-        snapshot: {
-          analysis,
-          layout: {},
-        },
+        analysis,
+        nonEntityFields: { layout: {} },
         createdAt: now,
         updatedAt: now,
       }),

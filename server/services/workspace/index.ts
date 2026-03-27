@@ -8,7 +8,10 @@ export {
   createCommandReceiptStoreProxy,
   createSqliteCommandReceiptStore,
 } from "./command-receipt-repository";
-export { createWorkspaceRecordFromSnapshot } from "./workspace-repository";
+export {
+  createCanonicalWorkspaceRecord,
+  createWorkspaceRecordFromSnapshot,
+} from "./workspace-repository";
 export {
   createThreadService,
   deriveThreadTitleFromMessage,

@@ -606,6 +606,7 @@ export function closeWorkspaceRuntimeConnection(
     },
   });
 
+  diagnosticsByConnectionId.delete(peerState.connectionId);
   peerStates.delete(peer.id);
 }
 

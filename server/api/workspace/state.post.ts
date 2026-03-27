@@ -1,6 +1,8 @@
 import { defineEventHandler, readBody, setResponseStatus } from "h3";
 import { z } from "zod";
+import * as entityGraphService from "../../services/entity-graph-service";
 import {
+  createCanonicalWorkspaceRecord,
   createWorkspaceRecordFromSnapshot,
   getWorkspaceDatabase,
 } from "../../services/workspace";
@@ -16,7 +18,30 @@ const workspaceSyncBodySchema = z.object({
   snapshot: z.unknown(),
   fileName: z.string().nullable().optional(),
   filePath: z.string().nullable().optional(),
+  import: z.boolean().optional(),
 });
+
+function extractNonEntityFields(snapshot: unknown): {
+  layout?: unknown;
+  threads?: unknown[];
+  artifacts?: unknown[];
+  checkpointHeaders?: unknown[];
+  pendingQuestions?: unknown[];
+} {
+  if (!snapshot || typeof snapshot !== "object") return {};
+  const s = snapshot as Record<string, unknown>;
+  return {
+    layout: s.layout ?? {},
+    threads: Array.isArray(s.threads) ? s.threads : [],
+    artifacts: Array.isArray(s.artifacts) ? s.artifacts : [],
+    checkpointHeaders: Array.isArray(s.checkpointHeaders)
+      ? s.checkpointHeaders
+      : [],
+    pendingQuestions: Array.isArray(s.pendingQuestions)
+      ? s.pendingQuestions
+      : [],
+  };
+}
 
 export default defineEventHandler(async (event) => {
   let rawBody: unknown;
@@ -33,17 +58,54 @@ export default defineEventHandler(async (event) => {
     return { error: "Invalid workspace sync payload" };
   }
 
-  const record = getWorkspaceDatabase().workspaces.upsertWorkspace(
-    createWorkspaceRecordFromSnapshot({
-      id: parsed.data.workspace.id,
-      name: parsed.data.workspace.name,
-      analysisType: parsed.data.workspace.analysisType,
-      filePath: parsed.data.filePath ?? null,
-      snapshot: parsed.data.snapshot,
-      createdAt: parsed.data.workspace.createdAt,
-      updatedAt: parsed.data.workspace.updatedAt,
-    }),
-  );
+  const { workspace: ws, snapshot, filePath } = parsed.data;
+  const isImport = parsed.data.import === true;
+  const nonEntityFields = extractNonEntityFields(snapshot);
+
+  // Import mode: load entities from snapshot into graph tables first
+  if (isImport) {
+    const snap = snapshot as Record<string, unknown> | null;
+    const analysis = snap?.analysis as Record<string, unknown> | undefined;
+    if (analysis && typeof analysis === "object") {
+      entityGraphService.loadAnalysis(analysis as never, {
+        workspaceId: ws.id,
+      });
+    }
+  }
+
+  // Derive entity data from canonical graph tables when the service
+  // is initialized for this workspace. Otherwise fall back to raw snapshot
+  // (covers initial empty workspace creation before graph service is ready).
+  const serviceWorkspaceId = entityGraphService.getWorkspaceId();
+  const useCanonical = serviceWorkspaceId === ws.id;
+
+  let record;
+  if (useCanonical) {
+    record = getWorkspaceDatabase().workspaces.upsertWorkspace(
+      createCanonicalWorkspaceRecord({
+        id: ws.id,
+        name: ws.name,
+        analysisType: ws.analysisType,
+        filePath: filePath ?? null,
+        analysis: entityGraphService.getAnalysis(),
+        nonEntityFields,
+        createdAt: ws.createdAt,
+        updatedAt: ws.updatedAt,
+      }),
+    );
+  } else {
+    record = getWorkspaceDatabase().workspaces.upsertWorkspace(
+      createWorkspaceRecordFromSnapshot({
+        id: ws.id,
+        name: ws.name,
+        analysisType: ws.analysisType,
+        filePath: filePath ?? null,
+        snapshot,
+        createdAt: ws.createdAt,
+        updatedAt: ws.updatedAt,
+      }),
+    );
+  }
 
   return {
     workspace: {

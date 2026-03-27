@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import type { Analysis } from "../../../shared/types/entity";
 import { stringifyJson, toNullableText } from "./sqlite-json";
 import type { WorkspaceRecord } from "./workspace-types";
 
@@ -21,7 +22,9 @@ function mapWorkspaceRow(row: Record<string, unknown>): WorkspaceRecord {
   };
 }
 
-export function createWorkspaceRepository(db: DatabaseSync): WorkspaceRepository {
+export function createWorkspaceRepository(
+  db: DatabaseSync,
+): WorkspaceRepository {
   const getStatement = db.prepare(
     `SELECT id, name, analysis_type, file_path, workspace_json, created_at, updated_at
      FROM workspaces
@@ -79,6 +82,7 @@ export function createWorkspaceRepository(db: DatabaseSync): WorkspaceRepository
   };
 }
 
+/** Used for initial/empty workspace creation where no entity data exists yet. */
 export function createWorkspaceRecordFromSnapshot(input: {
   id: string;
   name: string;
@@ -95,6 +99,52 @@ export function createWorkspaceRecordFromSnapshot(input: {
     analysisType: input.analysisType,
     filePath: toNullableText(input.filePath),
     workspaceJson: stringifyJson(input.snapshot),
+    createdAt: input.createdAt ?? now,
+    updatedAt: input.updatedAt ?? now,
+  };
+}
+
+/**
+ * Build a WorkspaceRecord where entity data is guaranteed to come from the
+ * canonical `analysis` parameter (should be entityGraphService.getAnalysis()).
+ * Non-entity fields (layout, threads, etc.) come from `nonEntityFields`.
+ */
+export function createCanonicalWorkspaceRecord(input: {
+  id: string;
+  name: string;
+  analysisType: string;
+  filePath?: string | null;
+  analysis: Readonly<Analysis>;
+  nonEntityFields: {
+    layout?: unknown;
+    threads?: unknown[];
+    artifacts?: unknown[];
+    checkpointHeaders?: unknown[];
+    pendingQuestions?: unknown[];
+  };
+  createdAt?: number;
+  updatedAt?: number;
+}): WorkspaceRecord {
+  const now = Date.now();
+  const snapshot = {
+    id: input.id,
+    name: input.name,
+    analysisType: input.analysisType,
+    createdAt: input.createdAt ?? now,
+    updatedAt: input.updatedAt ?? now,
+    analysis: input.analysis,
+    layout: input.nonEntityFields.layout ?? {},
+    threads: input.nonEntityFields.threads ?? [],
+    artifacts: input.nonEntityFields.artifacts ?? [],
+    checkpointHeaders: input.nonEntityFields.checkpointHeaders ?? [],
+    pendingQuestions: input.nonEntityFields.pendingQuestions ?? [],
+  };
+  return {
+    id: input.id,
+    name: input.name,
+    analysisType: input.analysisType,
+    filePath: toNullableText(input.filePath),
+    workspaceJson: stringifyJson(snapshot),
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now,
   };

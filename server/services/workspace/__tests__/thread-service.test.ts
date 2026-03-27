@@ -76,19 +76,219 @@ describe("thread-service", () => {
       "What should we analyze?",
       "Start with actors, incentives, and escalation options.",
     ]);
-    expect(database.activities.listActivitiesByThreadId(context.threadId)).toEqual(
-      [
-        expect.objectContaining({
-          id: activity.id,
-          scope: "chat-turn",
-          kind: "tool",
-          status: "completed",
-          toolName: "WebSearch",
-          query: "trade war retaliation ladder",
-        }),
-      ],
-    );
+    expect(
+      database.activities.listActivitiesByThreadId(context.threadId),
+    ).toEqual([
+      expect.objectContaining({
+        id: activity.id,
+        scope: "chat-turn",
+        kind: "tool",
+        status: "completed",
+        toolName: "WebSearch",
+        query: "trade war retaliation ladder",
+      }),
+    ]);
 
     database.close();
+  });
+
+  describe("createThread", () => {
+    it("generates threadId in workspaceId:thread-{nanoid} format", () => {
+      const database = createDatabase();
+      const threadService = createThreadService(database);
+      const thread = threadService.createThread({
+        workspaceId: "ws-1",
+        producer: "test",
+        occurredAt: 200,
+      });
+      expect(thread.id).toMatch(/^ws-1:thread-.+$/);
+      database.close();
+    });
+
+    it('defaults title to "New Chat" when not provided', () => {
+      const database = createDatabase();
+      const threadService = createThreadService(database);
+      const thread = threadService.createThread({
+        workspaceId: "ws-1",
+        producer: "test",
+        occurredAt: 200,
+      });
+      expect(thread.title).toBe("New Chat");
+      database.close();
+    });
+
+    it("uses provided title", () => {
+      const database = createDatabase();
+      const threadService = createThreadService(database);
+      const thread = threadService.createThread({
+        workspaceId: "ws-1",
+        title: "My analysis",
+        producer: "test",
+        occurredAt: 200,
+      });
+      expect(thread.title).toBe("My analysis");
+      database.close();
+    });
+  });
+
+  describe("renameThread", () => {
+    it("updates thread title in projection", () => {
+      const database = createDatabase();
+      const threadService = createThreadService(database);
+      const thread = threadService.createThread({
+        workspaceId: "ws-1",
+        title: "Original",
+        producer: "test",
+        occurredAt: 200,
+      });
+      const renamed = threadService.renameThread({
+        workspaceId: "ws-1",
+        threadId: thread.id,
+        title: "Renamed",
+        producer: "test",
+        occurredAt: 300,
+      });
+      expect(renamed.title).toBe("Renamed");
+      expect(database.threads.getThreadState(thread.id)?.title).toBe("Renamed");
+      database.close();
+    });
+
+    it('defaults blank title to "Untitled"', () => {
+      const database = createDatabase();
+      const threadService = createThreadService(database);
+      const thread = threadService.createThread({
+        workspaceId: "ws-1",
+        title: "Original",
+        producer: "test",
+        occurredAt: 200,
+      });
+      const renamed = threadService.renameThread({
+        workspaceId: "ws-1",
+        threadId: thread.id,
+        title: "   ",
+        producer: "test",
+        occurredAt: 300,
+      });
+      expect(renamed.title).toBe("Untitled");
+      database.close();
+    });
+  });
+
+  describe("deleteThread", () => {
+    it("removes non-primary thread from listings", () => {
+      const database = createDatabase();
+      const threadService = createThreadService(database);
+      // First ensure a primary thread exists
+      threadService.ensureThread({
+        workspaceId: "ws-1",
+        producer: "test",
+        occurredAt: 100,
+      });
+      // Create a secondary thread
+      const secondary = threadService.createThread({
+        workspaceId: "ws-1",
+        title: "Secondary",
+        producer: "test",
+        occurredAt: 200,
+      });
+      // Delete it
+      threadService.deleteThread({
+        workspaceId: "ws-1",
+        threadId: secondary.id,
+        producer: "test",
+        occurredAt: 300,
+      });
+      expect(database.threads.getThreadState(secondary.id)).toBeUndefined();
+      database.close();
+    });
+
+    it("throws when deleting primary thread", () => {
+      const database = createDatabase();
+      const threadService = createThreadService(database);
+      const context = threadService.ensureThread({
+        workspaceId: "ws-1",
+        producer: "test",
+        occurredAt: 100,
+      });
+      expect(() =>
+        threadService.deleteThread({
+          workspaceId: "ws-1",
+          threadId: context.threadId,
+          producer: "test",
+          occurredAt: 200,
+        }),
+      ).toThrow("Cannot delete the primary thread.");
+      database.close();
+    });
+
+    it("throws when deleting nonexistent thread", () => {
+      const database = createDatabase();
+      const threadService = createThreadService(database);
+      expect(() =>
+        threadService.deleteThread({
+          workspaceId: "ws-1",
+          threadId: "nonexistent",
+          producer: "test",
+          occurredAt: 200,
+        }),
+      ).toThrow("not found");
+      database.close();
+    });
+  });
+
+  describe("listMessagesByThreadId", () => {
+    it("returns messages in insertion order", () => {
+      const database = createDatabase();
+      const threadService = createThreadService(database);
+      const context = threadService.ensureThread({
+        workspaceId: "ws-1",
+        producer: "test",
+        occurredAt: 100,
+      });
+      threadService.recordMessage({
+        workspaceId: "ws-1",
+        threadId: context.threadId,
+        role: "user",
+        content: "First",
+        producer: "test",
+        occurredAt: 101,
+      });
+      threadService.recordMessage({
+        workspaceId: "ws-1",
+        threadId: context.threadId,
+        role: "assistant",
+        content: "Second",
+        producer: "test",
+        occurredAt: 102,
+      });
+      threadService.recordMessage({
+        workspaceId: "ws-1",
+        threadId: context.threadId,
+        role: "user",
+        content: "Third",
+        producer: "test",
+        occurredAt: 103,
+      });
+      const messages = threadService.listMessagesByThreadId(context.threadId);
+      expect(messages.map((m) => m.content)).toEqual([
+        "First",
+        "Second",
+        "Third",
+      ]);
+      database.close();
+    });
+
+    it("returns empty array for thread with no messages", () => {
+      const database = createDatabase();
+      const threadService = createThreadService(database);
+      const context = threadService.ensureThread({
+        workspaceId: "ws-1",
+        producer: "test",
+        occurredAt: 100,
+      });
+      const messages = threadService.listMessagesByThreadId(context.threadId);
+      expect(messages).toEqual([]);
+      database.close();
+    });
   });
 });

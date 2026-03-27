@@ -376,4 +376,161 @@ describe("thread-store", () => {
     expect(bindContextMock).toHaveBeenCalledTimes(2);
     expect(useThreadStore.getState().activeThreadId).toBe("thread-2");
   });
+
+  describe("question resolution", () => {
+    function createPendingQuestion(id: string) {
+      return {
+        question: {
+          id,
+          threadId: "thread-1",
+          header: "Input needed",
+          question: "Which actors matter most?",
+          options: [{ label: "Option A" }, { label: "Option B" }],
+          createdAt: Date.now(),
+        },
+        status: "pending" as const,
+      };
+    }
+
+    it("setPendingQuestions stores questions and resets activeQuestionIndex", async () => {
+      getItemMock.mockReturnValue("{}");
+      bindContextMock.mockResolvedValue(createBootstrap());
+      const { useThreadStore } = await import("@/stores/thread-store");
+      await useThreadStore.getState().hydrateWorkspace("workspace-1");
+
+      useThreadStore
+        .getState()
+        .setPendingQuestions([
+          createPendingQuestion("q-1"),
+          createPendingQuestion("q-2"),
+        ]);
+
+      expect(useThreadStore.getState().pendingQuestions).toHaveLength(2);
+      expect(useThreadStore.getState().activeQuestionIndex).toBe(0);
+    });
+
+    it("resolveQuestion updates local state and sends server request", async () => {
+      getItemMock.mockReturnValue("{}");
+      bindContextMock.mockResolvedValue(createBootstrap());
+      sendRequestMock.mockResolvedValue({});
+      const { useThreadStore } = await import("@/stores/thread-store");
+      await useThreadStore.getState().hydrateWorkspace("workspace-1");
+
+      useThreadStore
+        .getState()
+        .setPendingQuestions([createPendingQuestion("q-1")]);
+      useThreadStore.getState().resolveQuestion("q-1", {
+        selectedOptions: [0],
+        customText: "Important",
+      });
+
+      // Check local state
+      const resolved = useThreadStore
+        .getState()
+        .pendingQuestions.find((q) => q.question.id === "q-1");
+      expect(resolved?.status).toBe("resolved");
+      expect(resolved?.answer?.selectedOptions).toEqual([0]);
+
+      // Check server call
+      await vi.waitFor(() => {
+        expect(sendRequestMock).toHaveBeenCalledWith(
+          "question.resolve",
+          expect.objectContaining({ questionId: "q-1" }),
+        );
+      });
+    });
+
+    it("resolveQuestion advances activeQuestionIndex", async () => {
+      getItemMock.mockReturnValue("{}");
+      bindContextMock.mockResolvedValue(createBootstrap());
+      sendRequestMock.mockResolvedValue({});
+      const { useThreadStore } = await import("@/stores/thread-store");
+      await useThreadStore.getState().hydrateWorkspace("workspace-1");
+
+      useThreadStore
+        .getState()
+        .setPendingQuestions([
+          createPendingQuestion("q-1"),
+          createPendingQuestion("q-2"),
+          createPendingQuestion("q-3"),
+        ]);
+      useThreadStore
+        .getState()
+        .resolveQuestion("q-1", { selectedOptions: [0] });
+
+      expect(useThreadStore.getState().activeQuestionIndex).toBe(1);
+    });
+
+    it("clearPendingQuestions empties questions and resets index", async () => {
+      getItemMock.mockReturnValue("{}");
+      bindContextMock.mockResolvedValue(createBootstrap());
+      const { useThreadStore } = await import("@/stores/thread-store");
+      await useThreadStore.getState().hydrateWorkspace("workspace-1");
+
+      useThreadStore
+        .getState()
+        .setPendingQuestions([createPendingQuestion("q-1")]);
+      useThreadStore.getState().clearPendingQuestions();
+
+      expect(useThreadStore.getState().pendingQuestions).toEqual([]);
+      expect(useThreadStore.getState().activeQuestionIndex).toBe(0);
+    });
+
+    it("selectThread clears pending questions", async () => {
+      getItemMock.mockReturnValue("{}");
+      // Call 1: hydrateWorkspace initial bindContext (activeThreadId defaults to thread-2)
+      // Call 2: hydrateWorkspace rebind (resolveRestoredThreadId picks primary thread-1)
+      // Call 3: selectThread("thread-1") bindContext
+      bindContextMock
+        .mockResolvedValueOnce(createBootstrap())
+        .mockResolvedValueOnce(
+          createBootstrap({
+            activeThreadId: "thread-1",
+            activeThreadDetail: {
+              thread: {
+                id: "thread-1",
+                workspaceId: "workspace-1",
+                title: "First",
+                isPrimary: true,
+                createdAt: 1,
+                updatedAt: 2,
+              },
+              messages: [],
+              activities: [],
+            },
+          }),
+        )
+        .mockResolvedValueOnce(
+          createBootstrap({
+            activeThreadId: "thread-1",
+            activeThreadDetail: {
+              thread: {
+                id: "thread-1",
+                workspaceId: "workspace-1",
+                title: "First",
+                isPrimary: true,
+                createdAt: 1,
+                updatedAt: 2,
+              },
+              messages: [],
+              activities: [],
+            },
+          }),
+        );
+      const { useThreadStore } = await import("@/stores/thread-store");
+      await useThreadStore.getState().hydrateWorkspace("workspace-1");
+
+      useThreadStore
+        .getState()
+        .setPendingQuestions([
+          createPendingQuestion("q-1"),
+          createPendingQuestion("q-2"),
+        ]);
+      expect(useThreadStore.getState().pendingQuestions).toHaveLength(2);
+
+      await useThreadStore.getState().selectThread("thread-1");
+
+      expect(useThreadStore.getState().pendingQuestions).toEqual([]);
+    });
+  });
 });

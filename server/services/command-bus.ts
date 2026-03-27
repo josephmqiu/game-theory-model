@@ -226,6 +226,8 @@ export interface CommandBus {
 function createInMemoryReceiptStore(): CommandReceiptStore {
   const receiptsByCommandId = new Map<string, CommandReceipt>();
   const receiptsByReceiptId = new Map<string, CommandReceipt>();
+  const RECEIPT_EVICTION_TTL_MS = 5 * 60 * 1000;
+  const evictionTimers = new Set<ReturnType<typeof setTimeout>>();
 
   return {
     getByCommandId(commandId) {
@@ -242,6 +244,16 @@ function createInMemoryReceiptStore(): CommandReceiptStore {
           receiptsByReceiptId.set(receipt.receiptId, receipt);
         }
       }
+      if (receipt.finishedAt !== undefined) {
+        const timer = setTimeout(() => {
+          receiptsByCommandId.delete(receipt.commandId);
+          if (receipt.receiptId) {
+            receiptsByReceiptId.delete(receipt.receiptId);
+          }
+          evictionTimers.delete(timer);
+        }, RECEIPT_EVICTION_TTL_MS);
+        evictionTimers.add(timer);
+      }
     },
     list() {
       return Array.from(receiptsByCommandId.values());
@@ -249,6 +261,10 @@ function createInMemoryReceiptStore(): CommandReceiptStore {
     clear() {
       receiptsByCommandId.clear();
       receiptsByReceiptId.clear();
+      for (const timer of evictionTimers) {
+        clearTimeout(timer);
+      }
+      evictionTimers.clear();
     },
   };
 }
