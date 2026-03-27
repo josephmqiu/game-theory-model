@@ -1,4 +1,5 @@
 import type { AIStreamChunk } from "./ai-types";
+import type { AIProviderType } from "@/types/agent-settings";
 import {
   DEFAULT_STREAM_HARD_TIMEOUT_MS,
   DEFAULT_STREAM_NO_TEXT_TIMEOUT_MS,
@@ -61,7 +62,7 @@ export async function* streamChat(
   }>,
   model?: string,
   options?: StreamChatOptions,
-  provider?: string,
+  provider?: AIProviderType,
   abortSignal?: AbortSignal,
   runId?: string,
   threadContext?: StreamChatThreadContext,

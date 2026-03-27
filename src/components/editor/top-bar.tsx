@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import ClaudeLogo from "@/components/icons/claude-logo";
-import OpenAILogo from "@/components/icons/openai-logo";
+import CodexLogo from "@/components/icons/codex-logo";
 import LanguageSelector from "@/components/shared/language-selector";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -31,11 +31,11 @@ const PROVIDER_ICONS: Record<
   AIProviderType,
   ComponentType<SVGProps<SVGSVGElement>>
 > = {
-  anthropic: ClaudeLogo,
-  openai: OpenAILogo,
+  claude: ClaudeLogo,
+  codex: CodexLogo,
 };
 
-const PROVIDER_ORDER: AIProviderType[] = ["anthropic", "openai"];
+const PROVIDER_ORDER: AIProviderType[] = ["claude", "codex"];
 
 function AgentStatusButton() {
   const { t } = useTranslation();

@@ -31,7 +31,7 @@ import {
 import { PHASE_LABELS, V3_PHASES } from "@/types/methodology";
 import type { AnalysisEffortLevel } from "../../../shared/types/analysis-runtime";
 import ClaudeLogo from "@/components/icons/claude-logo";
-import OpenAILogo from "@/components/icons/openai-logo";
+import CodexLogo from "@/components/icons/codex-logo";
 
 // ---------------------------------------------------------------------------
 // Tab type
@@ -55,17 +55,17 @@ const PROVIDER_META: Record<
     Icon: ComponentType<SVGProps<SVGSVGElement>>;
   }
 > = {
-  anthropic: {
-    label: PROVIDER_LABELS.anthropic,
+  claude: {
+    label: PROVIDER_LABELS.claude,
     descriptionKey: "agents.claudeModels",
     agent: "claude-code",
     Icon: ClaudeLogo,
   },
-  openai: {
-    label: PROVIDER_LABELS.openai,
-    descriptionKey: "agents.openaiModels",
+  codex: {
+    label: PROVIDER_LABELS.codex,
+    descriptionKey: "agents.codexModels",
     agent: "codex-cli",
-    Icon: OpenAILogo,
+    Icon: CodexLogo,
   },
 };
 

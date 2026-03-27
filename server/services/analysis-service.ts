@@ -39,7 +39,10 @@ import {
 import { createRunLogger } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
 import type { AnalysisActivityCallback } from "./ai/analysis-activity";
-import type { AnalysisEffortLevel } from "../../shared/types/analysis-runtime";
+import type {
+  AnalysisEffortLevel,
+} from "../../shared/types/analysis-runtime";
+import { normalizeRuntimeProvider } from "../../shared/types/analysis-runtime";
 import type { PromptPackToolPolicy } from "../../shared/types/prompt-pack";
 import type { RuntimeAdapter } from "./ai/adapter-contract";
 import { loadRuntimeAdapter } from "./ai/adapter-loader";
@@ -1821,7 +1824,7 @@ export async function runPhase(
       effortLevel: context?.runtime?.effortLevel ?? "medium",
     });
   const model = context?.model ?? "claude-sonnet-4-20250514";
-  const provider = context?.provider ?? "anthropic";
+  const provider = normalizeRuntimeProvider(context?.provider) ?? "claude";
   const schema = buildOutputSchema(phase);
   const logContext = context?.phaseTurnId
     ? { phaseTurnId: context.phaseTurnId }

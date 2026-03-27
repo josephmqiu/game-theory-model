@@ -348,7 +348,7 @@ const de: TranslationKeys = {
   "agents.claudeCode": "Claude Code",
   "agents.claudeModels": "Claude-Modelle",
   "agents.codexCli": "Codex CLI",
-  "agents.openaiModels": "OpenAI-Modelle",
+  "agents.codexModels": "Codex-Modelle",
   "agents.mcpServer": "MCP-Server",
   "agents.mcpServerStart": "Starten",
   "agents.mcpServerStop": "Stoppen",

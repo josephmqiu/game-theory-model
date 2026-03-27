@@ -5,7 +5,11 @@
 
 import type { MethodologyPhase } from "../../shared/types/methodology";
 import type { AnalysisProgressEvent } from "../../shared/types/events";
-import type { ResolvedAnalysisRuntime } from "../../shared/types/analysis-runtime";
+import type {
+  ResolvedAnalysisRuntime,
+  RuntimeProvider,
+} from "../../shared/types/analysis-runtime";
+import { normalizeRuntimeProvider } from "../../shared/types/analysis-runtime";
 import { V2_PHASES, PHASE_NUMBERS } from "../../src/types/methodology";
 import { analysisRuntimeConfig } from "../config/analysis-runtime";
 import * as entityGraphService from "./entity-graph-service";
@@ -59,7 +63,7 @@ let unsubscribeMutation: (() => void) | null = null;
 const revalRunStatuses = new Map<string, RevalRunStatus>();
 
 /** Provider/model from the most recent analysis run, used for revalidation continuity. */
-let lastRunProvider: string | undefined;
+let lastRunProvider: RuntimeProvider | undefined;
 let lastRunModel: string | undefined;
 let lastRunRuntime: ResolvedAnalysisRuntime | undefined;
 
@@ -547,7 +551,7 @@ async function executeRevalidation(
             const error = result.error ?? "Revalidation phase failed";
             const failure = runtimeStatus.inferRuntimeError(
               error,
-              lastRunProvider as "anthropic" | "openai" | undefined,
+              lastRunProvider,
             );
             appendRevalidationEvents(runId, [
               {
@@ -589,7 +593,7 @@ async function executeRevalidation(
             runtimeStatus.releaseRun(runId, "failed", {
               failedPhase: p,
               failureMessage: error,
-              provider: lastRunProvider as "anthropic" | "openai" | undefined,
+              provider: lastRunProvider,
             });
             emitProgress({
               type: "analysis_failed",
@@ -673,7 +677,7 @@ async function executeRevalidation(
             : `Revision diff validation error: ${String(err)}`;
         const failure = runtimeStatus.inferRuntimeError(
           error,
-          lastRunProvider as "anthropic" | "openai" | undefined,
+          lastRunProvider,
         );
         appendRevalidationEvents(runId, [
           {
@@ -715,7 +719,7 @@ async function executeRevalidation(
         runtimeStatus.releaseRun(runId, "failed", {
           failedPhase: p,
           failureMessage: error,
-          provider: lastRunProvider as "anthropic" | "openai" | undefined,
+          provider: lastRunProvider,
         });
         emitProgress({
           type: "analysis_failed",
@@ -728,7 +732,7 @@ async function executeRevalidation(
       const error = result.error ?? "Revalidation phase failed";
       const failure = runtimeStatus.inferRuntimeError(
         error,
-        lastRunProvider as "anthropic" | "openai" | undefined,
+        lastRunProvider,
       );
       appendRevalidationEvents(runId, [
         {
@@ -770,7 +774,7 @@ async function executeRevalidation(
       runtimeStatus.releaseRun(runId, "failed", {
         failedPhase: p,
         failureMessage: error,
-        provider: lastRunProvider as "anthropic" | "openai" | undefined,
+        provider: lastRunProvider,
       });
       emitProgress({
         type: "analysis_failed",
@@ -851,7 +855,9 @@ export function onRunComplete(
   runtime?: ResolvedAnalysisRuntime,
   autoRevalidationEnabled = true,
 ): void {
-  if (provider !== undefined) lastRunProvider = provider;
+  if (provider !== undefined) {
+    lastRunProvider = normalizeRuntimeProvider(provider);
+  }
   if (model !== undefined) lastRunModel = model;
   if (runtime !== undefined) lastRunRuntime = runtime;
 

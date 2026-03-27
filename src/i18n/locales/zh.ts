@@ -338,7 +338,7 @@ const zh: TranslationKeys = {
   "agents.claudeCode": "Claude Code",
   "agents.claudeModels": "Claude 模型",
   "agents.codexCli": "Codex CLI",
-  "agents.openaiModels": "OpenAI 模型",
+  "agents.codexModels": "Codex 模型",
   "agents.mcpServer": "MCP 服务器",
   "agents.mcpServerStart": "启动",
   "agents.mcpServerStop": "停止",

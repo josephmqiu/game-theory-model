@@ -1,6 +1,6 @@
 import type { SVGProps } from 'react'
 
-export default function OpenAILogo(props: SVGProps<SVGSVGElement>) {
+export default function CodexLogo(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
       viewBox="0 0 64 64"

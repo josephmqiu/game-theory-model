@@ -760,9 +760,13 @@ async function* streamClaudeChatTurn(
               // but the SDK doesn't expose those directly. We emit start here if
               // we didn't already from stream_event.
             } else if (block.type === "tool_result") {
+              const toolResultRecord = raw as Record<string, unknown>;
               yield {
                 type: "tool_call_result",
-                toolName: block.name ?? "unknown",
+                toolName:
+                  (typeof toolResultRecord.tool_name === "string"
+                    ? toolResultRecord.tool_name
+                    : block.name) ?? "unknown",
                 output: block.content ?? raw,
               };
             }

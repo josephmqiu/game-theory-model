@@ -1,7 +1,7 @@
 import type { MethodologyPhase } from "./methodology";
 
 export type RuntimeProvider = "claude" | "codex";
-export type LegacyRuntimeProvider = RuntimeProvider | "anthropic" | "openai";
+export type HistoricalRuntimeProviderAlias = "anthropic" | "openai";
 export type RuntimeEffort = "low" | "medium" | "high" | "max";
 export type LegacyRuntimeEffort =
   | RuntimeEffort
@@ -71,23 +71,29 @@ export interface RuntimeModelInfo {
   effort: RuntimeModelEffortSupport;
 }
 
-// Wire-level provider names used by the API surface (matches SDK conventions).
-export const ALLOWED_WIRE_PROVIDERS = ["anthropic", "openai"] as const;
-export type AllowedWireProvider = (typeof ALLOWED_WIRE_PROVIDERS)[number];
+export const ALLOWED_RUNTIME_PROVIDERS = ["claude", "codex"] as const;
+export type AllowedRuntimeProvider = (typeof ALLOWED_RUNTIME_PROVIDERS)[number];
 
-export const WIRE_PROVIDER_LABELS: Record<AllowedWireProvider, string> = {
-  anthropic: "Claude",
-  openai: "Codex",
+export const HISTORICAL_RUNTIME_PROVIDER_ALIASES = [
+  "anthropic",
+  "openai",
+] as const;
+
+export const RUNTIME_PROVIDER_LABELS: Record<AllowedRuntimeProvider, string> = {
+  claude: "Claude",
+  codex: "Codex",
 } as const;
 
-export function isAllowedWireProvider(
+export function isAllowedRuntimeProvider(
   provider: string,
-): provider is AllowedWireProvider {
-  return (ALLOWED_WIRE_PROVIDERS as readonly string[]).includes(provider);
+): provider is AllowedRuntimeProvider {
+  return (ALLOWED_RUNTIME_PROVIDERS as readonly string[]).includes(provider);
 }
 
+// Compatibility shim for persisted state and older requests that still carry
+// pre-canonical provider ids. Active product code should use RuntimeProvider.
 export function normalizeRuntimeProvider(
-  provider?: LegacyRuntimeProvider | null,
+  provider?: string | null,
 ): RuntimeProvider | undefined {
   if (!provider) return undefined;
   if (provider === "claude" || provider === "anthropic") return "claude";

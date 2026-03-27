@@ -37,7 +37,10 @@ describe("editor layout", () => {
     expect(source).toContain("buildAnalysisRuntimeOverrides");
     expect(source).toContain("useAgentSettingsStore.getState()");
     expect(source).toContain(
-      "analysisClient.startAnalysis(topic, provider, model, runtime)",
+      'provider === "claude" || provider === "codex"',
+    );
+    expect(source).toContain(
+      "analysisClient.startAnalysis(",
     );
     expect(source).toContain(
       "<AnalysisLauncher onStartAnalysis={startOrchestrator} />",

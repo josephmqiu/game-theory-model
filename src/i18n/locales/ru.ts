@@ -358,7 +358,7 @@ const ru: TranslationKeys = {
   "agents.claudeCode": "Claude Code",
   "agents.claudeModels": "Модели Claude",
   "agents.codexCli": "Codex CLI",
-  "agents.openaiModels": "Модели OpenAI",
+  "agents.codexModels": "Модели Codex",
   "agents.mcpServer": "MCP Сервер",
   "agents.mcpServerStart": "Запустить",
   "agents.mcpServerStop": "Остановить",

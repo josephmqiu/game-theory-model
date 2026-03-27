@@ -3,6 +3,7 @@ import type { GroupedModel } from "../../../src/types/agent-settings";
 import type {
   ProviderHealthCheck,
   ProviderHealthState,
+  RuntimeProvider,
 } from "../../../shared/types/analysis-runtime";
 import { getClaudeProviderSnapshot } from "../../services/ai/claude-health";
 import { getCodexProviderSnapshot } from "../../services/ai/codex-health";
@@ -51,7 +52,7 @@ export default defineEventHandler(async (event) => {
 });
 
 function mapModels(
-  provider: "anthropic" | "openai",
+  provider: RuntimeProvider,
   models: Array<{
     value: string;
     displayName: string;
@@ -67,7 +68,7 @@ function mapModels(
 }
 
 function toConnectResult(
-  provider: "anthropic" | "openai",
+  provider: RuntimeProvider,
   snapshot: Awaited<ReturnType<typeof getClaudeProviderSnapshot>>,
 ): ConnectResult {
   const models = mapModels(provider, snapshot.models);
@@ -122,21 +123,21 @@ function isCodexConnectable(
 }
 
 function isProviderConnectable(
-  provider: "anthropic" | "openai",
+  provider: RuntimeProvider,
   health: ProviderHealthState,
   models: GroupedModel[],
 ): boolean {
-  return provider === "anthropic"
+  return provider === "claude"
     ? isClaudeConnectable(health, models)
     : isCodexConnectable(health, models);
 }
 
 /** Connect to Claude Code and preserve the existing renderer response shape. */
 export async function connectClaudeCode(): Promise<ConnectResult> {
-  return toConnectResult("anthropic", await getClaudeProviderSnapshot());
+  return toConnectResult("claude", await getClaudeProviderSnapshot());
 }
 
 /** Connect to Codex CLI and preserve the existing renderer response shape. */
 export async function connectCodexCli(): Promise<ConnectResult> {
-  return toConnectResult("openai", await getCodexProviderSnapshot());
+  return toConnectResult("codex", await getCodexProviderSnapshot());
 }

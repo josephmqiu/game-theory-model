@@ -38,7 +38,7 @@ function seedRun() {
       runId: "run-1",
       payload: {
         kind: "analysis",
-        provider: "openai",
+        provider: "codex",
         model: "gpt-5.4",
         effort: "medium",
         status: "running",

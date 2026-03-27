@@ -1748,7 +1748,17 @@ describe("codex-adapter", () => {
 
       await expect(
         runAnalysisPhase("analyze", "system", "gpt-4o", {}),
-      ).rejects.toThrow(/restore failed/);
+      ).resolves.toEqual({ entities: [] });
+
+      const { serverWarn } = await import("../../../utils/ai-logger");
+      expect(serverWarn).toHaveBeenCalledWith(
+        undefined,
+        "codex-adapter",
+        "mcp-restore-failed",
+        expect.objectContaining({
+          message: expect.stringContaining("restore failed"),
+        }),
+      );
     });
 
     it("error notification causes fatal failure", async () => {

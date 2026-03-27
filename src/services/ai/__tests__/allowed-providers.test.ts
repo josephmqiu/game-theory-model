@@ -8,21 +8,21 @@ import {
 } from "../allowed-providers";
 
 describe("allowed-providers", () => {
-  it("allows only anthropic and openai", () => {
-    expect(ALLOWED_PROVIDERS).toEqual(["anthropic", "openai"]);
+  it("allows only claude and codex", () => {
+    expect(ALLOWED_PROVIDERS).toEqual(["claude", "codex"]);
     // Verify type is exported and assignable
     const _check: AllowedProvider = ALLOWED_PROVIDERS[0];
-    expect(_check).toBe("anthropic");
+    expect(_check).toBe("claude");
   });
 
   it("provides human-readable labels", () => {
-    expect(PROVIDER_LABELS.anthropic).toBe("Claude");
-    expect(PROVIDER_LABELS.openai).toBe("Codex");
+    expect(PROVIDER_LABELS.claude).toBe("Claude");
+    expect(PROVIDER_LABELS.codex).toBe("Codex");
   });
 
   it("isAllowedProvider returns true for allowed providers", () => {
-    expect(isAllowedProvider("anthropic")).toBe(true);
-    expect(isAllowedProvider("openai")).toBe(true);
+    expect(isAllowedProvider("claude")).toBe(true);
+    expect(isAllowedProvider("codex")).toBe(true);
   });
 
   it("isAllowedProvider returns false for disallowed providers", () => {

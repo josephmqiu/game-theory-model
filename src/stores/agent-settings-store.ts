@@ -91,6 +91,16 @@ function normalizeAnalysisCustomPhases(
     : [...DEFAULT_ANALYSIS_CUSTOM_PHASES];
 }
 
+function normalizeStoredProviderKey(value: string): AIProviderType | undefined {
+  if (value === "claude" || value === "anthropic") {
+    return "claude";
+  }
+  if (value === "codex" || value === "openai") {
+    return "codex";
+  }
+  return undefined;
+}
+
 type AnalysisRuntimePreferenceState = Pick<
   PersistedState,
   | "analysisWebSearch"
@@ -122,15 +132,15 @@ export function buildAnalysisRuntimeOverrides(
 }
 
 const DEFAULT_PROVIDERS: Record<AIProviderType, AIProviderConfig> = {
-  anthropic: {
-    type: "anthropic",
+  claude: {
+    type: "claude",
     displayName: "Claude Code",
     isConnected: false,
     connectionMethod: null,
     models: [],
   },
-  openai: {
-    type: "openai",
+  codex: {
+    type: "codex",
     displayName: "Codex CLI",
     isConnected: false,
     connectionMethod: null,
@@ -301,14 +311,25 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => ({
       if (!raw) return;
       const data = JSON.parse(raw) as Partial<PersistedState>;
       if (data.providers) {
-        // Merge with defaults to ensure new fields (e.g. models) exist
         const merged = { ...DEFAULT_PROVIDERS };
-        for (const key of Object.keys(merged) as AIProviderType[]) {
-          if (data.providers[key]) {
-            merged[key] = { ...merged[key], ...data.providers[key] };
-            // Ensure models array always exists
-            if (!Array.isArray(merged[key].models)) merged[key].models = [];
+        for (const [storedKey, storedProvider] of Object.entries(
+          data.providers,
+        )) {
+          const canonicalKey = normalizeStoredProviderKey(storedKey);
+          if (!canonicalKey || !storedProvider) {
+            continue;
           }
+          merged[canonicalKey] = {
+            ...merged[canonicalKey],
+            ...storedProvider,
+            type: canonicalKey,
+            models: Array.isArray(storedProvider.models)
+              ? storedProvider.models.map((model) => ({
+                  ...model,
+                  provider: normalizeStoredProviderKey(model.provider) ?? model.provider,
+                }))
+              : [],
+          };
         }
         set({ providers: merged });
       }

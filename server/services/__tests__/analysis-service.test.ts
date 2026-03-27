@@ -557,14 +557,12 @@ vi.mock("../ai/adapter-contract", () => ({
   getRuntimeAdapter: vi.fn(async (providerInput?: string) => {
     if (
       providerInput &&
-      providerInput !== "anthropic" &&
       providerInput !== "claude" &&
-      providerInput !== "openai" &&
       providerInput !== "codex"
     ) {
       throw new Error(`Unknown provider: ${providerInput}`);
     }
-    const isCodex = providerInput === "openai" || providerInput === "codex";
+    const isCodex = providerInput === "codex";
     const runStructuredTurn = isCodex
       ? mockCodexRunAnalysisPhase
       : mockClaudeRunAnalysisPhase;
@@ -820,7 +818,7 @@ describe("analysis-service", () => {
       const result = await runPhase(
         "situational-grounding",
         "US-China trade war",
-        { provider: "openai" },
+        { provider: "codex" },
       );
 
       expect(mockCodexRunAnalysisPhase).toHaveBeenCalledTimes(1);

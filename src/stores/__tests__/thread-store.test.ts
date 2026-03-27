@@ -315,7 +315,7 @@ describe("thread-store", () => {
           workspaceId: "workspace-1",
           threadId: "thread-1",
           kind: "analysis",
-          provider: "openai",
+          provider: "codex",
           model: "gpt-5.4",
           effort: "medium",
           status: "running",

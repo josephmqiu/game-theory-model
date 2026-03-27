@@ -348,7 +348,7 @@ const ja: TranslationKeys = {
   "agents.claudeCode": "Claude Code",
   "agents.claudeModels": "Claude モデル",
   "agents.codexCli": "Codex CLI",
-  "agents.openaiModels": "OpenAI モデル",
+  "agents.codexModels": "Codex モデル",
   "agents.mcpServer": "MCP サーバー",
   "agents.mcpServerStart": "開始",
   "agents.mcpServerStop": "停止",

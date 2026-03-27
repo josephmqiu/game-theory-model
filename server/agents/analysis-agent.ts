@@ -15,7 +15,9 @@ import { getRuntimeErrorMessage } from "../../shared/types/runtime-error";
 import type {
   AnalysisRuntimeOverrides,
   ResolvedAnalysisRuntime,
+  RuntimeProvider,
 } from "../../shared/types/analysis-runtime";
+import { normalizeRuntimeProvider } from "../../shared/types/analysis-runtime";
 import type { PhaseResult } from "../services/analysis-service";
 import { runPhase } from "../services/analysis-service";
 import {
@@ -109,7 +111,7 @@ interface ActiveRun {
   threadId: string;
   status: RunStatusValue;
   activePhase: MethodologyPhase | null;
-  provider?: string;
+  provider?: RuntimeProvider;
   model?: string;
   runtime: ResolvedAnalysisRuntime;
   activePhases: SupportedPhase[];
@@ -969,6 +971,7 @@ export async function runFull(
   }
 
   const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const canonicalProvider = normalizeRuntimeProvider(provider);
   const analysisTimer = timer();
   const abortController = new AbortController();
   const runtime = resolveAnalysisRuntime(runtimeOverrides);
@@ -1032,7 +1035,7 @@ export async function runFull(
     threadId: resolvedThreadContext.threadId,
     status: "running",
     activePhase: null,
-    provider,
+    provider: canonicalProvider,
     model,
     runtime,
     activePhases,
@@ -1060,7 +1063,7 @@ export async function runFull(
         runId,
         payload: {
           kind: "analysis",
-          provider: provider ?? null,
+          provider: canonicalProvider ?? null,
           model: model ?? null,
           effort: runtime.effortLevel,
           status: "running",
@@ -1107,11 +1110,11 @@ export async function runFull(
   } catch (error) {
     activeRun = null;
     clearTimeout(runTimeoutHandle);
-    runtimeStatus.releaseRun(runId, "failed", {
-      failureMessage:
-        error instanceof Error ? error.message : "Failed to persist run start",
-      provider: provider as "anthropic" | "openai" | undefined,
-    });
+      runtimeStatus.releaseRun(runId, "failed", {
+        failureMessage:
+          error instanceof Error ? error.message : "Failed to persist run start",
+        provider: canonicalProvider,
+      });
     throw error;
   }
 
@@ -1158,7 +1161,7 @@ export async function runFull(
               const finishedAt = Date.now();
               const failure = runtimeStatus.inferRuntimeError(
                 "Run-level timeout exceeded",
-                run.provider as "anthropic" | "openai" | undefined,
+                run.provider,
               );
               appendRunLifecycleEvents(run, "analysis-agent", [
                 {
@@ -1202,7 +1205,7 @@ export async function runFull(
               runtimeStatus.releaseRun(run.runId, "failed", {
                 failedPhase: phase,
                 failureMessage: run.error,
-                provider: run.provider as "anthropic" | "openai" | undefined,
+                provider: run.provider,
               });
               run.logger.error("orchestrator", "run-timeout", {
                 elapsedMs: analysisTimer.elapsed(),
@@ -1255,7 +1258,7 @@ export async function runFull(
             const finishedAt = Date.now();
             const failure = runtimeStatus.inferRuntimeError(
               result.error ?? "Unknown error",
-              run.provider as "anthropic" | "openai" | undefined,
+              run.provider,
             );
             appendRunLifecycleEvents(run, "analysis-agent", [
               {
@@ -1299,7 +1302,7 @@ export async function runFull(
             runtimeStatus.releaseRun(run.runId, "failed", {
               failedPhase: phase,
               failureMessage: run.error,
-              provider: run.provider as "anthropic" | "openai" | undefined,
+              provider: run.provider,
             });
             emitProgress({
               type: "analysis_failed",
@@ -1342,7 +1345,7 @@ export async function runFull(
               const finishedAt = Date.now();
               const failure = runtimeStatus.inferRuntimeError(
                 run.error,
-                run.provider as "anthropic" | "openai" | undefined,
+                run.provider,
               );
               appendRunLifecycleEvents(run, "analysis-agent", [
                 {
@@ -1378,7 +1381,7 @@ export async function runFull(
               runtimeStatus.releaseRun(run.runId, "failed", {
                 failedPhase: phase,
                 failureMessage: run.error,
-                provider: run.provider as "anthropic" | "openai" | undefined,
+                provider: run.provider,
               });
               emitProgress({
                 type: "analysis_failed",
@@ -1666,7 +1669,7 @@ export function markOrphanedRunsFailed(): void {
     activeRun.activePhase = null;
     runtimeStatus.releaseRun(runId, "failed", {
       failureMessage: activeRun.error,
-      provider: activeRun.provider as "anthropic" | "openai" | undefined,
+      provider: activeRun.provider,
     });
     activeRun = null;
     runPromise = null;

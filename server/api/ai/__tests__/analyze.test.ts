@@ -55,7 +55,7 @@ describe("/api/ai/analyze", () => {
     };
     readBodyMock.mockResolvedValue({
       topic: "  Trade conflict  ",
-      provider: "openai",
+      provider: "codex",
       model: "gpt-5.4",
       runtime,
     });
@@ -66,7 +66,7 @@ describe("/api/ai/analyze", () => {
 
     expect(runFullMock).toHaveBeenCalledWith(
       "Trade conflict",
-      "openai",
+      "codex",
       "gpt-5.4",
       undefined,
       runtime,

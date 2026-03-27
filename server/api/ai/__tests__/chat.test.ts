@@ -96,7 +96,7 @@ describe("/api/ai/chat", () => {
 
   it("returns 400 when the request body shape is invalid", async () => {
     readBodyMock.mockResolvedValue({
-      provider: "openai",
+      provider: "codex",
       model: "gpt-5.4",
       message: "bad-shape",
     });
@@ -114,7 +114,7 @@ describe("/api/ai/chat", () => {
     readBodyMock.mockResolvedValue({
       workspaceId: "workspace-1",
       message: { content: "hello" },
-      provider: "openai",
+      provider: "codex",
       model: "gpt-5.4",
     });
 
@@ -162,7 +162,7 @@ describe("/api/ai/chat", () => {
     readBodyMock.mockResolvedValue({
       workspaceId: "workspace-err",
       message: { content: "test error path" },
-      provider: "openai",
+      provider: "codex",
       model: "gpt-5.4",
     });
 
@@ -201,7 +201,7 @@ describe("/api/ai/chat", () => {
   it("accepts canonical payloads and writes to the resolved thread", async () => {
     readBodyMock.mockResolvedValue({
       message: { content: "Follow up" },
-      provider: "openai",
+      provider: "codex",
       model: "gpt-5.4",
     });
 

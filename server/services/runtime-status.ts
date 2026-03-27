@@ -1,8 +1,5 @@
 import type { RunKind, RunStatus } from "../../shared/types/api";
-import type {
-  LegacyRuntimeProvider,
-  RuntimeProvider,
-} from "../../shared/types/analysis-runtime";
+import type { RuntimeProvider } from "../../shared/types/analysis-runtime";
 import type { MethodologyPhase } from "../../shared/types/methodology";
 import type { RuntimeError } from "../../shared/types/runtime-error";
 import {
@@ -30,7 +27,7 @@ interface ReleaseRunOptions {
   failedPhase?: MethodologyPhase;
   failure?: RuntimeError;
   failureMessage?: string;
-  provider?: LegacyRuntimeProvider;
+  provider?: string;
 }
 
 type StatusChangeListener = (status: RunStatus) => void;
@@ -105,7 +102,7 @@ function isActiveRun(runId: string): boolean {
 
 export function inferRuntimeError(
   error?: string,
-  providerInput?: LegacyRuntimeProvider,
+  providerInput?: string,
 ): RuntimeError {
   const provider = normalizeRuntimeProvider(providerInput);
   if (!error) {

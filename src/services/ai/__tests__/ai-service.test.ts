@@ -58,7 +58,7 @@ describe("ai-service streamChat", () => {
         [{ role: "user", content: "hello" }],
         "claude-sonnet-4-5-20250929",
         undefined,
-        "anthropic",
+        "claude",
       ),
     );
 
@@ -86,7 +86,7 @@ describe("ai-service streamChat", () => {
         [{ role: "user", content: "hello" }],
         "claude-sonnet-4-5-20250929",
         undefined,
-        "anthropic",
+        "claude",
         abortController.signal,
       ),
     );
@@ -126,7 +126,7 @@ describe("ai-service streamChat", () => {
         [{ role: "user", content: "hello" }],
         "claude-sonnet-4-5-20250929",
         undefined,
-        "anthropic",
+        "claude",
         undefined,
         undefined,
         {
@@ -151,7 +151,7 @@ describe("ai-service streamChat", () => {
         content: "hello",
       },
       model: "claude-sonnet-4-5-20250929",
-      provider: "anthropic",
+      provider: "claude",
     });
     expect(onResolvedThread).toHaveBeenCalledWith({
       workspaceId: "workspace-1",

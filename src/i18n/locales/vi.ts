@@ -347,7 +347,7 @@ const vi: TranslationKeys = {
   "agents.claudeCode": "Claude Code",
   "agents.claudeModels": "Các mô hình Claude",
   "agents.codexCli": "Codex CLI",
-  "agents.openaiModels": "Các mô hình OpenAI",
+  "agents.codexModels": "Các mô hình Codex",
   "agents.mcpServer": "Máy chủ MCP",
   "agents.mcpServerStart": "Khởi động",
   "agents.mcpServerStop": "Dừng",

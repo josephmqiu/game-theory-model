@@ -138,13 +138,13 @@ describe("handleStartAnalysis", () => {
 
     await handleStartAnalysis({
       topic: "US-China semiconductor trade war",
-      provider: "anthropic",
+      provider: "claude",
       model: "claude-sonnet-4-20250514",
     });
 
     expect(runFull).toHaveBeenCalledWith(
       "US-China semiconductor trade war",
-      "anthropic",
+      "claude",
       "claude-sonnet-4-20250514",
       undefined,
       undefined,

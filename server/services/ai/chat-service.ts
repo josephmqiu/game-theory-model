@@ -22,8 +22,9 @@ import {
 } from "../../../shared/types/prompt-pack";
 
 import {
-  ALLOWED_WIRE_PROVIDERS as ALLOWED_PROVIDERS,
-  isAllowedWireProvider,
+  isAllowedRuntimeProvider,
+  normalizeRuntimeProvider,
+  type RuntimeProvider,
 } from "../../../shared/types/analysis-runtime";
 const KEEPALIVE_INTERVAL_MS = 15_000;
 export const SENSITIVE_LOG_PATTERN =
@@ -50,7 +51,7 @@ export interface CanonicalChatRequest {
     content: string;
     attachments?: ChatAttachmentWire[];
   };
-  provider: "anthropic" | "openai";
+  provider: RuntimeProvider;
   model: string;
   thinkingMode?: "adaptive" | "disabled" | "enabled";
   thinkingBudgetTokens?: number;
@@ -71,7 +72,7 @@ const canonicalChatRequestSchema = z.object({
     content: z.string(),
     attachments: z.array(chatAttachmentSchema).optional(),
   }),
-  provider: z.enum(ALLOWED_PROVIDERS),
+  provider: z.string().trim().min(1),
   model: z.string().trim().min(1),
   thinkingMode: z.enum(["adaptive", "disabled", "enabled"]).optional(),
   thinkingBudgetTokens: z.number().positive().optional(),
@@ -83,10 +84,19 @@ export function parseChatRequest(raw: unknown): CanonicalChatRequest {
   if (!result.success) {
     throw new Error("Missing or invalid required fields for chat request.");
   }
-  return result.data;
+
+  const provider = normalizeRuntimeProvider(result.data.provider);
+  if (!provider) {
+    throw new Error("Missing or invalid required fields for chat request.");
+  }
+
+  return {
+    ...result.data,
+    provider,
+  };
 }
 
-const isAllowedProvider = isAllowedWireProvider;
+const isAllowedProvider = isAllowedRuntimeProvider;
 
 function buildServerChatSystemPrompt(): string {
   const analysis = entityGraphService.getAnalysis();
@@ -274,7 +284,7 @@ export async function createChatResponse(
       try {
         let prompt = request.message.content;
         if (
-          request.provider === "anthropic" &&
+          request.provider === "claude" &&
           request.message.attachments &&
           request.message.attachments.length > 0
         ) {
@@ -306,7 +316,7 @@ export async function createChatResponse(
         );
 
         const effectiveSystemPrompt =
-          request.provider === "anthropic" &&
+          request.provider === "claude" &&
           request.message.attachments &&
           request.message.attachments.length > 0
             ? stripNoToolsRestriction(systemPromptBase)
@@ -392,9 +402,9 @@ export async function createChatResponse(
               kind: "note",
               message:
                 recovery.disposition === "resumed"
-                  ? `${request.provider === "openai" ? "Codex app-server" : "Claude Code"} resumed persisted provider session`
+                  ? `${request.provider === "codex" ? "Codex app-server" : "Claude Code"} resumed persisted provider session`
                   : (recovery.message ??
-                    `${request.provider === "openai" ? "Codex app-server" : "Claude Code"} started a fresh provider session`),
+                    `${request.provider === "codex" ? "Codex app-server" : "Claude Code"} started a fresh provider session`),
               status:
                 recovery.disposition === "fallback" ? "failed" : "completed",
               producer: "chat-service",
@@ -452,7 +462,7 @@ export async function createChatResponse(
             `data: ${JSON.stringify({
               type: "error",
               error: createProcessRuntimeError(message, {
-                provider: request.provider === "openai" ? "codex" : "claude",
+                provider: request.provider,
                 processState: "failed-to-start",
                 retryable: false,
               }),

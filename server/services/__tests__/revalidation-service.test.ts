@@ -317,7 +317,7 @@ describe("revalidation-service", () => {
 
     mockIsRunning.mockReturnValue(false);
     revalidation.onRunComplete(
-      "openai",
+      "codex",
       "gpt-5.4",
       { webSearch: false, effortLevel: "high" },
       false,
@@ -537,7 +537,7 @@ describe("revalidation-service", () => {
   });
 
   it("reuses the last resolved runtime for revalidation phase reruns", async () => {
-    revalidation.onRunComplete("openai", "gpt-5.4", {
+    revalidation.onRunComplete("codex", "gpt-5.4", {
       webSearch: false,
       effortLevel: "high",
     });
@@ -555,7 +555,7 @@ describe("revalidation-service", () => {
     await advanceTimersByTimeAsync(0);
 
     expect(mockRunPhase.mock.calls[0][2]).toMatchObject({
-      provider: "openai",
+      provider: "codex",
       model: "gpt-5.4",
       runtime: { webSearch: false, effortLevel: "high" },
     });

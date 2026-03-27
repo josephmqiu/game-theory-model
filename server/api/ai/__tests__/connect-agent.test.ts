@@ -139,7 +139,7 @@ describe("connect-agent codex checks", () => {
             value: "gpt-5.4",
             displayName: "GPT-5.4",
             description: "Test model",
-            provider: "openai",
+            provider: "codex",
           },
         ],
       }),
@@ -186,7 +186,7 @@ describe("connect-agent codex checks", () => {
         value: "gpt-5.4",
         displayName: "GPT-5.4",
         description: "Cached model",
-        provider: "openai",
+        provider: "codex",
       },
     ]);
     expect(result.error).toContain("version failed");
@@ -256,7 +256,7 @@ describe("connect-agent claude checks", () => {
             value: "claude-sonnet-4-6",
             displayName: "Claude Sonnet 4.6",
             description: "",
-            provider: "anthropic",
+            provider: "claude",
           },
         ],
       }),

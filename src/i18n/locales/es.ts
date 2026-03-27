@@ -351,7 +351,7 @@ const es: TranslationKeys = {
   "agents.claudeCode": "Claude Code",
   "agents.claudeModels": "Modelos Claude",
   "agents.codexCli": "Codex CLI",
-  "agents.openaiModels": "Modelos OpenAI",
+  "agents.codexModels": "Modelos Codex",
   "agents.mcpServer": "Servidor MCP",
   "agents.mcpServerStart": "Iniciar",
   "agents.mcpServerStop": "Detener",

@@ -339,7 +339,7 @@ const zhTW: TranslationKeys = {
   "agents.claudeCode": "Claude Code",
   "agents.claudeModels": "Claude 模型",
   "agents.codexCli": "Codex CLI",
-  "agents.openaiModels": "OpenAI 模型",
+  "agents.codexModels": "Codex 模型",
   "agents.mcpServer": "MCP 伺服器",
   "agents.mcpServerStart": "啟動",
   "agents.mcpServerStop": "停止",

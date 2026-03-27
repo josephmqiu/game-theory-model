@@ -430,7 +430,7 @@ describe("analysis-orchestrator", () => {
 
     const { runId, threadId, workspaceId } = await orchestrator.runFull(
       "Test topic",
-      "openai",
+      "codex",
       "gpt-4o",
       undefined,
       {
@@ -445,7 +445,7 @@ describe("analysis-orchestrator", () => {
       id: runId,
       workspaceId,
       threadId,
-      provider: "openai",
+      provider: "codex",
       model: "gpt-4o",
       status: "completed",
       summary: {
@@ -767,7 +767,7 @@ describe("analysis-orchestrator", () => {
 
     const { runId } = await orchestrator.runFull(
       "Test topic",
-      "openai",
+      "codex",
       "gpt-5.4",
     );
     await flushAsync();
@@ -775,7 +775,7 @@ describe("analysis-orchestrator", () => {
     const status = orchestrator.getStatus(runId);
     expect(status.status).toBe("completed");
     expect(mockRunPhase).toHaveBeenCalledTimes(10);
-    expect(mockRunPhase.mock.calls[0][2]?.provider).toBe("openai");
+    expect(mockRunPhase.mock.calls[0][2]?.provider).toBe("codex");
     expect(mockRunPhase.mock.calls[0][2]?.model).toBe("gpt-5.4");
   });
 
@@ -1397,7 +1397,7 @@ describe("analysis-orchestrator", () => {
         .mockResolvedValueOnce(makePhaseResult("scenarios"))
         .mockResolvedValueOnce(makePhaseResult("meta-check"));
 
-      await orchestrator.runFull("Test topic", "openai", "gpt-4o", undefined, {
+      await orchestrator.runFull("Test topic", "codex", "gpt-4o", undefined, {
         webSearch: false,
       });
       await flushAsync();
@@ -1414,7 +1414,7 @@ describe("analysis-orchestrator", () => {
               runtime?: ResolvedAnalysisRuntime;
             }
           | undefined;
-        expect(context?.provider).toBe("openai");
+        expect(context?.provider).toBe("codex");
         expect(context?.model).toBe("gpt-4o");
         expect(context?.runtime).toEqual({
           webSearch: false,

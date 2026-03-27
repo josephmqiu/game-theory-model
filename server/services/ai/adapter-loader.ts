@@ -74,5 +74,5 @@ export async function loadRuntimeAdapter(opts: {
     };
   }
 
-  return getRuntimeAdapter(opts.provider as "anthropic" | "openai" | undefined);
+  return getRuntimeAdapter(opts.provider);
 }

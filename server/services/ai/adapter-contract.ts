@@ -148,7 +148,7 @@ export function mapRuntimeModels(
 }
 
 export async function getRuntimeAdapter(
-  providerInput: RuntimeProvider | "anthropic" | "openai" | undefined,
+  providerInput?: string,
 ): Promise<RuntimeAdapter> {
   const provider = normalizeRuntimeProvider(providerInput);
   if (provider === "codex") {
@@ -165,7 +165,7 @@ export async function getRuntimeAdapter(
 }
 
 export async function listRuntimeModels(
-  providerInput: RuntimeProvider | "anthropic" | "openai",
+  providerInput?: string,
 ): Promise<RuntimeModelInfo[]> {
   const provider = normalizeRuntimeProvider(providerInput);
   if (!provider) {
@@ -177,7 +177,7 @@ export async function listRuntimeModels(
 }
 
 export async function checkRuntimeProviderHealth(
-  providerInput: RuntimeProvider | "anthropic" | "openai",
+  providerInput?: string,
 ): Promise<ProviderHealthState> {
   const provider = normalizeRuntimeProvider(providerInput);
   if (!provider) {

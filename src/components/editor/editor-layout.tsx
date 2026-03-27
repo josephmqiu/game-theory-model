@@ -139,7 +139,14 @@ export default function EditorLayout() {
         );
 
         try {
-          await analysisClient.startAnalysis(topic, provider, model, runtime);
+          await analysisClient.startAnalysis(
+            topic,
+            provider === "claude" || provider === "codex"
+              ? provider
+              : undefined,
+            model,
+            runtime,
+          );
         } catch (err) {
           console.error(
             "[editor] analysis-start-failed",

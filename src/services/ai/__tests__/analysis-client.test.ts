@@ -508,7 +508,7 @@ describe("analysis-client", () => {
     const { client } = await loadModules();
 
     await expect(
-      client.startAnalysis("Topic", "openai", "gpt-5.4", {
+      client.startAnalysis("Topic", "codex", "gpt-5.4", {
         webSearch: false,
         effortLevel: "thorough",
         activePhases: ["situational-grounding", "scenarios"],
@@ -521,7 +521,7 @@ describe("analysis-client", () => {
         method: "POST",
         body: JSON.stringify({
           topic: "Topic",
-          provider: "openai",
+          provider: "codex",
           model: "gpt-5.4",
           runtime: {
             webSearch: false,

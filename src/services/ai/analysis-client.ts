@@ -22,6 +22,7 @@ import type {
 } from "../../../shared/types/workspace-runtime";
 import type { Analysis } from "../../../shared/types/entity";
 import type { AnalysisRuntimeOverrides } from "../../../shared/types/analysis-runtime";
+import type { AIProviderType } from "@/types/agent-settings";
 import i18n from "@/i18n";
 import { getEntityCardMetrics } from "@/services/entity/entity-card-metrics";
 import { formatPhaseActivityNote } from "./phase-activity-format";
@@ -328,7 +329,7 @@ export async function hydrateAnalysisState(): Promise<AnalysisStateResponse | nu
 
 export async function startAnalysis(
   topic: string,
-  provider?: string,
+  provider?: AIProviderType,
   model?: string,
   runtime?: AnalysisRuntimeOverrides,
 ): Promise<{ runId: string }> {

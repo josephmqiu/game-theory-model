@@ -344,7 +344,7 @@ const en = {
   "agents.claudeCode": "Claude Code",
   "agents.claudeModels": "Claude models",
   "agents.codexCli": "Codex CLI",
-  "agents.openaiModels": "OpenAI models",
+  "agents.codexModels": "Codex models",
   "agents.mcpServer": "MCP Server",
   "agents.mcpServerStart": "Start",
   "agents.mcpServerStop": "Stop",

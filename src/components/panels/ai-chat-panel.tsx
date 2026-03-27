@@ -37,7 +37,7 @@ import {
   type TranscriptEntry,
 } from "@/services/ai/thread-projection";
 import ClaudeLogo from "@/components/icons/claude-logo";
-import OpenAILogo from "@/components/icons/openai-logo";
+import CodexLogo from "@/components/icons/codex-logo";
 import { V3_PHASES } from "@/types/methodology";
 import type { AnalysisEffortLevel } from "../../../shared/types/analysis-runtime";
 import ChatMessage from "./chat-message";
@@ -52,8 +52,8 @@ export type AIChatMode = "analysis";
 export type AIChatPresentation = "floating" | "docked";
 
 const PROVIDER_ICON: Record<AIProviderType, typeof ClaudeLogo> = {
-  anthropic: ClaudeLogo,
-  openai: OpenAILogo,
+  claude: ClaudeLogo,
+  codex: CodexLogo,
 };
 
 const CORNER_CLASSES: Record<PanelCorner, string> = {

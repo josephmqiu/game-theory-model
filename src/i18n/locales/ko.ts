@@ -345,7 +345,7 @@ const ko: TranslationKeys = {
   "agents.claudeCode": "Claude Code",
   "agents.claudeModels": "Claude 모델",
   "agents.codexCli": "Codex CLI",
-  "agents.openaiModels": "OpenAI 모델",
+  "agents.codexModels": "Codex 모델",
   "agents.mcpServer": "MCP 서버",
   "agents.mcpServerStart": "시작",
   "agents.mcpServerStop": "정지",
