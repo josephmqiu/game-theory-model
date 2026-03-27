@@ -5,9 +5,13 @@
  */
 
 import { _bindWorkspaceDatabaseForInit } from "../services/entity-graph-service";
+import { waitForRuntimeRecovery } from "../services/workspace/runtime-recovery-service";
 import { getWorkspaceDatabase } from "../services/workspace/workspace-db";
 
 export default () => {
   if (process.env.VITEST === "true") return;
   _bindWorkspaceDatabaseForInit(getWorkspaceDatabase);
+  void waitForRuntimeRecovery().catch((error) => {
+    console.error("[runtime-recovery] startup reconciliation failed", error);
+  });
 };

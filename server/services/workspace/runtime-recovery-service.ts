@@ -345,28 +345,25 @@ async function runStartupRecovery(): Promise<void> {
     });
   }
 
-  // Dismiss orphaned pending questions — questions whose runs have failed
-  // but whose in-memory resolvers no longer exist after restart.
+  // Dismiss all persisted pending questions on startup. Question waits are
+  // backed by in-memory resolvers only, so they cannot be resumed after a
+  // process restart even if the originating run was not "running".
   const pendingQuestions = database.questions.listByStatus("pending");
   let dismissedCount = 0;
   for (const pq of pendingQuestions) {
-    // If the question's run was running (and just failed above), or if
-    // no run is actively waiting on this question, dismiss it.
-    const questionRunId = pq.question.runId;
-    const isOrphaned =
-      !questionRunId || runningRuns.some((r) => r.id === questionRunId);
-    if (isOrphaned) {
-      database.questions.updateStatus(pq.question.id, "dismissed");
-      dismissedCount += 1;
-    }
+    database.questions.updateStatus(pq.question.id, "dismissed");
+    dismissedCount += 1;
   }
 
   if (dismissedCount > 0) {
     recordRecoveryLog({
       code: "recovery-questions-dismissed",
       level: "info",
-      message: `Dismissed ${dismissedCount} orphaned pending question(s) from crashed runs`,
-      data: { dismissedCount },
+      message: `Dismissed ${dismissedCount} pending question(s) that could not resume after restart`,
+      data: {
+        dismissedCount,
+        reason: "question_resolvers_are_process_local",
+      },
     });
   }
 

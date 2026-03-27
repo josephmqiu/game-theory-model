@@ -5,15 +5,6 @@ Updated with items from Analysis Report & Prediction Verdict CEO review (2026-03
 Updated with T3 migration eng review findings (2026-03-26).
 Reorganized into P0-P3 priority tiers (2026-03-26).
 
-## P0 — Fix Now (from current eng review)
-
-Items addressed in the current session. Tracked here for completeness.
-
-### Startup reconciliation for stale runs + orphaned questions
-- **What:** On Nitro startup, mark stale "running" runs as "failed" and dismiss orphaned pending questions.
-- **Why:** Nitro crash mid-analysis leaves zombie run state and dead question cards in the UI.
-- **Status:** Partially addressed — run failure was already in runtime-recovery-service, question dismissal added 2026-03-26.
-
 ## P1 — Next Up (high value)
 
 ### Content stream typing (reasoning vs output)
