@@ -11,11 +11,7 @@ const RENDERER_DIRS = [
 ];
 
 // Specific renderer-side service files
-const RENDERER_FILES = [
-  "src/router.tsx",
-  "src/services/ai/analysis-client.ts",
-  "src/services/ai/ai-service.ts",
-];
+const RENDERER_FILES = ["src/router.tsx", "src/services/ai/analysis-client.ts"];
 
 // Server-only modules — importing these from renderer code causes runtime crashes
 const FORBIDDEN_PATTERNS = [

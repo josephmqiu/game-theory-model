@@ -14,6 +14,42 @@
 **Priority:** P2
 **Depends on:** None (all prerequisites done)
 
+### Workspace runtime stuck after analysis failure
+
+**What:** After any analysis run fails (timeout, validation error, provider error), subsequent chat requests time out with "Workspace runtime request timed out: chat.turn.start". The runtime doesn't properly clean up/reset after failure, blocking all AI interaction until the app is restarted.
+
+**Why:** Critical UX blocker — a single failed analysis makes the entire chat unusable. Users must restart the app to recover.
+
+**Context:** Discovered during E2E testing. Reproduces with both Claude and Codex providers. The workspace runtime transport appears to remain in a "busy" state after `analysis.run` fails, never returning to idle. The `chat.turn.start` request queues behind the dead analysis and eventually times out.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** None
+
+### Haiku scenario probability validation
+
+**What:** Haiku outputs scenario probabilities as decimal fractions (e.g., 0.003 instead of 30%), causing the Phase 8 probability sum validation to reject them. The validator expects 95-105% sum but gets ~0.9%.
+
+**Why:** Haiku completes 7/9 phases correctly but fails on Phase 8 every time due to this format mismatch. Blocks smaller/cheaper models from completing full analyses.
+
+**Context:** The fix is either: (a) detect decimal-vs-percentage format and normalize before validation, or (b) if all values are <1 and sum to ~1.0, multiply by 100. The validation logic lives in the analysis orchestrator's scenario phase handler.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Codex adapter timeout too aggressive for structured output
+
+**What:** gpt-5.4-mini times out on Phase 2 (Player Identification) which requires structured JSON output with multiple entity types. The adapter phase timeout is too short for smaller Codex models processing complex schemas.
+
+**Why:** Codex analysis can only complete Phase 1 before timing out, making the Codex analysis path effectively broken for all but the fastest models.
+
+**Context:** The timeout is set in the Codex adapter or analysis orchestrator. Structured output phases (player-identification, baseline-model, formal-modeling) are the heaviest. Consider per-phase or per-model timeout scaling.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
 ## Analysis Pipeline
 
 ### Multi-turn analysis phases
