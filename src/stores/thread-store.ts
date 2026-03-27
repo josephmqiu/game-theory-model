@@ -7,7 +7,6 @@ import type {
   ThreadState,
 } from "../../shared/types/workspace-state";
 import type { PendingQuestionState } from "../../shared/types/user-input";
-import type { ChatMessage } from "@/services/ai/ai-types";
 import type {
   WorkspaceRuntimeBootstrap,
   WorkspaceRuntimePushEnvelope,
@@ -24,6 +23,32 @@ interface ThreadDetailState {
   activities: ActivityEntry[];
 }
 
+// ---------------------------------------------------------------------------
+// Pending turn — bounded, single-turn optimistic state for the current
+// streaming chat turn. Replaces the old overlayMessages array.
+// ---------------------------------------------------------------------------
+
+export interface PendingToolCall {
+  id: string;
+  toolName: string;
+  status: "running" | "done" | "error";
+  content: string;
+}
+
+export interface PendingTurn {
+  correlationId: string;
+  status: "streaming" | "reconciling";
+  userMessage: { id: string; content: string; timestamp: number };
+  assistantMessage: {
+    id: string;
+    content: string;
+    timestamp: number;
+    isStreaming: boolean;
+  };
+  toolCalls: PendingToolCall[];
+  serverAssistantMessageId?: string;
+}
+
 interface ThreadStoreState {
   workspaceId?: string;
   activeThreadId?: string;
@@ -31,7 +56,7 @@ interface ThreadStoreState {
   activeThreadDetail: ThreadDetailState | null;
   latestRun: RunState | null;
   latestPhaseTurns: PhaseTurnSummaryState[];
-  overlayMessages: ChatMessage[];
+  pendingTurn: PendingTurn | null;
   pendingQuestions: PendingQuestionState[];
   activeQuestionIndex: number;
   isLoading: boolean;
@@ -42,7 +67,6 @@ interface ThreadStoreState {
   hydrateWorkspace: (workspaceId: string) => Promise<void>;
   refreshThreads: () => Promise<void>;
   refreshActiveThreadDetail: () => Promise<void>;
-  refreshAndClearOverlay: () => Promise<void>;
   selectThread: (threadId: string) => Promise<void>;
   createThread: (title?: string) => Promise<void>;
   renameThread: (threadId: string, title: string) => Promise<void>;
@@ -52,19 +76,19 @@ interface ThreadStoreState {
     threadId?: string;
   }) => void;
   clearProjection: () => void;
-  clearOverlayMessages: () => void;
-  addOverlayMessage: (message: ChatMessage) => void;
-  replaceOverlayMessages: (messages: ChatMessage[]) => void;
-  updateOverlayMessageById: (
-    id: string,
-    updates: Partial<
-      Pick<
-        ChatMessage,
-        "content" | "isStreaming" | "attachments" | "toolStatus" | "toolName"
-      >
-    >,
+  startPendingTurn: (
+    correlationId: string,
+    userMessage: PendingTurn["userMessage"],
+    assistantMessage: PendingTurn["assistantMessage"],
   ) => void;
-  updateLastOverlayAssistantMessage: (content: string) => void;
+  updatePendingTurnAssistant: (content: string) => void;
+  addPendingToolCall: (toolCall: PendingToolCall) => void;
+  updatePendingToolCall: (
+    id: string,
+    updates: Partial<Pick<PendingToolCall, "status" | "content">>,
+  ) => void;
+  completePendingTurn: (serverAssistantMessageId?: string) => void;
+  clearPendingTurn: () => void;
   setPendingQuestions: (questions: PendingQuestionState[]) => void;
   resolveQuestion: (
     questionId: string,
@@ -129,43 +153,24 @@ function resolveRestoredThreadId(
   return threads.find((thread) => thread.isPrimary)?.id ?? threads[0]?.id;
 }
 
-function shouldClearOverlayMessages(
-  overlayMessages: ChatMessage[],
+// ID-based reconciliation: clear the pending turn when the server has
+// persisted the assistant message we're waiting for.
+function shouldClearPendingTurn(
+  pendingTurn: PendingTurn | null,
   detail: ThreadDetailState | null,
 ): boolean {
-  if (!detail || overlayMessages.length === 0) {
+  if (
+    !pendingTurn ||
+    pendingTurn.status !== "reconciling" ||
+    !pendingTurn.serverAssistantMessageId ||
+    !detail
+  ) {
     return false;
   }
 
-  const userOverlay = overlayMessages.find(
-    (message) => message.role === "user",
+  return detail.messages.some(
+    (message) => message.id === pendingTurn.serverAssistantMessageId,
   );
-  const assistantOverlay = [...overlayMessages]
-    .reverse()
-    .find(
-      (message) =>
-        message.role === "assistant" && !message.id.startsWith("tool-"),
-    );
-
-  if (!assistantOverlay || assistantOverlay.isStreaming) {
-    return false;
-  }
-
-  const projectedHasAssistant = detail.messages.some(
-    (message) =>
-      message.role === "assistant" &&
-      message.content === assistantOverlay.content,
-  );
-  if (!projectedHasAssistant) {
-    return false;
-  }
-
-  return userOverlay
-    ? detail.messages.some(
-        (message) =>
-          message.role === "user" && message.content === userOverlay.content,
-      )
-    : true;
 }
 
 function toThreadDetailStateFromBootstrap(
@@ -185,10 +190,6 @@ function toThreadDetailStateFromBootstrap(
 function applyBootstrap(bootstrap: WorkspaceRuntimeBootstrap): void {
   useThreadStore.setState((state) => {
     const activeThreadDetail = toThreadDetailStateFromBootstrap(bootstrap);
-    const shouldClearOverlay = shouldClearOverlayMessages(
-      state.overlayMessages,
-      activeThreadDetail,
-    );
 
     if (bootstrap.workspaceId && bootstrap.activeThreadId) {
       writeStoredThreadSelection(
@@ -204,7 +205,9 @@ function applyBootstrap(bootstrap: WorkspaceRuntimeBootstrap): void {
       activeThreadDetail,
       latestRun: bootstrap.latestRun,
       latestPhaseTurns: bootstrap.latestPhaseTurns,
-      overlayMessages: shouldClearOverlay ? [] : state.overlayMessages,
+      pendingTurn: shouldClearPendingTurn(state.pendingTurn, activeThreadDetail)
+        ? null
+        : state.pendingTurn,
       isLoading: false,
       isCreating: false,
       error: undefined,
@@ -291,12 +294,9 @@ function applyThreadDetailPush(
 
     return {
       activeThreadDetail,
-      overlayMessages: shouldClearOverlayMessages(
-        state.overlayMessages,
-        activeThreadDetail,
-      )
-        ? []
-        : state.overlayMessages,
+      pendingTurn: shouldClearPendingTurn(state.pendingTurn, activeThreadDetail)
+        ? null
+        : state.pendingTurn,
       ...(serverPendingQuestions.length > 0
         ? {
             pendingQuestions: serverPendingQuestions,
@@ -337,7 +337,7 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
   activeThreadDetail: null,
   latestRun: null,
   latestPhaseTurns: [],
-  overlayMessages: [],
+  pendingTurn: null,
   pendingQuestions: [],
   activeQuestionIndex: 0,
   isLoading: false,
@@ -350,7 +350,7 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
       workspaceId,
       activeThreadId: undefined,
       activeThreadDetail: null,
-      overlayMessages: [],
+      pendingTurn: null,
       isLoading: true,
       error: undefined,
     });
@@ -416,25 +416,6 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
     );
   },
 
-  async refreshAndClearOverlay() {
-    const workspaceId = get().workspaceId;
-    if (!workspaceId) {
-      set({
-        activeThreadDetail: null,
-        overlayMessages: [],
-        latestRun: null,
-        latestPhaseTurns: [],
-      });
-      return;
-    }
-    applyBootstrap(
-      await workspaceRuntimeClient.bindContext({
-        workspaceId,
-        activeThreadId: get().activeThreadId,
-      }),
-    );
-  },
-
   async selectThread(threadId) {
     const workspaceId = get().workspaceId;
     set({
@@ -442,7 +423,7 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
       activeThreadDetail: null,
       latestRun: null,
       latestPhaseTurns: [],
-      overlayMessages: [],
+      pendingTurn: null,
       pendingQuestions: [],
       activeQuestionIndex: 0,
       error: undefined,
@@ -498,7 +479,7 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
       applyBootstrap(bootstrap);
       set({
         isCreating: false,
-        overlayMessages: [],
+        pendingTurn: null,
       });
       writeStoredThreadSelection(response.workspaceId, response.thread.id);
     } catch (error) {
@@ -562,7 +543,7 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
           activeThreadDetail: null,
           latestRun: null,
           latestPhaseTurns: [],
-          overlayMessages: [],
+          pendingTurn: null,
           pendingQuestions: [],
           activeQuestionIndex: 0,
         });
@@ -623,7 +604,7 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
       activeThreadDetail: null,
       latestRun: null,
       latestPhaseTurns: [],
-      overlayMessages: [],
+      pendingTurn: null,
       pendingQuestions: [],
       activeQuestionIndex: 0,
       isLoading: false,
@@ -633,42 +614,75 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
     });
   },
 
-  clearOverlayMessages() {
-    set({ overlayMessages: [] });
-  },
-
-  addOverlayMessage(message) {
-    set((state) => ({
-      overlayMessages: [...state.overlayMessages, message],
-    }));
-  },
-
-  replaceOverlayMessages(messages) {
-    set({ overlayMessages: messages });
-  },
-
-  updateOverlayMessageById(id, updates) {
-    set((state) => ({
-      overlayMessages: state.overlayMessages.map((message) =>
-        message.id === id ? { ...message, ...updates } : message,
-      ),
-    }));
-  },
-
-  updateLastOverlayAssistantMessage(content) {
-    set((state) => {
-      const overlayMessages = [...state.overlayMessages];
-
-      for (let index = overlayMessages.length - 1; index >= 0; index -= 1) {
-        const message = overlayMessages[index];
-        if (message.role === "assistant" && !message.id.startsWith("tool-")) {
-          overlayMessages[index] = { ...message, content };
-          break;
-        }
-      }
-
-      return { overlayMessages };
+  startPendingTurn(correlationId, userMessage, assistantMessage) {
+    set({
+      pendingTurn: {
+        correlationId,
+        status: "streaming",
+        userMessage,
+        assistantMessage,
+        toolCalls: [],
+      },
     });
+  },
+
+  updatePendingTurnAssistant(content) {
+    set((state) => {
+      if (!state.pendingTurn) return state;
+      return {
+        pendingTurn: {
+          ...state.pendingTurn,
+          assistantMessage: { ...state.pendingTurn.assistantMessage, content },
+        },
+      };
+    });
+  },
+
+  addPendingToolCall(toolCall) {
+    set((state) => {
+      if (!state.pendingTurn) return state;
+      return {
+        pendingTurn: {
+          ...state.pendingTurn,
+          toolCalls: [...state.pendingTurn.toolCalls, toolCall],
+        },
+      };
+    });
+  },
+
+  updatePendingToolCall(id, updates) {
+    set((state) => {
+      if (!state.pendingTurn) return state;
+      return {
+        pendingTurn: {
+          ...state.pendingTurn,
+          toolCalls: state.pendingTurn.toolCalls.map((tc) =>
+            tc.id === id ? { ...tc, ...updates } : tc,
+          ),
+        },
+      };
+    });
+  },
+
+  completePendingTurn(serverAssistantMessageId) {
+    set((state) => {
+      if (!state.pendingTurn) return state;
+      return {
+        pendingTurn: {
+          ...state.pendingTurn,
+          status: "reconciling",
+          serverAssistantMessageId,
+          assistantMessage: {
+            ...state.pendingTurn.assistantMessage,
+            isStreaming: false,
+          },
+        },
+      };
+    });
+  },
+
+  clearPendingTurn() {
+    set({ pendingTurn: null });
   },
 
   setPendingQuestions(questions) {

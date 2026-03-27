@@ -1,148 +1,242 @@
 # TODOS
 
-Deferred work items from the Entity Graph Canvas v1 plan review (2026-03-18).
-Updated with items from Analysis Report & Prediction Verdict CEO review (2026-03-23).
-Updated with T3 migration eng review findings (2026-03-26).
-Reorganized into P0-P3 priority tiers (2026-03-26).
-
-## P1 — Next Up (high value)
-
-### Chat context cleanup (remove hybrid prompt stuffing)
-
-- **What:** Stop injecting entity summaries and trimmed history windows into the chat system prompt. Move to canonical thread history + tool-driven graph lookup.
-- **Why:** Chat persistence exists in SQLite, but the live provider path still uses the pre-T3 architecture: server-side context stuffing plus `trimChatHistory`.
-- **Effort:** M (human: ~3 days / CC: ~20min)
-- **Where to start:** Delete the entity-summary block in `chat-service`, remove `trimChatHistory` from the hot path, and let adapters own context-window management.
-
-### Atomic entity persistence + batched broadcasts
-
-- **What:** Wrap `commitPhaseSnapshot` in a single SQLite transaction including both entity writes AND domain events. Collect mutations and emit ONE WebSocket broadcast per phase.
-- **Why:** Currently entity writes are N individual autocommit calls, and each fires a separate WebSocket broadcast. If a write fails mid-batch, the graph diverges silently.
-- **Effort:** M (human: ~6h / CC: ~20min)
-- **Where to start:** Add `beginBatch()`/`commitBatch()` API to entity-graph-service.
-
-### Persistence consolidation (single source of truth)
-
-- **What:** Make `graph_entities`/`graph_relationships` SQLite tables THE canonical entity state. Make `workspace_json` derive from them on save.
-- **Why:** 4 sources of entity truth (workspace_json, graph tables, domain events, .gta files). Export reads graph tables for entities but workspace_json for everything else — active split-brain.
-- **Effort:** L (human: ~1 week / CC: ~1h)
-- **Where to start:** Make workspace_json serialize from graph tables, not in-memory state. Make .gta export read from graph tables.
-
-### Workspace runtime outbound queue parity
-
-- **What:** Add outbound request queueing/replay to `workspace-runtime-client` so thread/question requests survive connect/reconnect transitions.
-- **Why:** The current client reconnects and replays pushes, but request sends still fail when the socket is not already open. That is not T3 transport parity yet.
-- **Effort:** S (human: ~1 day / CC: ~10min)
-- **Where to start:** Mirror T3 `wsTransport` semantics: enqueue every request, flush on open, reject only on timeout/dispose.
-
-## P2 — Important (product maturity)
-
-### Multi-turn analysis phases
-
-- **What:** Convert analysis phases from single-turn structured output to multi-turn thread-based turns. AI creates entities via tool calls. Phases are turns within a thread.
-- **Why:** The biggest architectural gap vs the T3 target. The current approach works but doesn't leverage the full T3 infrastructure (thread persistence, session resume, tool-based entity creation).
-- **Effort:** XL — deserves its own /office-hours + /plan-eng-review cycle.
+## Chat & Threads
 
 ### Thread rollback (undo N turns)
 
-- **What:** Allow users to undo N turns from a conversation thread.
-- **Why:** No undo means bad AI turns are permanent.
-- **Effort:** L (human: ~1 week / CC: ~30min)
-- **Depends on:** domain-event-store (done), thread-service (done), command-bus (done)
+**What:** Allow users to undo N turns from a conversation thread.
 
-### Tool approval UX
+**Why:** No undo means bad AI turns are permanent. Users need a way to back out of unproductive analysis directions.
 
-- **What:** Surface AI tool calls as approve/deny prompts with keyboard shortcuts.
-- **Why:** AI currently acts freely on all tools. Users should approve entity mutations.
-- **Effort:** L (human: ~1 week / CC: ~30min)
-- **Depends on:** question-service (done), WebSocket transport (done)
+**Context:** All prerequisites are in place: domain-event-store, thread-service, command-bus. The domain events already capture enough state to reconstruct prior thread snapshots.
 
-### Overlay transcript consolidation
+**Effort:** L
+**Priority:** P2
+**Depends on:** None (all prerequisites done)
 
-- **What:** Remove `overlayMessages` as a second chat transcript source. Replace it with a bounded pending-turn state that reconciles into the persisted thread projection.
-- **Why:** The renderer currently merges persisted thread messages with a parallel Zustand overlay transcript. That dual state path complicates resume, rollback, and truthfulness.
-- **Effort:** M (human: ~2 days / CC: ~20min)
-- **Depends on:** Chat transport — T3 WebSocket pattern
+## Analysis Pipeline
 
-### Schema-validated settings
+### Multi-turn analysis phases
 
-- **What:** Zod validation on all settings. Per-thread model selection persistence.
-- **Effort:** M (human: ~3 days / CC: ~15min)
+**What:** Convert analysis phases from single-turn structured output to multi-turn thread-based turns. AI creates entities via tool calls. Phases are turns within a thread.
+
+**Why:** The biggest architectural gap vs the T3 target. Current approach works but doesn't leverage thread persistence, session resume, or tool-based entity creation.
+
+**Context:** This is a major effort — deserves its own `/office-hours` + `/plan-eng-review` cycle before implementation.
+
+**Effort:** XL
+**Priority:** P2
+**Depends on:** None
 
 ### Analysis type architecture (multi-methodology platform)
 
-- **What:** Pluggable analysis workflows (game theory, prediction market, stock analysis, etc.).
-- **Why:** Foundation for entire product roadmap. Currently hardcoded to 10-phase game theory.
-- **Effort:** XL — deserves its own planning cycle.
-- **Depends on:** Analysis report v1 validates the concept.
+**What:** Pluggable analysis workflows (game theory, prediction market, stock analysis, etc.).
+
+**Why:** Foundation for entire product roadmap. Currently hardcoded to 10-phase game theory.
+
+**Context:** Depends on analysis report v1 validating the concept first. This is a major planning effort — separate cycle.
+
+**Effort:** XL
+**Priority:** P3
+**Depends on:** Analysis report v1
 
 ### Report revalidation (user-triggered)
 
-- **What:** Mark analysis report stale on upstream entity edits. Manual "regenerate report" action.
-- **Effort:** M (human: ~1 week / CC: ~1 hour)
-- **Depends on:** Analysis report feature.
+**What:** Mark analysis report stale on upstream entity edits. Manual "regenerate report" action.
 
-### Stream WebSearch queries into canvas status bar
+**Why:** Without this, users can't trust report accuracy after editing entities on the canvas.
 
-- **What:** Show live search queries (e.g., "searching: US China tariff history 2025") instead of just "Using WebSearch".
-- **Effort:** S — independent enhancement.
+**Context:** Requires the analysis report feature to be stable first.
 
-### Pin Nitro to stable release
-
-- **What:** Migrate from `nitro-nightly@3.0.1-20260217` to stable Nitro. Requires compatibility spike — the 3.0.0 stable vite plugin API (NitroPluginConfig) is different from the nightly API this app uses (`features`, `node`, `serverDir` config surface).
-- **Why:** Nightly builds can break without notice. Contradicts stabilization goals.
-- **Effort:** M (human: ~2 days / CC: ~30 min) — needs config migration + testing
+**Effort:** M
+**Priority:** P2
+**Depends on:** Analysis report feature
 
 ### analysis-service.ts decomposition
 
-- **What:** Split the 1,997-line file into schema-builder, orchestration-setup, and thin route handler.
-- **Why:** Mixes API surface + business logic. Largest file in codebase.
-- **Effort:** M (human: ~3 days / CC: ~30 min)
+**What:** Split the ~2,000-line file into schema-builder, orchestration-setup, and thin route handler.
 
-## P3 — Nice to Have
+**Why:** Largest file in codebase. Mixes API surface with business logic, making it hard to test and modify.
 
-### Event replay capability
+**Context:** Straightforward refactor — extract logical boundaries that already exist in the code.
 
-- **What:** Add `replayEvents` method to domain event store. State reconstruction from event log.
-- **Depends on:** domain-event-store (done)
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
 
-### Keybindings system
+## Canvas & UX
 
-- **What:** Declarative keybinding registry with context-aware when-clause evaluation.
-- **Effort:** M (human: ~3 days / CC: ~15min)
+### Tool approval UX
 
-### Electron crash recovery hardening
+**What:** Surface AI tool calls as approve/deny prompts with keyboard shortcuts.
 
-- **What:** Exponential backoff array for Nitro restart [1s, 2s, 4s, 8s, 16s, 30s]. Circuit breaker after 6 failures.
-- **Where to start:** `electron/main.ts` `scheduleNitroRestart`.
+**Why:** AI currently acts freely on all tools. Users should approve entity mutations before they hit the graph.
+
+**Context:** question-service and WebSocket transport are done. Need UI component + keybinding integration.
+
+**Effort:** L
+**Priority:** P2
+**Depends on:** None (all prerequisites done)
+
+### Stream WebSearch queries into canvas status bar
+
+**What:** Show live search queries (e.g., "searching: US China tariff history 2025") instead of just "Using WebSearch".
+
+**Why:** Gives users visibility into what the AI is actually searching for during analysis.
+
+**Context:** Independent enhancement. The content stream typing work (reasoning vs output) provides a pattern for surfacing tool activity.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### Force-directed graph layout
 
-- **What:** Force-directed or hierarchical graph layout for entity positioning.
-- **Depends on:** Entity graph v1 (done).
+**What:** Force-directed or hierarchical graph layout for entity positioning.
+
+**Why:** Entities currently require manual positioning. Auto-layout would make large graphs immediately usable.
+
+**Context:** Entity graph rendering and spatial index are done. Needs a layout algorithm (e.g., d3-force or dagre).
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
 
 ### Semantic zoom
 
-- **What:** Zoom-level-aware rendering with progressive detail disclosure.
-- **Depends on:** Entity graph + entity node rendering (done).
+**What:** Zoom-level-aware rendering with progressive detail disclosure.
 
-### Multi-tab state sync
+**Why:** At high zoom levels, entity nodes show too much detail; at low zoom, too little. Progressive disclosure improves readability.
 
-- **What:** Multiple Electron windows subscribe to WebSocket and see consistent state.
-- **Depends on:** WebSocket transport (done).
+**Context:** Entity graph + entity node rendering are done. Canvas pan/zoom is done.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
 
 ### Plan mode
 
-- **What:** AI proposes structured plans. Rendered as markdown card. "Implement Plan" button creates new thread.
-- **Why:** The current `PlanPreviewCard` is a pre-launch analysis settings card, not a provider-generated proposed-plan flow.
-- **Effort:** L
+**What:** AI proposes structured plans. Rendered as markdown card. "Implement Plan" button creates new thread.
+
+**Why:** The current `PlanPreviewCard` is a pre-launch analysis settings card, not a provider-generated proposed-plan flow.
+
+**Context:** Would build on thread-service and the existing plan preview UI component.
+
+**Effort:** L
+**Priority:** P3
+**Depends on:** None
+
+### Keybindings system
+
+**What:** Declarative keybinding registry with context-aware when-clause evaluation.
+
+**Why:** Power users need keyboard shortcuts. Currently no keybinding infrastructure.
+
+**Context:** Standalone feature, no hard dependencies.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
+## Infrastructure
+
+### Pin Nitro to stable release
+
+**What:** Migrate from `nitro-nightly@3.0.1-20260217` to stable Nitro.
+
+**Why:** Nightly builds can break without notice. Contradicts stabilization goals.
+
+**Context:** The 3.0.0 stable vite plugin API (NitroPluginConfig) differs from the nightly API this app uses (`features`, `node`, `serverDir` config surface). Needs a compatibility spike.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### Schema-validated settings
+
+**What:** Zod validation on all settings. Per-thread model selection persistence.
+
+**Why:** Settings are currently unvalidated. Bad values cause silent failures.
+
+**Context:** Straightforward — add Zod schemas to existing settings surface.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### Electron crash recovery hardening
+
+**What:** Exponential backoff array for Nitro restart [1s, 2s, 4s, 8s, 16s, 30s]. Circuit breaker after 6 failures.
+
+**Why:** Current restart logic is linear. Repeated failures should back off, not hammer.
+
+**Context:** Entry point is `scheduleNitroRestart` in `electron/main.ts`.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Event replay capability
+
+**What:** Add `replayEvents` method to domain event store. State reconstruction from event log.
+
+**Why:** Enables debugging, auditing, and potential time-travel features.
+
+**Context:** domain-event-store is done. This adds a read path on top of existing event data.
+
+**Effort:** S
+**Priority:** P4
+**Depends on:** None
+
+### Multi-tab state sync
+
+**What:** Multiple Electron windows subscribe to WebSocket and see consistent state.
+
+**Why:** Power users may want multiple views of the same workspace.
+
+**Context:** WebSocket transport is done. Needs broadcast channel or shared subscription logic.
+
+**Effort:** M
+**Priority:** P4
+**Depends on:** None
 
 ### Per-thread model selection (persisted)
 
-- **What:** Model selector persisted to SQLite per thread, not just localStorage.
-- **Effort:** S
+**What:** Model selector persisted to SQLite per thread, not just localStorage.
+
+**Why:** Model choice should survive across sessions and be workspace-portable.
+
+**Context:** Thread tables already exist. Add a `model` column and wire it through.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ## Completed
+
+### Chat context cleanup — remove hybrid prompt stuffing (2026-03-27)
+
+Removed entity-summary injection and `trimChatHistory` from the chat system prompt. Adapters now own context-window management. Commit: `2c14621`.
+
+### Atomic entity persistence + batched broadcasts (2026-03-27)
+
+Wrapped entity writes in single SQLite transactions with batched WebSocket broadcasts. Commit: `7e6fbf4`.
+
+### Persistence consolidation — single source of truth (2026-03-27)
+
+`workspace_json` no longer stores entity data. `graph_entities`/`graph_relationships` tables are the canonical entity state. Commit: `043e9b1`.
+
+### Workspace runtime outbound queue parity (2026-03-27)
+
+Added outbound request queueing/replay to `workspace-runtime-client`. Requests survive connect/reconnect transitions. Commit: `943c680`.
+
+### Chat transport — T3 WebSocket pattern (2026-03-27)
+
+Chat streaming migrated from SSE to workspace runtime WebSocket with `chat.turn.start`, correlation-scoped live push events, and server-owned token-aware history budgeting from SQLite.
+
+### Canvas navigation and entity inspection (2026-03-27)
+
+Pan (mouse drag), zoom (mouse wheel to point), click-to-inspect (entity overlay card with type-specific details, in-place editing, cross-entity navigation). Spatial index hit testing, viewport sync, hover detection, edge hit testing, click-away dismissal.
 
 ### AI Runtime Redesign (2026-03-19)
 
@@ -155,11 +249,3 @@ Provider adapters, command bus, WebSocket transport, tagged errors, SQLite persi
 ### Validated Audit Follow-ups (2026-03-23)
 
 Codex adapter isolation (partial), Nitro readiness (partial), protocol-boundary type hardening (partial).
-
-### Chat transport — T3 WebSocket pattern (2026-03-27)
-
-Chat streaming migrated from SSE to workspace runtime WebSocket with `chat.turn.start`, correlation-scoped live push events, and server-owned token-aware history budgeting from SQLite.
-
-### Canvas navigation and entity inspection (2026-03-27)
-
-Pan (mouse drag), zoom (mouse wheel to point), click-to-inspect (entity overlay card with type-specific details, in-place editing, cross-entity navigation). Spatial index hit testing, viewport sync, hover detection, edge hit testing, click-away dismissal.

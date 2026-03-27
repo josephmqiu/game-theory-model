@@ -2,11 +2,8 @@ import { useState, useCallback } from "react";
 import { nanoid } from "nanoid";
 import { useAIStore } from "@/stores/ai-store";
 import { useThreadStore } from "@/stores/thread-store";
-import type { ChatMessage as ChatMessageType } from "@/services/ai/ai-types";
-import type { AIStreamChunk } from "@/services/ai/ai-types";
 import { CHAT_STREAM_THINKING_CONFIG } from "@/services/ai/ai-runtime-config";
 import type { AIProviderType } from "@/types/agent-settings";
-import type { ChatEvent } from "@/services/ai/chat-events";
 import type { WorkspaceRuntimeChatEvent } from "../../../shared/types/workspace-runtime";
 import { workspaceRuntimeClient } from "@/services/ai/workspace-runtime-client";
 
@@ -21,157 +18,45 @@ type NormalizedChunk =
   | { kind: "tool_start"; toolName: string }
   | { kind: "tool_result"; toolName: string; output: unknown }
   | { kind: "tool_error"; toolName: string; error: string }
-  | { kind: "done" }
+  | { kind: "complete"; messageId?: string; correlationId: string }
   | { kind: "error"; content: string };
 
-export type PendingToolMsgIds = Map<string, string[]>;
-
 /**
- * Normalizes either a legacy AIStreamChunk or a new ChatEvent into a
- * NormalizedChunk.  Unknown shapes are silently skipped (returns null).
+ * Normalizes a WorkspaceRuntimeChatEvent into a NormalizedChunk.
+ * Unknown shapes are silently skipped (returns null).
  */
 function normalizeChunk(
-  raw: AIStreamChunk | ChatEvent | WorkspaceRuntimeChatEvent,
+  raw: WorkspaceRuntimeChatEvent,
 ): NormalizedChunk | null {
-  const t = (raw as { type: string }).type;
+  const t = raw.type;
 
-  // --- Legacy AIStreamChunk types ---
-  if (t === "text" && "content" in raw) {
-    return { kind: "text", content: (raw as AIStreamChunk).content };
-  }
-  if (t === "thinking" && "content" in raw) {
-    return { kind: "thinking", content: (raw as AIStreamChunk).content };
-  }
-  if (t === "done") {
-    return { kind: "done" };
-  }
-  if (t === "ping") {
-    return null; // handled by streamChat internally
-  }
-
-  // --- New ChatEvent types ---
-  if (t === "text_delta" && "content" in raw) {
-    const ev = raw as ChatEvent & { type: "text_delta" };
+  if (t === "chat.message.delta") {
     return {
-      kind: ev.content_kind === "reasoning" ? "thinking" : "text",
-      content: ev.content,
-    };
-  }
-  if (t === "tool_call_start" && "toolName" in raw) {
-    const ev = raw as ChatEvent & { type: "tool_call_start" };
-    return { kind: "tool_start", toolName: ev.toolName };
-  }
-  if (t === "tool_call_result" && "toolName" in raw) {
-    const ev = raw as ChatEvent & { type: "tool_call_result" };
-    return { kind: "tool_result", toolName: ev.toolName, output: ev.output };
-  }
-  if (t === "tool_call_error" && "toolName" in raw) {
-    const ev = raw as ChatEvent & { type: "tool_call_error" };
-    return { kind: "tool_error", toolName: ev.toolName, error: ev.error };
-  }
-  if (t === "turn_complete") {
-    return { kind: "done" };
-  }
-  if (t === "chat.message.delta" && "content" in raw) {
-    const ev = raw as WorkspaceRuntimeChatEvent & {
-      type: "chat.message.delta";
-    };
-    return {
-      kind: ev.content_kind === "reasoning" ? "thinking" : "text",
-      content: ev.content,
+      kind: raw.content_kind === "reasoning" ? "thinking" : "text",
+      content: raw.content,
     };
   }
   if (t === "chat.message.complete") {
-    return { kind: "done" };
-  }
-  if (t === "chat.tool.start" && "toolName" in raw) {
     return {
-      kind: "tool_start",
-      toolName: (raw as WorkspaceRuntimeChatEvent & { type: "chat.tool.start" })
-        .toolName,
+      kind: "complete",
+      messageId: raw.messageId,
+      correlationId: raw.correlationId,
     };
-  }
-  if (t === "chat.tool.result" && "toolName" in raw) {
-    const ev = raw as WorkspaceRuntimeChatEvent & { type: "chat.tool.result" };
-    return { kind: "tool_result", toolName: ev.toolName, output: ev.output };
-  }
-  if (t === "chat.tool.error" && "toolName" in raw) {
-    const ev = raw as WorkspaceRuntimeChatEvent & { type: "chat.tool.error" };
-    return { kind: "tool_error", toolName: ev.toolName, error: ev.error };
   }
   if (t === "chat.message.error") {
-    const ev = raw as WorkspaceRuntimeChatEvent & {
-      type: "chat.message.error";
-    };
-    return { kind: "error", content: ev.error.message };
+    return { kind: "error", content: raw.error.message };
   }
-  if (t === "user_input_requested") {
-    // Questions arrive via WebSocket thread-detail push, not the SSE stream.
-    // If this event does appear in the stream, it's a no-op here.
-    return null;
+  if (t === "chat.tool.start") {
+    return { kind: "tool_start", toolName: raw.toolName };
   }
-
-  // error — legacy uses `content`, ChatEvent uses `message`
-  if (t === "error") {
-    const content =
-      "error" in raw
-        ? (raw as ChatEvent & { type: "error" }).error.message
-        : "content" in raw
-          ? (raw as AIStreamChunk).content
-          : "Unknown error";
-    return { kind: "error", content };
+  if (t === "chat.tool.result") {
+    return { kind: "tool_result", toolName: raw.toolName, output: raw.output };
+  }
+  if (t === "chat.tool.error") {
+    return { kind: "tool_error", toolName: raw.toolName, error: raw.error };
   }
 
   return null;
-}
-
-export function enqueuePendingToolMessage(
-  pendingToolMsgIds: PendingToolMsgIds,
-  toolName: string,
-  messageId: string,
-): void {
-  const queue = pendingToolMsgIds.get(toolName) ?? [];
-  queue.push(messageId);
-  pendingToolMsgIds.set(toolName, queue);
-}
-
-export function dequeuePendingToolMessage(
-  pendingToolMsgIds: PendingToolMsgIds,
-  toolName: string,
-): string | undefined {
-  const queue = pendingToolMsgIds.get(toolName);
-  if (!queue || queue.length === 0) return undefined;
-
-  const messageId = queue.shift();
-  if (queue.length === 0) {
-    pendingToolMsgIds.delete(toolName);
-  } else {
-    pendingToolMsgIds.set(toolName, queue);
-  }
-  return messageId;
-}
-
-export function updateToolStatusMessage(
-  messages: ChatMessageType[],
-  messageId: string,
-  toolName: string,
-  toolStatus: NonNullable<ChatMessageType["toolStatus"]>,
-  error?: string,
-): ChatMessageType[] {
-  return messages.map((message) =>
-    message.id === messageId
-      ? {
-          ...message,
-          content:
-            toolStatus === "error"
-              ? `Tool ${toolName} failed: ${error ?? "Unknown error"}`
-              : `Used ${toolName}`,
-          isStreaming: false,
-          toolName,
-          toolStatus,
-        }
-      : message,
-  );
 }
 
 export function useChatHandlers() {
@@ -196,24 +81,21 @@ export function useChatHandlers() {
       }
 
       setInput("");
-      threadState.clearOverlayMessages();
 
-      const userMsg: ChatMessageType = {
-        id: nanoid(),
-        role: "user",
-        content: messageText,
-        timestamp: Date.now(),
-      };
-      threadState.addOverlayMessage(userMsg);
+      const correlationId = `chat-${nanoid()}`;
+      const userMsgId = nanoid();
+      const assistantMsgId = nanoid();
 
-      const assistantMsg: ChatMessageType = {
-        id: nanoid(),
-        role: "assistant",
-        content: "",
-        timestamp: Date.now(),
-        isStreaming: true,
-      };
-      threadState.addOverlayMessage(assistantMsg);
+      threadState.startPendingTurn(
+        correlationId,
+        { id: userMsgId, content: messageText, timestamp: Date.now() },
+        {
+          id: assistantMsgId,
+          content: "",
+          timestamp: Date.now(),
+          isStreaming: true,
+        },
+      );
       setStreaming(true);
 
       const currentProvider = useAIStore
@@ -228,7 +110,7 @@ export function useChatHandlers() {
 
       // Track in-flight tool calls so repeated calls to the same tool
       // each get their own lifecycle in FIFO order.
-      const pendingToolMsgIds: PendingToolMsgIds = new Map();
+      const pendingToolQueues = new Map<string, string[]>();
 
       try {
         let chatThinking = "";
@@ -237,7 +119,7 @@ export function useChatHandlers() {
           {
             workspaceId: threadState.workspaceId ?? "workspace-local-default",
             threadId: threadState.activeThreadId,
-            correlationId: `chat-${nanoid()}`,
+            correlationId,
             message: {
               content: messageText,
             },
@@ -256,13 +138,19 @@ export function useChatHandlers() {
           const chunk = normalizeChunk(rawChunk);
           if (!chunk) continue;
 
+          // Guard: if the pending turn was cleared (e.g. thread switch), stop updating.
+          const currentTurn = useThreadStore.getState().pendingTurn;
+          if (!currentTurn || currentTurn.correlationId !== correlationId) {
+            break;
+          }
+
           switch (chunk.kind) {
             case "thinking": {
               chatThinking += chunk.content;
               const thinkingStep = `<step title="Thinking">${chatThinking}</step>`;
               useThreadStore
                 .getState()
-                .updateLastOverlayAssistantMessage(
+                .updatePendingTurnAssistant(
                   thinkingStep + (accumulated ? `\n${accumulated}` : ""),
                 );
               break;
@@ -274,63 +162,43 @@ export function useChatHandlers() {
                 : "";
               useThreadStore
                 .getState()
-                .updateLastOverlayAssistantMessage(
-                  thinkingPrefix + accumulated,
-                );
+                .updatePendingTurnAssistant(thinkingPrefix + accumulated);
               break;
             }
             case "tool_start": {
               const toolMsgId = `tool-${chunk.toolName}-${nanoid(6)}`;
-              enqueuePendingToolMessage(
-                pendingToolMsgIds,
-                chunk.toolName,
-                toolMsgId,
-              );
-              useThreadStore.getState().addOverlayMessage({
+              const queue = pendingToolQueues.get(chunk.toolName) ?? [];
+              queue.push(toolMsgId);
+              pendingToolQueues.set(chunk.toolName, queue);
+              useThreadStore.getState().addPendingToolCall({
                 id: toolMsgId,
-                role: "assistant",
-                content: `Using ${chunk.toolName}`,
-                timestamp: Date.now(),
-                isStreaming: true,
                 toolName: chunk.toolName,
-                toolStatus: "running",
+                status: "running",
+                content: `Using ${chunk.toolName}`,
               });
               break;
             }
             case "tool_result": {
-              const msgId = dequeuePendingToolMessage(
-                pendingToolMsgIds,
-                chunk.toolName,
-              );
+              const queue = pendingToolQueues.get(chunk.toolName);
+              const msgId = queue?.shift();
+              if (queue?.length === 0) pendingToolQueues.delete(chunk.toolName);
               if (msgId) {
-                const store = useThreadStore.getState();
-                store.replaceOverlayMessages(
-                  updateToolStatusMessage(
-                    store.overlayMessages,
-                    msgId,
-                    chunk.toolName,
-                    "done",
-                  ),
-                );
+                useThreadStore.getState().updatePendingToolCall(msgId, {
+                  status: "done",
+                  content: `Used ${chunk.toolName}`,
+                });
               }
               break;
             }
             case "tool_error": {
-              const msgId = dequeuePendingToolMessage(
-                pendingToolMsgIds,
-                chunk.toolName,
-              );
+              const queue = pendingToolQueues.get(chunk.toolName);
+              const msgId = queue?.shift();
+              if (queue?.length === 0) pendingToolQueues.delete(chunk.toolName);
               if (msgId) {
-                const store = useThreadStore.getState();
-                store.replaceOverlayMessages(
-                  updateToolStatusMessage(
-                    store.overlayMessages,
-                    msgId,
-                    chunk.toolName,
-                    "error",
-                    chunk.error,
-                  ),
-                );
+                useThreadStore.getState().updatePendingToolCall(msgId, {
+                  status: "error",
+                  content: `Tool ${chunk.toolName} failed: ${chunk.error}`,
+                });
               }
               break;
             }
@@ -338,9 +206,10 @@ export function useChatHandlers() {
               terminalErrorMessage = chunk.content;
               break;
             }
-            case "done":
-              // Stream finished — nothing to do here, cleanup is in finally.
+            case "complete": {
+              useThreadStore.getState().completePendingTurn(chunk.messageId);
               break;
+            }
           }
         }
       } catch (error) {
@@ -350,47 +219,27 @@ export function useChatHandlers() {
           console.error("[chat] stream-error:", errMsg);
           accumulated = `**Error:** ${errMsg}`;
           terminalErrorMessage = errMsg;
-          useThreadStore
-            .getState()
-            .updateLastOverlayAssistantMessage(accumulated);
+          useThreadStore.getState().updatePendingTurnAssistant(accumulated);
         }
       } finally {
         useAIStore.getState().setAbortController(null);
         setStreaming(false);
 
-        // Mark any tool messages still pending as terminal so stale
+        // Mark any tool calls still running as terminal so stale
         // spinners never survive a completed or aborted turn.
-        for (const msgIds of pendingToolMsgIds.values()) {
+        for (const msgIds of pendingToolQueues.values()) {
           for (const msgId of msgIds) {
-            const store = useThreadStore.getState();
-            store.replaceOverlayMessages(
-              store.overlayMessages.map((message) =>
-                message.id === msgId
-                  ? {
-                      ...message,
-                      content: message.toolName
-                        ? `Used ${message.toolName}`
-                        : message.content,
-                      isStreaming: false,
-                      toolStatus:
-                        message.toolStatus === "running"
-                          ? "done"
-                          : message.toolStatus,
-                    }
-                  : message,
-              ),
-            );
+            useThreadStore.getState().updatePendingToolCall(msgId, {
+              status: "done",
+            });
           }
         }
       }
 
       if (terminalErrorMessage && !abortController.signal.aborted) {
-        useThreadStore.getState().addOverlayMessage({
-          id: `overlay-error-${nanoid(6)}`,
-          role: "assistant",
-          content: `**Error:** ${terminalErrorMessage}`,
-          timestamp: Date.now(),
-        });
+        useThreadStore
+          .getState()
+          .updatePendingTurnAssistant(`**Error:** ${terminalErrorMessage}`);
       }
     },
     [

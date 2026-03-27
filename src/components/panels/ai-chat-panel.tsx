@@ -33,6 +33,7 @@ import {
 import * as analysisClient from "@/services/ai/analysis-client";
 import {
   projectThreadMessagesToChatMessages,
+  projectPendingTurnToMessages,
   buildTranscript,
   type TranscriptEntry,
 } from "@/services/ai/thread-projection";
@@ -345,7 +346,7 @@ export default function AIChatPanel({
   const activeThreadId = useThreadStore((s) => s.activeThreadId);
   const activeThreadDetail = useThreadStore((s) => s.activeThreadDetail);
   const latestRun = useThreadStore((s) => s.latestRun);
-  const overlayMessages = useThreadStore((s) => s.overlayMessages);
+  const pendingTurn = useThreadStore((s) => s.pendingTurn);
   const isLoadingThreads = useThreadStore((s) => s.isLoading);
   const isCreatingThread = useThreadStore((s) => s.isCreating);
   const threadError = useThreadStore((s) => s.error);
@@ -361,6 +362,7 @@ export default function AIChatPanel({
   const analysisId = useEntityGraphStore((s) => s.analysis.id);
 
   const [analysisRunning, setAnalysisRunning] = useState(false);
+  const [notices, setNotices] = useState<ChatMessageType[]>([]);
 
   const noAvailableModels = !isLoadingModels && availableModels.length === 0;
   const canUseModel = !isLoadingModels && availableModels.length > 0;
@@ -380,10 +382,15 @@ export default function AIChatPanel({
       projectThreadMessagesToChatMessages(activeThreadDetail?.messages ?? []),
     [activeThreadDetail?.messages],
   );
-  const messages = useMemo(
-    () => [...projectedMessages, ...overlayMessages],
-    [overlayMessages, projectedMessages],
-  );
+  const messages = useMemo(() => {
+    const base =
+      notices.length > 0
+        ? [...projectedMessages, ...notices]
+        : projectedMessages;
+    return pendingTurn
+      ? [...base, ...projectPendingTurnToMessages(pendingTurn)]
+      : base;
+  }, [pendingTurn, projectedMessages, notices]);
   // Build unified transcript when we have activities
   const transcript: TranscriptEntry[] = useMemo(() => {
     const activities = activeThreadDetail?.activities ?? [];
@@ -409,6 +416,32 @@ export default function AIChatPanel({
     }, 500);
     return () => clearInterval(interval);
   }, []);
+
+  // Reconciliation timeout: if the pending turn is stuck in "reconciling"
+  // state (server confirmed but thread-detail push hasn't arrived), force
+  // a refresh after 5s and a hard clear after 10s.
+  useEffect(() => {
+    if (pendingTurn?.status !== "reconciling") return;
+
+    const refreshTimer = setTimeout(() => {
+      const store = useThreadStore.getState();
+      if (store.pendingTurn?.status === "reconciling") {
+        void store.refreshActiveThreadDetail();
+      }
+    }, 5_000);
+
+    const clearTimer = setTimeout(() => {
+      const store = useThreadStore.getState();
+      if (store.pendingTurn?.status === "reconciling") {
+        store.clearPendingTurn();
+      }
+    }, 10_000);
+
+    return () => {
+      clearTimeout(refreshTimer);
+      clearTimeout(clearTimer);
+    };
+  }, [pendingTurn?.status]);
 
   // Enhanced stop handler: aborts analysis orchestrator if running,
   // otherwise falls through to regular chat stream abort
@@ -439,15 +472,14 @@ export default function AIChatPanel({
           );
           if (!terminalNoticeKeysRef.current.has(noticeKey)) {
             terminalNoticeKeysRef.current.add(noticeKey);
-            useThreadStore
-              .getState()
-              .addOverlayMessage(
-                buildAnalysisTerminalMessage(
-                  previousStatus.runId,
-                  "completed",
-                  entityCount,
-                ),
-              );
+            setNotices((prev) => [
+              ...prev,
+              buildAnalysisTerminalMessage(
+                previousStatus.runId!,
+                "completed",
+                entityCount,
+              ),
+            ]);
           }
         } else if (
           (nextStatus.status === "failed" ||
@@ -460,15 +492,14 @@ export default function AIChatPanel({
           );
           if (!terminalNoticeKeysRef.current.has(noticeKey)) {
             terminalNoticeKeysRef.current.add(noticeKey);
-            useThreadStore
-              .getState()
-              .addOverlayMessage(
-                buildAnalysisTerminalMessage(
-                  nextStatus.runId,
-                  nextStatus.status,
-                  entityCount,
-                ),
-              );
+            setNotices((prev) => [
+              ...prev,
+              buildAnalysisTerminalMessage(
+                nextStatus.runId!,
+                nextStatus.status as AnalysisTerminalStatus,
+                entityCount,
+              ),
+            ]);
           }
         }
       }
@@ -480,6 +511,12 @@ export default function AIChatPanel({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Clear ephemeral notices when switching threads.
+  useEffect(() => {
+    setNotices([]);
+    terminalNoticeKeysRef.current.clear();
+  }, [activeThreadId]);
 
   // Ensure model preference is restored from localStorage on page refresh.
   useEffect(() => {
@@ -561,6 +598,7 @@ export default function AIChatPanel({
     const previousAnalysisId = previousAnalysisIdRef.current;
     previousAnalysisIdRef.current = analysisId;
     terminalNoticeKeysRef.current.clear();
+    setNotices([]);
     if (previousAnalysisId === null || previousAnalysisId === analysisId) {
       return;
     }
@@ -915,8 +953,11 @@ export default function AIChatPanel({
               }
               return null;
             })}
-            {/* Overlay messages still render after transcript (streaming chat) */}
-            {overlayMessages.map((msg) =>
+            {/* Pending turn + notices render after transcript (streaming chat) */}
+            {[
+              ...notices,
+              ...(pendingTurn ? projectPendingTurnToMessages(pendingTurn) : []),
+            ].map((msg) =>
               isToolMessage(msg.id) ? (
                 <ToolStatusMessage
                   key={msg.id}
@@ -1010,12 +1051,15 @@ export default function AIChatPanel({
             type="button"
             onClick={() => {
               if (analysisRunning) {
-                useThreadStore.getState().addOverlayMessage({
-                  id: `provider-blocked-${Date.now()}`,
-                  role: "assistant",
-                  content: i18n.t("analysis.cannotChangeModel"),
-                  timestamp: Date.now(),
-                });
+                setNotices((prev) => [
+                  ...prev,
+                  {
+                    id: `provider-blocked-${Date.now()}`,
+                    role: "assistant",
+                    content: i18n.t("analysis.cannotChangeModel"),
+                    timestamp: Date.now(),
+                  },
+                ]);
                 return;
               }
               setModelDropdownOpen((v) => !v);

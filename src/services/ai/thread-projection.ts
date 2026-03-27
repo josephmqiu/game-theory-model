@@ -4,6 +4,7 @@ import type {
 } from "../../../shared/types/workspace-state";
 import type { MethodologyPhase } from "../../../shared/types/methodology";
 import type { ChatAttachment, ChatMessage } from "@/services/ai/ai-types";
+import type { PendingTurn } from "@/stores/thread-store";
 
 function estimateAttachmentSize(data: string): number {
   const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
@@ -37,6 +38,43 @@ export function projectThreadMessagesToChatMessages(
     timestamp: message.createdAt,
     attachments: projectAttachments(message.id, message.attachments),
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Pending turn → ChatMessage[] projection
+// ---------------------------------------------------------------------------
+
+export function projectPendingTurnToMessages(turn: PendingTurn): ChatMessage[] {
+  const result: ChatMessage[] = [
+    {
+      id: turn.userMessage.id,
+      role: "user",
+      content: turn.userMessage.content,
+      timestamp: turn.userMessage.timestamp,
+    },
+  ];
+
+  for (const tc of turn.toolCalls) {
+    result.push({
+      id: tc.id,
+      role: "assistant",
+      content: tc.content,
+      timestamp: turn.assistantMessage.timestamp,
+      isStreaming: tc.status === "running",
+      toolName: tc.toolName,
+      toolStatus: tc.status,
+    });
+  }
+
+  result.push({
+    id: turn.assistantMessage.id,
+    role: "assistant",
+    content: turn.assistantMessage.content,
+    timestamp: turn.assistantMessage.timestamp,
+    isStreaming: turn.assistantMessage.isStreaming,
+  });
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------

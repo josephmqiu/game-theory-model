@@ -192,7 +192,7 @@ describe("thread-store", () => {
     expect(useThreadStore.getState().threads[0]?.title).toBe("New Thread");
   });
 
-  it("clears overlay messages when thread-detail push matches", async () => {
+  it("clears pending turn when thread-detail push contains matching server message ID", async () => {
     getItemMock.mockReturnValue("{}");
     bindContextMock.mockResolvedValue(
       createBootstrap({
@@ -214,19 +214,23 @@ describe("thread-store", () => {
 
     const { useThreadStore } = await import("@/stores/thread-store");
     await useThreadStore.getState().hydrateWorkspace("workspace-1");
-    useThreadStore.getState().addOverlayMessage({
-      id: "overlay-user",
-      role: "user",
-      content: "Analyze this",
-      timestamp: 100,
-    });
-    useThreadStore.getState().addOverlayMessage({
-      id: "overlay-assistant",
-      role: "assistant",
-      content: "Here is the analysis",
-      timestamp: 101,
-      isStreaming: false,
-    });
+
+    // Simulate a pending turn that completed and is waiting for reconciliation
+    useThreadStore
+      .getState()
+      .startPendingTurn(
+        "corr-1",
+        { id: "local-user", content: "Analyze this", timestamp: 100 },
+        {
+          id: "local-assistant",
+          content: "",
+          timestamp: 101,
+          isStreaming: true,
+        },
+      );
+    useThreadStore.getState().completePendingTurn("msg-2");
+
+    expect(useThreadStore.getState().pendingTurn?.status).toBe("reconciling");
 
     listeners[0]?.({
       type: "push",
@@ -273,7 +277,108 @@ describe("thread-store", () => {
       },
     });
 
-    expect(useThreadStore.getState().overlayMessages).toEqual([]);
+    expect(useThreadStore.getState().pendingTurn).toBeNull();
+  });
+
+  it("does NOT clear pending turn when server message ID does not match", async () => {
+    getItemMock.mockReturnValue("{}");
+    bindContextMock.mockResolvedValue(
+      createBootstrap({
+        activeThreadId: "thread-1",
+        activeThreadDetail: {
+          thread: {
+            id: "thread-1",
+            workspaceId: "workspace-1",
+            title: "First",
+            isPrimary: true,
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          messages: [],
+          activities: [],
+        },
+      }),
+    );
+
+    const { useThreadStore } = await import("@/stores/thread-store");
+    await useThreadStore.getState().hydrateWorkspace("workspace-1");
+
+    useThreadStore
+      .getState()
+      .startPendingTurn(
+        "corr-1",
+        { id: "local-user", content: "Analyze this", timestamp: 100 },
+        {
+          id: "local-assistant",
+          content: "",
+          timestamp: 101,
+          isStreaming: true,
+        },
+      );
+    useThreadStore.getState().completePendingTurn("msg-99");
+
+    listeners[0]?.({
+      type: "push",
+      channel: "thread-detail",
+      revision: 2,
+      scope: {
+        workspaceId: "workspace-1",
+        threadId: "thread-1",
+      },
+      payload: {
+        workspaceId: "workspace-1",
+        threadId: "thread-1",
+        detail: {
+          thread: {
+            id: "thread-1",
+            workspaceId: "workspace-1",
+            title: "First",
+            isPrimary: true,
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          messages: [
+            {
+              id: "msg-1",
+              workspaceId: "workspace-1",
+              threadId: "thread-1",
+              role: "user",
+              content: "Analyze this",
+              createdAt: 100,
+              updatedAt: 100,
+            },
+          ],
+          activities: [],
+        },
+      },
+    });
+
+    expect(useThreadStore.getState().pendingTurn).not.toBeNull();
+    expect(useThreadStore.getState().pendingTurn?.status).toBe("reconciling");
+  });
+
+  it("selectThread clears pending turn", async () => {
+    getItemMock.mockReturnValue("{}");
+    bindContextMock.mockResolvedValue(createBootstrap());
+    const { useThreadStore } = await import("@/stores/thread-store");
+    await useThreadStore.getState().hydrateWorkspace("workspace-1");
+
+    useThreadStore
+      .getState()
+      .startPendingTurn(
+        "corr-1",
+        { id: "local-user", content: "Test", timestamp: 100 },
+        {
+          id: "local-assistant",
+          content: "",
+          timestamp: 101,
+          isStreaming: true,
+        },
+      );
+    expect(useThreadStore.getState().pendingTurn).not.toBeNull();
+
+    await useThreadStore.getState().selectThread("thread-1");
+    expect(useThreadStore.getState().pendingTurn).toBeNull();
   });
 
   it("populates latest run from run-detail push", async () => {

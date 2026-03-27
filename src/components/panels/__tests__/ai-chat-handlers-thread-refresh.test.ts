@@ -1,88 +1,150 @@
-import { describe, expect, it } from "vitest";
-import {
-  enqueuePendingToolMessage,
-  dequeuePendingToolMessage,
-  updateToolStatusMessage,
-  type PendingToolMsgIds,
-} from "../ai-chat-handlers";
-import type { ChatMessage } from "@/services/ai/ai-types";
+// @vitest-environment jsdom
 
-describe("chat handler helpers", () => {
-  describe("pending tool message queue", () => {
-    it("enqueues and dequeues in FIFO order", () => {
-      const pending: PendingToolMsgIds = new Map();
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-      enqueuePendingToolMessage(pending, "search", "msg-1");
-      enqueuePendingToolMessage(pending, "search", "msg-2");
+const bindContextMock = vi.fn();
+const disconnectMock = vi.fn();
+const listeners: Array<(event: unknown) => void> = [];
 
-      expect(dequeuePendingToolMessage(pending, "search")).toBe("msg-1");
-      expect(dequeuePendingToolMessage(pending, "search")).toBe("msg-2");
-      expect(dequeuePendingToolMessage(pending, "search")).toBeUndefined();
+vi.mock("@/services/ai/workspace-runtime-client", () => ({
+  workspaceRuntimeClient: {
+    bindContext: (...args: unknown[]) => bindContextMock(...args),
+    sendRequest: vi.fn(),
+    disconnect: (...args: unknown[]) => disconnectMock(...args),
+    subscribe: (listener: (event: unknown) => void) => {
+      listeners.push(listener);
+      return () => {
+        const index = listeners.indexOf(listener);
+        if (index >= 0) listeners.splice(index, 1);
+      };
+    },
+  },
+}));
+
+vi.mock("@/utils/app-storage", () => ({
+  appStorage: {
+    getItem: vi.fn().mockReturnValue(null),
+    setItem: vi.fn(),
+    removeItem: vi.fn(),
+  },
+}));
+
+describe("pending turn tool call lifecycle", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.resetModules();
+    bindContextMock.mockReset();
+    disconnectMock.mockReset();
+    listeners.splice(0, listeners.length);
+  });
+
+  afterEach(async () => {
+    const { useThreadStore } = await import("@/stores/thread-store");
+    useThreadStore.setState(useThreadStore.getInitialState(), true);
+  });
+
+  it("tracks tool calls within the pending turn", async () => {
+    const { useThreadStore } = await import("@/stores/thread-store");
+
+    useThreadStore
+      .getState()
+      .startPendingTurn(
+        "corr-1",
+        { id: "user-1", content: "test", timestamp: 100 },
+        { id: "assistant-1", content: "", timestamp: 101, isStreaming: true },
+      );
+
+    useThreadStore.getState().addPendingToolCall({
+      id: "tool-search-1",
+      toolName: "search",
+      status: "running",
+      content: "Using search",
     });
 
-    it("returns undefined for unknown tools", () => {
-      const pending: PendingToolMsgIds = new Map();
+    expect(useThreadStore.getState().pendingTurn?.toolCalls).toHaveLength(1);
+    expect(useThreadStore.getState().pendingTurn?.toolCalls[0]?.status).toBe(
+      "running",
+    );
 
-      expect(dequeuePendingToolMessage(pending, "unknown")).toBeUndefined();
+    useThreadStore.getState().updatePendingToolCall("tool-search-1", {
+      status: "done",
+      content: "Used search",
+    });
+
+    expect(useThreadStore.getState().pendingTurn?.toolCalls[0]?.status).toBe(
+      "done",
+    );
+    expect(useThreadStore.getState().pendingTurn?.toolCalls[0]?.content).toBe(
+      "Used search",
+    );
+  });
+
+  it("marks tool call as error", async () => {
+    const { useThreadStore } = await import("@/stores/thread-store");
+
+    useThreadStore
+      .getState()
+      .startPendingTurn(
+        "corr-1",
+        { id: "user-1", content: "test", timestamp: 100 },
+        { id: "assistant-1", content: "", timestamp: 101, isStreaming: true },
+      );
+
+    useThreadStore.getState().addPendingToolCall({
+      id: "tool-calc-1",
+      toolName: "calc",
+      status: "running",
+      content: "Using calc",
+    });
+
+    useThreadStore.getState().updatePendingToolCall("tool-calc-1", {
+      status: "error",
+      content: "Tool calc failed: timeout",
+    });
+
+    expect(useThreadStore.getState().pendingTurn?.toolCalls[0]).toMatchObject({
+      status: "error",
+      content: "Tool calc failed: timeout",
     });
   });
 
-  describe("updateToolStatusMessage", () => {
-    it("marks a tool message as done", () => {
-      const messages: ChatMessage[] = [
-        {
-          id: "tool-search-abc",
-          role: "assistant",
-          content: "Using search",
-          timestamp: 1,
-          isStreaming: true,
-          toolName: "search",
-          toolStatus: "running",
-        },
-        { id: "msg-1", role: "assistant", content: "Hello", timestamp: 2 },
-      ];
+  it("completePendingTurn transitions to reconciling", async () => {
+    const { useThreadStore } = await import("@/stores/thread-store");
 
-      const updated = updateToolStatusMessage(
-        messages,
-        "tool-search-abc",
-        "search",
-        "done",
+    useThreadStore
+      .getState()
+      .startPendingTurn(
+        "corr-1",
+        { id: "user-1", content: "test", timestamp: 100 },
+        {
+          id: "assistant-1",
+          content: "response",
+          timestamp: 101,
+          isStreaming: true,
+        },
       );
 
-      expect(updated[0]).toMatchObject({
-        id: "tool-search-abc",
-        content: "Used search",
-        isStreaming: false,
-        toolStatus: "done",
-      });
-      expect(updated[1]).toBe(messages[1]);
-    });
+    useThreadStore.getState().completePendingTurn("server-msg-1");
 
-    it("marks a tool message as error with detail", () => {
-      const messages: ChatMessage[] = [
-        {
-          id: "tool-calc-xyz",
-          role: "assistant",
-          content: "Using calc",
-          timestamp: 1,
-          isStreaming: true,
-          toolName: "calc",
-          toolStatus: "running",
-        },
-      ];
+    const turn = useThreadStore.getState().pendingTurn;
+    expect(turn?.status).toBe("reconciling");
+    expect(turn?.serverAssistantMessageId).toBe("server-msg-1");
+    expect(turn?.assistantMessage.isStreaming).toBe(false);
+  });
 
-      const updated = updateToolStatusMessage(
-        messages,
-        "tool-calc-xyz",
-        "calc",
-        "error",
-        "timeout",
+  it("clearPendingTurn removes the pending turn", async () => {
+    const { useThreadStore } = await import("@/stores/thread-store");
+
+    useThreadStore
+      .getState()
+      .startPendingTurn(
+        "corr-1",
+        { id: "user-1", content: "test", timestamp: 100 },
+        { id: "assistant-1", content: "", timestamp: 101, isStreaming: true },
       );
+    expect(useThreadStore.getState().pendingTurn).not.toBeNull();
 
-      expect(updated[0]).toMatchObject({
-        content: "Tool calc failed: timeout",
-        toolStatus: "error",
-      });
-    });
+    useThreadStore.getState().clearPendingTurn();
+    expect(useThreadStore.getState().pendingTurn).toBeNull();
   });
 });
