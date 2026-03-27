@@ -1138,6 +1138,8 @@ export async function runFull(
   const executeAsync = async () => {
     try {
       let phaseIndex = 0;
+      // Count backward loopback jumps across the whole run so repeated
+      // replay cycles converge or fail deterministically.
       let passCount = 0;
 
       while (phaseIndex < run.activePhases.length) {
@@ -1406,9 +1408,6 @@ export async function runFull(
           }
         }
 
-        // Reset convergence counter on forward progress — passCount guards
-        // against oscillation, not accumulation of independent loopback triggers.
-        passCount = 0;
         phaseIndex++;
       }
 
