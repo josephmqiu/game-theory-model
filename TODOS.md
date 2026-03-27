@@ -38,18 +38,6 @@
 **Priority:** P2
 **Depends on:** None
 
-### Codex adapter timeout too aggressive for structured output
-
-**What:** gpt-5.4-mini times out on Phase 2 (Player Identification) which requires structured JSON output with multiple entity types. The adapter phase timeout is too short for smaller Codex models processing complex schemas.
-
-**Why:** Codex analysis can only complete Phase 1 before timing out, making the Codex analysis path effectively broken for all but the fastest models.
-
-**Context:** The timeout is set in the Codex adapter or analysis orchestrator. Structured output phases (player-identification, baseline-model, formal-modeling) are the heaviest. Consider per-phase or per-model timeout scaling.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ## Analysis Pipeline
 
 ### Multi-turn analysis phases
@@ -249,6 +237,10 @@
 **Depends on:** None
 
 ## Completed
+
+### Codex adapter wall-clock timeout replaced with idle timeout (2026-03-27)
+
+Replaced the hardcoded 5-minute wall-clock timeout with an idle timeout (3 min default) that only fires when the provider goes silent. Active phases now run to completion. Orchestrator phase timeout bumped to 20 min as a generous safety net. Commit: `98d819f`.
 
 ### Chat context cleanup — remove hybrid prompt stuffing (2026-03-27)
 
