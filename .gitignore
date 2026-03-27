@@ -20,11 +20,18 @@ scripts/figma-*
 server/evals/results/
 
 # Internal development docs
-CLAUDE.md
-AGENTS.md
-DESIGN.md
-TODOS.md
-docs/
+docs/*
+!AGENTS.md
+!CLAUDE.md
+!DESIGN.md
+!TODOS.md
+!docs/architecture/
+!docs/architecture/**
+!docs/post-t3-cleanup/
+!docs/post-t3-cleanup/**
+!docs/t3-migration-phases/
+!docs/t3-migration-phases/**
+!docs/game-theory-analytical-methodology.md
 
 # Local AI config
 .claude/
