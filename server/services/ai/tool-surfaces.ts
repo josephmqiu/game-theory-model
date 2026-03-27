@@ -23,8 +23,24 @@ export const ANALYSIS_TOOL_NAMES = [
   "ask_user",
 ] as const;
 
+export const ANALYSIS_WRITE_TOOL_NAMES = [
+  "create_entity",
+  "update_entity",
+  "delete_entity",
+  "create_relationship",
+  "delete_relationship",
+  "complete_phase",
+] as const;
+
+export const ANALYSIS_TOOL_BASED_NAMES = [
+  ...ANALYSIS_TOOL_NAMES,
+  ...ANALYSIS_WRITE_TOOL_NAMES,
+] as const;
+
 export type ChatToolName = (typeof CHAT_TOOL_NAMES)[number];
 export type AnalysisToolName = (typeof ANALYSIS_TOOL_NAMES)[number];
+export type AnalysisWriteToolName = (typeof ANALYSIS_WRITE_TOOL_NAMES)[number];
+export type AnalysisToolBasedName = (typeof ANALYSIS_TOOL_BASED_NAMES)[number];
 
 export interface AnalysisToolPolicy {
   allowedTools: AnalysisToolName[];

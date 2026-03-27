@@ -35,6 +35,7 @@ describe("analysis-runtime config", () => {
         phaseTimeoutMs: 20 * 60 * 1000,
         runTimeoutMs: 30 * 60 * 1000,
         maxResultSnapshots: 10,
+        toolBasedPhases: false,
       },
       analyzeSse: {
         keepaliveIntervalMs: 15_000,
@@ -112,6 +113,7 @@ describe("analysis-runtime config", () => {
         phaseTimeoutMs: 1234,
         runTimeoutMs: 5678,
         maxResultSnapshots: 9,
+        toolBasedPhases: false,
       },
       analyzeSse: {
         keepaliveIntervalMs: 111,
@@ -203,6 +205,7 @@ describe("analysis-runtime config", () => {
         phaseTimeoutMs: 20 * 60 * 1000,
         runTimeoutMs: 30 * 60 * 1000,
         maxResultSnapshots: 10,
+        toolBasedPhases: false,
       },
       analyzeSse: {
         keepaliveIntervalMs: 15_000,

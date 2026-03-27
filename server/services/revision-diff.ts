@@ -17,7 +17,7 @@ interface CommitPhaseSnapshotInput {
   allowLargeReductionCommit?: boolean;
 }
 
-interface AppliedCommitSummary {
+export interface AppliedCommitSummary {
   entitiesCreated: number;
   entitiesUpdated: number;
   entitiesDeleted: number;
@@ -439,6 +439,87 @@ export function commitPhaseSnapshot({
         .map((entity) => entity.id),
     },
   };
+}
+
+// ── Phase transaction functions (tool-based phases) ──
+
+interface PhaseTransactionState {
+  phase: MethodologyPhase;
+  runId: string;
+  priorAiEntityIds: string[];
+}
+
+let activePhaseTransaction: PhaseTransactionState | null = null;
+
+export function beginPhaseTransaction(
+  phase: MethodologyPhase,
+  runId: string,
+): void {
+  if (activePhaseTransaction !== null) {
+    throw new Error(
+      `Phase transaction already active for "${activePhaseTransaction.phase}"`,
+    );
+  }
+
+  const phaseEntities = entityGraphService.getEntitiesByPhase(phase);
+  const priorAiEntityIds = phaseEntities
+    .filter(isAiOwnedEntity)
+    .map((e) => e.id);
+
+  entityGraphService.beginBatch();
+  activePhaseTransaction = { phase, runId, priorAiEntityIds };
+}
+
+export function commitPhaseTransaction(
+  retainedEntityIds?: string[],
+): AppliedCommitSummary {
+  if (activePhaseTransaction === null) {
+    throw new Error("No active phase transaction to commit");
+  }
+
+  const { phase, priorAiEntityIds } = activePhaseTransaction;
+
+  let entitiesDeleted = 0;
+  if (retainedEntityIds) {
+    const retainedSet = new Set(retainedEntityIds);
+    for (const id of priorAiEntityIds) {
+      if (!retainedSet.has(id)) {
+        if (entityGraphService.removeEntity(id)) {
+          entitiesDeleted += 1;
+        }
+      }
+    }
+  }
+
+  validateReferentialIntegrity();
+  entityGraphService.commitBatch();
+
+  const currentPhaseEntityIds = entityGraphService
+    .getEntitiesByPhase(phase)
+    .map((e) => e.id);
+
+  const summary: AppliedCommitSummary = {
+    entitiesCreated: 0,
+    entitiesUpdated: 0,
+    entitiesDeleted,
+    relationshipsCreated: 0,
+    relationshipsDeleted: 0,
+    currentPhaseEntityIds,
+  };
+
+  activePhaseTransaction = null;
+  return summary;
+}
+
+export function rollbackPhaseTransaction(): void {
+  if (activePhaseTransaction === null) return;
+
+  entityGraphService.rollbackBatch();
+  activePhaseTransaction = null;
+}
+
+export function getActivePhaseTransaction(): Readonly<PhaseTransactionState> | null {
+  return activePhaseTransaction;
 }
 
 export const _private = {

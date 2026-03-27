@@ -10,6 +10,7 @@ export interface AnalysisRuntimeConfig {
     phaseTimeoutMs: number;
     runTimeoutMs: number;
     maxResultSnapshots: number;
+    toolBasedPhases: boolean;
   };
   analyzeSse: {
     keepaliveIntervalMs: number;
@@ -85,6 +86,7 @@ export const analysisRuntimeConfig: AnalysisRuntimeConfig = Object.freeze({
       "ORCHESTRATOR_MAX_RESULT_SNAPSHOTS",
       10,
     ),
+    toolBasedPhases: parseBooleanEnv("TOOL_BASED_PHASES", false),
   }),
   analyzeSse: Object.freeze({
     keepaliveIntervalMs: parseIntegerEnv(

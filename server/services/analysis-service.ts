@@ -5,43 +5,25 @@
 //
 // Does NOT own retries, sequencing, or run lifecycle — that's the orchestrator's job.
 
-import { z } from "zod/v4";
 import type { MethodologyPhase } from "../../shared/types/methodology";
-import { V3_PHASES } from "../../shared/types/methodology";
-import type { RelationshipType } from "../../shared/types/entity";
 import {
-  entityConfidenceSchema,
-  factDataSchema,
-  playerDataSchema,
-  objectiveDataSchema,
-  gameDataSchema,
-  strategyDataSchema,
-  interactionHistoryDataSchema,
-  repeatedGamePatternDataSchema,
-  trustAssessmentDataSchema,
-  dynamicInconsistencyDataSchema,
-  signalingEffectDataSchema,
-  assumptionDataSchema,
-  payoffMatrixDataSchema,
-  gameTreeDataSchema,
-  equilibriumResultDataSchema,
-  crossGameConstraintTableDataSchema,
-  crossGameEffectDataSchema,
-  signalClassificationDataSchema,
-  bargainingDynamicsDataSchema,
-  optionValueAssessmentDataSchema,
-  behavioralOverlayDataSchema,
-  eliminatedOutcomeDataSchema,
-  scenarioDataSchema,
-  centralThesisDataSchema,
-  metaCheckDataSchema,
-} from "../../src/types/entity";
+  type SupportedPhase,
+  isSupportedPhase,
+  PHASE_ENTITY_SCHEMAS,
+  relationshipSchema,
+  validateEntity,
+  type PhaseOutputEntity,
+  type PhaseOutputRelationship,
+} from "./analysis-entity-schemas";
+// Re-export for downstream consumers (revision-diff.ts imports these from here)
+export type {
+  PhaseOutputEntity,
+  PhaseOutputRelationship,
+} from "./analysis-entity-schemas";
 import { createRunLogger } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
 import type { AnalysisActivityCallback } from "./ai/analysis-activity";
-import type {
-  AnalysisEffortLevel,
-} from "../../shared/types/analysis-runtime";
+import type { AnalysisEffortLevel } from "../../shared/types/analysis-runtime";
 import { normalizeRuntimeProvider } from "../../shared/types/analysis-runtime";
 import type { PromptPackToolPolicy } from "../../shared/types/prompt-pack";
 import type { RuntimeAdapter } from "./ai/adapter-contract";
@@ -94,304 +76,6 @@ export interface PhaseContext {
   };
 }
 
-// ── Supported phase types ──
-
-type SupportedPhase = Extract<
-  MethodologyPhase,
-  | "situational-grounding"
-  | "player-identification"
-  | "baseline-model"
-  | "historical-game"
-  | "formal-modeling"
-  | "assumptions"
-  | "elimination"
-  | "scenarios"
-  | "meta-check"
->;
-
-const SUPPORTED_PHASES: SupportedPhase[] = V3_PHASES.filter(
-  (p): p is SupportedPhase =>
-    p === "situational-grounding" ||
-    p === "player-identification" ||
-    p === "baseline-model" ||
-    p === "historical-game" ||
-    p === "formal-modeling" ||
-    p === "assumptions" ||
-    p === "elimination" ||
-    p === "scenarios" ||
-    p === "meta-check",
-);
-
-function isSupportedPhase(phase: MethodologyPhase): phase is SupportedPhase {
-  return (SUPPORTED_PHASES as string[]).includes(phase);
-}
-
-// ── Zod schemas (ported from phase-worker.ts) ──
-
-const baseEntityFields = {
-  id: z.string().min(1).nullable(),
-  ref: z.string().min(1),
-  confidence: entityConfidenceSchema,
-  rationale: z.string(),
-};
-
-const factEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("fact"),
-  phase: z.literal("situational-grounding"),
-  data: factDataSchema,
-});
-
-const playerEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("player"),
-  phase: z.literal("player-identification"),
-  data: playerDataSchema,
-});
-
-const objectiveEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("objective"),
-  phase: z.literal("player-identification"),
-  data: objectiveDataSchema,
-});
-
-const gameEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("game"),
-  phase: z.literal("baseline-model"),
-  data: gameDataSchema,
-});
-
-const strategyEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("strategy"),
-  phase: z.literal("baseline-model"),
-  data: strategyDataSchema,
-});
-
-const interactionHistoryEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("interaction-history"),
-  phase: z.literal("historical-game"),
-  data: interactionHistoryDataSchema,
-});
-
-const repeatedGamePatternEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("repeated-game-pattern"),
-  phase: z.literal("historical-game"),
-  data: repeatedGamePatternDataSchema,
-});
-
-const trustAssessmentEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("trust-assessment"),
-  phase: z.literal("historical-game"),
-  data: trustAssessmentDataSchema,
-});
-
-const dynamicInconsistencyEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("dynamic-inconsistency"),
-  phase: z.literal("historical-game"),
-  data: dynamicInconsistencyDataSchema,
-});
-
-const signalingEffectEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("signaling-effect"),
-  phase: z.literal("historical-game"),
-  data: signalingEffectDataSchema,
-});
-
-const assumptionEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("assumption"),
-  phase: z.literal("assumptions"),
-  data: assumptionDataSchema,
-});
-
-const eliminatedOutcomeEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("eliminated-outcome"),
-  phase: z.literal("elimination"),
-  data: eliminatedOutcomeDataSchema,
-});
-
-const scenarioEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("scenario"),
-  phase: z.literal("scenarios"),
-  data: scenarioDataSchema,
-});
-
-const centralThesisEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("central-thesis"),
-  phase: z.literal("scenarios"),
-  data: centralThesisDataSchema,
-});
-
-const metaCheckEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("meta-check"),
-  phase: z.literal("meta-check"),
-  data: metaCheckDataSchema,
-});
-
-const payoffMatrixEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("payoff-matrix"),
-  phase: z.literal("formal-modeling"),
-  data: payoffMatrixDataSchema,
-});
-
-const gameTreeEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("game-tree"),
-  phase: z.literal("formal-modeling"),
-  data: gameTreeDataSchema,
-});
-
-const equilibriumResultEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("equilibrium-result"),
-  phase: z.literal("formal-modeling"),
-  data: equilibriumResultDataSchema,
-});
-
-const crossGameConstraintTableEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("cross-game-constraint-table"),
-  phase: z.literal("formal-modeling"),
-  data: crossGameConstraintTableDataSchema,
-});
-
-const crossGameEffectEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("cross-game-effect"),
-  phase: z.literal("formal-modeling"),
-  data: crossGameEffectDataSchema,
-});
-
-const signalClassificationEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("signal-classification"),
-  phase: z.literal("formal-modeling"),
-  data: signalClassificationDataSchema,
-});
-
-const bargainingDynamicsEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("bargaining-dynamics"),
-  phase: z.literal("formal-modeling"),
-  data: bargainingDynamicsDataSchema,
-});
-
-const optionValueAssessmentEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("option-value-assessment"),
-  phase: z.literal("formal-modeling"),
-  data: optionValueAssessmentDataSchema,
-});
-
-const behavioralOverlayEntitySchema = z.object({
-  ...baseEntityFields,
-  type: z.literal("behavioral-overlay"),
-  phase: z.literal("formal-modeling"),
-  data: behavioralOverlayDataSchema,
-});
-
-const relationshipTypeSchema = z.enum([
-  "plays-in",
-  "has-objective",
-  "conflicts-with",
-  "has-strategy",
-  "supports",
-  "contradicts",
-  "produces",
-  "depends-on",
-  "invalidated-by",
-  "constrains",
-  "escalates-to",
-  "links",
-  "precedes",
-  "informed-by",
-  "derived-from",
-]);
-
-const relationshipSchema = z.object({
-  id: z.string().min(1),
-  type: relationshipTypeSchema,
-  fromEntityId: z.string().min(1),
-  toEntityId: z.string().min(1),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
-
-/** Entity schemas accepted per phase */
-const PHASE_ENTITY_SCHEMAS: Record<SupportedPhase, z.ZodType[]> = {
-  "situational-grounding": [factEntitySchema],
-  "player-identification": [playerEntitySchema, objectiveEntitySchema],
-  "baseline-model": [gameEntitySchema, strategyEntitySchema],
-  "historical-game": [
-    interactionHistoryEntitySchema,
-    repeatedGamePatternEntitySchema,
-    trustAssessmentEntitySchema,
-    dynamicInconsistencyEntitySchema,
-    signalingEffectEntitySchema,
-  ],
-  "formal-modeling": [
-    payoffMatrixEntitySchema,
-    gameTreeEntitySchema,
-    equilibriumResultEntitySchema,
-    crossGameConstraintTableEntitySchema,
-    crossGameEffectEntitySchema,
-    signalClassificationEntitySchema,
-    bargainingDynamicsEntitySchema,
-    optionValueAssessmentEntitySchema,
-    behavioralOverlayEntitySchema,
-  ],
-  assumptions: [assumptionEntitySchema],
-  elimination: [eliminatedOutcomeEntitySchema],
-  scenarios: [scenarioEntitySchema, centralThesisEntitySchema],
-  "meta-check": [metaCheckEntitySchema],
-};
-
-export type PhaseOutputEntity =
-  | z.infer<typeof factEntitySchema>
-  | z.infer<typeof playerEntitySchema>
-  | z.infer<typeof objectiveEntitySchema>
-  | z.infer<typeof gameEntitySchema>
-  | z.infer<typeof strategyEntitySchema>
-  | z.infer<typeof interactionHistoryEntitySchema>
-  | z.infer<typeof repeatedGamePatternEntitySchema>
-  | z.infer<typeof trustAssessmentEntitySchema>
-  | z.infer<typeof dynamicInconsistencyEntitySchema>
-  | z.infer<typeof signalingEffectEntitySchema>
-  | z.infer<typeof assumptionEntitySchema>
-  | z.infer<typeof payoffMatrixEntitySchema>
-  | z.infer<typeof gameTreeEntitySchema>
-  | z.infer<typeof equilibriumResultEntitySchema>
-  | z.infer<typeof crossGameConstraintTableEntitySchema>
-  | z.infer<typeof crossGameEffectEntitySchema>
-  | z.infer<typeof signalClassificationEntitySchema>
-  | z.infer<typeof bargainingDynamicsEntitySchema>
-  | z.infer<typeof optionValueAssessmentEntitySchema>
-  | z.infer<typeof behavioralOverlayEntitySchema>
-  | z.infer<typeof eliminatedOutcomeEntitySchema>
-  | z.infer<typeof scenarioEntitySchema>
-  | z.infer<typeof centralThesisEntitySchema>
-  | z.infer<typeof metaCheckEntitySchema>;
-
-export interface PhaseOutputRelationship {
-  id: string;
-  type: RelationshipType;
-  fromEntityId: string;
-  toEntityId: string;
-  metadata?: Record<string, unknown>;
-}
-
 // ── JSON extraction (ported from phase-worker.ts) ──
 
 const JSON_FENCE_PATTERN = /```(?:json)?\s*([\s\S]*?)```/i;
@@ -401,25 +85,6 @@ function trimJsonLike(text: string): string {
   const fenced = text.match(JSON_FENCE_PATTERN);
   const candidate = fenced?.[1] ?? text;
   return candidate.trim().replace(TRAILING_COMMA_PATTERN, "$1");
-}
-
-// ── Validation helpers ──
-
-function validateEntity(
-  value: unknown,
-  schemas: z.ZodType[],
-):
-  | { success: true; data: PhaseOutputEntity }
-  | { success: false; error: z.ZodError } {
-  for (const schema of schemas) {
-    const result = schema.safeParse(value);
-    if (result.success) {
-      return { success: true, data: result.data as PhaseOutputEntity };
-    }
-  }
-  // Return the first schema's error for diagnostics
-  const fallback = schemas[0].safeParse(value);
-  return { success: false, error: fallback.error! };
 }
 
 /**
