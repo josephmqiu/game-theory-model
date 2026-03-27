@@ -60,6 +60,36 @@ export interface SynthesisCompletedEvent {
   runId: string;
 }
 
+export interface EntityCreatedDuringPhaseEvent {
+  type: "entity_created_during_phase";
+  phase: string;
+  runId: string;
+  entityId: string;
+  entityType: string;
+  entityRef?: string;
+}
+
+export interface EntityUpdatedDuringPhaseEvent {
+  type: "entity_updated_during_phase";
+  phase: string;
+  runId: string;
+  entityId: string;
+  entityType: string;
+}
+
+export interface EntityDeletedDuringPhaseEvent {
+  type: "entity_deleted_during_phase";
+  phase: string;
+  runId: string;
+  entityId: string;
+}
+
+export interface PhaseCompletionRequestedEvent {
+  type: "phase_completion_requested";
+  phase: string;
+  runId: string;
+}
+
 export type AnalysisProgressEvent =
   | PhaseStartedEvent
   | PhaseActivityEvent
@@ -67,7 +97,11 @@ export type AnalysisProgressEvent =
   | AnalysisCompletedEvent
   | AnalysisFailedEvent
   | SynthesisStartedEvent
-  | SynthesisCompletedEvent;
+  | SynthesisCompletedEvent
+  | EntityCreatedDuringPhaseEvent
+  | EntityUpdatedDuringPhaseEvent
+  | EntityDeletedDuringPhaseEvent
+  | PhaseCompletionRequestedEvent;
 
 export type AnalysisMutationEvent =
   | { type: "entity_created"; entity: AnalysisEntity }

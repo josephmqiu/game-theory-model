@@ -166,6 +166,16 @@
       "path": "prompts/player-identification/revision.md"
     },
     {
+      "phase": "player-identification",
+      "variant": "initial-tools",
+      "path": "prompts/player-identification/initial-tools.md"
+    },
+    {
+      "phase": "player-identification",
+      "variant": "revision-tools",
+      "path": "prompts/player-identification/revision-tools.md"
+    },
+    {
       "phase": "baseline-model",
       "variant": "initial",
       "path": "prompts/baseline-model/initial.md"
@@ -174,6 +184,16 @@
       "phase": "baseline-model",
       "variant": "revision",
       "path": "prompts/baseline-model/revision.md"
+    },
+    {
+      "phase": "baseline-model",
+      "variant": "initial-tools",
+      "path": "prompts/baseline-model/initial-tools.md"
+    },
+    {
+      "phase": "baseline-model",
+      "variant": "revision-tools",
+      "path": "prompts/baseline-model/revision-tools.md"
     },
     {
       "phase": "historical-game",
@@ -186,6 +206,16 @@
       "path": "prompts/historical-game/revision.md"
     },
     {
+      "phase": "historical-game",
+      "variant": "initial-tools",
+      "path": "prompts/historical-game/initial-tools.md"
+    },
+    {
+      "phase": "historical-game",
+      "variant": "revision-tools",
+      "path": "prompts/historical-game/revision-tools.md"
+    },
+    {
       "phase": "formal-modeling",
       "variant": "initial",
       "path": "prompts/formal-modeling/initial.md"
@@ -194,6 +224,16 @@
       "phase": "formal-modeling",
       "variant": "revision",
       "path": "prompts/formal-modeling/revision.md"
+    },
+    {
+      "phase": "formal-modeling",
+      "variant": "initial-tools",
+      "path": "prompts/formal-modeling/initial-tools.md"
+    },
+    {
+      "phase": "formal-modeling",
+      "variant": "revision-tools",
+      "path": "prompts/formal-modeling/revision-tools.md"
     },
     {
       "phase": "assumptions",
@@ -206,6 +246,16 @@
       "path": "prompts/assumptions/revision.md"
     },
     {
+      "phase": "assumptions",
+      "variant": "initial-tools",
+      "path": "prompts/assumptions/initial-tools.md"
+    },
+    {
+      "phase": "assumptions",
+      "variant": "revision-tools",
+      "path": "prompts/assumptions/revision-tools.md"
+    },
+    {
       "phase": "elimination",
       "variant": "initial",
       "path": "prompts/elimination/initial.md"
@@ -214,6 +264,16 @@
       "phase": "elimination",
       "variant": "revision",
       "path": "prompts/elimination/revision.md"
+    },
+    {
+      "phase": "elimination",
+      "variant": "initial-tools",
+      "path": "prompts/elimination/initial-tools.md"
+    },
+    {
+      "phase": "elimination",
+      "variant": "revision-tools",
+      "path": "prompts/elimination/revision-tools.md"
     },
     {
       "phase": "scenarios",
@@ -226,6 +286,16 @@
       "path": "prompts/scenarios/revision.md"
     },
     {
+      "phase": "scenarios",
+      "variant": "initial-tools",
+      "path": "prompts/scenarios/initial-tools.md"
+    },
+    {
+      "phase": "scenarios",
+      "variant": "revision-tools",
+      "path": "prompts/scenarios/revision-tools.md"
+    },
+    {
       "phase": "meta-check",
       "variant": "initial",
       "path": "prompts/meta-check/initial.md"
@@ -234,6 +304,16 @@
       "phase": "meta-check",
       "variant": "revision",
       "path": "prompts/meta-check/revision.md"
+    },
+    {
+      "phase": "meta-check",
+      "variant": "initial-tools",
+      "path": "prompts/meta-check/initial-tools.md"
+    },
+    {
+      "phase": "meta-check",
+      "variant": "revision-tools",
+      "path": "prompts/meta-check/revision-tools.md"
     }
   ]
 }

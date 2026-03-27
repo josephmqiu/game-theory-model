@@ -1320,6 +1320,7 @@ export async function runFull(
           runId: run.runId,
           phase: run.activePhases[0],
           allowedEntityTypes: [],
+          onProgress: emitProgress,
         };
         run.toolWriteContext = writeContext;
         const { createToolBasedAnalysisMcpServer } =

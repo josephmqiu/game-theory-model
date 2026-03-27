@@ -4,6 +4,7 @@ import type {
   EntityType,
   RelationshipType,
 } from "../../shared/types/entity";
+import type { AnalysisProgressEvent } from "../../shared/types/events";
 import type { MethodologyPhase } from "../../shared/types/methodology";
 import * as entityGraphService from "./entity-graph-service";
 import {
@@ -179,6 +180,8 @@ export interface AnalysisWriteContext extends AnalysisToolContext {
   allowedEntityTypes: string[];
   /** Mutable counters — reset by orchestrator before each phase. */
   counters?: AnalysisWriteCounters;
+  /** Optional callback to emit real-time progress events during tool execution. */
+  onProgress?: (event: AnalysisProgressEvent) => void;
 }
 
 export function analysisCreateEntity(
@@ -236,6 +239,14 @@ export function analysisCreateEntity(
   );
 
   if (ctx.counters) ctx.counters.entitiesCreated++;
+  ctx.onProgress?.({
+    type: "entity_created_during_phase",
+    phase: ctx.phase,
+    runId: ctx.runId ?? "",
+    entityId: created.id,
+    entityType: args.type,
+    entityRef: args.ref,
+  });
   return { id: created.id, ref: args.ref, type: args.type };
 }
 
@@ -273,6 +284,13 @@ export function analysisUpdateEntity(
   }
 
   if (ctx.counters) ctx.counters.entitiesUpdated++;
+  ctx.onProgress?.({
+    type: "entity_updated_during_phase",
+    phase: ctx.phase,
+    runId: ctx.runId ?? "",
+    entityId: updated.id,
+    entityType: updated.type,
+  });
   return { id: updated.id, type: updated.type, updated: true };
 }
 
@@ -299,6 +317,12 @@ export function analysisDeleteEntity(
 
   entityGraphService.removeEntity(args.id);
   if (ctx.counters) ctx.counters.entitiesDeleted++;
+  ctx.onProgress?.({
+    type: "entity_deleted_during_phase",
+    phase: ctx.phase,
+    runId: ctx.runId ?? "",
+    entityId: args.id,
+  });
   return { id: args.id, deleted: true };
 }
 
@@ -369,6 +393,12 @@ export function analysisCompletePhase(
   if (!isSupportedPhase(ctx.phase)) {
     return { success: false, error: `Unsupported phase "${ctx.phase}"` };
   }
+
+  ctx.onProgress?.({
+    type: "phase_completion_requested",
+    phase: ctx.phase,
+    runId: ctx.runId ?? "",
+  });
 
   const phaseEntities = entityGraphService
     .getEntitiesByPhase(ctx.phase)
