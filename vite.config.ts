@@ -33,6 +33,7 @@ if (!isVitest) {
       external: [/^@sentry\//, "canvas", "jsdom", "cssstyle", "canvaskit-wasm"],
     },
     serverDir: "./server",
+    ignore: ["**/__tests__/**", "**/*.test.ts", "**/*.spec.ts"],
     ...(isElectronBuild ? { preset: "node-server" } : {}),
   } as any);
 }
