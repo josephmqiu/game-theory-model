@@ -27,6 +27,10 @@ import {
   commitSave,
   markDirty,
   onMutation,
+  beginBatch,
+  commitBatch,
+  rollbackBatch,
+  isBatching,
   _resetForTest,
 } from "../entity-graph-service";
 
@@ -623,7 +627,9 @@ describe("loadAnalysis", () => {
       V3_PHASES,
     );
     expect(
-      loaded.phases.find((phaseState) => phaseState.phase === "historical-game"),
+      loaded.phases.find(
+        (phaseState) => phaseState.phase === "historical-game",
+      ),
     ).toMatchObject({
       status: "complete",
       entityIds: ["historical-entity"],
@@ -843,5 +849,174 @@ describe("onMutation", () => {
 
     createEntity(makeFactData(), defaultProvenance);
     expect(events).toHaveLength(1); // no new events after unsub
+  });
+});
+
+// ── Batching ──
+
+describe("batching", () => {
+  it("beginBatch() defers emit() calls", () => {
+    newAnalysis("test");
+    const events: AnalysisMutationEvent[] = [];
+    const unsub = onMutation((event) => events.push(event));
+
+    beginBatch();
+    createEntity(makeFactData(), defaultProvenance);
+    createEntity(makePlayerData(), {
+      source: "phase-derived",
+      runId: "run-1",
+      phase: "player-identification",
+    });
+
+    // No events should have been emitted yet
+    expect(events).toHaveLength(0);
+
+    commitBatch();
+    unsub();
+  });
+
+  it("commitBatch() fires a single state_changed event", () => {
+    newAnalysis("test");
+    const events: AnalysisMutationEvent[] = [];
+    const unsub = onMutation((event) => events.push(event));
+
+    beginBatch();
+    createEntity(makeFactData(), defaultProvenance);
+    createEntity(makeFactData(), defaultProvenance);
+    createEntity(makeFactData(), defaultProvenance);
+    const deferred = commitBatch();
+
+    // Exactly one state_changed event emitted to listeners
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("state_changed");
+
+    // Deferred events array contains the individual mutations
+    expect(deferred.length).toBeGreaterThanOrEqual(3);
+    expect(deferred.filter((e) => e.type === "entity_created")).toHaveLength(3);
+
+    unsub();
+  });
+
+  it("mutations inside batch are readable via getAnalysis()", () => {
+    newAnalysis("test");
+
+    beginBatch();
+    const entity = createEntity(makeFactData(), defaultProvenance);
+
+    // In-memory state is updated even inside the batch
+    const analysis = getAnalysis();
+    expect(analysis.entities.find((e) => e.id === entity.id)).toBeDefined();
+
+    commitBatch();
+  });
+
+  it("rollbackBatch() restores in-memory state", () => {
+    newAnalysis("test");
+    const entityBefore = createEntity(makeFactData(), defaultProvenance);
+
+    beginBatch();
+    createEntity(makeFactData(), defaultProvenance);
+    createEntity(makeFactData(), defaultProvenance);
+
+    // Three entities in memory during batch
+    expect(getAnalysis().entities).toHaveLength(3);
+
+    rollbackBatch();
+
+    // Rolled back to pre-batch state (one entity)
+    const analysis = getAnalysis();
+    expect(analysis.entities).toHaveLength(1);
+    expect(analysis.entities[0].id).toBe(entityBefore.id);
+  });
+
+  it("rollbackBatch() discards deferred events", () => {
+    newAnalysis("test");
+    const events: AnalysisMutationEvent[] = [];
+    const unsub = onMutation((event) => events.push(event));
+
+    beginBatch();
+    createEntity(makeFactData(), defaultProvenance);
+    rollbackBatch();
+
+    // No events emitted at all
+    expect(events).toHaveLength(0);
+
+    unsub();
+  });
+
+  it("nested beginBatch() throws", () => {
+    newAnalysis("test");
+    beginBatch();
+
+    expect(() => beginBatch()).toThrow(/already active/);
+
+    // Clean up
+    rollbackBatch();
+  });
+
+  it("commitBatch() without active batch throws", () => {
+    expect(() => commitBatch()).toThrow(/without an active batch/);
+  });
+
+  it("rollbackBatch() without active batch throws", () => {
+    expect(() => rollbackBatch()).toThrow(/without an active batch/);
+  });
+
+  it("isBatching() reflects batch state", () => {
+    newAnalysis("test");
+
+    expect(isBatching()).toBe(false);
+    beginBatch();
+    expect(isBatching()).toBe(true);
+    commitBatch();
+    expect(isBatching()).toBe(false);
+  });
+
+  it("non-batched callers still emit immediately", () => {
+    newAnalysis("test");
+    const events: AnalysisMutationEvent[] = [];
+    const unsub = onMutation((event) => events.push(event));
+
+    // Without a batch, events fire immediately (regression check)
+    createEntity(makeFactData(), defaultProvenance);
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("entity_created");
+
+    unsub();
+  });
+
+  it("rollback after updateEntity + markStale restores full state", () => {
+    newAnalysis("test");
+
+    // Create two connected entities with a downstream relationship
+    const upstream = createEntity(makeFactData(), defaultProvenance);
+    const downstream = createEntity(makeFactData(), defaultProvenance);
+    createRelationship(
+      {
+        type: "depends-on",
+        fromEntityId: upstream.id,
+        toEntityId: downstream.id,
+      },
+      defaultProvenance,
+    );
+
+    // Downstream should not be stale yet
+    expect(getStaleEntityIds()).toHaveLength(0);
+
+    beginBatch();
+    // Update upstream — this internally calls markStale on downstream
+    updateEntity(
+      upstream.id,
+      { rationale: "updated rationale" },
+      { source: "phase-derived", runId: "run-1" },
+    );
+
+    // During batch, downstream is stale in-memory
+    expect(getStaleEntityIds()).toContain(downstream.id);
+
+    rollbackBatch();
+
+    // After rollback, stale state is restored
+    expect(getStaleEntityIds()).toHaveLength(0);
   });
 });

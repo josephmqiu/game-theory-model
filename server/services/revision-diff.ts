@@ -229,7 +229,8 @@ function maybeRequireTruncationRetry(
   allowLargeReductionCommit: boolean,
 ): RetryRequiredResult | null {
   const looksTruncated =
-    originalAiEntityCount > 4 && returnedAiEntityCount * 2 < originalAiEntityCount;
+    originalAiEntityCount > 4 &&
+    returnedAiEntityCount * 2 < originalAiEntityCount;
 
   if (!looksTruncated || allowLargeReductionCommit) {
     return null;
@@ -272,12 +273,17 @@ export function commitPhaseSnapshot({
   allowLargeReductionCommit = false,
 }: CommitPhaseSnapshotInput): CommitPhaseSnapshotResult {
   const analysis = entityGraphService.getAnalysis();
-  const entityById = new Map(analysis.entities.map((entity) => [entity.id, entity]));
+  const entityById = new Map(
+    analysis.entities.map((entity) => [entity.id, entity]),
+  );
   const currentPhaseEntities = analysis.entities.filter(
     (entity) => entity.phase === phase,
   );
-  const currentPhaseIds = new Set(currentPhaseEntities.map((entity) => entity.id));
-  const aiOwnedCurrentPhaseEntities = currentPhaseEntities.filter(isAiOwnedEntity);
+  const currentPhaseIds = new Set(
+    currentPhaseEntities.map((entity) => entity.id),
+  );
+  const aiOwnedCurrentPhaseEntities =
+    currentPhaseEntities.filter(isAiOwnedEntity);
 
   assertUniqueBatchEntities(entities);
 
@@ -310,103 +316,115 @@ export function commitPhaseSnapshot({
   let entitiesCreated = 0;
   let entitiesUpdated = 0;
   let entitiesDeleted = 0;
+  let relationshipsDeleted = 0;
+  let relationshipsCreated = 0;
 
-  for (const entity of entities) {
-    if (entity.id === null) {
-      const created = entityGraphService.createEntity(
+  // Wrap all mutations in an atomic batch: single SQLite transaction,
+  // single WebSocket broadcast on commit.
+  entityGraphService.beginBatch();
+  try {
+    for (const entity of entities) {
+      if (entity.id === null) {
+        const created = entityGraphService.createEntity(
+          {
+            type: entity.type,
+            phase: entity.phase,
+            data: entity.data,
+            confidence: entity.confidence,
+            rationale: entity.rationale,
+            revision: 1,
+            stale: false,
+          },
+          { source: "phase-derived", runId, phase },
+        );
+        refToServerId.set(entity.ref, created.id);
+        entitiesCreated += 1;
+        continue;
+      }
+
+      const existing = entityById.get(entity.id);
+      if (!existing) {
+        throw new Error(`Unknown entity id "${entity.id}" in phase snapshot`);
+      }
+
+      refToServerId.set(entity.ref, existing.id);
+
+      if (isUserEditedEntity(existing)) {
+        continue;
+      }
+
+      const updated = entityGraphService.updateEntity(
+        existing.id,
         {
           type: entity.type,
           phase: entity.phase,
           data: entity.data,
           confidence: entity.confidence,
           rationale: entity.rationale,
-          revision: 1,
+          revision: existing.revision + 1,
           stale: false,
+        },
+        { source: "phase-derived", runId },
+      );
+
+      if (updated === null) {
+        throw new Error(`Failed to update entity "${existing.id}"`);
+      }
+
+      retainedAiEntityIds.add(existing.id);
+      entitiesUpdated += 1;
+    }
+
+    for (const existing of aiOwnedCurrentPhaseEntities) {
+      if (retainedAiEntityIds.has(existing.id)) continue;
+      const removed = entityGraphService.removeEntity(existing.id);
+      if (removed) {
+        entitiesDeleted += 1;
+      }
+    }
+
+    const analysisAfterEntityDiff = entityGraphService.getAnalysis();
+    const entityByIdAfterDiff = new Map(
+      analysisAfterEntityDiff.entities.map((entity) => [entity.id, entity]),
+    );
+    const relationshipsToReplace = analysisAfterEntityDiff.relationships.filter(
+      (relationship) =>
+        isAiOwnedRelationshipForPhase(relationship, phase, entityByIdAfterDiff),
+    );
+
+    for (const relationship of relationshipsToReplace) {
+      if (entityGraphService.removeRelationship(relationship.id)) {
+        relationshipsDeleted += 1;
+      }
+    }
+
+    for (const relationship of preflightedRelationships) {
+      const fromEntityId =
+        refToServerId.get(relationship.fromEntityId) ??
+        relationship.fromEntityId;
+      const toEntityId =
+        refToServerId.get(relationship.toEntityId) ?? relationship.toEntityId;
+
+      entityGraphService.createRelationship(
+        {
+          type: relationship.type,
+          fromEntityId,
+          toEntityId,
+          metadata: relationship.metadata,
         },
         { source: "phase-derived", runId, phase },
       );
-      refToServerId.set(entity.ref, created.id);
-      entitiesCreated += 1;
-      continue;
+      relationshipsCreated += 1;
     }
 
-    const existing = entityById.get(entity.id);
-    if (!existing) {
-      throw new Error(`Unknown entity id "${entity.id}" in phase snapshot`);
+    validateReferentialIntegrity();
+    entityGraphService.commitBatch();
+  } catch (error) {
+    if (entityGraphService.isBatching()) {
+      entityGraphService.rollbackBatch();
     }
-
-    refToServerId.set(entity.ref, existing.id);
-
-    if (isUserEditedEntity(existing)) {
-      continue;
-    }
-
-    const updated = entityGraphService.updateEntity(
-      existing.id,
-      {
-        type: entity.type,
-        phase: entity.phase,
-        data: entity.data,
-        confidence: entity.confidence,
-        rationale: entity.rationale,
-        revision: existing.revision + 1,
-        stale: false,
-      },
-      { source: "phase-derived", runId },
-    );
-
-    if (updated === null) {
-      throw new Error(`Failed to update entity "${existing.id}"`);
-    }
-
-    retainedAiEntityIds.add(existing.id);
-    entitiesUpdated += 1;
+    throw error;
   }
-
-  for (const existing of aiOwnedCurrentPhaseEntities) {
-    if (retainedAiEntityIds.has(existing.id)) continue;
-    const removed = entityGraphService.removeEntity(existing.id);
-    if (removed) {
-      entitiesDeleted += 1;
-    }
-  }
-
-  const analysisAfterEntityDiff = entityGraphService.getAnalysis();
-  const entityByIdAfterDiff = new Map(
-    analysisAfterEntityDiff.entities.map((entity) => [entity.id, entity]),
-  );
-  const relationshipsToReplace = analysisAfterEntityDiff.relationships.filter(
-    (relationship) =>
-      isAiOwnedRelationshipForPhase(relationship, phase, entityByIdAfterDiff),
-  );
-
-  let relationshipsDeleted = 0;
-  for (const relationship of relationshipsToReplace) {
-    if (entityGraphService.removeRelationship(relationship.id)) {
-      relationshipsDeleted += 1;
-    }
-  }
-
-  let relationshipsCreated = 0;
-  for (const relationship of preflightedRelationships) {
-    const fromEntityId =
-      refToServerId.get(relationship.fromEntityId) ?? relationship.fromEntityId;
-    const toEntityId =
-      refToServerId.get(relationship.toEntityId) ?? relationship.toEntityId;
-
-    entityGraphService.createRelationship(
-      {
-        type: relationship.type,
-        fromEntityId,
-        toEntityId,
-        metadata: relationship.metadata,
-      },
-      { source: "phase-derived", runId, phase },
-    );
-    relationshipsCreated += 1;
-  }
-
-  validateReferentialIntegrity();
 
   return {
     status: "applied",

@@ -54,6 +54,21 @@ let _fileHandle: FileSystemFileHandle | null = null;
 
 const listeners = new Set<(event: AnalysisMutationEvent) => void>();
 
+// ── Batch state ──
+// When a batch is active, SQLite writes participate in a single transaction
+// and emit() calls are deferred until commitBatch().
+
+interface BatchState {
+  /** Snapshot of `analysis` at beginBatch() for rollback */
+  snapshot: Analysis;
+  /** Deferred mutation events collected during the batch */
+  deferredEvents: AnalysisMutationEvent[];
+  /** Whether we opened a SQLite transaction (false in unit tests without db) */
+  transactionOpen: boolean;
+}
+
+let _batch: BatchState | null = null;
+
 // ── SQLite backing ──
 // Lazy import to avoid pulling node:sqlite into the module graph eagerly.
 // Bun does not support node:sqlite, so static imports break the dev server.
@@ -127,6 +142,10 @@ function normalizeAnalysis(analysisState: Analysis): Analysis {
 }
 
 function emit(event: AnalysisMutationEvent): void {
+  if (_batch) {
+    _batch.deferredEvents.push(event);
+    return;
+  }
   for (const cb of listeners) {
     cb(event);
   }
@@ -746,6 +765,83 @@ export function markDirty(): void {
   _isDirty = true;
 }
 
+// ── Batching ──
+
+/**
+ * Begin an atomic batch. All SQLite writes are wrapped in a single transaction
+ * and all emit() calls are deferred until commitBatch(). If no workspace
+ * context is bound (e.g. unit tests), event deferral still applies but
+ * no SQLite transaction is opened.
+ */
+export function beginBatch(): void {
+  if (_batch) {
+    throw new Error(
+      "entity-graph-service: beginBatch() called while a batch is already active",
+    );
+  }
+  let transactionOpen = false;
+  if (hasWorkspaceContext()) {
+    getWorkspaceDatabase().db.exec("BEGIN IMMEDIATE");
+    transactionOpen = true;
+  }
+  _batch = {
+    snapshot: analysis,
+    deferredEvents: [],
+    transactionOpen,
+  };
+}
+
+/**
+ * Commit the active batch. Commits the SQLite transaction, clears batch state,
+ * then emits a single `state_changed` event so clients re-sync.
+ * Returns the array of deferred events for logging/debugging.
+ */
+export function commitBatch(): AnalysisMutationEvent[] {
+  if (!_batch) {
+    throw new Error(
+      "entity-graph-service: commitBatch() called without an active batch",
+    );
+  }
+  const { deferredEvents, transactionOpen } = _batch;
+  if (transactionOpen) {
+    try {
+      getWorkspaceDatabase().db.exec("COMMIT");
+    } catch (error) {
+      // COMMIT failed — SQLite auto-rolls back. Restore in-memory state.
+      analysis = _batch.snapshot;
+      _batch = null;
+      throw error;
+    }
+  }
+  _batch = null;
+  // Emit a single state_changed so clients re-fetch the full graph.
+  emit({ type: "state_changed" });
+  return deferredEvents;
+}
+
+/**
+ * Roll back the active batch. Rolls back the SQLite transaction, restores the
+ * in-memory analysis to its pre-batch snapshot, and discards all deferred events.
+ */
+export function rollbackBatch(): void {
+  if (!_batch) {
+    throw new Error(
+      "entity-graph-service: rollbackBatch() called without an active batch",
+    );
+  }
+  const { transactionOpen, snapshot } = _batch;
+  if (transactionOpen) {
+    getWorkspaceDatabase().db.exec("ROLLBACK");
+  }
+  analysis = snapshot;
+  _batch = null;
+}
+
+/** Returns true if a batch is currently active. */
+export function isBatching(): boolean {
+  return _batch !== null;
+}
+
 // ── Events ──
 
 export function onMutation(
@@ -770,6 +866,7 @@ export function _resetForTest(): void {
   _filePath = null;
   _fileHandle = null;
   _repoOverride = null;
+  _batch = null;
   listeners.clear();
 }
 
