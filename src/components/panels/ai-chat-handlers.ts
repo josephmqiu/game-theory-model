@@ -51,9 +51,10 @@ function normalizeChunk(
 
   // --- New ChatEvent types ---
   if (t === "text_delta" && "content" in raw) {
+    const ev = raw as ChatEvent & { type: "text_delta" };
     return {
-      kind: "text",
-      content: (raw as ChatEvent & { type: "text_delta" }).content,
+      kind: ev.content_kind === "reasoning" ? "thinking" : "text",
+      content: ev.content,
     };
   }
   if (t === "tool_call_start" && "toolName" in raw) {
@@ -72,9 +73,12 @@ function normalizeChunk(
     return { kind: "done" };
   }
   if (t === "chat.message.delta" && "content" in raw) {
+    const ev = raw as WorkspaceRuntimeChatEvent & {
+      type: "chat.message.delta";
+    };
     return {
-      kind: "text",
-      content: (raw as WorkspaceRuntimeChatEvent & { type: "chat.message.delta" }).content,
+      kind: ev.content_kind === "reasoning" ? "thinking" : "text",
+      content: ev.content,
     };
   }
   if (t === "chat.message.complete") {
@@ -83,7 +87,8 @@ function normalizeChunk(
   if (t === "chat.tool.start" && "toolName" in raw) {
     return {
       kind: "tool_start",
-      toolName: (raw as WorkspaceRuntimeChatEvent & { type: "chat.tool.start" }).toolName,
+      toolName: (raw as WorkspaceRuntimeChatEvent & { type: "chat.tool.start" })
+        .toolName,
     };
   }
   if (t === "chat.tool.result" && "toolName" in raw) {
@@ -95,7 +100,9 @@ function normalizeChunk(
     return { kind: "tool_error", toolName: ev.toolName, error: ev.error };
   }
   if (t === "chat.message.error") {
-    const ev = raw as WorkspaceRuntimeChatEvent & { type: "chat.message.error" };
+    const ev = raw as WorkspaceRuntimeChatEvent & {
+      type: "chat.message.error";
+    };
     return { kind: "error", content: ev.error.message };
   }
   if (t === "user_input_requested") {

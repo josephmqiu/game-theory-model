@@ -288,12 +288,18 @@ async function executeChatTurn(
         signal: abortController.signal,
       })) {
         if (eventChunk.type === "text_delta") {
-          accumulated += eventChunk.content;
+          // Only accumulate output text for persistence — reasoning is ephemeral
+          if (eventChunk.content_kind !== "reasoning") {
+            accumulated += eventChunk.content;
+          }
           options.onEvent?.(
             {
               type: "chat.message.delta",
               correlationId: options.correlationId,
               content: eventChunk.content,
+              ...(eventChunk.content_kind
+                ? { content_kind: eventChunk.content_kind }
+                : {}),
             },
             {
               workspaceId: options.workspaceId,

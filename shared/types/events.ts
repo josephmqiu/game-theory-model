@@ -85,9 +85,12 @@ export type AnalysisMutationEvent =
 
 export type AnalysisEvent = AnalysisProgressEvent | AnalysisMutationEvent;
 
+export type ChatContentKind = "output" | "reasoning";
+
 export interface ChatTextDeltaEvent {
   type: "text_delta";
   content: string;
+  content_kind?: ChatContentKind;
 }
 
 export interface ChatToolCallStartEvent {

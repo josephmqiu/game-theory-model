@@ -5,7 +5,11 @@ import type {
   ThreadMessageState,
   ThreadState,
 } from "./workspace-state";
-import type { AnalysisMutationEvent, AnalysisProgressEvent } from "./events";
+import type {
+  AnalysisMutationEvent,
+  AnalysisProgressEvent,
+  ChatContentKind,
+} from "./events";
 import type { RunStatus } from "./api";
 import type { RuntimeProvider } from "./analysis-runtime";
 import type { RuntimeError } from "./runtime-error";
@@ -86,6 +90,7 @@ export interface WorkspaceRuntimeChatTurnDeltaEvent {
   type: "chat.message.delta";
   correlationId: string;
   content: string;
+  content_kind?: ChatContentKind;
 }
 
 export interface WorkspaceRuntimeChatTurnCompleteEvent {

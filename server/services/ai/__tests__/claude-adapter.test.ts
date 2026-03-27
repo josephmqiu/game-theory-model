@@ -257,8 +257,8 @@ describe("claude-adapter", () => {
       }
 
       expect(events).toEqual([
-        { type: "text_delta", content: "Hello " },
-        { type: "text_delta", content: "world" },
+        { type: "text_delta", content: "Hello ", content_kind: "output" },
+        { type: "text_delta", content: "world", content_kind: "output" },
         { type: "turn_complete" },
       ]);
     });
@@ -476,6 +476,7 @@ describe("claude-adapter", () => {
       expect(events).toContainEqual({
         type: "text_delta",
         content: "Fallback response",
+        content_kind: "output",
       });
       expect(events).toContainEqual({ type: "turn_complete" });
     });

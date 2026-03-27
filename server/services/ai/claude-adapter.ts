@@ -743,9 +743,21 @@ async function* streamClaudeChatTurn(
         const ev = message.event;
         if (ev.type === "content_block_delta") {
           if (ev.delta.type === "text_delta") {
-            yield { type: "text_delta", content: ev.delta.text };
+            yield {
+              type: "text_delta",
+              content: ev.delta.text,
+              content_kind: "output",
+            } as const;
+          } else if (ev.delta.type === "thinking_delta") {
+            const thinking = ev.delta.thinking;
+            if (typeof thinking === "string" && thinking.length > 0) {
+              yield {
+                type: "text_delta",
+                content: thinking,
+                content_kind: "reasoning",
+              } as const;
+            }
           }
-          // thinking deltas are silently consumed (not part of ChatEvent schema)
         } else if (ev.type === "content_block_start") {
           if ("content_block" in ev) {
             const block = narrowContentBlock(ev.content_block);
@@ -834,7 +846,11 @@ async function* streamClaudeChatTurn(
 
     // Fallback: SDK yielded assistant text but never a result event
     if (!gotResult && lastAssistantText) {
-      yield { type: "text_delta", content: lastAssistantText };
+      yield {
+        type: "text_delta",
+        content: lastAssistantText,
+        content_kind: "output",
+      } as const;
       yield { type: "turn_complete" };
     } else if (!gotResult) {
       yield { type: "turn_complete" };
