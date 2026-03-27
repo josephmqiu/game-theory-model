@@ -414,7 +414,8 @@ function handleIncomingLine(conn: AppServerConnection, line: string): void {
   }
 }
 
-const ANALYSIS_TIMEOUT_MS = analysisRuntimeConfig.codex.analysisTimeoutMs;
+const ANALYSIS_IDLE_TIMEOUT_MS =
+  analysisRuntimeConfig.codex.analysisIdleTimeoutMs;
 
 function resolveMcpServerCommand(): string {
   // In Electron, process.execPath is the Electron binary (GUI app), not a
@@ -1229,6 +1230,10 @@ export async function runAnalysisPhase<T = unknown>(
     let completionErrorDetails: CodexTurnErrorDetails | null = null;
     let streamedText = "";
     let fatalError: string | null = null;
+    let lastActivityAt = Date.now();
+    const resetIdleTimer = () => {
+      lastActivityAt = Date.now();
+    };
 
     const removeListener = onNotification(conn, (method, params) => {
       // Thread filtering: skip notifications for a different thread (best-effort).
@@ -1236,6 +1241,7 @@ export async function runAnalysisPhase<T = unknown>(
       if (notifThreadId && notifThreadId !== threadId) return;
 
       if (method === "turn/started") {
+        resetIdleTimer();
         turnId = getTurnIdFromParams(params) ?? turnId;
         session.providerTurnId = turnId ?? undefined;
         persistCodexBinding(session);
@@ -1263,6 +1269,7 @@ export async function runAnalysisPhase<T = unknown>(
       }
 
       if (method === "item/started") {
+        resetIdleTimer();
         const item = asRecord(params.item);
         if (item?.type === "webSearch") {
           const query = getWebSearchQuery(item.query);
@@ -1279,6 +1286,7 @@ export async function runAnalysisPhase<T = unknown>(
       }
 
       if (method === "item/agentMessage/delta") {
+        resetIdleTimer();
         if (typeof params.delta === "string") {
           streamedText += params.delta;
         }
@@ -1286,6 +1294,7 @@ export async function runAnalysisPhase<T = unknown>(
       }
 
       if (method === "item/mcpToolCall/progress") {
+        resetIdleTimer();
         const toolName =
           typeof params.toolName === "string" ? params.toolName : "unknown";
         options?.onActivity?.({
@@ -1301,6 +1310,7 @@ export async function runAnalysisPhase<T = unknown>(
       }
 
       if (method === "item/completed") {
+        resetIdleTimer();
         const item = asRecord(params.item);
         if (item?.type === "webSearch") {
           serverLog(runId, "codex-adapter", "analysis-web-search-complete", {
@@ -1441,7 +1451,10 @@ export async function runAnalysisPhase<T = unknown>(
       turnId,
     });
 
-    const startTime = Date.now();
+    // Reset the idle timer now that the turn has started — the provider is
+    // expected to send notifications as it works. If it goes silent for
+    // ANALYSIS_IDLE_TIMEOUT_MS we treat it as a stall.
+    resetIdleTimer();
 
     try {
       while (!completed) {
@@ -1475,20 +1488,22 @@ export async function runAnalysisPhase<T = unknown>(
           }
           throw new Error(fatalError);
         }
-        if (Date.now() - startTime > ANALYSIS_TIMEOUT_MS) {
+        if (Date.now() - lastActivityAt > ANALYSIS_IDLE_TIMEOUT_MS) {
           if (turnId) {
             await sendRequest(conn, "turn/interrupt", {
               threadId,
               turnId,
             }).catch(
               logSendRequestFailure(runId, "turn-interrupt-failed", {
-                reason: "analysis-timeout",
+                reason: "analysis-idle-stall",
                 threadId,
                 turnId,
               }),
             );
           }
-          throw new Error("Analysis phase timed out");
+          throw new Error(
+            `Analysis phase stalled — no provider activity for ${Math.round(ANALYSIS_IDLE_TIMEOUT_MS / 1000)}s`,
+          );
         }
         await new Promise((resolve) =>
           setTimeout(

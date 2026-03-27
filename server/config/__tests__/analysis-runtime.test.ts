@@ -32,7 +32,7 @@ describe("analysis-runtime config", () => {
       orchestrator: {
         maxRetries: 2,
         maxLoopbackPasses: 4,
-        phaseTimeoutMs: 9 * 60 * 1000,
+        phaseTimeoutMs: 20 * 60 * 1000,
         runTimeoutMs: 30 * 60 * 1000,
         maxResultSnapshots: 10,
       },
@@ -46,7 +46,7 @@ describe("analysis-runtime config", () => {
         analysisMaxTurns: 12,
       },
       codex: {
-        analysisTimeoutMs: 5 * 60 * 1000,
+        analysisIdleTimeoutMs: 3 * 60 * 1000,
         initializeTimeoutMs: 15_000,
         gracefulShutdownTimeoutMs: 2000,
         chatTimeoutMs: 5 * 60 * 1000,
@@ -84,7 +84,8 @@ describe("analysis-runtime config", () => {
       "333";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_CLAUDE_CHAT_TIMEOUT_MS = "444";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_CLAUDE_ANALYSIS_MAX_TURNS = "5";
-    process.env.GAME_THEORY_ANALYSIS_RUNTIME_CODEX_ANALYSIS_TIMEOUT_MS = "666";
+    process.env.GAME_THEORY_ANALYSIS_RUNTIME_CODEX_ANALYSIS_IDLE_TIMEOUT_MS =
+      "666";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_CODEX_INITIALIZE_TIMEOUT_MS =
       "777";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_CODEX_GRACEFUL_SHUTDOWN_TIMEOUT_MS =
@@ -94,8 +95,7 @@ describe("analysis-runtime config", () => {
       "10";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_CODEX_ANALYSIS_WEB_SEARCH_ENABLED =
       "false";
-    process.env.GAME_THEORY_ANALYSIS_RUNTIME_CODEX_CHAT_POLL_INTERVAL_MS =
-      "11";
+    process.env.GAME_THEORY_ANALYSIS_RUNTIME_CODEX_CHAT_POLL_INTERVAL_MS = "11";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_CODEX_ANALYSIS_POLL_INTERVAL_MS =
       "12";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_CODEX_MCP_STARTUP_TIMEOUT_SEC =
@@ -123,7 +123,7 @@ describe("analysis-runtime config", () => {
         analysisMaxTurns: 5,
       },
       codex: {
-        analysisTimeoutMs: 666,
+        analysisIdleTimeoutMs: 666,
         initializeTimeoutMs: 777,
         gracefulShutdownTimeoutMs: 888,
         chatTimeoutMs: 999,
@@ -174,7 +174,8 @@ describe("analysis-runtime config", () => {
       "bad";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_CLAUDE_CHAT_TIMEOUT_MS = "bad";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_CLAUDE_ANALYSIS_MAX_TURNS = "bad";
-    process.env.GAME_THEORY_ANALYSIS_RUNTIME_CODEX_ANALYSIS_TIMEOUT_MS = "bad";
+    process.env.GAME_THEORY_ANALYSIS_RUNTIME_CODEX_ANALYSIS_IDLE_TIMEOUT_MS =
+      "bad";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_CODEX_INITIALIZE_TIMEOUT_MS =
       "bad";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_CODEX_GRACEFUL_SHUTDOWN_TIMEOUT_MS =
@@ -199,7 +200,7 @@ describe("analysis-runtime config", () => {
       orchestrator: {
         maxRetries: 2,
         maxLoopbackPasses: 4,
-        phaseTimeoutMs: 9 * 60 * 1000,
+        phaseTimeoutMs: 20 * 60 * 1000,
         runTimeoutMs: 30 * 60 * 1000,
         maxResultSnapshots: 10,
       },
@@ -213,7 +214,7 @@ describe("analysis-runtime config", () => {
         analysisMaxTurns: 12,
       },
       codex: {
-        analysisTimeoutMs: 5 * 60 * 1000,
+        analysisIdleTimeoutMs: 3 * 60 * 1000,
         initializeTimeoutMs: 15_000,
         gracefulShutdownTimeoutMs: 2000,
         chatTimeoutMs: 5 * 60 * 1000,

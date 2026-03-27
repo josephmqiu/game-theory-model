@@ -1,5 +1,5 @@
 const ENV_PREFIX = "GAME_THEORY_ANALYSIS_RUNTIME_";
-const DEFAULT_ORCHESTRATOR_PHASE_TIMEOUT_MS = 9 * 60 * 1000;
+const DEFAULT_ORCHESTRATOR_PHASE_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_ORCHESTRATOR_RUN_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_ANALYZE_SSE_STREAM_TIMEOUT_BUFFER_MS = 60 * 1000;
 
@@ -21,7 +21,7 @@ export interface AnalysisRuntimeConfig {
     analysisMaxTurns: number;
   };
   codex: {
-    analysisTimeoutMs: number;
+    analysisIdleTimeoutMs: number;
     initializeTimeoutMs: number;
     gracefulShutdownTimeoutMs: number;
     chatTimeoutMs: number;
@@ -105,14 +105,11 @@ export const analysisRuntimeConfig: AnalysisRuntimeConfig = Object.freeze({
     analysisMaxTurns: parseIntegerEnv("CLAUDE_ANALYSIS_MAX_TURNS", 12),
   }),
   codex: Object.freeze({
-    analysisTimeoutMs: parseIntegerEnv(
-      "CODEX_ANALYSIS_TIMEOUT_MS",
-      5 * 60 * 1000,
+    analysisIdleTimeoutMs: parseIntegerEnv(
+      "CODEX_ANALYSIS_IDLE_TIMEOUT_MS",
+      parseIntegerEnv("CODEX_ANALYSIS_TIMEOUT_MS", 3 * 60 * 1000),
     ),
-    initializeTimeoutMs: parseIntegerEnv(
-      "CODEX_INITIALIZE_TIMEOUT_MS",
-      15_000,
-    ),
+    initializeTimeoutMs: parseIntegerEnv("CODEX_INITIALIZE_TIMEOUT_MS", 15_000),
     gracefulShutdownTimeoutMs: parseIntegerEnv(
       "CODEX_GRACEFUL_SHUTDOWN_TIMEOUT_MS",
       2000,
