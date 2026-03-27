@@ -5,6 +5,7 @@ import type {
   PromptPackMode,
   PromptPackSourceRef,
   PromptPackToolPolicy,
+  PromptTemplateVariant,
 } from "./prompt-pack";
 import type { RuntimeError } from "./runtime-error";
 
@@ -127,7 +128,7 @@ export interface PhaseTurnPromptProvenance {
   templateIdentity: string;
   templateHash: string;
   effectivePromptHash: string;
-  variant: "initial" | "revision";
+  variant: PromptTemplateVariant;
   toolPolicy: PromptPackToolPolicy;
   doneCondition: string;
 }

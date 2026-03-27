@@ -23,7 +23,14 @@ import {
   queryEntities,
   queryRelationships,
   requestLoopback,
+  analysisCreateEntity,
+  analysisUpdateEntity,
+  analysisDeleteEntity,
+  analysisCreateRelationship,
+  analysisDeleteRelationship,
+  analysisCompletePhase,
   type AnalysisToolContext,
+  type AnalysisWriteContext,
 } from "../analysis-tools";
 import {
   ANALYSIS_TOOL_NAMES,
@@ -594,6 +601,223 @@ export async function createAnalysisMcpServer(
 
   return createSdkMcpServer({
     name: ANALYSIS_MCP_SERVER_NAME,
+    version: "1.0.0",
+    tools,
+  });
+}
+
+export const TOOL_BASED_ANALYSIS_MCP_SERVER_NAME = "game-theory-analysis-tools";
+
+/**
+ * Creates an MCP server for tool-based analysis phases. Unlike the read-only
+ * createAnalysisMcpServer, this registers ALL analysis tools including write
+ * operations (create_entity, update_entity, etc.) that route to the
+ * analysis-tools.ts handlers via a mutable writeContext closure.
+ *
+ * The writeContext is captured by reference — the orchestrator mutates it
+ * between phases (updating phase, phaseTurnId, allowedEntityTypes, counters).
+ */
+export async function createToolBasedAnalysisMcpServer(
+  writeContext: AnalysisWriteContext,
+) {
+  const { createSdkMcpServer, tool } =
+    await import("@anthropic-ai/claude-agent-sdk");
+  const { z } = await import("zod/v4");
+
+  const tools = [
+    // ── Read-only tools ──
+    tool(
+      "get_entity",
+      "Get a single analysis entity by ID",
+      { id: z.string() },
+      async (args) => ({
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(getEntity(args.id, writeContext)),
+          },
+        ],
+      }),
+    ),
+    tool(
+      "query_entities",
+      "Query analysis entities by phase, type, or stale status",
+      {
+        phase: z.string().optional(),
+        type: z.string().optional(),
+        stale: z.boolean().optional(),
+      },
+      async (args) => ({
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(queryEntities(args, writeContext)),
+          },
+        ],
+      }),
+    ),
+    tool(
+      "query_relationships",
+      "Query analysis relationships by entity or type",
+      {
+        type: z.string().optional(),
+        entityId: z.string().optional(),
+      },
+      async (args) => ({
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(queryRelationships(args, writeContext)),
+          },
+        ],
+      }),
+    ),
+    tool(
+      "request_loopback",
+      "Record a disruption trigger for later loopback handling",
+      {
+        trigger_type: z.string(),
+        justification: z.string(),
+      },
+      async (args) => ({
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(requestLoopback(args, writeContext)),
+          },
+        ],
+      }),
+    ),
+    tool(
+      "ask_user",
+      "Ask the user clarifying questions about assumptions, motivations, or boundaries",
+      {
+        questions: z.array(
+          z.object({
+            header: z.string().optional(),
+            question: z.string(),
+            options: z
+              .array(
+                z.object({
+                  label: z.string(),
+                  description: z.string().optional(),
+                }),
+              )
+              .optional(),
+            multiSelect: z.boolean().optional(),
+          }),
+        ),
+      },
+      async (args) => ({
+        content: [{ type: "text" as const, text: await handleAskUser(args) }],
+      }),
+    ),
+
+    // ── Write tools ──
+    tool(
+      "create_entity",
+      "Create a new analysis entity in the current phase",
+      {
+        ref: z.string(),
+        type: z.string(),
+        phase: z.string(),
+        data: z.record(z.string(), z.unknown()),
+        confidence: z.string().optional(),
+        rationale: z.string().optional(),
+      },
+      async (args) => ({
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(analysisCreateEntity(args, writeContext)),
+          },
+        ],
+      }),
+    ),
+    tool(
+      "update_entity",
+      "Update an existing analysis entity",
+      {
+        id: z.string(),
+        updates: z.record(z.string(), z.unknown()),
+      },
+      async (args) => ({
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(analysisUpdateEntity(args, writeContext)),
+          },
+        ],
+      }),
+    ),
+    tool(
+      "delete_entity",
+      "Delete an analysis entity",
+      { id: z.string() },
+      async (args) => ({
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(analysisDeleteEntity(args, writeContext)),
+          },
+        ],
+      }),
+    ),
+    tool(
+      "create_relationship",
+      "Create a relationship between entities",
+      {
+        type: z.string(),
+        fromEntityId: z.string(),
+        toEntityId: z.string(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+      },
+      async (args) => ({
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              analysisCreateRelationship(args, writeContext),
+            ),
+          },
+        ],
+      }),
+    ),
+    tool(
+      "delete_relationship",
+      "Delete a relationship",
+      { id: z.string() },
+      async (args) => ({
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              analysisDeleteRelationship(args, writeContext),
+            ),
+          },
+        ],
+      }),
+    ),
+    tool(
+      "complete_phase",
+      "Signal that the current analysis phase is complete",
+      {
+        retained_entity_refs: z.array(z.string()).optional(),
+        notes: z.string().optional(),
+      },
+      async (args) => ({
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(analysisCompletePhase(args, writeContext)),
+          },
+        ],
+      }),
+    ),
+  ];
+
+  return createSdkMcpServer({
+    name: TOOL_BASED_ANALYSIS_MCP_SERVER_NAME,
     version: "1.0.0",
     tools,
   });

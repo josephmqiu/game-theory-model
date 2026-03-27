@@ -8,6 +8,7 @@ import {
   DEFAULT_ANALYSIS_TYPE,
   DEFAULT_PROMPT_PACK_MODE,
   type PromptPackPhaseConfig,
+  type PromptTemplateVariant,
 } from "../../shared/types/prompt-pack";
 import {
   resolveAnalysisPromptTemplate,
@@ -15,9 +16,7 @@ import {
 } from "./prompt-pack-registry";
 import { hashText } from "../utils/hash-text";
 
-function resolvePhaseConfig(
-  phase: MethodologyPhase,
-): PromptPackPhaseConfig {
+function resolvePhaseConfig(phase: MethodologyPhase): PromptPackPhaseConfig {
   const promptPack = resolvePromptPack({
     analysisType: DEFAULT_ANALYSIS_TYPE,
     mode: DEFAULT_PROMPT_PACK_MODE,
@@ -104,6 +103,7 @@ export function buildPhasePromptBundle(input: {
   phaseBrief?: string;
   revisionRetryInstruction?: string;
   revisionSystemPrompt?: string;
+  toolBased?: boolean;
 }): {
   system: string;
   user: string;
@@ -112,18 +112,23 @@ export function buildPhasePromptBundle(input: {
 } {
   const phase = input.phase;
   const phaseConfig = resolvePhaseConfig(phase);
+  const toolGuidanceLines = [
+    "Analysis-mode tool guidance:",
+    `- Available analysis tools: ${phaseConfig.toolPolicy.enabledAnalysisTools.join(", ")}.`,
+    phaseConfig.toolPolicy.webSearch === false
+      ? "- Web search is disabled for this phase. Rely on graph-query tools and existing grounded facts."
+      : "- Use web search to verify current, time-sensitive facts before finalizing entities.",
+    "- Use get_entity, query_entities, and query_relationships to inspect prior analytical state when helpful.",
+    "- If you detect a disruption trigger, call request_loopback(trigger_type, justification).",
+  ];
+  if (!input.toolBased) {
+    toolGuidanceLines.push(
+      "- Return only the final JSON object that matches the schema.",
+    );
+  }
   const parts = [
     `Analyze the following topic:\n\n${input.topic}`,
-    [
-      "Analysis-mode tool guidance:",
-      `- Available analysis tools: ${phaseConfig.toolPolicy.enabledAnalysisTools.join(", ")}.`,
-      phaseConfig.toolPolicy.webSearch === false
-        ? "- Web search is disabled for this phase. Rely on graph-query tools and existing grounded facts."
-        : "- Use web search to verify current, time-sensitive facts before finalizing entities.",
-      "- Use get_entity, query_entities, and query_relationships to inspect prior analytical state when helpful.",
-      "- If you detect a disruption trigger, call request_loopback(trigger_type, justification).",
-      "- Return only the final JSON object that matches the schema.",
-    ].join("\n"),
+    toolGuidanceLines.join("\n"),
     buildAnalysisEffortGuidance(input.effortLevel),
   ];
 
@@ -140,16 +145,44 @@ export function buildPhasePromptBundle(input: {
   }
 
   const userPrompt = parts.join("\n");
-  const variant =
+  const baseVariant =
     input.revisionSystemPrompt || input.revisionRetryInstruction
       ? "revision"
       : "initial";
-  const resolvedTemplate = resolveAnalysisPromptTemplate({
-    analysisType: DEFAULT_ANALYSIS_TYPE,
-    mode: DEFAULT_PROMPT_PACK_MODE,
-    phase,
-    variant,
-  });
+
+  // When tool-based, try the "-tools" variant first; fall back to the base
+  // variant when the tools prompt doesn't exist yet (graceful degradation for
+  // phases that only have structured-output prompts so far).
+  let variant: PromptTemplateVariant = baseVariant;
+  let resolvedTemplate: ReturnType<typeof resolveAnalysisPromptTemplate>;
+  if (input.toolBased) {
+    const toolsVariant =
+      baseVariant === "revision" ? "revision-tools" : "initial-tools";
+    try {
+      resolvedTemplate = resolveAnalysisPromptTemplate({
+        analysisType: DEFAULT_ANALYSIS_TYPE,
+        mode: DEFAULT_PROMPT_PACK_MODE,
+        phase,
+        variant: toolsVariant,
+      });
+      variant = toolsVariant;
+    } catch {
+      // Tools prompt not available for this phase yet — fall back
+      resolvedTemplate = resolveAnalysisPromptTemplate({
+        analysisType: DEFAULT_ANALYSIS_TYPE,
+        mode: DEFAULT_PROMPT_PACK_MODE,
+        phase,
+        variant: baseVariant,
+      });
+    }
+  } else {
+    resolvedTemplate = resolveAnalysisPromptTemplate({
+      analysisType: DEFAULT_ANALYSIS_TYPE,
+      mode: DEFAULT_PROMPT_PACK_MODE,
+      phase,
+      variant: baseVariant,
+    });
+  }
   const systemPrompt = input.revisionSystemPrompt ?? resolvedTemplate.text;
 
   return {

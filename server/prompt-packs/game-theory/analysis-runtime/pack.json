@@ -146,6 +146,16 @@
       "path": "prompts/situational-grounding/revision.md"
     },
     {
+      "phase": "situational-grounding",
+      "variant": "initial-tools",
+      "path": "prompts/situational-grounding/initial-tools.md"
+    },
+    {
+      "phase": "situational-grounding",
+      "variant": "revision-tools",
+      "path": "prompts/situational-grounding/revision-tools.md"
+    },
+    {
       "phase": "player-identification",
       "variant": "initial",
       "path": "prompts/player-identification/initial.md"

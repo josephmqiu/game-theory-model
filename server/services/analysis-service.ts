@@ -1656,6 +1656,270 @@ export async function runPhase(
   return validated;
 }
 
+// ── Tool-based phase execution ──
+
+/** Must match the constant in claude-adapter.ts. Duplicated here to avoid
+ *  importing claude-adapter from analysis-service (which changes module
+ *  loading order and breaks test mocking). */
+const TOOL_BASED_ANALYSIS_MCP_SERVER_NAME = "game-theory-analysis-tools";
+
+export interface PhaseToolResult {
+  success: boolean;
+  error?: string;
+  entitiesCreated: number;
+  entitiesUpdated: number;
+  entitiesDeleted: number;
+  relationshipsCreated: number;
+  phaseCompleted: boolean;
+}
+
+const TOOL_BASED_MAX_TURNS = 36;
+
+/**
+ * Run a single analysis phase using the tool-based execution path.
+ *
+ * Unlike runPhase() which creates/disposes a session per call and expects
+ * structured JSON output, this function:
+ * - Receives a persistent MCP server (shared across phases)
+ * - Does NOT create/dispose sessions — the SDK query() handles that
+ * - Relies on the MCP server's write tools for entity creation
+ * - Reads results from writeContext.counters after the query completes
+ *
+ * Does NOT call beginPhaseTransaction/commitPhaseTransaction — the
+ * orchestrator wraps those around this call.
+ */
+export async function runPhaseWithTools(
+  phase: MethodologyPhase,
+  topic: string,
+  toolMcpServer: unknown,
+  writeContext: import("./analysis-tools").AnalysisWriteContext,
+  context?: PhaseContext,
+): Promise<PhaseToolResult> {
+  if (!isSupportedPhase(phase)) {
+    return {
+      success: false,
+      error: `Unsupported phase: ${phase}`,
+      entitiesCreated: 0,
+      entitiesUpdated: 0,
+      entitiesDeleted: 0,
+      relationshipsCreated: 0,
+      phaseCompleted: false,
+    };
+  }
+
+  if (context?.signal?.aborted) {
+    return {
+      success: false,
+      error: "Aborted",
+      entitiesCreated: 0,
+      entitiesUpdated: 0,
+      entitiesDeleted: 0,
+      relationshipsCreated: 0,
+      phaseCompleted: false,
+    };
+  }
+
+  const logger =
+    context?.logger ??
+    createRunLogger(
+      `svc-tools-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    );
+
+  const { system, user } =
+    context?.promptBundle ??
+    buildPhasePromptBundle({
+      phase,
+      topic,
+      phaseBrief: context?.phaseBrief,
+      effortLevel: context?.runtime?.effortLevel ?? "medium",
+      toolBased: true,
+    });
+
+  const model = context?.model ?? "claude-sonnet-4-20250514";
+  const logContext = context?.phaseTurnId
+    ? { phaseTurnId: context.phaseTurnId }
+    : {};
+
+  logger.log("analysis-service", "tool-phase-start", {
+    phase,
+    model,
+    ...logContext,
+  });
+  context?.onActivity?.({ kind: "note", message: "Preparing phase analysis" });
+
+  const { query } = await import("@anthropic-ai/claude-agent-sdk");
+  const { buildClaudeAgentEnv, getClaudeAgentDebugFilePath } =
+    await import("../utils/resolve-claude-agent-env");
+  const { resolveClaudeCli } = await import("../utils/resolve-claude-cli");
+
+  const env = buildClaudeAgentEnv();
+  const debugFile = getClaudeAgentDebugFilePath();
+  const claudePath = resolveClaudeCli();
+
+  const { ANALYSIS_TOOL_BASED_NAMES } = await import("./ai/tool-surfaces");
+  const allowedTools = ANALYSIS_TOOL_BASED_NAMES.map(
+    (name: string) => `mcp__${TOOL_BASED_ANALYSIS_MCP_SERVER_NAME}__${name}`,
+  );
+  const webSearchEnabled =
+    context?.promptBundle?.toolPolicy?.webSearch ??
+    context?.runtime?.webSearch ??
+    true;
+  if (webSearchEnabled) {
+    allowedTools.push("WebSearch");
+  }
+
+  const q = query({
+    prompt: (async function* () {
+      yield {
+        type: "user" as const,
+        message: { role: "user" as const, content: user },
+        parent_tool_use_id: null,
+        session_id: "analysis-phase",
+      };
+    })(),
+    options: {
+      systemPrompt: system,
+      model,
+      maxTurns: TOOL_BASED_MAX_TURNS,
+      allowedTools,
+      mcpServers: {
+        [TOOL_BASED_ANALYSIS_MCP_SERVER_NAME]: toolMcpServer as any,
+      },
+      includePartialMessages: true,
+      permissionMode: "dontAsk",
+      persistSession: true,
+      settingSources: [],
+      plugins: [],
+      env,
+      ...(debugFile ? { debugFile } : {}),
+      ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
+    },
+  });
+
+  const onAbort = () => q.close();
+  context?.signal?.addEventListener("abort", onAbort, { once: true });
+
+  try {
+    for await (const message of q) {
+      if (context?.signal?.aborted) {
+        logger.warn("analysis-service", "tool-phase-aborted", {
+          phase,
+          ...logContext,
+        });
+        break;
+      }
+
+      // Track tool calls for activity events
+      if (message.type === "stream_event") {
+        const ev = (message as any).event;
+        if (ev?.type === "content_block_start") {
+          const block = ev.content_block;
+          if (
+            block &&
+            (block.type === "tool_use" || block.type === "server_tool_use")
+          ) {
+            const toolName: string = block.name ?? "unknown";
+            // Strip MCP prefix for cleaner logging
+            const shortName = toolName.replace(
+              `mcp__${TOOL_BASED_ANALYSIS_MCP_SERVER_NAME}__`,
+              "",
+            );
+            context?.onActivity?.({
+              kind:
+                shortName === "WebSearch" || toolName === "WebSearch"
+                  ? "web-search"
+                  : "tool",
+              message: `Using ${shortName}`,
+              toolName: shortName,
+            });
+            logger.log("analysis-service", "tool-phase-tool-call", {
+              phase,
+              toolName: shortName,
+              ...logContext,
+            });
+          }
+        }
+      }
+
+      if (message.type === "result") {
+        const subtype = (message as any).subtype;
+        if (subtype !== "success" || (message as any).is_error) {
+          const errors: string[] = (message as any).errors ?? [];
+          const errMsg = errors.join("; ") || "Query ended without success";
+          logger.error("analysis-service", "tool-phase-query-failed", {
+            phase,
+            error: errMsg,
+            ...logContext,
+          });
+          return {
+            success: false,
+            error: errMsg,
+            entitiesCreated: writeContext.counters?.entitiesCreated ?? 0,
+            entitiesUpdated: writeContext.counters?.entitiesUpdated ?? 0,
+            entitiesDeleted: writeContext.counters?.entitiesDeleted ?? 0,
+            relationshipsCreated:
+              writeContext.counters?.relationshipsCreated ?? 0,
+            phaseCompleted: writeContext.counters?.phaseCompleted ?? false,
+          };
+        }
+        break;
+      }
+    }
+  } catch (err) {
+    if (context?.signal?.aborted) {
+      return {
+        success: false,
+        error: "Aborted",
+        entitiesCreated: writeContext.counters?.entitiesCreated ?? 0,
+        entitiesUpdated: writeContext.counters?.entitiesUpdated ?? 0,
+        entitiesDeleted: writeContext.counters?.entitiesDeleted ?? 0,
+        relationshipsCreated: writeContext.counters?.relationshipsCreated ?? 0,
+        phaseCompleted: writeContext.counters?.phaseCompleted ?? false,
+      };
+    }
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logger.error("analysis-service", "tool-phase-error", {
+      phase,
+      error: errMsg,
+      ...logContext,
+    });
+    return {
+      success: false,
+      error: errMsg,
+      entitiesCreated: writeContext.counters?.entitiesCreated ?? 0,
+      entitiesUpdated: writeContext.counters?.entitiesUpdated ?? 0,
+      entitiesDeleted: writeContext.counters?.entitiesDeleted ?? 0,
+      relationshipsCreated: writeContext.counters?.relationshipsCreated ?? 0,
+      phaseCompleted: writeContext.counters?.phaseCompleted ?? false,
+    };
+  } finally {
+    context?.signal?.removeEventListener("abort", onAbort);
+  }
+
+  const counters = writeContext.counters;
+  const phaseCompleted = counters?.phaseCompleted ?? false;
+
+  logger.log("analysis-service", "tool-phase-complete", {
+    phase,
+    phaseCompleted,
+    entitiesCreated: counters?.entitiesCreated ?? 0,
+    entitiesUpdated: counters?.entitiesUpdated ?? 0,
+    entitiesDeleted: counters?.entitiesDeleted ?? 0,
+    relationshipsCreated: counters?.relationshipsCreated ?? 0,
+    ...logContext,
+  });
+
+  return {
+    success: phaseCompleted,
+    entitiesCreated: counters?.entitiesCreated ?? 0,
+    entitiesUpdated: counters?.entitiesUpdated ?? 0,
+    entitiesDeleted: counters?.entitiesDeleted ?? 0,
+    relationshipsCreated: counters?.relationshipsCreated ?? 0,
+    phaseCompleted,
+    ...(!phaseCompleted ? { error: "AI did not call complete_phase" } : {}),
+  };
+}
+
 // ── Exported for testing ──
 
 export {

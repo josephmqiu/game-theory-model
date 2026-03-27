@@ -19,7 +19,7 @@ import type {
 } from "../../shared/types/analysis-runtime";
 import { normalizeRuntimeProvider } from "../../shared/types/analysis-runtime";
 import type { PhaseResult } from "../services/analysis-service";
-import { runPhase } from "../services/analysis-service";
+import { runPhase, runPhaseWithTools } from "../services/analysis-service";
 import {
   buildPhasePromptBundle,
   createRunPromptProvenance,
@@ -33,12 +33,19 @@ import {
 } from "../services/analysis-phase-selection";
 import * as entityGraphService from "../services/entity-graph-service";
 import * as revalidationService from "../services/revalidation-service";
-import { commitPhaseSnapshot } from "../services/revision-diff";
+import {
+  commitPhaseSnapshot,
+  beginPhaseTransaction,
+  commitPhaseTransaction,
+  rollbackPhaseTransaction,
+} from "../services/revision-diff";
 import {
   getRecordedLoopbackTriggers,
   clearRecordedLoopbackTriggers,
+  type AnalysisWriteContext,
 } from "../services/analysis-tools";
 import type { LoopbackTriggerType } from "../services/analysis-tools";
+import { PHASE_ENTITY_TYPES } from "../services/analysis-entity-schemas";
 import { analysisRuntimeConfig } from "../config/analysis-runtime";
 import { resolveAnalysisRuntime } from "../config/analysis-runtime-resolver";
 import * as runtimeStatus from "../services/runtime-status";
@@ -125,6 +132,9 @@ interface ActiveRun {
   error?: string;
   logger: RunLogger;
   promptProvenance: ReturnType<typeof createRunPromptProvenance>;
+  /** Tool-based phase execution state (null when feature flag is off) */
+  toolWriteContext: AnalysisWriteContext | null;
+  toolMcpServer: unknown | null;
 }
 
 function clearAnalysisRunBinding(
@@ -549,6 +559,169 @@ async function executeSinglePhase(
   ]);
   emitProgress({ type: "phase_started", phase, runId: run.runId });
   run.logger.log("orchestrator", "phase-start", { phase, phaseTurnId });
+
+  // ── Tool-based execution path (behind feature flag) ──
+  if (
+    analysisRuntimeConfig.orchestrator.toolBasedPhases &&
+    run.toolWriteContext &&
+    run.toolMcpServer
+  ) {
+    // Update the mutable write context for this phase
+    run.toolWriteContext.phase = phase;
+    run.toolWriteContext.phaseTurnId = phaseTurnId;
+    run.toolWriteContext.runId = run.runId;
+    run.toolWriteContext.allowedEntityTypes = PHASE_ENTITY_TYPES[phase] ?? [];
+    run.toolWriteContext.counters = {
+      entitiesCreated: 0,
+      entitiesUpdated: 0,
+      entitiesDeleted: 0,
+      relationshipsCreated: 0,
+      phaseCompleted: false,
+    };
+
+    // Build tool-based prompt bundle
+    const toolPromptBundle = buildPhasePromptBundle({
+      phase,
+      topic,
+      phaseBrief: phaseBrief.phaseBrief,
+      effortLevel: run.runtime.effortLevel,
+      toolBased: true,
+    });
+
+    const phaseAbort = new AbortController();
+    const onExternalAbort = () => phaseAbort.abort();
+    externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
+
+    beginPhaseTransaction(phase, run.runId);
+    try {
+      const toolResult = await runPhaseWithTools(
+        phase,
+        topic,
+        run.toolMcpServer,
+        run.toolWriteContext,
+        {
+          workspaceId: run.workspaceId,
+          threadId: run.threadId,
+          promptBundle: {
+            system: toolPromptBundle.system,
+            user: toolPromptBundle.user,
+            toolPolicy: toolPromptBundle.toolPolicy,
+          },
+          provider: run.provider,
+          model: run.model,
+          runtime: run.runtime,
+          runId: run.runId,
+          phaseTurnId,
+          signal: phaseAbort.signal,
+          logger: run.logger,
+          onActivity: (activity) => {
+            appendRunLifecycleEvents(run, "analysis-agent", [
+              {
+                type: "phase.activity.recorded",
+                payload: {
+                  phase,
+                  phaseTurnId,
+                  kind: activity.kind,
+                  message: activity.message,
+                  ...(activity.toolName ? { toolName: activity.toolName } : {}),
+                  ...(activity.query ? { query: activity.query } : {}),
+                },
+                occurredAt: Date.now(),
+              },
+            ]);
+            emitPhaseActivity(run.runId, phase, activity.message, {
+              kind: activity.kind,
+              toolName: activity.toolName,
+              query: activity.query,
+            });
+          },
+        },
+      );
+
+      if (toolResult.success && toolResult.phaseCompleted) {
+        const txSummary = commitPhaseTransaction();
+        entityGraphService.setPhaseStatus(phase, "complete");
+        run.logger.log("orchestrator", "tool-phase-complete", {
+          phase,
+          phaseTurnId,
+          elapsedMs: Date.now() - phaseStart,
+          entitiesCreated: txSummary.entitiesCreated,
+          entitiesUpdated: txSummary.entitiesUpdated,
+          entitiesDeleted: txSummary.entitiesDeleted,
+          relationshipsCreated: txSummary.relationshipsCreated,
+        });
+        const summary: PhaseSummary = {
+          entitiesCreated: txSummary.entitiesCreated,
+          entitiesUpdated: txSummary.entitiesUpdated,
+          relationshipsCreated: txSummary.relationshipsCreated,
+          durationMs: Date.now() - phaseStart,
+        };
+        appendRunLifecycleEvents(run, "analysis-agent", [
+          {
+            type: "phase.completed",
+            payload: {
+              phase,
+              phaseTurnId,
+              summary,
+            },
+            occurredAt: Date.now(),
+          },
+          {
+            type: "run.status.changed",
+            payload: {
+              status: "running",
+              activePhase: null,
+              progress: {
+                completed: run.phasesCompleted.length + 1,
+                total: run.activePhases.length,
+              },
+              summary: {
+                statusMessage: `Completed ${phase}`,
+                completedPhases: run.phasesCompleted.length + 1,
+              },
+              latestPhaseTurnId: phaseTurnId,
+            },
+            occurredAt: Date.now(),
+          },
+        ]);
+        emitProgress({
+          type: "phase_completed",
+          phase,
+          runId: run.runId,
+          summary,
+        });
+        runtimeStatus.completePhase(run.runId);
+        drainEditQueue();
+        return { success: true };
+      } else {
+        rollbackPhaseTransaction();
+        entityGraphService.setPhaseStatus(phase, "failed");
+        const errMsg = toolResult.error ?? "Phase did not complete";
+        run.logger.error("orchestrator", "tool-phase-failed", {
+          phase,
+          phaseTurnId,
+          elapsedMs: Date.now() - phaseStart,
+          error: errMsg,
+        });
+        return { success: false, error: errMsg };
+      }
+    } catch (err) {
+      rollbackPhaseTransaction();
+      entityGraphService.setPhaseStatus(phase, "failed");
+      const errMsg = err instanceof Error ? err.message : String(err);
+      run.logger.error("orchestrator", "tool-phase-error", {
+        phase,
+        phaseTurnId,
+        elapsedMs: Date.now() - phaseStart,
+        error: errMsg,
+      });
+      return { success: false, error: errMsg };
+    } finally {
+      externalSignal?.removeEventListener("abort", onExternalAbort);
+    }
+  }
+
+  // ── Structured-output execution path (default) ──
 
   let lastError = "";
 
@@ -1048,6 +1221,8 @@ export async function runFull(
     abortController,
     logger,
     promptProvenance,
+    toolWriteContext: null,
+    toolMcpServer: null,
   };
 
   try {
@@ -1110,11 +1285,11 @@ export async function runFull(
   } catch (error) {
     activeRun = null;
     clearTimeout(runTimeoutHandle);
-      runtimeStatus.releaseRun(runId, "failed", {
-        failureMessage:
-          error instanceof Error ? error.message : "Failed to persist run start",
-        provider: canonicalProvider,
-      });
+    runtimeStatus.releaseRun(runId, "failed", {
+      failureMessage:
+        error instanceof Error ? error.message : "Failed to persist run start",
+      provider: canonicalProvider,
+    });
     throw error;
   }
 
@@ -1137,6 +1312,25 @@ export async function runFull(
   const run = activeRun;
   const executeAsync = async () => {
     try {
+      // Set up tool-based execution infrastructure when feature flag is on
+      if (analysisRuntimeConfig.orchestrator.toolBasedPhases) {
+        const writeContext: AnalysisWriteContext = {
+          workspaceId: run.workspaceId,
+          threadId: run.threadId,
+          runId: run.runId,
+          phase: run.activePhases[0],
+          allowedEntityTypes: [],
+        };
+        run.toolWriteContext = writeContext;
+        const { createToolBasedAnalysisMcpServer } =
+          await import("../services/ai/claude-adapter");
+        run.toolMcpServer =
+          await createToolBasedAnalysisMcpServer(writeContext);
+        run.logger.log("orchestrator", "tool-based-setup", {
+          toolBasedPhases: true,
+        });
+      }
+
       let phaseIndex = 0;
       // Count backward loopback jumps across the whole run so repeated
       // replay cycles converge or fail deterministically.
@@ -1512,6 +1706,9 @@ export async function runFull(
       }
     } finally {
       clearTimeout(runTimeoutHandle);
+      // Clean up tool-based execution state
+      run.toolWriteContext = null;
+      run.toolMcpServer = null;
       // Drain any remaining queued edits
       drainEditQueue();
       run.activePhase = null;

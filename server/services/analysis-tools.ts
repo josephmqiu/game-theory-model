@@ -166,9 +166,19 @@ export function _resetLoopbackTriggersForTest(): void {
 
 // ── Analysis-write context and handlers (tool-based phases) ──
 
+export interface AnalysisWriteCounters {
+  entitiesCreated: number;
+  entitiesUpdated: number;
+  entitiesDeleted: number;
+  relationshipsCreated: number;
+  phaseCompleted: boolean;
+}
+
 export interface AnalysisWriteContext extends AnalysisToolContext {
   phase: MethodologyPhase;
   allowedEntityTypes: string[];
+  /** Mutable counters — reset by orchestrator before each phase. */
+  counters?: AnalysisWriteCounters;
 }
 
 export function analysisCreateEntity(
@@ -225,6 +235,7 @@ export function analysisCreateEntity(
     { source: "phase-derived", runId: ctx.runId, phase: ctx.phase },
   );
 
+  if (ctx.counters) ctx.counters.entitiesCreated++;
   return { id: created.id, ref: args.ref, type: args.type };
 }
 
@@ -261,6 +272,7 @@ export function analysisUpdateEntity(
     return { error: `Failed to update entity "${args.id}"` };
   }
 
+  if (ctx.counters) ctx.counters.entitiesUpdated++;
   return { id: updated.id, type: updated.type, updated: true };
 }
 
@@ -286,6 +298,7 @@ export function analysisDeleteEntity(
   }
 
   entityGraphService.removeEntity(args.id);
+  if (ctx.counters) ctx.counters.entitiesDeleted++;
   return { id: args.id, deleted: true };
 }
 
@@ -320,6 +333,7 @@ export function analysisCreateRelationship(
     { source: "phase-derived", runId: ctx.runId, phase: ctx.phase },
   );
 
+  if (ctx.counters) ctx.counters.relationshipsCreated++;
   return {
     id: created.id,
     type: created.type,
@@ -368,5 +382,6 @@ export function analysisCompletePhase(
     return { success: false, error: invariantResult.error };
   }
 
+  if (ctx.counters) ctx.counters.phaseCompleted = true;
   return { success: true, phase: ctx.phase };
 }
