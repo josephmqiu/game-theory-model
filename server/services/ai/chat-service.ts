@@ -26,7 +26,6 @@ import {
   normalizeRuntimeProvider,
   type RuntimeProvider,
 } from "../../../shared/types/analysis-runtime";
-import { buildTokenBudgetedChatHistory } from "./chat-history-budget";
 
 export const SENSITIVE_LOG_PATTERN =
   /ANTHROPIC_API_KEY=|Authorization:\s*Bearer|api[_-]?key\s*[:=]/i;
@@ -118,28 +117,15 @@ function buildServerChatSystemPrompt(): string {
   const phaseStatuses = analysis.phases
     .map((phaseStatus) => `${phaseStatus.phase}: ${phaseStatus.status}`)
     .join(", ");
-  const entitySummary = analysis.entities
-    .slice(0, 30)
-    .map((entity) => {
-      const data = entity.data;
-      const label =
-        "name" in data
-          ? data.name
-          : "content" in data
-            ? data.content
-            : entity.type;
-      return `- [${entity.type}] ${label} (${entity.confidence} confidence, phase: ${entity.phase})`;
-    })
-    .join("\n");
 
   const context = [
     "ANALYSIS CONTEXT:",
     `Topic: ${analysis.topic || "(no topic)"}`,
-    `Name: ${analysis.name || "(unnamed)"}`,
-    `Entities: ${analysis.entities.length}`,
+    `Entities on canvas: ${analysis.entities.length}`,
     `Phases: ${phaseStatuses}`,
-    analysis.entities.length > 0 ? `\nEntities:\n${entitySummary}` : "",
-    analysis.centralThesis ? `\nCentral Thesis: ${analysis.centralThesis}` : "",
+    analysis.centralThesis ? `Central Thesis: ${analysis.centralThesis}` : "",
+    "",
+    "Use query_entities, get_entity, and query_relationships tools to inspect entity details when needed.",
   ]
     .filter(Boolean)
     .join("\n");
@@ -541,19 +527,15 @@ export async function startChatTurn(
     occurredAt,
     correlationId,
   });
-  const priorMessages = threadService.listMessagesByThreadId(threadContext.threadId);
+  const priorMessages = threadService.listMessagesByThreadId(
+    threadContext.threadId,
+  );
   const historySource = priorMessages.map((message) => ({
     role: message.role,
     content: message.content,
   }));
   const systemPrompt = buildServerChatSystemPrompt();
-  const history = buildTokenBudgetedChatHistory({
-    messages: historySource,
-    provider: request.provider,
-    model: request.model,
-    systemPrompt,
-    nextUserMessage: request.message.content,
-  });
+  const history = historySource;
 
   threadService.recordMessage({
     workspaceId: threadContext.workspaceId,

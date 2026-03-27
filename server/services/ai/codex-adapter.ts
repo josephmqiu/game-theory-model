@@ -36,6 +36,7 @@ import {
   recordResumeDiag,
   buildHistoryInjectedPrompt,
 } from "./adapter-session-utils";
+import { buildTokenBudgetedChatHistory } from "./chat-history-budget";
 
 // ── Types ──
 
@@ -1562,13 +1563,23 @@ class CodexRuntimeSession implements RuntimeAdapterSession {
   }
 
   streamChatTurn(input: RuntimeChatTurnInput): AsyncGenerator<ChatEvent> {
-    // For non-resumed sessions, prepend conversation history into the system
-    // prompt so the model has context. Resumed sessions already have the full
+    // For non-resumed sessions, trim history to the model's context window and
+    // prepend it into the system prompt. Resumed sessions already have the full
     // conversation in the Codex thread state.
+    const trimmedMessages =
+      input.messages && input.messages.length > 0
+        ? buildTokenBudgetedChatHistory({
+            messages: input.messages,
+            provider: "codex",
+            model: input.model,
+            systemPrompt: input.systemPrompt,
+            nextUserMessage: input.prompt,
+          })
+        : [];
     const resumeThreadId = getCodexResumeThreadId(this.state);
     const effectiveSystemPrompt =
-      !resumeThreadId && input.messages && input.messages.length > 0
-        ? buildHistoryInjectedPrompt(input.systemPrompt, input.messages)
+      !resumeThreadId && trimmedMessages.length > 0
+        ? buildHistoryInjectedPrompt(input.systemPrompt, trimmedMessages)
         : input.systemPrompt;
 
     return streamChat(

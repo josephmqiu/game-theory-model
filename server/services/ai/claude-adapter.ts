@@ -62,6 +62,7 @@ import {
   extractMessageContent,
   type SdkStreamMessage,
 } from "./claude-sdk-types";
+import { buildTokenBudgetedChatHistory } from "./chat-history-budget";
 
 type ClaudeAnalysisMode = "structured" | "json-fallback";
 
@@ -663,12 +664,22 @@ async function* streamClaudeChatTurn(
     );
   }
 
-  // For non-resumed sessions, prepend conversation history into the system
-  // prompt so the model has context. Resumed sessions already have the full
+  // For non-resumed sessions, trim history to the model's context window and
+  // prepend it into the system prompt. Resumed sessions already have the full
   // conversation in the SDK's persisted state.
+  const trimmedMessages =
+    input.messages && input.messages.length > 0
+      ? buildTokenBudgetedChatHistory({
+          messages: input.messages,
+          provider: "claude",
+          model: input.model,
+          systemPrompt: input.systemPrompt,
+          nextUserMessage: input.prompt,
+        })
+      : [];
   const effectiveSystemPrompt =
-    !resumeSessionId && input.messages && input.messages.length > 0
-      ? buildHistoryInjectedPrompt(input.systemPrompt, input.messages)
+    !resumeSessionId && trimmedMessages.length > 0
+      ? buildHistoryInjectedPrompt(input.systemPrompt, trimmedMessages)
       : input.systemPrompt;
 
   const q = query({
