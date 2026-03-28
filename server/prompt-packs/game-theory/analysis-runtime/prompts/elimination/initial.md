@@ -5,6 +5,7 @@ possibility space and prevents scenarios that seem plausible on the surface but 
 eliminated by the strategic structure.
 
 BEFORE ELIMINATING, think through the scope:
+
 1. What outcomes would a non-expert consider plausible that the analysis has ruled out?
 2. Am I about to restate a definitional property as an elimination? (e.g., "both players
    can't win in a zero-sum game" is not an elimination — it's the definition of zero-sum.)
@@ -24,6 +25,7 @@ Use the query_entities tool to retrieve prior phase entities. For each outcome y
 state which phase's findings eliminate it with specific entity ID references.
 
 Examples of well-formed eliminations:
+
 - "Bilateral negotiated settlement is eliminated because Phase 4 shows the trust infrastructure
   is destroyed (entity IDs: ...)."
 - "Clean 'declare victory and leave' is eliminated because Phase 6 cross-game constraint table
@@ -33,22 +35,55 @@ Examples of well-formed eliminations:
 
 ELIMINATED-OUTCOME ENTITY SCHEMA:
 {
-  "id": null,
-  "ref": "<unique-ref>",
-  "type": "eliminated-outcome",
-  "phase": "elimination",
-  "data": {
-    "type": "eliminated-outcome",
-    "description": "<what outcome is eliminated>",
-    "traced_reasoning": "<which phase's findings eliminate it, with entity references>",
-    "source_phase": "<which phase produced the evidence>",
-    "source_entity_ids": ["<entity-id-1>", "<entity-id-2>"]
-  },
-  "confidence": "high" | "medium" | "low",
-  "rationale": "<why this elimination matters>"
+"ref": "<unique-ref>",
+"type": "eliminated-outcome",
+"phase": "elimination",
+"data": {
+"type": "eliminated-outcome",
+"description": "<what outcome is eliminated>",
+"traced_reasoning": "<which phase's findings eliminate it, with entity references>",
+"source_phase": "<which phase produced the evidence>",
+"source_entity_ids": ["<entity-id-1>", "<entity-id-2>"]
+},
+"confidence": "high" | "medium" | "low",
+"rationale": "<why this elimination matters>"
 }
 
 RELATIONSHIPS:
+
 - Use "invalidated-by" from eliminated-outcome to source entities that provide the evidence.
 
-${SHARED_OUTPUT_RULES}
+HOW TO CREATE ENTITIES — use the provided tools:
+
+Use the `create_entity` tool to create each eliminated-outcome entity. Parameters:
+
+- `ref`: a unique reference string (e.g. "elim-bilateral-deal", "elim-quick-victory")
+- `type`: "eliminated-outcome"
+- `phase`: "elimination"
+- `data`: the entity data object matching the schema above
+- `confidence`: "high", "medium", or "low"
+- `rationale`: one sentence justifying this elimination
+
+Use the `create_relationship` tool to link to source evidence. Parameters:
+
+- `type`: "invalidated-by"
+- `fromEntityId`: the ref of the eliminated-outcome entity
+- `toEntityId`: the ID of the source entity providing evidence
+
+If you make an error, use `update_entity` to correct an entity's data, or `delete_entity` to remove it entirely.
+
+When you have eliminated all structurally impossible outcomes, call `complete_phase` to signal that Phase 8 is done.
+
+EXAMPLE — creating an elimination:
+
+Call create_entity with:
+ref: "elim-negotiated-settlement"
+type: "eliminated-outcome"
+phase: "elimination"
+data: { "type": "eliminated-outcome", "description": "Bilateral negotiated settlement on semiconductor trade", "traced_reasoning": "Phase 4 trust assessment shows zero trust between parties; Phase 6 bargaining dynamics show no credible commitment mechanism exists", "source_phase": "historical-game", "source_entity_ids": ["trust-us-china", "bargain-semiconductor"] }
+confidence: "high"
+rationale: "Looks plausible to outsiders but structural analysis rules it out"
+
+Then create_relationship with type "invalidated-by" from the elimination to the source entities.
+
+Call complete_phase when done.

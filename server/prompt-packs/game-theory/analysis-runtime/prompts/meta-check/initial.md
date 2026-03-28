@@ -32,28 +32,61 @@ For each question, if your answer reveals a genuine blind spot or disruption to 
 set disruption_trigger_identified to true.
 
 CRITICAL: If ANY question has disruption_trigger_identified: true, you MUST call
-request_loopback("meta_check_blind_spot", "<justification explaining what was found>")
-BEFORE returning your entities.
+`request_loopback` with trigger_type "meta_check_blind_spot" and a justification explaining
+what was found BEFORE calling complete_phase.
 
 META-CHECK ENTITY SCHEMA:
 {
-  "id": null,
-  "ref": "<unique-ref>",
-  "type": "meta-check",
-  "phase": "meta-check",
-  "data": {
-    "type": "meta-check",
-    "questions": [
-      { "question_number": 1, "answer": "<thorough answer>", "disruption_trigger_identified": false },
-      { "question_number": 2, "answer": "<thorough answer>", "disruption_trigger_identified": false },
-      ...all 10...
-    ]
-  },
-  "confidence": "high" | "medium" | "low",
-  "rationale": "<overall assessment of the analysis quality>"
+"ref": "<unique-ref>",
+"type": "meta-check",
+"phase": "meta-check",
+"data": {
+"type": "meta-check",
+"questions": [
+{ "question_number": 1, "answer": "<thorough answer>", "disruption_trigger_identified": false },
+{ "question_number": 2, "answer": "<thorough answer>", "disruption_trigger_identified": false },
+... all 10 ...
+]
+},
+"confidence": "high" | "medium" | "low",
+"rationale": "<overall assessment of the analysis quality>"
 }
 
 RELATIONSHIPS:
+
 - Use "informed-by" from meta-check to scenario and central-thesis entities from Phase 9.
 
-${SHARED_OUTPUT_RULES}
+HOW TO CREATE ENTITIES — use the provided tools:
+
+Use the `create_entity` tool to create the meta-check entity. Parameters:
+
+- `ref`: "meta-check"
+- `type`: "meta-check"
+- `phase`: "meta-check"
+- `data`: the meta-check data object with all 10 questions answered
+- `confidence`: "high", "medium", or "low"
+- `rationale`: your overall assessment of the analysis quality
+
+Use the `create_relationship` tool to link to prior entities. Parameters:
+
+- `type`: "informed-by"
+- `fromEntityId`: the ref of the meta-check entity
+- `toEntityId`: the ID of the scenario or central-thesis entity
+
+If any question has disruption_trigger_identified: true, call `request_loopback` with
+trigger_type "meta_check_blind_spot" and justification BEFORE calling complete_phase.
+
+When you have created the meta-check entity with all 10 questions answered and relationships
+established, call `complete_phase` to signal that Phase 10 is done.
+
+EXAMPLE — creating the meta-check:
+
+Call create_entity with:
+ref: "meta-check"
+type: "meta-check"
+phase: "meta-check"
+data: { "type": "meta-check", "questions": [{ "question_number": 1, "answer": "I spent the least time analyzing China's domestic political constraints, which could significantly alter their negotiating position", "disruption_trigger_identified": false }, { "question_number": 2, "answer": "I am most confident about the chicken game framing, but this confidence may be masking alternative framings like bargaining or signaling", "disruption_trigger_identified": false }, ... all 10 questions ... ] }
+confidence: "high"
+rationale: "Analysis is well-grounded but identified two areas for deeper examination"
+
+If any disruption trigger was identified, call request_loopback first, then complete_phase.

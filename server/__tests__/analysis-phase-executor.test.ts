@@ -14,15 +14,16 @@ describe("analysis-service boundary", () => {
     expect(source).not.toContain("node:fs");
   });
 
-  it("resolves providers through the runtime adapter contract", () => {
+  it("delegates to tool-based execution via claude-adapter MCP server", () => {
     const source = readFileSync(
       resolve("server/services/analysis-service.ts"),
       "utf-8",
     );
 
-    expect(source).toContain("loadRuntimeAdapter");
-    expect(source).toContain("createSession");
-    expect(source).not.toContain("../ai/claude-adapter");
+    // Tool-based path uses createToolBasedAnalysisMcpServer from claude-adapter
+    expect(source).toContain("createToolBasedAnalysisMcpServer");
+    expect(source).toContain("runPhaseWithTools");
+    // Does not import codex-adapter directly
     expect(source).not.toContain("../ai/codex-adapter");
   });
 

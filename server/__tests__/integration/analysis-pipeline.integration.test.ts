@@ -1,87 +1,21 @@
 /**
- * Integration tests: analysis-service → revision-diff → entity-graph-service.
+ * Integration tests: entity graph operations via revision-diff transactions.
  *
- * Only the AI adapter is mocked. Everything else runs real:
- * - Zod validation in analysis-service
- * - Entity diffing in revision-diff
- * - Entity storage in entity-graph-service
- * - Runtime status tracking
+ * Tests that the entity graph correctly handles multi-phase entity creation,
+ * user-edited entity preservation, and phase transactions.
+ *
+ * Note: runPhase() is a thin wrapper that delegates to runPhaseWithTools(),
+ * which uses the Agent SDK. The orchestrator-pipeline integration tests
+ * cover the full end-to-end flow. These tests focus on the entity graph
+ * and revision-diff behavior directly.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { MethodologyPhase } from "../../../shared/types/methodology";
 import {
   resetAllServices,
-  makeFactOutput,
-  getPhaseFixture,
+  PHASE_FIXTURES,
 } from "../../__test-utils__/fixtures";
-import { createMockRunAnalysisPhase } from "../../__test-utils__/mock-adapter";
-
-// ── Mock ONLY the AI adapters ──
-
-const mockRunAnalysisPhase = createMockRunAnalysisPhase();
-let activeRunAnalysisPhase = mockRunAnalysisPhase;
-
-vi.mock("../../services/ai/adapter-contract", () => ({
-  getRuntimeAdapter: vi.fn(async (providerInput?: string) => {
-    const isCodex = providerInput === "openai" || providerInput === "codex";
-    return {
-      provider: isCodex ? "codex" : "claude",
-      createSession(key: {
-        threadId: string;
-        runId?: string;
-        purpose?: string;
-      }) {
-        return {
-          provider: isCodex ? "codex" : "claude",
-          context: key,
-          streamChatTurn: vi.fn(),
-          runStructuredTurn<T = unknown>(input: {
-            prompt: string;
-            systemPrompt: string;
-            model: string;
-            schema: Record<string, unknown>;
-            signal?: AbortSignal;
-            runId?: string;
-            maxTurns?: number;
-            webSearch?: boolean;
-            onActivity?: unknown;
-          }) {
-            return activeRunAnalysisPhase(
-              input.prompt,
-              input.systemPrompt,
-              input.model,
-              input.schema,
-              {
-                signal: input.signal,
-                runId: input.runId,
-                maxTurns: input.maxTurns,
-                webSearch: input.webSearch,
-                onActivity: input.onActivity,
-              },
-            ) as Promise<T>;
-          },
-          getDiagnostics: vi.fn(() => ({
-            provider: isCodex ? "codex" : "claude",
-            sessionId: "analysis-pipeline-session",
-            details: { threadId: key.threadId },
-          })),
-          getBinding() {
-            return null;
-          },
-          dispose: vi.fn(async () => {}),
-        };
-      },
-      listModels: vi.fn(async () => []),
-      checkHealth: vi.fn(async () => ({
-        provider: isCodex ? "codex" : "claude",
-        status: "healthy",
-        reason: null,
-        checkedAt: Date.now(),
-        checks: [],
-      })),
-    };
-  }),
-}));
 
 // Suppress logger output
 vi.mock("../../utils/ai-logger", () => ({
@@ -99,11 +33,68 @@ vi.mock("../../utils/ai-logger", () => ({
   serverError: vi.fn(),
 }));
 
-// ── Real imports (loaded after mocks) ──
+// ── Real imports ──
 
-const { runPhase } = await import("../../services/analysis-service");
-const { commitPhaseSnapshot } = await import("../../services/revision-diff");
 const entityGraph = await import("../../services/entity-graph-service");
+const revisionDiff = await import("../../services/revision-diff");
+
+/**
+ * Simulate what tool handlers do during a phase: create entities and
+ * relationships in the entity graph within a revision-diff transaction.
+ */
+function simulatePhaseExecution(
+  phase: MethodologyPhase,
+  runId: string,
+): { entitiesCreated: number; relationshipsCreated: number } {
+  const fixture = PHASE_FIXTURES[phase];
+  if (!fixture) return { entitiesCreated: 0, relationshipsCreated: 0 };
+
+  for (const entity of fixture.entities) {
+    entityGraph.createEntity(
+      {
+        type: (entity as any).type,
+        phase,
+        data: (entity as any).data,
+        confidence: (entity as any).confidence,
+        rationale: (entity as any).rationale,
+        revision: 1,
+        stale: false,
+      },
+      { source: "phase-derived", runId, phase },
+    );
+  }
+
+  // Create relationships with resolved entity IDs
+  const graphEntities = entityGraph.getEntitiesByPhase(phase);
+  for (const rel of fixture.relationships) {
+    const fromIdx = fixture.entities.findIndex(
+      (e: any) => e.ref === (rel as any).fromEntityId,
+    );
+    const toIdx = fixture.entities.findIndex(
+      (e: any) => e.ref === (rel as any).toEntityId,
+    );
+    if (
+      fromIdx >= 0 &&
+      toIdx >= 0 &&
+      graphEntities[fromIdx] &&
+      graphEntities[toIdx]
+    ) {
+      entityGraph.createRelationship(
+        {
+          type: (rel as any).type,
+          fromEntityId: graphEntities[fromIdx].id,
+          toEntityId: graphEntities[toIdx].id,
+        },
+        { source: "phase-derived", runId, phase },
+      );
+    }
+  }
+
+  return {
+    entitiesCreated: fixture.entities.length,
+    relationshipsCreated: fixture.relationships.length,
+  };
+}
 
 // ── Tests ──
 
@@ -111,34 +102,23 @@ describe("analysis pipeline integration", () => {
   beforeEach(async () => {
     await resetAllServices();
     entityGraph.newAnalysis("Integration test topic");
-    activeRunAnalysisPhase = mockRunAnalysisPhase;
   });
 
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  it("single phase produces entities in the entity graph", async () => {
-    const result = await runPhase("situational-grounding", "Steel trade war");
+  it("single phase produces entities in the entity graph via transaction", () => {
+    const runId = "test-run-1";
+    revisionDiff.beginPhaseTransaction("situational-grounding", runId);
+    simulatePhaseExecution("situational-grounding", runId);
+    revisionDiff.commitPhaseTransaction();
 
-    expect(result.success).toBe(true);
-    expect(result.entities.length).toBeGreaterThan(0);
-
-    // Commit to graph
-    const commitResult = commitPhaseSnapshot({
-      phase: "situational-grounding",
-      runId: "test-run-1",
-      entities: result.entities,
-      relationships: result.relationships,
-    });
-
-    expect(commitResult.status).toBe("applied");
-
-    // Verify entities landed in the graph
     const graphEntities = entityGraph.getEntitiesByPhase(
       "situational-grounding",
     );
-    expect(graphEntities.length).toBe(result.entities.length);
+    const fixture = PHASE_FIXTURES["situational-grounding"]!;
+    expect(graphEntities.length).toBe(fixture.entities.length);
 
     // Verify relationships resolve to real entity IDs
     const analysis = entityGraph.getAnalysis();
@@ -149,38 +129,17 @@ describe("analysis pipeline integration", () => {
     }
   });
 
-  it("two sequential phases with prior context coexist in graph", async () => {
-    // Phase 1
-    const result1 = await runPhase("situational-grounding", "Steel trade war");
-    expect(result1.success).toBe(true);
-    commitPhaseSnapshot({
-      phase: "situational-grounding",
-      runId: "test-run-1",
-      entities: result1.entities,
-      relationships: result1.relationships,
-    });
+  it("two sequential phases with prior context coexist in graph", () => {
+    const runId = "test-run-1";
 
-    // Build prior context (as the orchestrator does)
-    const phase1Entities = entityGraph.getEntitiesByPhase(
-      "situational-grounding",
-    );
-    const priorContext = JSON.stringify(
-      phase1Entities.map((e) => ({ id: e.id, type: e.type, data: e.data })),
-    );
+    revisionDiff.beginPhaseTransaction("situational-grounding", runId);
+    simulatePhaseExecution("situational-grounding", runId);
+    revisionDiff.commitPhaseTransaction();
 
-    // Phase 2 with prior context
-    const result2 = await runPhase("player-identification", "Steel trade war", {
-      phaseBrief: priorContext,
-    });
-    expect(result2.success).toBe(true);
-    commitPhaseSnapshot({
-      phase: "player-identification",
-      runId: "test-run-1",
-      entities: result2.entities,
-      relationships: result2.relationships,
-    });
+    revisionDiff.beginPhaseTransaction("player-identification", runId);
+    simulatePhaseExecution("player-identification", runId);
+    revisionDiff.commitPhaseTransaction();
 
-    // Both phases' entities should coexist
     const allEntities = entityGraph.getAnalysis().entities;
     const phase1Count = allEntities.filter(
       (e) => e.phase === "situational-grounding",
@@ -189,19 +148,21 @@ describe("analysis pipeline integration", () => {
       (e) => e.phase === "player-identification",
     ).length;
 
-    expect(phase1Count).toBe(result1.entities.length);
-    expect(phase2Count).toBe(result2.entities.length);
+    expect(phase1Count).toBe(
+      PHASE_FIXTURES["situational-grounding"]!.entities.length,
+    );
+    expect(phase2Count).toBe(
+      PHASE_FIXTURES["player-identification"]!.entities.length,
+    );
   });
 
-  it("re-run preserves user-edited entities", async () => {
-    // Initial run
-    const result1 = await runPhase("situational-grounding", "Steel trade war");
-    commitPhaseSnapshot({
-      phase: "situational-grounding",
-      runId: "test-run-1",
-      entities: result1.entities,
-      relationships: result1.relationships,
-    });
+  it("re-run preserves user-edited entities", () => {
+    const runId = "test-run-1";
+
+    // First run
+    revisionDiff.beginPhaseTransaction("situational-grounding", runId);
+    simulatePhaseExecution("situational-grounding", runId);
+    revisionDiff.commitPhaseTransaction();
 
     const entities = entityGraph.getEntitiesByPhase("situational-grounding");
     expect(entities.length).toBeGreaterThan(0);
@@ -214,14 +175,10 @@ describe("analysis pipeline integration", () => {
       { source: "user-edited", runId: "user" },
     );
 
-    // Re-run the same phase (different run)
-    const result2 = await runPhase("situational-grounding", "Steel trade war");
-    commitPhaseSnapshot({
-      phase: "situational-grounding",
-      runId: "test-run-2",
-      entities: result2.entities,
-      relationships: result2.relationships,
-    });
+    // Re-run the same phase (new transaction)
+    revisionDiff.beginPhaseTransaction("situational-grounding", "test-run-2");
+    simulatePhaseExecution("situational-grounding", "test-run-2");
+    revisionDiff.commitPhaseTransaction();
 
     // User-edited entity should survive
     const analysis = entityGraph.getAnalysis();
@@ -231,112 +188,51 @@ describe("analysis pipeline integration", () => {
     expect(userEntity!.provenance?.source).toBe("user-edited");
   });
 
-  it("truncation detection returns retry_required", async () => {
-    // Seed graph with many entities
-    const manyFacts = Array.from({ length: 6 }, (_, i) =>
-      makeFactOutput({ ref: `fact-${i + 1}`, content: `Fact ${i + 1}` }),
+  it("rollback reverts entities created during transaction", () => {
+    const runId = "test-run-1";
+
+    revisionDiff.beginPhaseTransaction("situational-grounding", runId);
+    simulatePhaseExecution("situational-grounding", runId);
+
+    // Entities exist before rollback
+    const beforeRollback = entityGraph.getEntitiesByPhase(
+      "situational-grounding",
     );
-    commitPhaseSnapshot({
-      phase: "situational-grounding",
-      runId: "seed-run",
-      entities: manyFacts as any,
-      relationships: [],
-    });
+    expect(beforeRollback.length).toBeGreaterThan(0);
 
-    const seeded = entityGraph.getEntitiesByPhase("situational-grounding");
-    expect(seeded.length).toBe(6);
+    revisionDiff.rollbackPhaseTransaction();
 
-    // Commit with only 2 entities (< 50% of original 6) triggers truncation detection
-    const truncatedEntities = [
-      makeFactOutput({ ref: "fact-1", content: "Fact 1" }),
-      makeFactOutput({ ref: "fact-2", content: "Fact 2" }),
-    ];
-
-    const result = commitPhaseSnapshot({
-      phase: "situational-grounding",
-      runId: "test-run-2",
-      entities: truncatedEntities as any,
-      relationships: [],
-    });
-
-    expect(result.status).toBe("retry_required");
-    if (result.status === "retry_required") {
-      expect(result.originalAiEntityCount).toBe(6);
-      expect(result.returnedAiEntityCount).toBe(2);
-    }
+    // After rollback, entities created in this transaction should be removed
+    const afterRollback = entityGraph.getEntitiesByPhase(
+      "situational-grounding",
+    );
+    expect(afterRollback.length).toBe(0);
   });
 
-  it("Zod validation rejects malformed entity data", async () => {
-    // Create a custom mock that returns an entity missing required fields
-    const badMock = vi.fn().mockResolvedValue({
-      entities: [
-        {
-          id: null,
-          ref: "bad-fact",
-          type: "fact",
-          phase: "situational-grounding",
-          data: {
-            type: "fact",
-            // Missing required fields: date, source, content, category
-          },
-          confidence: "high",
-          rationale: "test",
-        },
-      ],
-      relationships: [],
-    });
-
-    try {
-      activeRunAnalysisPhase = badMock;
-      const result = await runPhase("situational-grounding", "Bad data test");
-      expect(result.success).toBe(false);
-      expect(result.error).toBeDefined();
-    } finally {
-      activeRunAnalysisPhase = mockRunAnalysisPhase;
-    }
-  });
-
-  it("full 3-phase pipeline with graph verification", async () => {
+  it("full 3-phase pipeline with graph verification", () => {
     const phases = [
       "situational-grounding",
       "player-identification",
       "baseline-model",
     ] as const;
-    let priorContext: string | undefined;
+    const runId = "test-run-1";
 
     for (const phase of phases) {
-      const result = await runPhase(phase, "Steel trade war", {
-        phaseBrief: priorContext,
-      });
-      expect(result.success).toBe(true);
-
-      const commitResult = commitPhaseSnapshot({
-        phase,
-        runId: "test-run-1",
-        entities: result.entities,
-        relationships: result.relationships,
-      });
-      expect(commitResult.status).toBe("applied");
-
-      // Build prior context for next phase
-      const phaseEntities = entityGraph.getEntitiesByPhase(phase);
-      priorContext = JSON.stringify(
-        phaseEntities.map((e) => ({ id: e.id, type: e.type, data: e.data })),
-      );
+      revisionDiff.beginPhaseTransaction(phase, runId);
+      simulatePhaseExecution(phase, runId);
+      revisionDiff.commitPhaseTransaction();
     }
 
     // Verify final graph state
     const analysis = entityGraph.getAnalysis();
     const entityIds = new Set(analysis.entities.map((e) => e.id));
 
-    // All phases have entities
     for (const phase of phases) {
       const phaseEntities = analysis.entities.filter((e) => e.phase === phase);
-      const expectedFixture = getPhaseFixture(phase);
+      const expectedFixture = PHASE_FIXTURES[phase]!;
       expect(phaseEntities.length).toBe(expectedFixture.entities.length);
     }
 
-    // All relationships have valid endpoints
     for (const rel of analysis.relationships) {
       expect(entityIds.has(rel.fromEntityId)).toBe(true);
       expect(entityIds.has(rel.toEntityId)).toBe(true);

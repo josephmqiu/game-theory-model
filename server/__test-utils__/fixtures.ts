@@ -15,6 +15,7 @@ export async function resetAllServices(): Promise<void> {
     orchestrator,
     commandHandlers,
     workspaceDb,
+    revisionDiff,
   ] = await Promise.all([
     import("../services/entity-graph-service"),
     import("../services/runtime-status"),
@@ -22,7 +23,10 @@ export async function resetAllServices(): Promise<void> {
     import("../agents/analysis-agent"),
     import("../services/command-handlers"),
     import("../services/workspace/workspace-db"),
+    import("../services/revision-diff"),
   ]);
+  // Clear any leftover phase transaction before resetting entity graph
+  revisionDiff.rollbackPhaseTransaction();
   // Ensure entity-graph-service can reach the workspace database in tests
   entityGraph._bindWorkspaceDatabaseForInit(workspaceDb.getWorkspaceDatabase);
   entityGraph._resetForTest();

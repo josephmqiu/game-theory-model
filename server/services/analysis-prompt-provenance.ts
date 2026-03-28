@@ -103,6 +103,7 @@ export function buildPhasePromptBundle(input: {
   phaseBrief?: string;
   revisionRetryInstruction?: string;
   revisionSystemPrompt?: string;
+  /** @deprecated No-op, kept for call-site compatibility during migration. */
   toolBased?: boolean;
 }): {
   system: string;
@@ -121,11 +122,6 @@ export function buildPhasePromptBundle(input: {
     "- Use get_entity, query_entities, and query_relationships to inspect prior analytical state when helpful.",
     "- If you detect a disruption trigger, call request_loopback(trigger_type, justification).",
   ];
-  if (!input.toolBased) {
-    toolGuidanceLines.push(
-      "- Return only the final JSON object that matches the schema.",
-    );
-  }
   const parts = [
     `Analyze the following topic:\n\n${input.topic}`,
     toolGuidanceLines.join("\n"),
@@ -145,44 +141,16 @@ export function buildPhasePromptBundle(input: {
   }
 
   const userPrompt = parts.join("\n");
-  const baseVariant =
+  const variant: PromptTemplateVariant =
     input.revisionSystemPrompt || input.revisionRetryInstruction
       ? "revision"
       : "initial";
-
-  // When tool-based, try the "-tools" variant first; fall back to the base
-  // variant when the tools prompt doesn't exist yet (graceful degradation for
-  // phases that only have structured-output prompts so far).
-  let variant: PromptTemplateVariant = baseVariant;
-  let resolvedTemplate: ReturnType<typeof resolveAnalysisPromptTemplate>;
-  if (input.toolBased) {
-    const toolsVariant =
-      baseVariant === "revision" ? "revision-tools" : "initial-tools";
-    try {
-      resolvedTemplate = resolveAnalysisPromptTemplate({
-        analysisType: DEFAULT_ANALYSIS_TYPE,
-        mode: DEFAULT_PROMPT_PACK_MODE,
-        phase,
-        variant: toolsVariant,
-      });
-      variant = toolsVariant;
-    } catch {
-      // Tools prompt not available for this phase yet — fall back
-      resolvedTemplate = resolveAnalysisPromptTemplate({
-        analysisType: DEFAULT_ANALYSIS_TYPE,
-        mode: DEFAULT_PROMPT_PACK_MODE,
-        phase,
-        variant: baseVariant,
-      });
-    }
-  } else {
-    resolvedTemplate = resolveAnalysisPromptTemplate({
-      analysisType: DEFAULT_ANALYSIS_TYPE,
-      mode: DEFAULT_PROMPT_PACK_MODE,
-      phase,
-      variant: baseVariant,
-    });
-  }
+  const resolvedTemplate = resolveAnalysisPromptTemplate({
+    analysisType: DEFAULT_ANALYSIS_TYPE,
+    mode: DEFAULT_PROMPT_PACK_MODE,
+    phase,
+    variant,
+  });
   const systemPrompt = input.revisionSystemPrompt ?? resolvedTemplate.text;
 
   return {

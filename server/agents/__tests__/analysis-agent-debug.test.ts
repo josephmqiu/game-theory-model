@@ -31,21 +31,53 @@ vi.mock("../../services/analysis-tools", () => ({
 const mockRunPhase = vi.fn();
 
 vi.mock("../../services/analysis-service", () => ({
-  runPhase: (...args: unknown[]) => mockRunPhase(...args),
+  runPhaseWithTools: (...args: unknown[]) => mockRunPhase(...args),
+}));
+
+vi.mock("../../services/analysis-prompt-provenance", () => ({
+  buildPhasePromptBundle: vi.fn(() => ({
+    system: "mock system",
+    user: "mock user",
+    promptProvenance: {
+      promptPackId: "game-theory/default",
+      promptPackVersion: "2026-03-25.1",
+      promptPackMode: "analysis-runtime",
+      promptPackSource: { kind: "bundled" },
+      phase: "situational-grounding",
+      variant: "initial",
+      templateIdentity: "game-theory/default:situational-grounding:initial",
+      templateHash: "mock-hash",
+      effectivePromptHash: "mock-effective-hash",
+      toolPolicy: { enabledAnalysisTools: [], webSearch: true },
+      doneCondition: "test",
+    },
+    toolPolicy: { enabledAnalysisTools: [], webSearch: true },
+  })),
+  createRunPromptProvenance: vi.fn(() => ({
+    analysisType: "game-theory",
+    activePhases: [],
+    promptPackId: "game-theory/default",
+    promptPackVersion: "2026-03-25.1",
+    promptPackMode: "analysis-runtime",
+    templateSetIdentity: "game-theory/default",
+  })),
+}));
+
+vi.mock("../../services/ai/claude-adapter", () => ({
+  createToolBasedAnalysisMcpServer: vi.fn(async () => ({})),
 }));
 
 vi.mock("../../services/revision-diff", () => ({
-  commitPhaseSnapshot: vi.fn(() => ({
-    status: "applied",
-    summary: {
-      entitiesCreated: 0,
-      entitiesUpdated: 0,
-      entitiesDeleted: 0,
-      relationshipsCreated: 0,
-      relationshipsDeleted: 0,
-      currentPhaseEntityIds: [],
-    },
+  beginPhaseTransaction: vi.fn(),
+  commitPhaseTransaction: vi.fn(() => ({
+    entitiesCreated: 0,
+    entitiesUpdated: 0,
+    entitiesDeleted: 0,
+    relationshipsCreated: 0,
+    relationshipsDeleted: 0,
+    currentPhaseEntityIds: [],
   })),
+  rollbackPhaseTransaction: vi.fn(),
 }));
 
 const mockEntityGraph = vi.hoisted(() => ({
@@ -90,24 +122,11 @@ describe("analysis-agent debug runFull", () => {
     console.log("TEST: Setting up mock");
     mockRunPhase.mockResolvedValue({
       success: true,
-      entities: [
-        {
-          id: null,
-          ref: "fact-1",
-          type: "fact",
-          phase: "situational-grounding",
-          data: {
-            type: "fact",
-            date: "2025-06-15",
-            source: "Reuters",
-            content: "Fact 1",
-            category: "action",
-          },
-          confidence: "high",
-          rationale: "Test",
-        },
-      ],
-      relationships: [],
+      entitiesCreated: 1,
+      entitiesUpdated: 0,
+      entitiesDeleted: 0,
+      relationshipsCreated: 0,
+      phaseCompleted: true,
     });
 
     console.log("TEST: Calling runFull...");

@@ -1,59 +1,50 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import type { ResolvedAnalysisRuntime } from "../../../shared/types/analysis-runtime";
 import type { MethodologyPhase } from "../../../shared/types/methodology";
 import type { AnalysisProgressEvent } from "../../../shared/types/events";
-import type {
-  AnalysisEntity,
-  AnalysisRelationship,
-} from "../../../shared/types/entity";
-import type { PhaseOutputEntity, PhaseResult } from "../analysis-service";
+import type { AnalysisEntity } from "../../../shared/types/entity";
 import * as runtimeStatus from "../runtime-status";
+import { resetWorkspaceDatabaseForTest } from "../workspace";
 
 // ── Mock analysis-service ──
 
-const mockRunPhase = vi.fn<
-  (
-    phase: MethodologyPhase,
-    topic: string,
-    context?: {
-      phaseBrief?: string;
-      revisionRetryInstruction?: string;
-      provider?: string;
-      model?: string;
-      runtime?: ResolvedAnalysisRuntime;
-      runId?: string;
-      signal?: AbortSignal;
-    },
-  ) => Promise<PhaseResult>
+const mockRunPhaseWithTools = vi.fn<
+  (...args: unknown[]) => Promise<{
+    success: boolean;
+    error?: string;
+    entitiesCreated: number;
+    entitiesUpdated: number;
+    entitiesDeleted: number;
+    relationshipsCreated: number;
+    phaseCompleted: boolean;
+  }>
 >();
 
 vi.mock("../analysis-service", () => ({
-  runPhase: (...args: Parameters<typeof mockRunPhase>) => mockRunPhase(...args),
+  runPhaseWithTools: (...args: unknown[]) => mockRunPhaseWithTools(...args),
 }));
 
-const mockCommitPhaseSnapshot = vi.fn(
-  ({
-    entities,
-    relationships,
-  }: {
-    entities: PhaseOutputEntity[];
-    relationships: Array<{ type: string }>;
-  }) => ({
-    status: "applied" as const,
-    summary: {
-      entitiesCreated: entities.filter((entity) => entity.id === null).length,
-      entitiesUpdated: entities.filter((entity) => entity.id !== null).length,
-      entitiesDeleted: 0,
-      relationshipsCreated: relationships.length,
-      relationshipsDeleted: 0,
-      currentPhaseEntityIds: ["phase-entity-1", "phase-entity-2"],
-    },
-  }),
-);
+// ── Mock claude-adapter (tool MCP server factory) ──
+
+vi.mock("../ai/claude-adapter", () => ({
+  createToolBasedAnalysisMcpServer: vi.fn(async () => ({})),
+}));
+
+const mockBeginPhaseTransaction = vi.fn();
+const mockCommitPhaseTransaction = vi.fn(() => ({
+  entitiesCreated: 0,
+  entitiesUpdated: 0,
+  entitiesDeleted: 0,
+  relationshipsCreated: 0,
+  relationshipsDeleted: 0,
+  currentPhaseEntityIds: ["phase-entity-1", "phase-entity-2"],
+}));
+const mockRollbackPhaseTransaction = vi.fn();
 
 vi.mock("../revision-diff", () => ({
-  commitPhaseSnapshot: (...args: Parameters<typeof mockCommitPhaseSnapshot>) =>
-    mockCommitPhaseSnapshot(...args),
+  beginPhaseTransaction: (...args: unknown[]) =>
+    mockBeginPhaseTransaction(...args),
+  commitPhaseTransaction: (..._args: unknown[]) => mockCommitPhaseTransaction(),
+  rollbackPhaseTransaction: () => mockRollbackPhaseTransaction(),
 }));
 
 // ── Mock analysis-orchestrator ──
@@ -66,21 +57,24 @@ vi.mock("../../agents/analysis-agent", () => ({
 
 // ── Mock entity-graph-service ──
 
-const mockEntityGraph = {
+const mockEntityGraph = vi.hoisted(() => ({
   getAnalysis: vi.fn(() => ({
     id: "test",
     name: "test",
     topic: "test topic",
-    entities: [] as AnalysisEntity[],
-    relationships: [] as AnalysisRelationship[],
+    entities: [] as import("../../../shared/types/entity").AnalysisEntity[],
+    relationships:
+      [] as import("../../../shared/types/entity").AnalysisRelationship[],
     phases: [],
   })),
   getStaleEntityIds: vi.fn(() => [] as string[]),
   clearStale: vi.fn(),
   removePhaseEntities: vi.fn(),
+  setPhaseStatus: vi.fn(),
+  getEntitiesByPhase: vi.fn((): AnalysisEntity[] => []),
   markStale: vi.fn(),
   onMutation: vi.fn((_cb: (event: unknown) => void) => vi.fn()),
-};
+}));
 
 vi.mock("../entity-graph-service", () => mockEntityGraph);
 
@@ -116,38 +110,34 @@ function makeEntity(
   } as AnalysisEntity;
 }
 
-function makePhaseResult(
-  phase: MethodologyPhase,
-  entityCount = 1,
-): PhaseResult {
-  const entities: PhaseOutputEntity[] = [];
-  for (let i = 0; i < entityCount; i++) {
-    entities.push({
-      id: null,
-      ref: `${phase}-${i}`,
-      type: "fact",
-      phase,
-      data: {
-        type: "fact",
-        date: "2026-03-19",
-        source: "test",
-        content: `Entity ${phase}-${i}`,
-        category: "action",
-      },
-      confidence: "high",
-      rationale: "test",
-    } as PhaseOutputEntity);
-  }
-  return { success: true, entities, relationships: [] };
+function makeToolResult(_phase?: MethodologyPhase) {
+  return {
+    success: true,
+    entitiesCreated: 1,
+    entitiesUpdated: 0,
+    entitiesDeleted: 0,
+    relationshipsCreated: 0,
+    phaseCompleted: true,
+  };
 }
 
-function makeFailedResult(error: string): PhaseResult {
-  return { success: false, entities: [], relationships: [], error };
+function makeFailedToolResult(error: string) {
+  return {
+    success: false,
+    error,
+    entitiesCreated: 0,
+    entitiesUpdated: 0,
+    entitiesDeleted: 0,
+    relationshipsCreated: 0,
+    phaseCompleted: false,
+  };
 }
 
 async function advanceTimersByTimeAsync(ms: number): Promise<void> {
   vi.advanceTimersByTime(ms);
-  for (let i = 0; i < 10; i += 1) {
+  // Each phase requires multiple microtask rounds (await runPhaseWithTools,
+  // appendRevalidationEvents, commitPhaseTransaction, etc.)
+  for (let i = 0; i < 50; i += 1) {
     await Promise.resolve();
   }
 }
@@ -165,6 +155,7 @@ describe("revalidation-service", () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     mockIsRunning.mockReturnValue(false);
+    resetWorkspaceDatabaseForTest();
     revalidation = await importRevalidation();
     revalidation._resetForTest();
   });
@@ -184,18 +175,20 @@ describe("revalidation-service", () => {
       relationships: [],
       phases: [],
     });
-    mockRunPhase.mockResolvedValue(makePhaseResult("situational-grounding"));
+    mockRunPhaseWithTools.mockResolvedValue(
+      makeToolResult("situational-grounding"),
+    );
 
     revalidation.scheduleRevalidation(["e1"]);
 
     // Not called yet — within debounce window
-    expect(mockRunPhase).not.toHaveBeenCalled();
+    expect(mockRunPhaseWithTools).not.toHaveBeenCalled();
 
     // Advance past the 2s debounce
     await advanceTimersByTimeAsync(2000);
 
     // Now revalidation should have triggered
-    expect(mockRunPhase).toHaveBeenCalled();
+    expect(mockRunPhaseWithTools).toHaveBeenCalled();
   });
 
   // ── 2. Multiple calls within 2s produce single revalidation with merged staleIds ──
@@ -212,10 +205,10 @@ describe("revalidation-service", () => {
       relationships: [],
       phases: [],
     });
-    mockRunPhase
-      .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
-      .mockResolvedValueOnce(makePhaseResult("player-identification"))
-      .mockResolvedValueOnce(makePhaseResult("baseline-model"));
+    mockRunPhaseWithTools
+      .mockResolvedValueOnce(makeToolResult("situational-grounding"))
+      .mockResolvedValueOnce(makeToolResult("player-identification"))
+      .mockResolvedValueOnce(makeToolResult("baseline-model"));
 
     // First call
     revalidation.scheduleRevalidation(["e1"]);
@@ -225,15 +218,17 @@ describe("revalidation-service", () => {
     revalidation.scheduleRevalidation(["e2"]);
 
     // At 1s mark, no calls yet
-    expect(mockRunPhase).not.toHaveBeenCalled();
+    expect(mockRunPhaseWithTools).not.toHaveBeenCalled();
 
     // Advance the remaining 2s from the reset
     await advanceTimersByTimeAsync(2000);
 
     // Single revalidation that covers both IDs
     // It should find earliest stale phase (situational-grounding) and run from there
-    expect(mockRunPhase).toHaveBeenCalled();
-    expect(mockRunPhase.mock.calls[0][0]).toBe("situational-grounding");
+    expect(mockRunPhaseWithTools).toHaveBeenCalled();
+    expect(mockRunPhaseWithTools.mock.calls[0][0]).toBe(
+      "situational-grounding",
+    );
   });
 
   // ── 3. Suppression: scheduleRevalidation during active analysis doesn't trigger ──
@@ -247,7 +242,7 @@ describe("revalidation-service", () => {
     await advanceTimersByTimeAsync(5000);
 
     // No revalidation triggered
-    expect(mockRunPhase).not.toHaveBeenCalled();
+    expect(mockRunPhaseWithTools).not.toHaveBeenCalled();
 
     // Stale IDs should be deferred
     const deferred = revalidation._getDeferredStaleIds();
@@ -264,7 +259,9 @@ describe("revalidation-service", () => {
       relationships: [],
       phases: [],
     });
-    mockRunPhase.mockResolvedValue(makePhaseResult("situational-grounding"));
+    mockRunPhaseWithTools.mockResolvedValue(
+      makeToolResult("situational-grounding"),
+    );
 
     expect(
       runtimeStatus.acquireRun("revalidation", "existing-reval", {
@@ -276,13 +273,13 @@ describe("revalidation-service", () => {
 
     await advanceTimersByTimeAsync(2000);
 
-    expect(mockRunPhase).not.toHaveBeenCalled();
+    expect(mockRunPhaseWithTools).not.toHaveBeenCalled();
     expect(revalidation._getPendingStaleIds()).toEqual(new Set(["e1"]));
 
     runtimeStatus.releaseRun("existing-reval", "completed");
     await advanceTimersByTimeAsync(2000);
 
-    expect(mockRunPhase).toHaveBeenCalled();
+    expect(mockRunPhaseWithTools).toHaveBeenCalled();
     expect(revalidation._getPendingStaleIds().size).toBe(0);
   });
 
@@ -295,14 +292,14 @@ describe("revalidation-service", () => {
     revalidation.scheduleRevalidation(["e1"]);
 
     await advanceTimersByTimeAsync(5000);
-    expect(mockRunPhase).not.toHaveBeenCalled();
+    expect(mockRunPhaseWithTools).not.toHaveBeenCalled();
 
     // Run completes
     mockIsRunning.mockReturnValue(false);
     revalidation.onRunComplete();
     await advanceTimersByTimeAsync(0);
 
-    expect(mockRunPhase).not.toHaveBeenCalled();
+    expect(mockRunPhaseWithTools).not.toHaveBeenCalled();
     expect(revalidation._getDeferredStaleIds()).toEqual(new Set(["e1"]));
   });
 
@@ -325,7 +322,7 @@ describe("revalidation-service", () => {
 
     await advanceTimersByTimeAsync(0);
 
-    expect(mockRunPhase).not.toHaveBeenCalled();
+    expect(mockRunPhaseWithTools).not.toHaveBeenCalled();
     expect(revalidation._getDeferredStaleIds().size).toBe(2);
     expect(revalidation._getPendingStaleIds().size).toBe(0);
   });
@@ -344,11 +341,12 @@ describe("revalidation-service", () => {
       relationships: [],
       phases: [],
     });
-    mockRunPhase
-      .mockResolvedValueOnce(makePhaseResult("player-identification"))
-      .mockResolvedValueOnce(makePhaseResult("baseline-model"))
-      .mockResolvedValueOnce(makePhaseResult("historical-game"))
-      .mockResolvedValueOnce(makePhaseResult("assumptions"));
+    mockRunPhaseWithTools
+      .mockResolvedValueOnce(makeToolResult("player-identification"))
+      .mockResolvedValueOnce(makeToolResult("baseline-model"))
+      .mockResolvedValueOnce(makeToolResult("historical-game"))
+      .mockResolvedValueOnce(makeToolResult("formal-modeling"))
+      .mockResolvedValueOnce(makeToolResult("assumptions"));
 
     const result = revalidation.revalidate(["e1", "e2"]);
 
@@ -357,13 +355,15 @@ describe("revalidation-service", () => {
     // Flush microtasks to let async execution complete
     await advanceTimersByTimeAsync(0);
 
-    // Should run from player-identification (earliest) through assumptions
-    expect(mockRunPhase).toHaveBeenCalledTimes(5);
-    expect(mockRunPhase.mock.calls[0][0]).toBe("player-identification");
-    expect(mockRunPhase.mock.calls[1][0]).toBe("baseline-model");
-    expect(mockRunPhase.mock.calls[2][0]).toBe("historical-game");
-    expect(mockRunPhase.mock.calls[3][0]).toBe("formal-modeling");
-    expect(mockRunPhase.mock.calls[4][0]).toBe("assumptions");
+    // Should run from player-identification (earliest) through assumptions (5 V2 phases)
+    expect(mockRunPhaseWithTools).toHaveBeenCalledTimes(5);
+    expect(mockRunPhaseWithTools.mock.calls[0][0]).toBe(
+      "player-identification",
+    );
+    expect(mockRunPhaseWithTools.mock.calls[1][0]).toBe("baseline-model");
+    expect(mockRunPhaseWithTools.mock.calls[2][0]).toBe("historical-game");
+    expect(mockRunPhaseWithTools.mock.calls[3][0]).toBe("formal-modeling");
+    expect(mockRunPhaseWithTools.mock.calls[4][0]).toBe("assumptions");
   });
 
   // ── 6. revalidate(undefined, phase) re-runs from explicit phase ──
@@ -377,11 +377,11 @@ describe("revalidation-service", () => {
       relationships: [],
       phases: [],
     });
-    mockRunPhase
-      .mockResolvedValueOnce(makePhaseResult("baseline-model"))
-      .mockResolvedValueOnce(makePhaseResult("historical-game"))
-      .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
-      .mockResolvedValueOnce(makePhaseResult("assumptions"));
+    mockRunPhaseWithTools
+      .mockResolvedValueOnce(makeToolResult("baseline-model"))
+      .mockResolvedValueOnce(makeToolResult("historical-game"))
+      .mockResolvedValueOnce(makeToolResult("formal-modeling"))
+      .mockResolvedValueOnce(makeToolResult("assumptions"));
 
     const result = revalidation.revalidate(undefined, "baseline-model");
 
@@ -391,11 +391,11 @@ describe("revalidation-service", () => {
     await advanceTimersByTimeAsync(0);
 
     // Should run baseline-model through assumptions (4 phases in V2)
-    expect(mockRunPhase).toHaveBeenCalledTimes(4);
-    expect(mockRunPhase.mock.calls[0][0]).toBe("baseline-model");
-    expect(mockRunPhase.mock.calls[1][0]).toBe("historical-game");
-    expect(mockRunPhase.mock.calls[2][0]).toBe("formal-modeling");
-    expect(mockRunPhase.mock.calls[3][0]).toBe("assumptions");
+    expect(mockRunPhaseWithTools).toHaveBeenCalledTimes(4);
+    expect(mockRunPhaseWithTools.mock.calls[0][0]).toBe("baseline-model");
+    expect(mockRunPhaseWithTools.mock.calls[1][0]).toBe("historical-game");
+    expect(mockRunPhaseWithTools.mock.calls[2][0]).toBe("formal-modeling");
+    expect(mockRunPhaseWithTools.mock.calls[3][0]).toBe("assumptions");
   });
 
   // ── 7. Returns runId ──
@@ -416,13 +416,13 @@ describe("revalidation-service", () => {
       relationships: [],
       phases: [],
     });
-    mockRunPhase
-      .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
-      .mockResolvedValueOnce(makePhaseResult("player-identification"))
-      .mockResolvedValueOnce(makePhaseResult("baseline-model"))
-      .mockResolvedValueOnce(makePhaseResult("historical-game"))
-      .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
-      .mockResolvedValueOnce(makePhaseResult("assumptions"));
+    mockRunPhaseWithTools
+      .mockResolvedValueOnce(makeToolResult("situational-grounding"))
+      .mockResolvedValueOnce(makeToolResult("player-identification"))
+      .mockResolvedValueOnce(makeToolResult("baseline-model"))
+      .mockResolvedValueOnce(makeToolResult("historical-game"))
+      .mockResolvedValueOnce(makeToolResult("formal-modeling"))
+      .mockResolvedValueOnce(makeToolResult("assumptions"));
 
     const events: AnalysisProgressEvent[] = [];
     const unsubscribe = revalidation.onProgress((event) => events.push(event));
@@ -457,7 +457,9 @@ describe("revalidation-service", () => {
       relationships: [],
       phases: [],
     });
-    mockRunPhase.mockResolvedValueOnce(makeFailedResult("API error"));
+    mockRunPhaseWithTools.mockResolvedValueOnce(
+      makeFailedToolResult("API error"),
+    );
 
     const events: AnalysisProgressEvent[] = [];
     const unsubscribe = revalidation.onProgress((event) => events.push(event));
@@ -477,7 +479,7 @@ describe("revalidation-service", () => {
     });
 
     // Should not continue to subsequent phases
-    expect(mockRunPhase).toHaveBeenCalledTimes(1);
+    expect(mockRunPhaseWithTools).toHaveBeenCalledTimes(1);
   });
 
   // ── 10. wire() subscribes to stale_marked events ──
@@ -509,31 +511,33 @@ describe("revalidation-service", () => {
       relationships: [],
       phases: [],
     });
-    mockRunPhase.mockResolvedValue(makePhaseResult("situational-grounding"));
+    mockRunPhaseWithTools.mockResolvedValue(
+      makeToolResult("situational-grounding"),
+    );
 
     revalidation.scheduleRevalidation(["e1"]);
 
     // Advance 1.5s (within 2s window)
     await advanceTimersByTimeAsync(1500);
-    expect(mockRunPhase).not.toHaveBeenCalled();
+    expect(mockRunPhaseWithTools).not.toHaveBeenCalled();
 
     // Second call resets the timer
     revalidation.scheduleRevalidation(["e1"]);
 
     // Advance another 1.5s — total 3s from first, but only 1.5s from reset
     await advanceTimersByTimeAsync(1500);
-    expect(mockRunPhase).not.toHaveBeenCalled();
+    expect(mockRunPhaseWithTools).not.toHaveBeenCalled();
 
     // Advance remaining 0.5s to hit 2s from reset
     await advanceTimersByTimeAsync(500);
-    expect(mockRunPhase).toHaveBeenCalled();
+    expect(mockRunPhaseWithTools).toHaveBeenCalled();
   });
 
   // ── 13. onRunComplete does nothing with no deferred IDs ──
 
   it("onRunComplete does nothing when there are no deferred staleIds", () => {
     revalidation.onRunComplete();
-    expect(mockRunPhase).not.toHaveBeenCalled();
+    expect(mockRunPhaseWithTools).not.toHaveBeenCalled();
   });
 
   it("reuses the last resolved runtime for revalidation phase reruns", async () => {
@@ -549,12 +553,14 @@ describe("revalidation-service", () => {
       relationships: [],
       phases: [],
     });
-    mockRunPhase.mockResolvedValue(makePhaseResult("situational-grounding"));
+    mockRunPhaseWithTools.mockResolvedValue(
+      makeToolResult("situational-grounding"),
+    );
 
     revalidation.revalidate(["e1"]);
     await advanceTimersByTimeAsync(0);
 
-    expect(mockRunPhase.mock.calls[0][2]).toMatchObject({
+    expect(mockRunPhaseWithTools.mock.calls[0][4]).toMatchObject({
       provider: "codex",
       model: "gpt-5.4",
       runtime: { webSearch: false, effortLevel: "high" },
@@ -580,7 +586,7 @@ describe("revalidation-service", () => {
     await advanceTimersByTimeAsync(0);
 
     expect(result.runId).toMatch(/^reval-/);
-    expect(mockRunPhase).not.toHaveBeenCalled();
+    expect(mockRunPhaseWithTools).not.toHaveBeenCalled();
 
     // H1: status should be "completed" for no-op revalidation
     const status = revalidation.getRevalStatus(result.runId);
@@ -599,13 +605,13 @@ describe("revalidation-service", () => {
       relationships: [],
       phases: [],
     });
-    mockRunPhase
-      .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
-      .mockResolvedValueOnce(makePhaseResult("player-identification"))
-      .mockResolvedValueOnce(makePhaseResult("baseline-model"))
-      .mockResolvedValueOnce(makePhaseResult("historical-game"))
-      .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
-      .mockResolvedValueOnce(makePhaseResult("assumptions"));
+    mockRunPhaseWithTools
+      .mockResolvedValueOnce(makeToolResult("situational-grounding"))
+      .mockResolvedValueOnce(makeToolResult("player-identification"))
+      .mockResolvedValueOnce(makeToolResult("baseline-model"))
+      .mockResolvedValueOnce(makeToolResult("historical-game"))
+      .mockResolvedValueOnce(makeToolResult("formal-modeling"))
+      .mockResolvedValueOnce(makeToolResult("assumptions"));
 
     revalidation.revalidate(["e1"]);
 
@@ -613,7 +619,7 @@ describe("revalidation-service", () => {
     await advanceTimersByTimeAsync(0);
 
     expect(mockEntityGraph.removePhaseEntities).not.toHaveBeenCalled();
-    expect(mockCommitPhaseSnapshot).toHaveBeenCalledTimes(6);
+    expect(mockCommitPhaseTransaction).toHaveBeenCalledTimes(6);
   });
 
   // ── 16. getRevalStatus returns status for tracked runs ──
@@ -627,12 +633,12 @@ describe("revalidation-service", () => {
       relationships: [],
       phases: [],
     });
-    mockRunPhase
-      .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
-      .mockResolvedValueOnce(makePhaseResult("player-identification"))
-      .mockResolvedValueOnce(makePhaseResult("baseline-model"))
-      .mockResolvedValueOnce(makePhaseResult("historical-game"))
-      .mockResolvedValueOnce(makePhaseResult("assumptions"));
+    mockRunPhaseWithTools
+      .mockResolvedValueOnce(makeToolResult("situational-grounding"))
+      .mockResolvedValueOnce(makeToolResult("player-identification"))
+      .mockResolvedValueOnce(makeToolResult("baseline-model"))
+      .mockResolvedValueOnce(makeToolResult("historical-game"))
+      .mockResolvedValueOnce(makeToolResult("assumptions"));
 
     const { runId } = revalidation.revalidate(["e1"]);
 
@@ -659,7 +665,7 @@ describe("revalidation-service", () => {
 
   // ── 18. Revalidation clears stale on surviving entities after diff commit ──
 
-  it("clears stale flags for the surviving current-phase entity ids returned by revision diff", async () => {
+  it("clears stale flags for the surviving current-phase entity ids after phase execution", async () => {
     mockEntityGraph.getAnalysis.mockReturnValue({
       id: "test",
       name: "test",
@@ -669,40 +675,19 @@ describe("revalidation-service", () => {
       phases: [],
     });
 
-    const phaseResult: PhaseResult = {
-      success: true,
-      entities: [
-        {
-          id: null,
-          ref: "fact-1",
-          type: "fact",
-          phase: "situational-grounding",
-          data: {
-            type: "fact",
-            date: "2026-03-19",
-            source: "test",
-            content: "Entity fact-1",
-            category: "action",
-          },
-          confidence: "high",
-          rationale: "test",
-        },
-      ],
-      relationships: [
-        {
-          id: "rel-1",
-          type: "precedes",
-          fromEntityId: "fact-1",
-          toEntityId: "fact-1",
-        },
-      ] as AnalysisRelationship[],
-    };
-    mockRunPhase
-      .mockResolvedValueOnce(phaseResult)
-      .mockResolvedValueOnce(makePhaseResult("player-identification"))
-      .mockResolvedValueOnce(makePhaseResult("baseline-model"))
-      .mockResolvedValueOnce(makePhaseResult("historical-game"))
-      .mockResolvedValueOnce(makePhaseResult("assumptions"));
+    // Make getEntitiesByPhase return entities so clearStale gets called
+    mockEntityGraph.getEntitiesByPhase.mockReturnValue([
+      { id: "phase-entity-1" } as AnalysisEntity,
+      { id: "phase-entity-2" } as AnalysisEntity,
+    ]);
+
+    mockRunPhaseWithTools
+      .mockResolvedValueOnce(makeToolResult("situational-grounding"))
+      .mockResolvedValueOnce(makeToolResult("player-identification"))
+      .mockResolvedValueOnce(makeToolResult("baseline-model"))
+      .mockResolvedValueOnce(makeToolResult("historical-game"))
+      .mockResolvedValueOnce(makeToolResult("formal-modeling"))
+      .mockResolvedValueOnce(makeToolResult("assumptions"));
 
     revalidation.revalidate(["e1"]);
     await advanceTimersByTimeAsync(0);
@@ -711,17 +696,10 @@ describe("revalidation-service", () => {
       "phase-entity-1",
       "phase-entity-2",
     ]);
-    expect(mockCommitPhaseSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({
-        phase: "situational-grounding",
-        relationships: [
-          expect.objectContaining({
-            type: "precedes",
-            fromEntityId: "fact-1",
-            toEntityId: "fact-1",
-          }),
-        ],
-      }),
+    expect(mockBeginPhaseTransaction).toHaveBeenCalledWith(
+      "situational-grounding",
+      expect.any(String),
     );
+    expect(mockCommitPhaseTransaction).toHaveBeenCalled();
   });
 });

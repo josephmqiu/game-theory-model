@@ -3,11 +3,7 @@ import type { MethodologyPhase } from "./methodology";
 export type PromptPackId = string;
 export type PromptPackVersion = string;
 export type PromptPackMode = "analysis-runtime" | "synthesis" | "chat";
-export type PromptTemplateVariant =
-  | "initial"
-  | "revision"
-  | "initial-tools"
-  | "revision-tools";
+export type PromptTemplateVariant = "initial" | "revision";
 
 export interface PromptPackSourceRef {
   kind: "bundled" | "filesystem";

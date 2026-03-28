@@ -12,13 +12,11 @@ INSTRUCTIONS:
 - Re-evaluate strategies — upstream changes may add new feasible strategies, eliminate
   existing ones, or change a strategy's dominance.
 - If upstream player changes are significant, the game structure itself may need revision.
-- Remove game or strategy entities that are no longer relevant (omit them from output).
-- New entities get "id": null. Revised entities keep their existing "id".
+- Remove game or strategy entities that are no longer relevant using the delete_entity tool.
 - Dependencies must reference real entity IDs — use the query_entities tool to find them.
 
 GAME ENTITY SCHEMA:
 {
-"id": null,
 "ref": "<unique-ref>",
 "type": "game",
 "phase": "baseline-model",
@@ -35,7 +33,6 @@ GAME ENTITY SCHEMA:
 
 STRATEGY ENTITY SCHEMA:
 {
-"id": null,
 "ref": "<unique-ref>",
 "type": "strategy",
 "phase": "baseline-model",
@@ -57,31 +54,36 @@ RELATIONSHIPS:
   is provided.
 - Use "derived-from" when a strategy is derived from an objective.
 
-OUTPUT FORMAT — respond with a single JSON object, no markdown outside the code fence:
+HOW TO MODIFY ENTITIES — use the provided tools:
 
-```json
-{
-  "entities": [ ... ],
-  "relationships": [ ... ]
-}
-```
+Use `query_entities` with `phase: "baseline-model"` to retrieve your existing games and strategies.
 
-ENTITY RULES:
+Use `create_entity` to add new games or strategies. Parameters:
 
-- For new entities, set "id" to null.
-- For entities you are revising, keep the existing "id" from the graph.
-- Every entity needs a locally-unique "ref" (e.g. "fact-1", "player-eu").
-- Include "confidence" ("high" | "medium" | "low") and "rationale" (one sentence justifying the entity).
-- Do not include "source", "revision", "stale", or "position" fields.
+- `ref`: a unique reference string (e.g. "game-new-tension", "strat-new-option")
+- `type`: "game" or "strategy"
+- `phase`: "baseline-model"
+- `data`: the entity data object matching the schema above
+- `confidence`: "high", "medium", or "low"
+- `rationale`: one sentence justifying this entity
 
-RELATIONSHIP RULES:
+Use `update_entity` to revise existing entities. Parameters:
 
-- Each relationship needs a unique "id" (e.g. "rel-1").
-- "fromEntityId" and "toEntityId" must reference entity refs in the same output.
-- Use the most specific relationship type that applies.
-- Some phases further restrict which relationship types are valid; follow the phase-specific rules when they are narrower than the shared list.
-- Valid types: "supports", "contradicts", "depends-on", "informed-by", "derived-from",
-  "plays-in", "has-objective", "has-strategy", "conflicts-with", "produces",
-  "invalidated-by", "constrains", "escalates-to", "links", "precedes".
+- `id`: the existing entity's ID (from query_entities results)
+- `updates`: an object with the fields to change
 
-Do NOT include any commentary outside the JSON code fence.
+Use `delete_entity` to remove entities that are no longer relevant. Parameters:
+
+- `id`: the existing entity's ID
+
+Use `create_relationship` to link related entities. Parameters:
+
+- `type`: one of "plays-in", "has-strategy", "informed-by", "derived-from"
+- `fromEntityId`: the ref or ID of the source entity
+- `toEntityId`: the ref or ID of the target entity
+
+Use `delete_relationship` to remove outdated relationships. Parameters:
+
+- `id`: the relationship ID
+
+When you have finished revising all games, strategies, and relationships, call `complete_phase` to signal that the revision is done.

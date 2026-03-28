@@ -66,14 +66,18 @@ Wraps the Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`).
 
 **How this app uses it:**
 
-- Analysis mode: `query()` with `mcpServers` (read-only product tools),
-  `allowedTools` (entity queries + WebSearch + request_loopback), AND
-  `outputFormat` (phase entity schema). `maxTurns` set to 10-15
-  (configurable) to allow multi-step research before producing output.
-  The AI researches with tools, then returns structured entities.
+- Analysis mode: `query()` with `mcpServers` (entity CRUD tools +
+  WebSearch + phase control tools), `allowedTools` whitelist,
+  `includePartialMessages: true`. `maxTurns` set high enough for
+  multi-step research and incremental entity creation (10-15,
+  configurable). The AI creates entities one-by-one via tool calls
+  (`create_entity`, `update_entity`, `create_relationship`,
+  `complete_phase`) with per-call Zod validation. No `outputFormat` —
+  analysis phases use tool-based entity creation, not structured output.
 - Chat mode: `query()` with `mcpServers` (full product + analysis control
   tools), `allowedTools`, `includePartialMessages: true`. Streams
-  text and tool side effects.
+  text and tool side effects. Chat synthesis uses structured output
+  (`runStructuredTurn`) for final response formatting.
 
 ### Codex Connector
 
@@ -103,15 +107,14 @@ Wraps the Codex CLI app-server via JSON-RPC 2.0 over stdio.
 
 **How this app uses it:**
 
-- Analysis mode: register a read-only MCP server (entity queries only)
-  via `config.toml` + `config/mcpServer/reload` before the analysis
-  thread starts. Send phase prompt via `turn/start` with `outputSchema`.
-  The AI uses read-only MCP tools for research, returns structured
-  entities via the output schema. On analysis completion, reload the
-  full CRUD MCP server for chat mode. This gives Codex the same
-  read-only analysis constraint that Claude gets via `allowedTools`
-  filtering. Native structured output makes Codex analysis as reliable
-  as Claude's.
+- Analysis mode: register an MCP server (entity CRUD + phase control
+  tools) via `config.toml` + `config/mcpServer/reload` before the
+  analysis thread starts. Send phase prompt via `turn/start`. The AI
+  creates entities incrementally via MCP tool calls (`create_entity`,
+  `update_entity`, `create_relationship`, `complete_phase`). No
+  `outputSchema` — analysis phases use tool-based entity creation, not
+  structured output. On analysis completion, reload the full CRUD MCP
+  server for chat mode.
 - Chat mode: `turn/start` with streaming. MCP tools (full CRUD +
   analysis control) available via config registration. Streaming
   follows the item lifecycle: `item/started` → deltas → `item/completed`.
@@ -124,6 +127,7 @@ Wraps the Codex CLI app-server via JSON-RPC 2.0 over stdio.
 | Capability        | Claude                       | Codex                                   |
 | ----------------- | ---------------------------- | --------------------------------------- |
 | Structured output | Native (`outputFormat`)      | Native (`outputSchema`)                 |
+| Analysis mode     | Tool-based entity creation   | Tool-based entity creation              |
 | Tool registration | In-memory MCP servers        | Persistent config + reload              |
 | Session model     | Stateless (per-query)        | Persistent threads                      |
 | Web search        | MCP-style (`WebSearch` tool) | Native model capability                 |
@@ -320,20 +324,26 @@ triggers a rerun.
 **Flow:**
 
 1. Orchestrator selects the next phase to run.
-2. Builds a phase-specific system prompt with methodology instructions
-   and the structured output schema for the phase.
-3. Calls the connector in analysis mode — read-only tools + structured
-   output. `maxTurns` set high enough for multi-step research (10-15,
+2. Begins a phase transaction (tracks pending entity mutations).
+3. Builds a phase-specific system prompt with methodology instructions
+   and the available entity creation tools.
+4. Calls the connector in analysis mode — entity CRUD tools + web
+   search + phase control tools. `maxTurns` set high enough for
+   multi-step research and incremental entity creation (10-15,
    configurable).
-4. AI uses read tools during processing (web search for current facts,
-   querying existing entities from prior phases for context) and returns
-   structured JSON (entities + relationships) as the final output.
-5. Orchestrator validates the structured output (correct entity types,
-   required relationships, minimum entity count per phase, referential
-   integrity).
-6. If validation passes: commit entities to the entity graph via the
-   revision diff algorithm (see below).
-7. If validation fails: retry the phase (new attempt).
+5. AI creates entities incrementally via tool calls during the turn:
+   - `create_entity` / `update_entity` — each call validated
+     individually via Zod schemas. Real-time progress events emitted
+     per entity creation.
+   - `create_relationship` — wires entities within the phase.
+   - Web search and entity query tools for research context.
+   - `complete_phase` — signals phase completion, triggers cross-entity
+     validation (correct entity types, required relationships, minimum
+     entity count, referential integrity).
+6. If cross-entity validation passes: commit the phase transaction
+   (all entities persisted atomically to the entity graph).
+7. If validation fails or the turn errors: rollback the phase
+   transaction (no partial state). Retry the phase (new attempt).
 8. Between phases: check for disruption triggers (from `request_loopback`
    calls during the phase) and staleness. Handle loopbacks before
    advancing.
@@ -489,7 +499,7 @@ revisions.
 
 - **Server owns all entity IDs.** The entity graph service generates IDs
   via `nanoid()` on creation. The AI never generates permanent IDs.
-- **Every entity in the AI's structured output has two identity fields:**
+- **Every entity created via tool call has two identity fields:**
   - `id` — server-assigned ID (string) for existing entities the AI
     wants to keep or update. `null` for new entities.
   - `ref` — AI-generated local reference (string, e.g., `"fact-1"`,
@@ -523,9 +533,9 @@ read-only query tools as context. It returns a revised entity set where:
 
 ### Entity diff rules
 
-The AI's structured output for a phase is an explicit full snapshot of
-all AI-owned entities for that phase. The orchestrator diffs this snapshot
-against the current graph:
+During a phase, the AI creates entities incrementally via tool calls.
+The phase transaction collects all mutations. On `complete_phase`, the
+orchestrator diffs the accumulated entity set against the current graph:
 
 1. **Entity with existing server ID matching current phase** → update
    (apply changes from the AI's version).
@@ -541,8 +551,8 @@ against the current graph:
 
 ### Relationship diff rules
 
-Relationships in the AI's structured output follow the same full-snapshot
-pattern as entities. The orchestrator:
+Relationships created via tool calls during the phase follow the same
+transactional pattern as entities. The orchestrator:
 
 1. Resolves all `ref`-based endpoints to real entity IDs (using the
    `ref → server ID` mapping for new entities, and the `id` field for
@@ -844,8 +854,9 @@ They determine whether the AI produces good analytical output or garbage.
    to produce, what relationships to create, and what quality standards
    to apply.
 
-2. Phase prompts include the structured output schema so the AI knows
-   what format to return.
+2. Phase prompts describe the available entity creation tools and their
+   expected arguments so the AI knows what to produce and how to call
+   the tools.
 
 3. Prior phase context is provided through tool access (the AI can query
    existing entities via read tools) and a condensed summary in the user

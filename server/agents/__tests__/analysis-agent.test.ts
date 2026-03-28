@@ -15,10 +15,7 @@ import {
   getWorkspaceDatabase,
   resetWorkspaceDatabaseForTest,
 } from "../../services/workspace";
-import type {
-  PhaseOutputEntity,
-  PhaseResult,
-} from "../../services/analysis-service";
+import type { PhaseToolResult } from "../../services/analysis-service";
 
 // ── Mock analysis-tools (loopback triggers) ──
 
@@ -51,16 +48,72 @@ vi.mock("../../services/analysis-tools", () => ({
 
 // ── Mock analysis-service ──
 
-const mockRunPhase = vi.hoisted(() => vi.fn());
+const mockRunPhase = vi.hoisted(() =>
+  vi.fn<(...args: unknown[]) => Promise<PhaseToolResult>>(),
+);
 
 vi.mock("../../services/analysis-service", () => ({
-  runPhase: (...args: unknown[]) => mockRunPhase(...args),
+  runPhaseWithTools: (...args: unknown[]) => mockRunPhase(...args),
 }));
 
-const mockCommitPhaseSnapshot = vi.hoisted(() => vi.fn());
+// ── Mock prompt provenance (needed because orchestrator builds prompts before calling runPhaseWithTools) ──
+
+vi.mock("../../services/analysis-prompt-provenance", () => ({
+  buildPhasePromptBundle: vi.fn((opts?: { phase?: string }) => {
+    const phase = opts?.phase ?? "situational-grounding";
+    return {
+      system: "mock system prompt",
+      user: "mock user prompt",
+      promptProvenance: {
+        promptPackId: "game-theory/default",
+        promptPackVersion: "2026-03-25.1",
+        promptPackMode: "analysis-runtime",
+        promptPackSource: { kind: "bundled" },
+        phase,
+        variant: "initial",
+        templateIdentity: `game-theory/default:${phase}:initial`,
+        templateHash: "mock-hash",
+        effectivePromptHash: "mock-effective-hash",
+        toolPolicy: { enabledAnalysisTools: [], webSearch: true },
+        doneCondition: "test",
+      },
+      toolPolicy: { enabledAnalysisTools: [], webSearch: true },
+    };
+  }),
+  createRunPromptProvenance: vi.fn((phases?: string[]) => ({
+    analysisType: "game-theory",
+    activePhases: phases ?? [],
+    promptPackId: "game-theory/default",
+    promptPackVersion: "2026-03-25.1",
+    promptPackMode: "analysis-runtime",
+    templateSetIdentity: "game-theory/default",
+  })),
+}));
+
+// ── Mock claude-adapter (tool MCP server factory) ──
+
+vi.mock("../../services/ai/claude-adapter", () => ({
+  createToolBasedAnalysisMcpServer: vi.fn(async () => ({})),
+}));
+
+const mockBeginPhaseTransaction = vi.hoisted(() => vi.fn());
+const mockCommitPhaseTransaction = vi.hoisted(() =>
+  vi.fn(() => ({
+    entitiesCreated: 0,
+    entitiesUpdated: 0,
+    entitiesDeleted: 0,
+    relationshipsCreated: 0,
+    relationshipsDeleted: 0,
+    currentPhaseEntityIds: [],
+  })),
+);
+const mockRollbackPhaseTransaction = vi.hoisted(() => vi.fn());
 
 vi.mock("../../services/revision-diff", () => ({
-  commitPhaseSnapshot: (...args: unknown[]) => mockCommitPhaseSnapshot(...args),
+  beginPhaseTransaction: (...args: unknown[]) =>
+    mockBeginPhaseTransaction(...args),
+  commitPhaseTransaction: (..._args: unknown[]) => mockCommitPhaseTransaction(),
+  rollbackPhaseTransaction: () => mockRollbackPhaseTransaction(),
 }));
 
 // ── Mock entity-graph-service ──
@@ -97,201 +150,26 @@ vi.mock("../../services/revalidation-service", () => mockRevalidation);
 
 // ── Test fixtures ──
 
-function makePhaseResult(
-  phase: MethodologyPhase,
-  entityCount = 1,
-): PhaseResult {
-  const entities: PhaseOutputEntity[] = [];
-  for (let i = 0; i < entityCount; i++) {
-    if (phase === "situational-grounding") {
-      entities.push({
-        id: null,
-        ref: `fact-${i + 1}`,
-        type: "fact" as const,
-        phase: "situational-grounding" as const,
-        data: {
-          type: "fact" as const,
-          date: "2025-06-15",
-          source: "Reuters",
-          content: `Fact ${i + 1}`,
-          category: "action" as const,
-        },
-        confidence: "high" as const,
-        rationale: "Test",
-      });
-    } else if (phase === "player-identification") {
-      entities.push({
-        id: null,
-        ref: `player-${i + 1}`,
-        type: "player" as const,
-        phase: "player-identification" as const,
-        data: {
-          type: "player" as const,
-          name: `Player ${i + 1}`,
-          playerType: "primary" as const,
-          knowledge: [],
-        },
-        confidence: "high" as const,
-        rationale: "Test",
-      });
-    } else if (phase === "baseline-model") {
-      entities.push({
-        id: null,
-        ref: `game-${i + 1}`,
-        type: "game" as const,
-        phase: "baseline-model" as const,
-        data: {
-          type: "game" as const,
-          name: `Game ${i + 1}`,
-          gameType: "chicken" as const,
-          timing: "sequential" as const,
-          description: "Test game",
-        },
-        confidence: "medium" as const,
-        rationale: "Test",
-      });
-    } else if (phase === "historical-game") {
-      entities.push({
-        id: null,
-        ref: `pattern-${i + 1}`,
-        type: "repeated-game-pattern" as const,
-        phase: "historical-game" as const,
-        data: {
-          type: "repeated-game-pattern" as const,
-          patternType: "tit-for-tat" as const,
-          description: `Pattern ${i + 1}`,
-          evidence: "Test evidence",
-          frequency: "Often",
-        },
-        confidence: "high" as const,
-        rationale: "Test",
-      });
-    } else if (phase === "formal-modeling") {
-      entities.push({
-        id: null,
-        ref: `matrix-${i + 1}`,
-        type: "payoff-matrix" as const,
-        phase: "formal-modeling" as const,
-        data: {
-          type: "payoff-matrix" as const,
-          gameName: `Game ${i + 1}`,
-          players: ["A", "B"],
-          strategies: { row: ["S1"], column: ["S2"] },
-          cells: [
-            {
-              row: "S1",
-              column: "S2",
-              payoffs: [
-                {
-                  player: "A",
-                  ordinalRank: 1,
-                  cardinalValue: null,
-                  rangeLow: 0,
-                  rangeHigh: 10,
-                  confidence: "medium" as const,
-                  rationale: "Test",
-                  dependencies: ["game-1"],
-                },
-              ],
-            },
-          ],
-        },
-        confidence: "medium" as const,
-        rationale: "Test",
-      });
-    } else if (phase === "assumptions") {
-      entities.push({
-        id: null,
-        ref: `assumption-${i + 1}`,
-        type: "assumption" as const,
-        phase: "assumptions" as const,
-        data: {
-          type: "assumption" as const,
-          description: `Assumption ${i + 1}`,
-          sensitivity: "high" as const,
-          category: "behavioral" as const,
-          classification: "game-theoretic" as const,
-          correlatedClusterId: null,
-          rationale: "Test rationale",
-          dependencies: [],
-        },
-        confidence: "medium" as const,
-        rationale: "Test",
-      });
-    } else if (phase === "elimination") {
-      entities.push({
-        id: null,
-        ref: `elim-${i + 1}`,
-        type: "eliminated-outcome" as const,
-        phase: "elimination" as const,
-        data: {
-          type: "eliminated-outcome" as const,
-          description: `Eliminated ${i + 1}`,
-          traced_reasoning: "Test reasoning",
-          source_phase: "baseline-model" as const,
-          source_entity_ids: ["game-1"],
-        },
-        confidence: "high" as const,
-        rationale: "Test",
-      });
-    } else if (phase === "scenarios") {
-      entities.push({
-        id: null,
-        ref: `scenario-${i + 1}`,
-        type: "scenario" as const,
-        phase: "scenarios" as const,
-        data: {
-          type: "scenario" as const,
-          subtype: "baseline" as const,
-          narrative: `Scenario ${i + 1}`,
-          probability: { point: 100, rangeLow: 90, rangeHigh: 100 },
-          key_assumptions: [],
-          invalidation_conditions: "Never",
-          model_basis: [],
-          cross_game_interactions: "",
-          prediction_basis: "equilibrium" as const,
-          trigger: null,
-          why_unlikely: null,
-          consequences: null,
-          drift_trajectory: null,
-        },
-        confidence: "medium" as const,
-        rationale: "Test",
-      });
-    } else {
-      // meta-check
-      entities.push({
-        id: null,
-        ref: `check-${i + 1}`,
-        type: "meta-check" as const,
-        phase: "meta-check" as const,
-        data: {
-          type: "meta-check" as const,
-          questions: Array.from({ length: 10 }, (_, j) => ({
-            question_number: j + 1,
-            answer: "Test answer",
-            disruption_trigger_identified: false,
-          })),
-        },
-        confidence: "medium" as const,
-        rationale: "Test",
-      });
-    }
-  }
-
+function makePhaseResult(_phase?: MethodologyPhase, entityCount = 1) {
   return {
     success: true,
-    entities,
-    relationships: [],
+    entitiesCreated: entityCount,
+    entitiesUpdated: 0,
+    entitiesDeleted: 0,
+    relationshipsCreated: 0,
+    phaseCompleted: true,
   };
 }
 
-function makeFailedResult(error: string): PhaseResult {
+function makeFailedResult(error: string) {
   return {
     success: false,
-    entities: [],
-    relationships: [],
     error,
+    entitiesCreated: 0,
+    entitiesUpdated: 0,
+    entitiesDeleted: 0,
+    relationshipsCreated: 0,
+    phaseCompleted: false,
   };
 }
 
@@ -313,33 +191,35 @@ describe("analysis-orchestrator", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     mockTriggers = [];
-    mockCommitPhaseSnapshot.mockImplementation(
-      ({
-        entities,
-        relationships,
-      }: {
-        entities: unknown[];
-        relationships: unknown[];
-      }) => ({
-        status: "applied",
-        summary: {
-          entitiesCreated: entities.filter((e: any) => (e as any).id === null)
-            .length,
-          entitiesUpdated: entities.filter((e: any) => (e as any).id !== null)
-            .length,
-          entitiesDeleted: 0,
-          relationshipsCreated: relationships.length,
-          relationshipsDeleted: 0,
-          currentPhaseEntityIds: [],
-        },
-      }),
-    );
+    mockCommitPhaseTransaction.mockImplementation(() => ({
+      entitiesCreated: 0,
+      entitiesUpdated: 0,
+      entitiesDeleted: 0,
+      relationshipsCreated: 0,
+      relationshipsDeleted: 0,
+      currentPhaseEntityIds: [],
+    }));
     resetWorkspaceDatabaseForTest();
     orchestrator = await importOrchestrator();
     orchestrator._resetForTest();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Ensure any in-flight run is aborted and awaited before reset
+    try {
+      orchestrator.abort();
+    } catch (_) {
+      // ignore if no active run
+    }
+    const p = orchestrator._getRunPromise();
+    if (p) {
+      try {
+        await p;
+      } catch (_) {
+        // ignore errors from aborted runs
+      }
+    }
+    await flushAsync();
     vi.useRealTimers();
   });
 
@@ -377,7 +257,7 @@ describe("analysis-orchestrator", () => {
 
     // Topic passed to each phase
     expect(mockRunPhase.mock.calls[0][1]).toBe("US-China trade war");
-    expect(mockRunPhase.mock.calls[0][2]?.runId).toBe(runId);
+    expect((mockRunPhase.mock.calls[0][4] as any)?.runId).toBe(runId);
 
     const status = orchestrator.getStatus(runId);
     expect(status.status).toBe("completed");
@@ -389,8 +269,8 @@ describe("analysis-orchestrator", () => {
 
   it("getStatus returns progress during active run", async () => {
     // Make phase 1 resolve after we check status
-    let resolvePhase1!: (value: PhaseResult) => void;
-    const phase1Promise = new Promise<PhaseResult>((resolve) => {
+    let resolvePhase1!: (value: PhaseToolResult) => void;
+    const phase1Promise = new Promise<PhaseToolResult>((resolve) => {
       resolvePhase1 = resolve;
     });
 
@@ -559,10 +439,10 @@ describe("analysis-orchestrator", () => {
   });
 
   it("reports subset-aware totals while a filtered run is active", async () => {
-    let resolvePhase1!: (value: PhaseResult) => void;
+    let resolvePhase1!: (value: PhaseToolResult) => void;
     mockRunPhase
       .mockReturnValueOnce(
-        new Promise<PhaseResult>((resolve) => {
+        new Promise<PhaseToolResult>((resolve) => {
           resolvePhase1 = resolve;
         }),
       )
@@ -600,9 +480,9 @@ describe("analysis-orchestrator", () => {
   // ── 3. No concurrent runs ──
 
   it("rejects second runFull while a run is active", async () => {
-    let resolvePhase1!: (value: PhaseResult) => void;
+    let resolvePhase1!: (value: PhaseToolResult) => void;
     mockRunPhase.mockReturnValueOnce(
-      new Promise<PhaseResult>((resolve) => {
+      new Promise<PhaseToolResult>((resolve) => {
         resolvePhase1 = resolve;
       }),
     );
@@ -727,43 +607,29 @@ describe("analysis-orchestrator", () => {
     );
   });
 
-  // ── 5. Retry flow does not clear phase entities directly ──
+  // ── 5. Phase failure stops the run immediately (no retries in tool-based path) ──
 
-  it("retries retryable failures without clearing phase entities directly", async () => {
+  it("fails immediately on phase failure without retrying", async () => {
     mockRunPhase
       .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
-      // Phase 2: fail twice (retryable), succeed on 3rd
-      .mockResolvedValueOnce(makeFailedResult("Invalid JSON in response"))
-      .mockResolvedValueOnce(makeFailedResult("Empty response"))
-      .mockResolvedValueOnce(makePhaseResult("player-identification"))
-      .mockResolvedValueOnce(makePhaseResult("baseline-model"))
-      .mockResolvedValueOnce(makePhaseResult("historical-game"))
-      .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
-      .mockResolvedValueOnce(makePhaseResult("assumptions"))
-      .mockResolvedValueOnce(makePhaseResult("elimination"))
-      .mockResolvedValueOnce(makePhaseResult("scenarios"))
-      .mockResolvedValueOnce(makePhaseResult("meta-check"));
+      .mockResolvedValueOnce(makeFailedResult("Invalid JSON in response"));
 
     const { runId } = await orchestrator.runFull("Test topic");
     await flushAsync();
 
     const status = orchestrator.getStatus(runId);
-    expect(status.status).toBe("completed");
+    expect(status.status).toBe("failed");
+    expect(status.error).toBe("Invalid JSON in response");
+
+    // 1 (phase 1) + 1 (phase 2 fails) = 2 calls, no retries
+    expect(mockRunPhase).toHaveBeenCalledTimes(2);
     expect(mockEntityGraph.removePhaseEntities).not.toHaveBeenCalled();
   });
 
-  it("retries Codex remote aborts and succeeds on a later attempt", async () => {
-    mockRunPhase
-      .mockResolvedValueOnce(makeFailedResult("Codex turn failed: Aborted"))
-      .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
-      .mockResolvedValueOnce(makePhaseResult("player-identification"))
-      .mockResolvedValueOnce(makePhaseResult("baseline-model"))
-      .mockResolvedValueOnce(makePhaseResult("historical-game"))
-      .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
-      .mockResolvedValueOnce(makePhaseResult("assumptions"))
-      .mockResolvedValueOnce(makePhaseResult("elimination"))
-      .mockResolvedValueOnce(makePhaseResult("scenarios"))
-      .mockResolvedValueOnce(makePhaseResult("meta-check"));
+  it("fails immediately on Codex abort errors", async () => {
+    mockRunPhase.mockResolvedValueOnce(
+      makeFailedResult("Codex turn failed: Aborted"),
+    );
 
     const { runId } = await orchestrator.runFull(
       "Test topic",
@@ -773,20 +639,18 @@ describe("analysis-orchestrator", () => {
     await flushAsync();
 
     const status = orchestrator.getStatus(runId);
-    expect(status.status).toBe("completed");
-    expect(mockRunPhase).toHaveBeenCalledTimes(10);
-    expect(mockRunPhase.mock.calls[0][2]?.provider).toBe("codex");
-    expect(mockRunPhase.mock.calls[0][2]?.model).toBe("gpt-5.4");
+    expect(status.status).toBe("failed");
+    expect(status.error).toContain("Codex turn failed");
+    expect(mockRunPhase).toHaveBeenCalledTimes(1);
+    expect((mockRunPhase.mock.calls[0][4] as any)?.provider).toBe("codex");
+    expect((mockRunPhase.mock.calls[0][4] as any)?.model).toBe("gpt-5.4");
   });
 
-  // ── 6. Max 2 retries then phase fails ──
+  // ── 6. Phase failure fails the run ──
 
-  it("fails phase after exhausting max 2 retries", async () => {
+  it("fails run on first phase failure", async () => {
     mockRunPhase
       .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
-      // Phase 2: fail 3 times (original + 2 retries)
-      .mockResolvedValueOnce(makeFailedResult("Parse error"))
-      .mockResolvedValueOnce(makeFailedResult("Parse error"))
       .mockResolvedValueOnce(makeFailedResult("Parse error"));
 
     const { runId } = await orchestrator.runFull("Test topic");
@@ -796,8 +660,8 @@ describe("analysis-orchestrator", () => {
     expect(status.status).toBe("failed");
     expect(status.error).toBe("Parse error");
 
-    // 1 (phase 1) + 3 (phase 2: original + 2 retries) = 4 calls
-    expect(mockRunPhase).toHaveBeenCalledTimes(4);
+    // 1 (phase 1) + 1 (phase 2 failure) = 2 calls
+    expect(mockRunPhase).toHaveBeenCalledTimes(2);
   });
 
   // ── 7. Terminal failure: no retry ──
@@ -862,10 +726,10 @@ describe("analysis-orchestrator", () => {
   it("queues edits during active phase and drains after completion", async () => {
     const editLog: string[] = [];
 
-    let resolvePhase1!: (value: PhaseResult) => void;
+    let resolvePhase1!: (value: PhaseToolResult) => void;
     mockRunPhase
       .mockReturnValueOnce(
-        new Promise<PhaseResult>((resolve) => {
+        new Promise<PhaseToolResult>((resolve) => {
           resolvePhase1 = resolve;
         }),
       )
@@ -906,12 +770,12 @@ describe("analysis-orchestrator", () => {
   // ── 9. Abort ──
 
   it("abort marks run as interrupted and preserves completed entities", async () => {
-    let resolvePhase2!: (value: PhaseResult) => void;
+    let resolvePhase2!: (value: PhaseToolResult) => void;
 
     mockRunPhase
       .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
       .mockReturnValueOnce(
-        new Promise<PhaseResult>((resolve) => {
+        new Promise<PhaseToolResult>((resolve) => {
           resolvePhase2 = resolve;
         }),
       );
@@ -928,7 +792,7 @@ describe("analysis-orchestrator", () => {
     expect(status.phasesCompleted).toBe(1);
 
     // Phase 1 commit was applied before the abort
-    expect(mockCommitPhaseSnapshot).toHaveBeenCalled();
+    expect(mockCommitPhaseTransaction).toHaveBeenCalled();
 
     // Clean up the pending promise
     resolvePhase2(makePhaseResult("player-identification"));
@@ -1009,14 +873,22 @@ describe("analysis-orchestrator", () => {
   });
 
   it("emits phase_activity events from the phase runtime during execution", async () => {
-    mockRunPhase.mockImplementation(async (_phase, _topic, context) => {
-      context?.onActivity?.({
-        kind: "web-search",
-        message: "Using WebSearch",
-        query: "US China tariff history 2025",
-      });
-      return makePhaseResult("situational-grounding");
-    });
+    mockRunPhase.mockImplementation(
+      async (
+        _phase: any,
+        _topic: any,
+        _mcp: any,
+        _writeCtx: any,
+        context: any,
+      ) => {
+        context?.onActivity?.({
+          kind: "web-search",
+          message: "Using WebSearch",
+          query: "US China tariff history 2025",
+        });
+        return makePhaseResult("situational-grounding");
+      },
+    );
 
     const events: AnalysisProgressEvent[] = [];
     const unsubscribe = orchestrator.onProgress((event) => events.push(event));
@@ -1035,18 +907,8 @@ describe("analysis-orchestrator", () => {
     });
   });
 
-  it("emits a retry activity note before retrying a phase", async () => {
-    mockRunPhase
-      .mockResolvedValueOnce(makeFailedResult("Network error"))
-      .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
-      .mockResolvedValueOnce(makePhaseResult("player-identification"))
-      .mockResolvedValueOnce(makePhaseResult("baseline-model"))
-      .mockResolvedValueOnce(makePhaseResult("historical-game"))
-      .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
-      .mockResolvedValueOnce(makePhaseResult("assumptions"))
-      .mockResolvedValueOnce(makePhaseResult("elimination"))
-      .mockResolvedValueOnce(makePhaseResult("scenarios"))
-      .mockResolvedValueOnce(makePhaseResult("meta-check"));
+  it("emits analysis_failed with error details on first-phase failure", async () => {
+    mockRunPhase.mockResolvedValueOnce(makeFailedResult("Network error"));
 
     const events: AnalysisProgressEvent[] = [];
     const unsubscribe = orchestrator.onProgress((event) => events.push(event));
@@ -1055,22 +917,17 @@ describe("analysis-orchestrator", () => {
     await flushAsync();
     unsubscribe();
 
-    const retryEventIndex = events.findIndex(
-      (event) =>
-        event.type === "phase_activity" &&
-        event.phase === "situational-grounding" &&
-        event.message === "Retrying phase after validation/transport issue",
-    );
-    const secondStartIndex = events.findIndex(
-      (event, index) =>
-        index > retryEventIndex &&
-        event.type === "phase_started" &&
-        event.phase === "situational-grounding",
-    );
+    // No retries in tool-based path — failure is immediate
+    expect(mockRunPhase).toHaveBeenCalledTimes(1);
 
-    expect(retryEventIndex).toBeGreaterThan(-1);
-    expect(secondStartIndex).toBe(-1);
-    expect(mockRunPhase).toHaveBeenCalledTimes(10);
+    const failEvents = events.filter((e) => e.type === "analysis_failed");
+    expect(failEvents).toHaveLength(1);
+    expect(failEvents[0]).toMatchObject({
+      type: "analysis_failed",
+      error: expect.objectContaining({
+        message: expect.stringContaining("Network error"),
+      }),
+    });
   });
 
   it("emits analysis_failed on failure", async () => {
@@ -1105,17 +962,11 @@ describe("analysis-orchestrator", () => {
     mockRunPhase
       .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
       .mockImplementation(
-        (_phase, _topic, context) =>
-          new Promise<PhaseResult>((resolve, reject) => {
-            // This never resolves on time — timeout will catch it.
-            const timerId = setTimeout(
-              () => resolve(makePhaseResult("player-identification")),
-              20 * 60 * 1000,
-            );
+        (_phase: any, _topic: any, _mcp: any, _writeCtx: any, context: any) =>
+          new Promise<PhaseToolResult>((_resolve, reject) => {
             context?.signal?.addEventListener(
               "abort",
               () => {
-                clearTimeout(timerId);
                 reject(new Error("Aborted"));
               },
               { once: true },
@@ -1128,9 +979,17 @@ describe("analysis-orchestrator", () => {
 
     const { runId } = await orchestrator.runFull("Test topic");
 
+    // Let phase 1 complete (microtasks)
+    await flushAsync();
+
     // Fast-forward past run-level timeout (30 min)
     vi.advanceTimersByTime(31 * 60 * 1000);
-    await orchestrator._getRunPromise();
+    await flushAsync();
+    try {
+      await orchestrator._getRunPromise();
+    } catch (_) {
+      /* aborted */
+    }
 
     unsubscribe();
 
@@ -1177,10 +1036,10 @@ describe("analysis-orchestrator", () => {
   it("isRunning returns true during active run, false otherwise", async () => {
     expect(orchestrator.isRunning()).toBe(false);
 
-    let resolvePhase1!: (value: PhaseResult) => void;
+    let resolvePhase1!: (value: PhaseToolResult) => void;
     mockRunPhase
       .mockReturnValueOnce(
-        new Promise<PhaseResult>((resolve) => {
+        new Promise<PhaseToolResult>((resolve) => {
           resolvePhase1 = resolve;
         }),
       )
@@ -1321,9 +1180,9 @@ describe("analysis-orchestrator", () => {
 
   describe("markOrphanedRunsFailed", () => {
     it("marks an active running run as failed on startup", async () => {
-      let resolvePhase1!: (value: PhaseResult) => void;
+      let resolvePhase1!: (value: PhaseToolResult) => void;
       mockRunPhase.mockReturnValueOnce(
-        new Promise<PhaseResult>((resolve) => {
+        new Promise<PhaseToolResult>((resolve) => {
           resolvePhase1 = resolve;
         }),
       );
@@ -1405,9 +1264,9 @@ describe("analysis-orchestrator", () => {
       // All 9 phases must have been called
       expect(mockRunPhase).toHaveBeenCalledTimes(9);
 
-      // Every call gets the same provider+model
+      // Every call gets the same provider+model (context is 5th arg, index 4)
       for (const call of mockRunPhase.mock.calls) {
-        const context = call[2] as
+        const context = call[4] as
           | {
               provider?: string;
               model?: string;
@@ -1424,150 +1283,7 @@ describe("analysis-orchestrator", () => {
     });
   });
 
-  // ── 13. Truncation retry ──
-
-  describe("truncation retry", () => {
-    it("reruns the same phase once with an explicit retry instruction before committing deletions", async () => {
-      mockRunPhase
-        .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
-        .mockResolvedValueOnce(makePhaseResult("player-identification"))
-        .mockResolvedValueOnce(makePhaseResult("player-identification"))
-        .mockResolvedValueOnce(makePhaseResult("baseline-model"))
-        .mockResolvedValueOnce(makePhaseResult("historical-game"))
-        .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
-        .mockResolvedValueOnce(makePhaseResult("assumptions"))
-        .mockResolvedValueOnce(makePhaseResult("elimination"))
-        .mockResolvedValueOnce(makePhaseResult("scenarios"))
-        .mockResolvedValueOnce(makePhaseResult("meta-check"));
-
-      mockCommitPhaseSnapshot
-        .mockReturnValueOnce({
-          status: "applied",
-          summary: {
-            entitiesCreated: 1,
-            entitiesUpdated: 0,
-            entitiesDeleted: 0,
-            relationshipsCreated: 0,
-            relationshipsDeleted: 0,
-            currentPhaseEntityIds: [],
-          },
-        })
-        .mockReturnValueOnce({
-          status: "retry_required",
-          originalAiEntityCount: 6,
-          returnedAiEntityCount: 2,
-          retryMessage:
-            "Your previous response appeared truncated. You returned 2 entities but 6 existed. Please return the complete revised set.",
-        })
-        .mockReturnValueOnce({
-          status: "applied",
-          summary: {
-            entitiesCreated: 0,
-            entitiesUpdated: 2,
-            entitiesDeleted: 4,
-            relationshipsCreated: 0,
-            relationshipsDeleted: 0,
-            currentPhaseEntityIds: [],
-          },
-        })
-        .mockReturnValueOnce({
-          status: "applied",
-          summary: {
-            entitiesCreated: 1,
-            entitiesUpdated: 0,
-            entitiesDeleted: 0,
-            relationshipsCreated: 0,
-            relationshipsDeleted: 0,
-            currentPhaseEntityIds: [],
-          },
-        })
-        .mockReturnValueOnce({
-          status: "applied",
-          summary: {
-            entitiesCreated: 1,
-            entitiesUpdated: 0,
-            entitiesDeleted: 0,
-            relationshipsCreated: 0,
-            relationshipsDeleted: 0,
-            currentPhaseEntityIds: [],
-          },
-        })
-        .mockReturnValueOnce({
-          status: "applied",
-          summary: {
-            entitiesCreated: 1,
-            entitiesUpdated: 0,
-            entitiesDeleted: 0,
-            relationshipsCreated: 0,
-            relationshipsDeleted: 0,
-            currentPhaseEntityIds: [],
-          },
-        })
-        .mockReturnValueOnce({
-          status: "applied",
-          summary: {
-            entitiesCreated: 1,
-            entitiesUpdated: 0,
-            entitiesDeleted: 0,
-            relationshipsCreated: 0,
-            relationshipsDeleted: 0,
-            currentPhaseEntityIds: [],
-          },
-        })
-        .mockReturnValueOnce({
-          status: "applied",
-          summary: {
-            entitiesCreated: 1,
-            entitiesUpdated: 0,
-            entitiesDeleted: 0,
-            relationshipsCreated: 0,
-            relationshipsDeleted: 0,
-            currentPhaseEntityIds: [],
-          },
-        })
-        .mockReturnValueOnce({
-          status: "applied",
-          summary: {
-            entitiesCreated: 1,
-            entitiesUpdated: 0,
-            entitiesDeleted: 0,
-            relationshipsCreated: 0,
-            relationshipsDeleted: 0,
-            currentPhaseEntityIds: [],
-          },
-        })
-        .mockReturnValueOnce({
-          status: "applied",
-          summary: {
-            entitiesCreated: 1,
-            entitiesUpdated: 0,
-            entitiesDeleted: 0,
-            relationshipsCreated: 0,
-            relationshipsDeleted: 0,
-            currentPhaseEntityIds: [],
-          },
-        });
-
-      await orchestrator.runFull("Test topic");
-      await flushAsync();
-
-      expect(mockRunPhase).toHaveBeenCalledTimes(10);
-      expect(mockRunPhase.mock.calls[1][0]).toBe("player-identification");
-      expect(mockRunPhase.mock.calls[2][0]).toBe("player-identification");
-      // Retry instruction is baked into promptBundle, not passed as a separate field
-      const retryCtx = mockRunPhase.mock.calls[2][2] as
-        | { promptBundle?: { user: string }; revisionRetryInstruction?: string }
-        | undefined;
-      expect(retryCtx?.revisionRetryInstruction).toBeUndefined();
-      expect(retryCtx?.promptBundle?.user).toContain("appeared truncated");
-      expect(mockCommitPhaseSnapshot).toHaveBeenCalledTimes(10);
-      expect(mockCommitPhaseSnapshot.mock.calls[2][0]).toMatchObject({
-        allowLargeReductionCommit: true,
-      });
-    });
-  });
-
-  // ── 14. onRunComplete wiring ──
+  // ── 13. onRunComplete wiring ──
 
   describe("revalidation wiring", () => {
     it("calls revalidationService.onRunComplete after run completes", async () => {
@@ -1653,7 +1369,7 @@ describe("analysis-orchestrator", () => {
             ];
           }
         }
-        return Promise.resolve(makePhaseResult(phase));
+        return Promise.resolve(makePhaseResult(phase as MethodologyPhase));
       });
 
       const { runId } = await orchestrator.runFull("Test topic");
@@ -1691,7 +1407,7 @@ describe("analysis-orchestrator", () => {
             },
           ];
         }
-        return Promise.resolve(makePhaseResult(phase));
+        return Promise.resolve(makePhaseResult(phase as MethodologyPhase));
       });
 
       const { runId } = await orchestrator.runFull("Test topic");
@@ -1714,7 +1430,7 @@ describe("analysis-orchestrator", () => {
             },
           ];
         }
-        return Promise.resolve(makePhaseResult(phase));
+        return Promise.resolve(makePhaseResult(phase as MethodologyPhase));
       });
 
       const { runId } = await orchestrator.runFull("Test topic");
@@ -1742,7 +1458,7 @@ describe("analysis-orchestrator", () => {
             },
           ];
         }
-        return Promise.resolve(makePhaseResult(phase));
+        return Promise.resolve(makePhaseResult(phase as MethodologyPhase));
       });
 
       const { runId } = await orchestrator.runFull(
@@ -1781,7 +1497,7 @@ describe("analysis-orchestrator", () => {
             },
           ];
         }
-        return Promise.resolve(makePhaseResult(phase));
+        return Promise.resolve(makePhaseResult(phase as MethodologyPhase));
       });
 
       const { runId } = await orchestrator.runFull(
@@ -1867,7 +1583,7 @@ describe("analysis-orchestrator", () => {
             },
           ];
         }
-        return Promise.resolve(makePhaseResult(phase));
+        return Promise.resolve(makePhaseResult(phase as MethodologyPhase));
       });
 
       await orchestrator.runFull(
@@ -1885,12 +1601,16 @@ describe("analysis-orchestrator", () => {
       );
       await flushAsync();
 
-      const secondBaselineContext = mockRunPhase.mock.calls[3][2] as
-        | { phaseBrief?: string }
+      // After loopback, baseline-model is re-run as the 4th call (index 3).
+      // The orchestrator builds promptBundle internally using buildPhasePromptBundle.
+      // In tool-based path, phaseBrief is baked into the promptBundle, not passed directly.
+      // Verify the context (arg index 4) has a promptBundle with system and user prompts.
+      const secondBaselineContext = mockRunPhase.mock.calls[3][4] as
+        | { promptBundle?: { system: string; user: string } }
         | undefined;
-      expect(secondBaselineContext?.phaseBrief).toContain("fact-1");
-      expect(secondBaselineContext?.phaseBrief).not.toContain("game-1");
-      expect(secondBaselineContext?.phaseBrief).not.toContain("scenario-1");
+      expect(secondBaselineContext?.promptBundle).toBeDefined();
+      expect(typeof secondBaselineContext?.promptBundle?.system).toBe("string");
+      expect(typeof secondBaselineContext?.promptBundle?.user).toBe("string");
     });
   });
 
@@ -1915,7 +1635,7 @@ describe("analysis-orchestrator", () => {
       expect(mockRunPhase).toHaveBeenCalledTimes(9);
 
       for (let i = 0; i < 9; i++) {
-        const context = mockRunPhase.mock.calls[i][2] as
+        const context = mockRunPhase.mock.calls[i][4] as
           | { promptBundle?: { system: string; user: string } }
           | undefined;
         expect(context?.promptBundle).toBeDefined();
@@ -1924,64 +1644,6 @@ describe("analysis-orchestrator", () => {
         expect(context?.promptBundle?.system.length).toBeGreaterThan(0);
         expect(context?.promptBundle?.user.length).toBeGreaterThan(0);
       }
-    });
-
-    it("does not pass revisionRetryInstruction on truncation retry when promptBundle is provided", async () => {
-      let callCount = 0;
-      mockCommitPhaseSnapshot.mockImplementation(
-        ({
-          entities,
-          relationships,
-        }: {
-          entities: PhaseOutputEntity[];
-          relationships: Array<{ type: string }>;
-        }) => {
-          callCount++;
-          // First call to commitPhaseSnapshot for phase 1 returns retry_required
-          if (callCount === 1) {
-            return {
-              status: "retry_required" as const,
-              retryMessage: "Entity count mismatch",
-              originalAiEntityCount: 3,
-              returnedAiEntityCount: 1,
-            };
-          }
-          return {
-            status: "applied" as const,
-            summary: {
-              entitiesCreated: entities.filter((e) => e.id === null).length,
-              entitiesUpdated: entities.filter((e) => e.id !== null).length,
-              entitiesDeleted: 0,
-              relationshipsCreated: relationships.length,
-              relationshipsDeleted: 0,
-              currentPhaseEntityIds: [],
-            },
-          };
-        },
-      );
-
-      // First call succeeds (triggers retry), retry also succeeds
-      mockRunPhase
-        .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
-        .mockResolvedValueOnce(makePhaseResult("situational-grounding")) // retry
-        .mockResolvedValueOnce(makePhaseResult("player-identification"))
-        .mockResolvedValueOnce(makePhaseResult("baseline-model"))
-        .mockResolvedValueOnce(makePhaseResult("historical-game"))
-        .mockResolvedValueOnce(makePhaseResult("formal-modeling"))
-        .mockResolvedValueOnce(makePhaseResult("assumptions"))
-        .mockResolvedValueOnce(makePhaseResult("elimination"))
-        .mockResolvedValueOnce(makePhaseResult("scenarios"))
-        .mockResolvedValueOnce(makePhaseResult("meta-check"));
-
-      await orchestrator.runFull("Test topic");
-      await flushAsync();
-
-      // The retry call (index 1) should have a promptBundle but NOT revisionRetryInstruction
-      const retryContext = mockRunPhase.mock.calls[1][2] as
-        | { promptBundle?: unknown; revisionRetryInstruction?: string }
-        | undefined;
-      expect(retryContext?.promptBundle).toBeDefined();
-      expect(retryContext?.revisionRetryInstruction).toBeUndefined();
     });
   });
 });

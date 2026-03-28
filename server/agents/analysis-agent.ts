@@ -1,5 +1,5 @@
 // analysis-orchestrator.ts — run lifecycle, retry, edit queueing, progress events.
-// Calls analysis-service.runPhase() per phase. Does NOT call streamChat directly.
+// Calls analysis-service.runPhaseWithTools() per phase. Does NOT call streamChat directly.
 // Consolidates analysis-run-store state into module-level singleton.
 
 import type { MethodologyPhase } from "../../shared/types/methodology";
@@ -18,8 +18,7 @@ import type {
   RuntimeProvider,
 } from "../../shared/types/analysis-runtime";
 import { normalizeRuntimeProvider } from "../../shared/types/analysis-runtime";
-import type { PhaseResult } from "../services/analysis-service";
-import { runPhase, runPhaseWithTools } from "../services/analysis-service";
+import { runPhaseWithTools } from "../services/analysis-service";
 import {
   buildPhasePromptBundle,
   createRunPromptProvenance,
@@ -34,7 +33,6 @@ import {
 import * as entityGraphService from "../services/entity-graph-service";
 import * as revalidationService from "../services/revalidation-service";
 import {
-  commitPhaseSnapshot,
   beginPhaseTransaction,
   commitPhaseTransaction,
   rollbackPhaseTransaction,
@@ -106,12 +104,6 @@ export interface RunPersistenceContext {
   producer?: string;
 }
 
-interface CommitSummary {
-  entitiesCreated: number;
-  entitiesUpdated: number;
-  relationshipsCreated: number;
-}
-
 interface ActiveRun {
   runId: string;
   workspaceId: string;
@@ -132,7 +124,7 @@ interface ActiveRun {
   error?: string;
   logger: RunLogger;
   promptProvenance: ReturnType<typeof createRunPromptProvenance>;
-  /** Tool-based phase execution state (null when feature flag is off) */
+  /** Tool-based phase execution state */
   toolWriteContext: AnalysisWriteContext | null;
   toolMcpServer: unknown | null;
 }
@@ -153,7 +145,6 @@ type SupportedPhase = SupportedAnalysisPhase;
 
 const SUPPORTED_PHASES: SupportedPhase[] = SUPPORTED_ANALYSIS_PHASES;
 
-const MAX_RETRIES = analysisRuntimeConfig.orchestrator.maxRetries;
 const MAX_LOOPBACK_PASSES =
   analysisRuntimeConfig.orchestrator.maxLoopbackPasses;
 
@@ -172,27 +163,7 @@ const TRIGGER_TARGET_PHASE: Record<LoopbackTriggerType, MethodologyPhase> = {
   behavioral_overlay_change: "baseline-model",
   meta_check_blind_spot: "player-identification",
 };
-const PHASE_TIMEOUT_MS = analysisRuntimeConfig.orchestrator.phaseTimeoutMs;
 const RUN_TIMEOUT_MS = analysisRuntimeConfig.orchestrator.runTimeoutMs;
-
-function createPhaseTimeout(ms: number, abort: AbortController) {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const promise = new Promise<PhaseResult>((_, reject) => {
-    timer = setTimeout(() => {
-      abort.abort();
-      reject(new Error("Phase timeout"));
-    }, ms);
-  });
-  return {
-    promise,
-    clear() {
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
-      }
-    },
-  };
-}
 
 // ── Synthesis adapter ──
 
@@ -560,484 +531,96 @@ async function executeSinglePhase(
   emitProgress({ type: "phase_started", phase, runId: run.runId });
   run.logger.log("orchestrator", "phase-start", { phase, phaseTurnId });
 
-  // ── Tool-based execution path (behind feature flag) ──
-  if (
-    analysisRuntimeConfig.orchestrator.toolBasedPhases &&
-    run.toolWriteContext &&
-    run.toolMcpServer
-  ) {
-    // Update the mutable write context for this phase
-    run.toolWriteContext.phase = phase;
-    run.toolWriteContext.phaseTurnId = phaseTurnId;
-    run.toolWriteContext.runId = run.runId;
-    run.toolWriteContext.allowedEntityTypes = PHASE_ENTITY_TYPES[phase] ?? [];
-    run.toolWriteContext.counters = {
-      entitiesCreated: 0,
-      entitiesUpdated: 0,
-      entitiesDeleted: 0,
-      relationshipsCreated: 0,
-      phaseCompleted: false,
-    };
+  // ── Tool-based execution path ──
 
-    // Build tool-based prompt bundle
-    const toolPromptBundle = buildPhasePromptBundle({
+  // Update the mutable write context for this phase
+  run.toolWriteContext!.phase = phase;
+  run.toolWriteContext!.phaseTurnId = phaseTurnId;
+  run.toolWriteContext!.runId = run.runId;
+  run.toolWriteContext!.allowedEntityTypes = PHASE_ENTITY_TYPES[phase] ?? [];
+  run.toolWriteContext!.counters = {
+    entitiesCreated: 0,
+    entitiesUpdated: 0,
+    entitiesDeleted: 0,
+    relationshipsCreated: 0,
+    phaseCompleted: false,
+  };
+
+  // Build tool-based prompt bundle
+  const toolPromptBundle = buildPhasePromptBundle({
+    phase,
+    topic,
+    phaseBrief: phaseBrief.phaseBrief,
+    effortLevel: run.runtime.effortLevel,
+    toolBased: true,
+  });
+
+  const phaseAbort = new AbortController();
+  const onExternalAbort = () => phaseAbort.abort();
+  externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
+
+  beginPhaseTransaction(phase, run.runId);
+  try {
+    const toolResult = await runPhaseWithTools(
       phase,
       topic,
-      phaseBrief: phaseBrief.phaseBrief,
-      effortLevel: run.runtime.effortLevel,
-      toolBased: true,
-    });
-
-    const phaseAbort = new AbortController();
-    const onExternalAbort = () => phaseAbort.abort();
-    externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
-
-    beginPhaseTransaction(phase, run.runId);
-    try {
-      const toolResult = await runPhaseWithTools(
-        phase,
-        topic,
-        run.toolMcpServer,
-        run.toolWriteContext,
-        {
-          workspaceId: run.workspaceId,
-          threadId: run.threadId,
-          promptBundle: {
-            system: toolPromptBundle.system,
-            user: toolPromptBundle.user,
-            toolPolicy: toolPromptBundle.toolPolicy,
-          },
-          provider: run.provider,
-          model: run.model,
-          runtime: run.runtime,
-          runId: run.runId,
-          phaseTurnId,
-          signal: phaseAbort.signal,
-          logger: run.logger,
-          onActivity: (activity) => {
-            appendRunLifecycleEvents(run, "analysis-agent", [
-              {
-                type: "phase.activity.recorded",
-                payload: {
-                  phase,
-                  phaseTurnId,
-                  kind: activity.kind,
-                  message: activity.message,
-                  ...(activity.toolName ? { toolName: activity.toolName } : {}),
-                  ...(activity.query ? { query: activity.query } : {}),
-                },
-                occurredAt: Date.now(),
-              },
-            ]);
-            emitPhaseActivity(run.runId, phase, activity.message, {
-              kind: activity.kind,
-              toolName: activity.toolName,
-              query: activity.query,
-            });
-          },
+      run.toolMcpServer!,
+      run.toolWriteContext!,
+      {
+        workspaceId: run.workspaceId,
+        threadId: run.threadId,
+        promptBundle: {
+          system: toolPromptBundle.system,
+          user: toolPromptBundle.user,
+          toolPolicy: toolPromptBundle.toolPolicy,
         },
-      );
-
-      if (toolResult.success && toolResult.phaseCompleted) {
-        const txSummary = commitPhaseTransaction();
-        entityGraphService.setPhaseStatus(phase, "complete");
-        run.logger.log("orchestrator", "tool-phase-complete", {
-          phase,
-          phaseTurnId,
-          elapsedMs: Date.now() - phaseStart,
-          entitiesCreated: txSummary.entitiesCreated,
-          entitiesUpdated: txSummary.entitiesUpdated,
-          entitiesDeleted: txSummary.entitiesDeleted,
-          relationshipsCreated: txSummary.relationshipsCreated,
-        });
-        const summary: PhaseSummary = {
-          entitiesCreated: txSummary.entitiesCreated,
-          entitiesUpdated: txSummary.entitiesUpdated,
-          relationshipsCreated: txSummary.relationshipsCreated,
-          durationMs: Date.now() - phaseStart,
-        };
-        appendRunLifecycleEvents(run, "analysis-agent", [
-          {
-            type: "phase.completed",
-            payload: {
-              phase,
-              phaseTurnId,
-              summary,
-            },
-            occurredAt: Date.now(),
-          },
-          {
-            type: "run.status.changed",
-            payload: {
-              status: "running",
-              activePhase: null,
-              progress: {
-                completed: run.phasesCompleted.length + 1,
-                total: run.activePhases.length,
-              },
-              summary: {
-                statusMessage: `Completed ${phase}`,
-                completedPhases: run.phasesCompleted.length + 1,
-              },
-              latestPhaseTurnId: phaseTurnId,
-            },
-            occurredAt: Date.now(),
-          },
-        ]);
-        emitProgress({
-          type: "phase_completed",
-          phase,
-          runId: run.runId,
-          summary,
-        });
-        runtimeStatus.completePhase(run.runId);
-        drainEditQueue();
-        return { success: true };
-      } else {
-        rollbackPhaseTransaction();
-        entityGraphService.setPhaseStatus(phase, "failed");
-        const errMsg = toolResult.error ?? "Phase did not complete";
-        run.logger.error("orchestrator", "tool-phase-failed", {
-          phase,
-          phaseTurnId,
-          elapsedMs: Date.now() - phaseStart,
-          error: errMsg,
-        });
-        return { success: false, error: errMsg };
-      }
-    } catch (err) {
-      rollbackPhaseTransaction();
-      entityGraphService.setPhaseStatus(phase, "failed");
-      const errMsg = err instanceof Error ? err.message : String(err);
-      run.logger.error("orchestrator", "tool-phase-error", {
-        phase,
+        provider: run.provider,
+        model: run.model,
+        runtime: run.runtime,
+        runId: run.runId,
         phaseTurnId,
-        elapsedMs: Date.now() - phaseStart,
-        error: errMsg,
-      });
-      return { success: false, error: errMsg };
-    } finally {
-      externalSignal?.removeEventListener("abort", onExternalAbort);
-    }
-  }
-
-  // ── Structured-output execution path (default) ──
-
-  let lastError = "";
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    // Check abort before each attempt
-    if (externalSignal?.aborted) {
-      entityGraphService.setPhaseStatus(phase, "pending");
-      return { success: false, error: "Aborted" };
-    }
-
-    // Check run-level timeout before each attempt
-    if (Date.now() - run.startTime >= RUN_TIMEOUT_MS) {
-      run.logger.error("orchestrator", "run-timeout", {
-        elapsedMs: Date.now() - run.startTime,
-        phase,
-        phaseTurnId,
-      });
-      entityGraphService.setPhaseStatus(phase, "failed");
-      return { success: false, error: "Run-level timeout exceeded" };
-    }
-
-    run.logger.log("orchestrator", "attempt-start", {
-      phase,
-      phaseTurnId,
-      attempt: attempt + 1,
-      maxAttempts: MAX_RETRIES + 1,
-    });
-
-    // Per-phase timeout via AbortController
-    const phaseAbort = new AbortController();
-    let phaseTimeout = createPhaseTimeout(PHASE_TIMEOUT_MS, phaseAbort);
-
-    // Also abort if external signal fires
-    const onExternalAbort = () => phaseAbort.abort();
-    externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
-
-    let result: PhaseResult;
-    try {
-      result = await Promise.race([
-        runPhase(phase, topic, {
-          workspaceId: run.workspaceId,
-          threadId: run.threadId,
-          phaseBrief: phaseBrief.phaseBrief,
-          promptBundle: {
-            system: phasePromptBundle.system,
-            user: phasePromptBundle.user,
-            toolPolicy: phasePromptBundle.toolPolicy,
-          },
-          provider: run.provider,
-          model: run.model,
-          runtime: run.runtime,
-          runId: run.runId,
-          phaseTurnId,
-          signal: phaseAbort.signal,
-          logger: run.logger,
-          onActivity: (activity) => {
-            appendRunLifecycleEvents(run, "analysis-agent", [
-              {
-                type: "phase.activity.recorded",
-                payload: {
-                  phase,
-                  phaseTurnId,
-                  kind: activity.kind,
-                  message: activity.message,
-                  ...(activity.toolName ? { toolName: activity.toolName } : {}),
-                  ...(activity.query ? { query: activity.query } : {}),
-                },
-                occurredAt: Date.now(),
-              },
-            ]);
-            emitPhaseActivity(run.runId, phase, activity.message, {
-              kind: activity.kind,
-              toolName: activity.toolName,
-              query: activity.query,
-            });
-          },
-        }),
-        phaseTimeout.promise,
-      ]);
-    } catch (err) {
-      phaseTimeout.clear();
-      externalSignal?.removeEventListener("abort", onExternalAbort);
-
-      if (externalSignal?.aborted) {
-        entityGraphService.setPhaseStatus(phase, "pending");
-        return { success: false, error: "Aborted" };
-      }
-
-      lastError = err instanceof Error ? err.message : String(err);
-      const classification = classifyFailure(lastError);
-      if (classification === "terminal") {
-        run.logger.error("orchestrator", "phase-failed", {
-          phase,
-          phaseTurnId,
-          elapsedMs: Date.now() - phaseStart,
-          failureKind: classification,
-          lastError,
-        });
-        entityGraphService.setPhaseStatus(phase, "failed");
-        return { success: false, error: lastError };
-      }
-      run.logger.warn("orchestrator", "attempt-failed", {
-        phase,
-        phaseTurnId,
-        attempt: attempt + 1,
-        error: lastError,
-        classification,
-      });
-      if (attempt < MAX_RETRIES) {
-        emitPhaseActivity(
-          run.runId,
-          phase,
-          "Retrying phase after validation/transport issue",
-        );
-      }
-      continue;
-    } finally {
-      phaseTimeout.clear();
-      externalSignal?.removeEventListener("abort", onExternalAbort);
-    }
-
-    if (result.success) {
-      let commitSummary: CommitSummary | null = null;
-      lastError = "";
-      try {
-        let commitResult = commitPhaseSnapshot({
-          phase,
-          runId: run.runId,
-          entities: result.entities,
-          relationships: result.relationships,
-        });
-
-        if (commitResult.status === "retry_required") {
-          run.logger.warn("orchestrator", "truncation-retry", {
-            phase,
-            phaseTurnId,
-            originalAiEntityCount: commitResult.originalAiEntityCount,
-            returnedAiEntityCount: commitResult.returnedAiEntityCount,
-          });
-          emitPhaseActivity(
-            run.runId,
-            phase,
-            "Retrying phase after validation/transport issue",
-          );
-
-          const retryPromptBundle = buildPhasePromptBundle({
-            phase,
-            topic,
-            phaseBrief: phaseBrief.phaseBrief,
-            revisionRetryInstruction: commitResult.retryMessage,
-            effortLevel: run.runtime.effortLevel,
-          });
+        signal: phaseAbort.signal,
+        logger: run.logger,
+        onActivity: (activity) => {
           appendRunLifecycleEvents(run, "analysis-agent", [
             {
-              type: "phase.started",
+              type: "phase.activity.recorded",
               payload: {
                 phase,
                 phaseTurnId,
-                turnIndex,
-                promptProvenance: retryPromptBundle.promptProvenance,
-              },
-              occurredAt: Date.now(),
-            },
-            {
-              type: "run.status.changed",
-              payload: {
-                status: "running",
-                activePhase: phase,
-                progress: {
-                  completed: run.phasesCompleted.length,
-                  total: run.activePhases.length,
-                },
-                summary: buildRunSummary(run, `Retrying ${phase}`),
-                latestPhaseTurnId: phaseTurnId,
+                kind: activity.kind,
+                message: activity.message,
+                ...(activity.toolName ? { toolName: activity.toolName } : {}),
+                ...(activity.query ? { query: activity.query } : {}),
               },
               occurredAt: Date.now(),
             },
           ]);
-
-          // Fresh timeout for the truncation retry — the primary timeout was already cleared.
-          phaseTimeout = createPhaseTimeout(PHASE_TIMEOUT_MS, phaseAbort);
-
-          const retryResult = await Promise.race([
-            runPhase(phase, topic, {
-              workspaceId: run.workspaceId,
-              threadId: run.threadId,
-              phaseBrief: phaseBrief.phaseBrief,
-              // retryMessage is already embedded in retryPromptBundle via buildPhasePromptBundle
-              promptBundle: {
-                system: retryPromptBundle.system,
-                user: retryPromptBundle.user,
-                toolPolicy: retryPromptBundle.toolPolicy,
-              },
-              provider: run.provider,
-              model: run.model,
-              runtime: run.runtime,
-              runId: run.runId,
-              phaseTurnId,
-              signal: phaseAbort.signal,
-              logger: run.logger,
-              onActivity: (activity) => {
-                appendRunLifecycleEvents(run, "analysis-agent", [
-                  {
-                    type: "phase.activity.recorded",
-                    payload: {
-                      phase,
-                      phaseTurnId,
-                      kind: activity.kind,
-                      message: activity.message,
-                      ...(activity.toolName
-                        ? { toolName: activity.toolName }
-                        : {}),
-                      ...(activity.query ? { query: activity.query } : {}),
-                    },
-                    occurredAt: Date.now(),
-                  },
-                ]);
-                emitPhaseActivity(run.runId, phase, activity.message, {
-                  kind: activity.kind,
-                  toolName: activity.toolName,
-                  query: activity.query,
-                });
-              },
-            }),
-            phaseTimeout.promise,
-          ]);
-
-          phaseTimeout.clear();
-
-          if (!retryResult.success) {
-            result = retryResult;
-          } else {
-            commitResult = commitPhaseSnapshot({
-              phase,
-              runId: run.runId,
-              entities: retryResult.entities,
-              relationships: retryResult.relationships,
-              allowLargeReductionCommit: true,
-            });
-
-            if (commitResult.status !== "applied") {
-              throw new Error(
-                "Revision diff requested an unexpected second truncation retry",
-              );
-            }
-
-            result = retryResult;
-          }
-        }
-
-        if (!result.success) {
-          lastError = result.error ?? "Unknown validation error";
-        } else {
-          if (commitResult.status !== "applied") {
-            throw new Error("Revision diff did not produce an applied result");
-          }
-
-          commitSummary = {
-            entitiesCreated: commitResult.summary.entitiesCreated,
-            entitiesUpdated: commitResult.summary.entitiesUpdated,
-            relationshipsCreated: commitResult.summary.relationshipsCreated,
-          };
-        }
-      } catch (err) {
-        lastError = `Revision diff validation error: ${
-          err instanceof Error ? err.message : String(err)
-        }`;
-      }
-
-      if (!result.success || lastError) {
-        const classification = classifyFailure(lastError);
-        if (classification === "terminal") {
-          run.logger.error("orchestrator", "phase-failed", {
-            phase,
-            phaseTurnId,
-            elapsedMs: Date.now() - phaseStart,
-            failureKind: classification,
-            lastError,
+          emitPhaseActivity(run.runId, phase, activity.message, {
+            kind: activity.kind,
+            toolName: activity.toolName,
+            query: activity.query,
           });
-          entityGraphService.setPhaseStatus(phase, "failed");
-          return { success: false, error: lastError };
-        }
-        run.logger.warn("orchestrator", "attempt-failed", {
-          phase,
-          phaseTurnId,
-          attempt: attempt + 1,
-          error: lastError,
-          classification,
-        });
-        if (attempt < MAX_RETRIES) {
-          emitPhaseActivity(
-            run.runId,
-            phase,
-            "Retrying phase after validation/transport issue",
-          );
-        }
-        lastError = "";
-        continue;
-      }
+        },
+      },
+    );
 
+    if (toolResult.success && toolResult.phaseCompleted) {
+      const txSummary = commitPhaseTransaction();
       entityGraphService.setPhaseStatus(phase, "complete");
-
-      run.logger.log("orchestrator", "phase-complete", {
+      run.logger.log("orchestrator", "tool-phase-complete", {
         phase,
         phaseTurnId,
         elapsedMs: Date.now() - phaseStart,
-        entities: result.entities.length,
-        relationships: result.relationships.length,
-        attemptsUsed: attempt + 1,
+        entitiesCreated: txSummary.entitiesCreated,
+        entitiesUpdated: txSummary.entitiesUpdated,
+        entitiesDeleted: txSummary.entitiesDeleted,
+        relationshipsCreated: txSummary.relationshipsCreated,
       });
-      await run.logger.flush();
-
       const summary: PhaseSummary = {
-        entitiesCreated: commitSummary!.entitiesCreated,
-        relationshipsCreated: commitSummary!.relationshipsCreated,
-        entitiesUpdated: commitSummary!.entitiesUpdated,
+        entitiesCreated: txSummary.entitiesCreated,
+        entitiesUpdated: txSummary.entitiesUpdated,
+        relationshipsCreated: txSummary.relationshipsCreated,
         durationMs: Date.now() - phaseStart,
       };
       appendRunLifecycleEvents(run, "analysis-agent", [
@@ -1075,54 +658,34 @@ async function executeSinglePhase(
         summary,
       });
       runtimeStatus.completePhase(run.runId);
-
-      // Drain edit queue after each successful phase
       drainEditQueue();
-
       return { success: true };
-    }
-
-    // Parse/validation failure — check classification
-    lastError = result.error ?? "Unknown validation error";
-    const classification = classifyFailure(lastError);
-    if (classification === "terminal") {
-      run.logger.error("orchestrator", "phase-failed", {
+    } else {
+      rollbackPhaseTransaction();
+      entityGraphService.setPhaseStatus(phase, "failed");
+      const errMsg = toolResult.error ?? "Phase did not complete";
+      run.logger.error("orchestrator", "tool-phase-failed", {
         phase,
         phaseTurnId,
         elapsedMs: Date.now() - phaseStart,
-        failureKind: classification,
-        lastError,
+        error: errMsg,
       });
-      entityGraphService.setPhaseStatus(phase, "failed");
-      return { success: false, error: lastError };
+      return { success: false, error: errMsg };
     }
-    run.logger.warn("orchestrator", "attempt-failed", {
+  } catch (err) {
+    rollbackPhaseTransaction();
+    entityGraphService.setPhaseStatus(phase, "failed");
+    const errMsg = err instanceof Error ? err.message : String(err);
+    run.logger.error("orchestrator", "tool-phase-error", {
       phase,
       phaseTurnId,
-      attempt: attempt + 1,
-      error: lastError,
-      classification,
+      elapsedMs: Date.now() - phaseStart,
+      error: errMsg,
     });
-    if (attempt < MAX_RETRIES) {
-      emitPhaseActivity(
-        run.runId,
-        phase,
-        "Retrying phase after validation/transport issue",
-      );
-    }
-    // Retryable — continue loop
+    return { success: false, error: errMsg };
+  } finally {
+    externalSignal?.removeEventListener("abort", onExternalAbort);
   }
-
-  // Exhausted retries
-  run.logger.error("orchestrator", "phase-failed", {
-    phase,
-    phaseTurnId,
-    elapsedMs: Date.now() - phaseStart,
-    failureKind: "retries-exhausted",
-    lastError,
-  });
-  entityGraphService.setPhaseStatus(phase, "failed");
-  return { success: false, error: lastError };
 }
 
 // ── Public API ──
@@ -1312,25 +875,20 @@ export async function runFull(
   const run = activeRun;
   const executeAsync = async () => {
     try {
-      // Set up tool-based execution infrastructure when feature flag is on
-      if (analysisRuntimeConfig.orchestrator.toolBasedPhases) {
-        const writeContext: AnalysisWriteContext = {
-          workspaceId: run.workspaceId,
-          threadId: run.threadId,
-          runId: run.runId,
-          phase: run.activePhases[0],
-          allowedEntityTypes: [],
-          onProgress: emitProgress,
-        };
-        run.toolWriteContext = writeContext;
-        const { createToolBasedAnalysisMcpServer } =
-          await import("../services/ai/claude-adapter");
-        run.toolMcpServer =
-          await createToolBasedAnalysisMcpServer(writeContext);
-        run.logger.log("orchestrator", "tool-based-setup", {
-          toolBasedPhases: true,
-        });
-      }
+      // Set up tool-based execution infrastructure
+      const writeContext: AnalysisWriteContext = {
+        workspaceId: run.workspaceId,
+        threadId: run.threadId,
+        runId: run.runId,
+        phase: run.activePhases[0],
+        allowedEntityTypes: [],
+        onProgress: emitProgress,
+      };
+      run.toolWriteContext = writeContext;
+      const { createToolBasedAnalysisMcpServer } =
+        await import("../services/ai/claude-adapter");
+      run.toolMcpServer = await createToolBasedAnalysisMcpServer(writeContext);
+      run.logger.log("orchestrator", "tool-based-setup", {});
 
       let phaseIndex = 0;
       // Count backward loopback jumps across the whole run so repeated

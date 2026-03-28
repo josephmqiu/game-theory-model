@@ -40,18 +40,6 @@
 
 ## Analysis Pipeline
 
-### Multi-turn analysis phases
-
-**What:** Convert analysis phases from single-turn structured output to multi-turn thread-based turns. AI creates entities via tool calls. Phases are turns within a thread.
-
-**Why:** The biggest architectural gap vs the T3 target. Current approach works but doesn't leverage thread persistence, session resume, or tool-based entity creation.
-
-**Context:** This is a major effort — deserves its own `/office-hours` + `/plan-eng-review` cycle before implementation.
-
-**Effort:** XL
-**Priority:** P2
-**Depends on:** None
-
 ### Analysis type architecture (multi-methodology platform)
 
 **What:** Pluggable analysis workflows (game theory, prediction market, stock analysis, etc.).
@@ -237,6 +225,10 @@
 **Depends on:** None
 
 ## Completed
+
+### Tool-based analysis phases (2026-03-27)
+
+Analysis phases migrated from single-turn structured output to tool-based entity creation. AI creates entities incrementally via MCP tool calls (`create_entity`, `update_entity`, `create_relationship`, `complete_phase`) with per-call Zod validation, phase transactions (begin/commit/rollback), and real-time progress events. Each phase is a turn within a persistent thread/session. Structured output (`runStructuredTurn`) retained for chat synthesis only.
 
 ### Codex adapter wall-clock timeout replaced with idle timeout (2026-03-27)
 

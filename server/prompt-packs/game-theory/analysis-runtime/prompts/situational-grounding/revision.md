@@ -10,15 +10,13 @@ INSTRUCTIONS:
 - Check each existing fact: is it still accurate and relevant given the upstream changes?
 - Add new facts warranted by the new context — especially if upstream changes introduce
   new actors, events, or constraints.
-- Remove facts that are no longer relevant (omit them from output).
+- Delete facts that are no longer relevant using the delete_entity tool.
 - Update categories if upstream changes shift the nature of a fact (e.g., a "position" that
-  became a binding "rule").
-- New entities get "id": null. Revised entities keep their existing "id".
+  became a binding "rule") using the update_entity tool.
 - Dependencies must reference real entity IDs — use the query_entities tool to find them.
 
 ENTITY SCHEMA for each fact:
 {
-"id": null,
 "ref": "<unique-ref>",
 "type": "fact",
 "phase": "situational-grounding",
@@ -33,36 +31,42 @@ ENTITY SCHEMA for each fact:
 "rationale": "<why this fact matters>"
 }
 
-For Phase 1, only emit relationship types "supports", "contradicts", and "precedes".
-Do not use any other relationship type in this phase, even if it appears in the shared list below.
+For Phase 1, only use relationship types "supports", "contradicts", and "precedes".
+Do not use any other relationship type in this phase.
 Use "supports" between facts that reinforce each other, "contradicts" between facts that
 are in tension, and "precedes" for chronological ordering.
 
-OUTPUT FORMAT — respond with a single JSON object, no markdown outside the code fence:
+HOW TO MODIFY ENTITIES — use the provided tools:
 
-```json
-{
-  "entities": [ ... ],
-  "relationships": [ ... ]
-}
-```
+Use `query_entities` with `phase: "situational-grounding"` to retrieve your existing facts.
 
-ENTITY RULES:
+Use `create_entity` to add new facts. Parameters:
 
-- For new entities, set "id" to null.
-- For entities you are revising, keep the existing "id" from the graph.
-- Every entity needs a locally-unique "ref" (e.g. "fact-1", "player-eu").
-- Include "confidence" ("high" | "medium" | "low") and "rationale" (one sentence justifying the entity).
-- Do not include "source", "revision", "stale", or "position" fields.
+- `ref`: a unique reference string (e.g. "fact-1", "fact-new-sanction")
+- `type`: "fact"
+- `phase`: "situational-grounding"
+- `data`: the fact data object matching the schema above
+- `confidence`: "high", "medium", or "low"
+- `rationale`: one sentence justifying why this fact matters
 
-RELATIONSHIP RULES:
+Use `update_entity` to revise existing facts. Parameters:
 
-- Each relationship needs a unique "id" (e.g. "rel-1").
-- "fromEntityId" and "toEntityId" must reference entity refs in the same output.
-- Use the most specific relationship type that applies.
-- Some phases further restrict which relationship types are valid; follow the phase-specific rules when they are narrower than the shared list.
-- Valid types: "supports", "contradicts", "depends-on", "informed-by", "derived-from",
-  "plays-in", "has-objective", "has-strategy", "conflicts-with", "produces",
-  "invalidated-by", "constrains", "escalates-to", "links", "precedes".
+- `id`: the existing entity's ID (from query_entities results)
+- `updates`: an object with the fields to change
 
-Do NOT include any commentary outside the JSON code fence.
+Use `delete_entity` to remove facts that are no longer relevant. Parameters:
+
+- `id`: the existing entity's ID
+
+Use `create_relationship` to link related entities. Parameters:
+
+- `type`: one of "supports", "contradicts", "precedes"
+- `fromEntityId`: the ref or ID of the source entity
+- `toEntityId`: the ref or ID of the target entity
+
+Use `delete_relationship` to remove outdated relationships. Parameters:
+
+- `id`: the relationship ID
+
+When you have finished revising all facts and relationships, call `complete_phase` to signal
+that the revision is done.

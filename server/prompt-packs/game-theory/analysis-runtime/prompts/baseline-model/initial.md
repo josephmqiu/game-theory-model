@@ -5,6 +5,7 @@ first formal step — but it is intentionally rough. The goal is to create a min
 early enough to discipline the rest of the analysis.
 
 BEFORE MODELING, think through the topic:
+
 1. How many distinct strategic tensions does this situation actually have?
 2. Is this a well-known canonical game, or a novel structure?
 3. How many strategies does each player realistically have?
@@ -34,65 +35,82 @@ feasible. Do not include strategies that violate the rules of the game (e.g., "c
 
 GAME ENTITY SCHEMA:
 {
-  "id": null,
-  "ref": "<unique-ref>",
-  "type": "game",
-  "phase": "baseline-model",
-  "data": {
-    "type": "game",
-    "name": "<descriptive game name>",
-    "gameType": "<one of the canonical types above>",
-    "timing": "simultaneous" | "sequential" | "repeated",
-    "description": "<brief description of the strategic tension>"
-  },
-  "confidence": "high" | "medium" | "low",
-  "rationale": "<why this game type fits>"
+"ref": "<unique-ref>",
+"type": "game",
+"phase": "baseline-model",
+"data": {
+"type": "game",
+"name": "<descriptive game name>",
+"gameType": "<one of the canonical types above>",
+"timing": "simultaneous" | "sequential" | "repeated",
+"description": "<brief description of the strategic tension>"
+},
+"confidence": "high" | "medium" | "low",
+"rationale": "<why this game type fits>"
 }
 
 STRATEGY ENTITY SCHEMA:
 {
-  "id": null,
-  "ref": "<unique-ref>",
-  "type": "strategy",
-  "phase": "baseline-model",
-  "data": {
-    "type": "strategy",
-    "name": "<strategy name>",
-    "feasibility": "actual" | "requires-new-capability" | "rhetoric-only" | "dominated",
-    "description": "<what this strategy entails>"
-  },
-  "confidence": "high" | "medium" | "low",
-  "rationale": "<why this strategy is available to the player>"
+"ref": "<unique-ref>",
+"type": "strategy",
+"phase": "baseline-model",
+"data": {
+"type": "strategy",
+"name": "<strategy name>",
+"feasibility": "actual" | "requires-new-capability" | "rhetoric-only" | "dominated",
+"description": "<what this strategy entails>"
+},
+"confidence": "high" | "medium" | "low",
+"rationale": "<why this strategy is available to the player>"
 }
 
 RELATIONSHIPS:
+
 - Use "plays-in" from player to game.
 - Use "has-strategy" from player to strategy.
 - Use "informed-by" from game/strategy to prior-phase entities when priorContext
   is provided.
 - Use "derived-from" when a strategy is derived from an objective.
 
-OUTPUT FORMAT — respond with a single JSON object, no markdown outside the code fence:
-```json
-{
-  "entities": [ ... ],
-  "relationships": [ ... ]
-}
-```
+HOW TO CREATE ENTITIES — use the provided tools:
 
-ENTITY RULES:
-- For new entities, set "id" to null.
-- Every entity needs a locally-unique "ref" (e.g. "fact-1", "player-eu").
-- Include "confidence" ("high" | "medium" | "low") and "rationale" (one sentence justifying the entity).
-- Do not include "source", "revision", "stale", or "position" fields.
+Use the `create_entity` tool to create each game and strategy entity. Parameters:
 
-RELATIONSHIP RULES:
-- Each relationship needs a unique "id" (e.g. "rel-1").
-- "fromEntityId" and "toEntityId" must reference entity refs in the same output.
-- Use the most specific relationship type that applies.
-- Some phases further restrict which relationship types are valid; follow the phase-specific rules when they are narrower than the shared list.
-- Valid types: "supports", "contradicts", "depends-on", "informed-by", "derived-from",
-  "plays-in", "has-objective", "has-strategy", "conflicts-with", "produces",
-  "invalidated-by", "constrains", "escalates-to", "links", "precedes".
+- `ref`: a unique reference string (e.g. "game-trade-war", "strat-us-escalate")
+- `type`: "game" or "strategy"
+- `phase`: "baseline-model"
+- `data`: the entity data object matching the schema above
+- `confidence`: "high", "medium", or "low"
+- `rationale`: one sentence justifying this entity
 
-Do NOT include any commentary outside the JSON code fence.
+Use the `create_relationship` tool to link entities. Parameters:
+
+- `type`: one of "plays-in", "has-strategy", "informed-by", "derived-from"
+- `fromEntityId`: the ref of the source entity
+- `toEntityId`: the ref of the target entity
+
+If you make an error, use `update_entity` to correct an entity's data, or `delete_entity` to remove it entirely.
+
+When you have built the baseline model with all games, strategies, and relationships, call `complete_phase` to signal that Phase 3 is done.
+
+EXAMPLE — creating a game and strategy:
+
+Call create_entity with:
+ref: "game-semiconductor"
+type: "game"
+phase: "baseline-model"
+data: { "type": "game", "name": "Semiconductor Supply Chain Control", "gameType": "chicken", "timing": "sequential", "description": "Both sides escalate restrictions, but mutual decoupling is the worst outcome for both" }
+confidence: "high"
+rationale: "Core tension: both want dominance but mutual exclusion destroys value"
+
+Call create_entity with:
+ref: "strat-us-restrict"
+type: "strategy"
+phase: "baseline-model"
+data: { "type": "strategy", "name": "Expand export controls", "feasibility": "actual", "description": "Broaden entity list and technology restrictions" }
+confidence: "high"
+rationale: "Already being implemented via Commerce Department actions"
+
+Then link with create_relationship: type "has-strategy", from player to strategy, and type "plays-in", from player to game.
+
+Call complete_phase when done.

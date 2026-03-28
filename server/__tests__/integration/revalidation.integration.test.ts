@@ -8,52 +8,62 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MethodologyPhase } from "../../../shared/types/methodology";
-import {
-  resetAllServices,
-  makeFactOutput,
-} from "../../__test-utils__/fixtures";
+import { resetAllServices } from "../../__test-utils__/fixtures";
+import type { AnalysisEntity } from "../../../shared/types/entity";
 
-// ── Mock the adapter (called by runPhase internally) ──
+// ── Mock the tool-based execution path (called by revalidation-service) ──
 
-vi.mock("../../services/ai/adapter-contract", () => ({
-  getRuntimeAdapter: vi.fn(async (providerInput?: string) => {
-    const isCodex = providerInput === "openai" || providerInput === "codex";
-    return {
-      provider: isCodex ? "codex" : "claude",
-      createSession(key: {
-        threadId: string;
-        runId?: string;
-        purpose?: string;
-      }) {
-        return {
-          provider: isCodex ? "codex" : "claude",
-          context: key,
-          streamChatTurn: vi.fn(),
-          runStructuredTurn: vi.fn(async () => ({
-            entities: [],
-            relationships: [],
-          })),
-          getDiagnostics: vi.fn(() => ({
-            provider: isCodex ? "codex" : "claude",
-            sessionId: "revalidation-session",
-            details: { threadId: key.threadId },
-          })),
-          getBinding() {
-            return null;
-          },
-          dispose: vi.fn(async () => {}),
-        };
-      },
-      listModels: vi.fn(async () => []),
-      checkHealth: vi.fn(async () => ({
-        provider: isCodex ? "codex" : "claude",
-        status: "healthy",
-        reason: null,
-        checkedAt: Date.now(),
-        checks: [],
-      })),
-    };
-  }),
+vi.mock("../../services/analysis-service", () => ({
+  runPhaseWithTools: vi.fn(
+    async (
+      _phase: unknown,
+      _topic: unknown,
+      _mcp: unknown,
+      writeContext: { counters?: Record<string, unknown> },
+    ) => {
+      if (writeContext.counters) {
+        writeContext.counters.phaseCompleted = true;
+      }
+      return {
+        success: true,
+        entitiesCreated: 0,
+        entitiesUpdated: 0,
+        entitiesDeleted: 0,
+        relationshipsCreated: 0,
+        phaseCompleted: true,
+      };
+    },
+  ),
+}));
+
+vi.mock("../../services/ai/claude-adapter", () => ({
+  createToolBasedAnalysisMcpServer: vi.fn(async () => ({})),
+}));
+
+vi.mock("../../services/analysis-prompt-provenance", () => ({
+  buildPhasePromptBundle: vi.fn((opts?: { phase?: string }) => ({
+    system: "mock system",
+    user: "mock user",
+    promptProvenance: {
+      promptPackId: "game-theory/default",
+      promptPackVersion: "2026-03-25.1",
+      promptPackMode: "analysis-runtime",
+      phase: opts?.phase ?? "situational-grounding",
+      variant: "initial",
+      templateIdentity: "game-theory/default:test:initial",
+      templateHash: "mock-hash",
+      effectivePromptHash: "mock-effective-hash",
+    },
+    toolPolicy: { enabledAnalysisTools: [], webSearch: true },
+  })),
+  createRunPromptProvenance: vi.fn((phases?: string[]) => ({
+    analysisType: "game-theory",
+    activePhases: phases ?? [],
+    promptPackId: "game-theory/default",
+    promptPackVersion: "2026-03-25.1",
+    promptPackMode: "analysis-runtime",
+    templateSetIdentity: "game-theory/default",
+  })),
 }));
 
 vi.mock("../../utils/ai-logger", () => ({
@@ -76,7 +86,31 @@ vi.mock("../../utils/ai-logger", () => ({
 const entityGraph = await import("../../services/entity-graph-service");
 const runtimeStatus = await import("../../services/runtime-status");
 const revalidationService = await import("../../services/revalidation-service");
-const { commitPhaseSnapshot } = await import("../../services/revision-diff");
+
+function seedFact(content: string): AnalysisEntity {
+  return entityGraph.createEntity(
+    {
+      type: "fact",
+      phase: "situational-grounding",
+      data: {
+        type: "fact",
+        date: "2026-03-19",
+        source: "test",
+        content,
+        category: "action",
+      },
+      confidence: "high",
+      rationale: `seed:${content}`,
+      revision: 1,
+      stale: false,
+    },
+    {
+      source: "phase-derived",
+      runId: "seed-run",
+      phase: "situational-grounding",
+    },
+  );
+}
 
 async function advanceTimersByTimeAsync(ms: number): Promise<void> {
   vi.advanceTimersByTime(ms);
@@ -99,74 +133,55 @@ describe("revalidation integration", () => {
   // ── Entity graph: stale tracking and downstream traversal ──
 
   it("markStale flags entities and getStaleEntityIds returns them", () => {
-    commitPhaseSnapshot({
-      phase: "situational-grounding",
-      runId: "seed-run",
-      entities: [
-        makeFactOutput({ ref: "fact-1", content: "Fact 1" }),
-        makeFactOutput({ ref: "fact-2", content: "Fact 2" }),
-      ] as any,
-      relationships: [],
-    });
+    const fact1 = seedFact("Fact 1");
+    const fact2 = seedFact("Fact 2");
 
-    const entities = entityGraph.getEntitiesByPhase("situational-grounding");
-    expect(entities.length).toBe(2);
+    expect(entityGraph.getEntitiesByPhase("situational-grounding").length).toBe(
+      2,
+    );
 
-    entityGraph.markStale([entities[0].id]);
+    entityGraph.markStale([fact1.id]);
 
     const staleIds = entityGraph.getStaleEntityIds();
-    expect(staleIds).toContain(entities[0].id);
-    expect(staleIds).not.toContain(entities[1].id);
+    expect(staleIds).toContain(fact1.id);
+    expect(staleIds).not.toContain(fact2.id);
   });
 
   it("getDownstreamEntityIds follows downstream relationships via BFS", () => {
-    commitPhaseSnapshot({
-      phase: "situational-grounding",
-      runId: "seed-run",
-      entities: [
-        makeFactOutput({ ref: "fact-1", content: "Root" }),
-        makeFactOutput({ ref: "fact-2", content: "Downstream" }),
-      ] as any,
-      relationships: [
-        {
-          id: "rel-1",
-          type: "depends-on" as const, // "downstream" category
-          fromEntityId: "fact-1",
-          toEntityId: "fact-2",
-        },
-      ],
-    });
-
-    const entities = entityGraph.getEntitiesByPhase("situational-grounding");
-    const root = entities.find((e) => (e.data as any).content === "Root")!;
-    const downstream = entities.find(
-      (e) => (e.data as any).content === "Downstream",
-    )!;
+    const root = seedFact("Root");
+    const downstream = seedFact("Downstream");
+    entityGraph.createRelationship(
+      {
+        type: "depends-on",
+        fromEntityId: root.id,
+        toEntityId: downstream.id,
+      },
+      {
+        source: "phase-derived",
+        runId: "seed-run",
+        phase: "situational-grounding",
+      },
+    );
 
     const result = entityGraph.getDownstreamEntityIds(root.id);
     expect(result).toContain(downstream.id);
   });
 
   it("getDownstreamEntityIds does NOT follow structural relationships", () => {
-    commitPhaseSnapshot({
-      phase: "situational-grounding",
-      runId: "seed-run",
-      entities: [
-        makeFactOutput({ ref: "fact-1", content: "A" }),
-        makeFactOutput({ ref: "fact-2", content: "B" }),
-      ] as any,
-      relationships: [
-        {
-          id: "rel-1",
-          type: "precedes" as const, // "structural" category — NOT traversed
-          fromEntityId: "fact-1",
-          toEntityId: "fact-2",
-        },
-      ],
-    });
-
-    const entities = entityGraph.getEntitiesByPhase("situational-grounding");
-    const a = entities.find((e) => (e.data as any).content === "A")!;
+    const a = seedFact("A");
+    const b = seedFact("B");
+    entityGraph.createRelationship(
+      {
+        type: "precedes",
+        fromEntityId: a.id,
+        toEntityId: b.id,
+      },
+      {
+        source: "phase-derived",
+        runId: "seed-run",
+        phase: "situational-grounding",
+      },
+    );
 
     const result = entityGraph.getDownstreamEntityIds(a.id);
     expect(result.length).toBe(0);
@@ -201,16 +216,8 @@ describe("revalidation integration", () => {
 
   it("scheduleRevalidation does NOT trigger immediately (2s debounce)", async () => {
     // Seed with a stale entity
-    commitPhaseSnapshot({
-      phase: "situational-grounding",
-      runId: "seed-run",
-      entities: [
-        makeFactOutput({ ref: "fact-1", content: "Stale fact" }),
-      ] as any,
-      relationships: [],
-    });
-    const entities = entityGraph.getEntitiesByPhase("situational-grounding");
-    entityGraph.markStale([entities[0].id]);
+    const staleFact = seedFact("Stale fact");
+    entityGraph.markStale([staleFact.id]);
 
     // Track whether revalidation runs
     let revalTriggered = false;
@@ -218,7 +225,7 @@ describe("revalidation integration", () => {
       revalTriggered = true;
     });
 
-    revalidationService.scheduleRevalidation([entities[0].id]);
+    revalidationService.scheduleRevalidation([staleFact.id]);
 
     // Advance 1 second — still within 2s debounce
     await advanceTimersByTimeAsync(1000);
@@ -228,18 +235,10 @@ describe("revalidation integration", () => {
   });
 
   it("scheduleRevalidation triggers after 2s debounce elapses", async () => {
-    commitPhaseSnapshot({
-      phase: "situational-grounding",
-      runId: "seed-run",
-      entities: [
-        makeFactOutput({ ref: "fact-1", content: "Stale fact" }),
-      ] as any,
-      relationships: [],
-    });
-    const entities = entityGraph.getEntitiesByPhase("situational-grounding");
-    entityGraph.markStale([entities[0].id]);
+    const staleFact = seedFact("Stale fact");
+    entityGraph.markStale([staleFact.id]);
 
-    revalidationService.scheduleRevalidation([entities[0].id]);
+    revalidationService.scheduleRevalidation([staleFact.id]);
 
     // Advance past 2s debounce
     await advanceTimersByTimeAsync(2500);
@@ -249,15 +248,7 @@ describe("revalidation integration", () => {
   });
 
   it("revalidation is suppressed while an analysis run is active", async () => {
-    commitPhaseSnapshot({
-      phase: "situational-grounding",
-      runId: "seed-run",
-      entities: [
-        makeFactOutput({ ref: "fact-1", content: "Stale fact" }),
-      ] as any,
-      relationships: [],
-    });
-    const entities = entityGraph.getEntitiesByPhase("situational-grounding");
+    const staleFact = seedFact("Stale fact");
 
     // Import orchestrator to make isRunning() return true
     await import("../../agents/analysis-agent");
@@ -273,22 +264,20 @@ describe("revalidation integration", () => {
 
     // Instead, test the deferRevalidation path which is what scheduleRevalidation
     // calls when isRunning() returns true:
-    runtimeStatus.deferRevalidation([entities[0].id], {
+    runtimeStatus.deferRevalidation([staleFact.id], {
       reason: "analysis-active",
     });
 
     // Stale IDs should have been deferred
     expect(runtimeStatus.hasDeferredRevalidationIds()).toBe(true);
-    expect(runtimeStatus.getDeferredRevalidationIds()).toContain(
-      entities[0].id,
-    );
+    expect(runtimeStatus.getDeferredRevalidationIds()).toContain(staleFact.id);
 
     // Release the run
     runtimeStatus.releaseRun("run-1", "completed");
 
     // Deferred IDs persist after release (consumer must explicitly consume)
     const deferred = runtimeStatus.getDeferredRevalidationIds();
-    expect(deferred).toContain(entities[0].id);
+    expect(deferred).toContain(staleFact.id);
   });
 
   it("dismiss clears failed status and returns to idle", () => {

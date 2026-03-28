@@ -11,13 +11,11 @@ INSTRUCTIONS:
 - Re-evaluate objectives — upstream changes may shift priorities, create new objectives,
   or render existing ones obsolete.
 - Check if new actors have emerged from upstream changes that warrant player entities.
-- Remove players or objectives that are no longer relevant (omit them from output).
-- New entities get "id": null. Revised entities keep their existing "id".
+- Remove players or objectives that are no longer relevant using the delete_entity tool.
 - Dependencies must reference real entity IDs — use the query_entities tool to find them.
 
 PLAYER ENTITY SCHEMA:
 {
-"id": null,
 "ref": "<unique-ref>",
 "type": "player",
 "phase": "player-identification",
@@ -33,7 +31,6 @@ PLAYER ENTITY SCHEMA:
 
 OBJECTIVE ENTITY SCHEMA:
 {
-"id": null,
 "ref": "<unique-ref>",
 "type": "objective",
 "phase": "player-identification",
@@ -54,31 +51,36 @@ RELATIONSHIPS:
 - Use "informed-by" from player/objective to prior-phase fact entities when
   priorContext is provided.
 
-OUTPUT FORMAT — respond with a single JSON object, no markdown outside the code fence:
+HOW TO MODIFY ENTITIES — use the provided tools:
 
-```json
-{
-  "entities": [ ... ],
-  "relationships": [ ... ]
-}
-```
+Use `query_entities` with `phase: "player-identification"` to retrieve your existing players and objectives.
 
-ENTITY RULES:
+Use `create_entity` to add new players or objectives. Parameters:
 
-- For new entities, set "id" to null.
-- For entities you are revising, keep the existing "id" from the graph.
-- Every entity needs a locally-unique "ref" (e.g. "fact-1", "player-eu").
-- Include "confidence" ("high" | "medium" | "low") and "rationale" (one sentence justifying the entity).
-- Do not include "source", "revision", "stale", or "position" fields.
+- `ref`: a unique reference string (e.g. "player-new-actor", "obj-new-goal")
+- `type`: "player" or "objective"
+- `phase`: "player-identification"
+- `data`: the entity data object matching the schema above
+- `confidence`: "high", "medium", or "low"
+- `rationale`: one sentence justifying why this entity matters
 
-RELATIONSHIP RULES:
+Use `update_entity` to revise existing entities. Parameters:
 
-- Each relationship needs a unique "id" (e.g. "rel-1").
-- "fromEntityId" and "toEntityId" must reference entity refs in the same output.
-- Use the most specific relationship type that applies.
-- Some phases further restrict which relationship types are valid; follow the phase-specific rules when they are narrower than the shared list.
-- Valid types: "supports", "contradicts", "depends-on", "informed-by", "derived-from",
-  "plays-in", "has-objective", "has-strategy", "conflicts-with", "produces",
-  "invalidated-by", "constrains", "escalates-to", "links", "precedes".
+- `id`: the existing entity's ID (from query_entities results)
+- `updates`: an object with the fields to change
 
-Do NOT include any commentary outside the JSON code fence.
+Use `delete_entity` to remove entities that are no longer relevant. Parameters:
+
+- `id`: the existing entity's ID
+
+Use `create_relationship` to link related entities. Parameters:
+
+- `type`: one of "has-objective", "conflicts-with", "informed-by"
+- `fromEntityId`: the ref or ID of the source entity
+- `toEntityId`: the ref or ID of the target entity
+
+Use `delete_relationship` to remove outdated relationships. Parameters:
+
+- `id`: the relationship ID
+
+When you have finished revising all players, objectives, and relationships, call `complete_phase` to signal that the revision is done.
