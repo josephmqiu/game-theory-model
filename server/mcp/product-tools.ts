@@ -261,14 +261,14 @@ export const CHAT_MODE_TOOL_DEFINITIONS = [
           description:
             "Relationship type: plays-in, has-objective, conflicts-with, has-strategy, supports, contradicts, produces, depends-on, invalidated-by, constrains, escalates-to, links, precedes, informed-by, derived-from",
         },
-        fromId: { type: "string", description: "Source entity ID" },
-        toId: { type: "string", description: "Target entity ID" },
+        fromEntityId: { type: "string", description: "Source entity ID" },
+        toEntityId: { type: "string", description: "Target entity ID" },
         metadata: {
           type: "object",
           description: "Optional metadata for the relationship",
         },
       },
-      required: ["type", "fromId", "toId"],
+      required: ["type", "fromEntityId", "toEntityId"],
     },
   },
   {
@@ -528,8 +528,8 @@ export async function handleDeleteEntity(args: {
 
 export async function handleCreateRelationship(args: {
   type: string;
-  fromId: string;
-  toId: string;
+  fromEntityId: string;
+  toEntityId: string;
   metadata?: Record<string, unknown>;
 }): Promise<string> {
   const runId = resolveToolRunId();
@@ -537,8 +537,8 @@ export async function handleCreateRelationship(args: {
     kind: "relationship.create",
     relationship: {
       type: args.type as RelationshipType,
-      fromEntityId: args.fromId,
-      toEntityId: args.toId,
+      fromEntityId: args.fromEntityId,
+      toEntityId: args.toEntityId,
       metadata: args.metadata,
     },
     provenanceSource: "ai-edited",

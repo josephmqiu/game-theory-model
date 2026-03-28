@@ -381,6 +381,18 @@ export function validateEntity(
 ):
   | { success: true; data: PhaseOutputEntity }
   | { success: false; error: z.ZodError } {
+  if (schemas.length === 0) {
+    return {
+      success: false,
+      error: new z.ZodError([
+        {
+          code: "custom",
+          message: "No schemas available for validation",
+          path: [],
+        },
+      ]),
+    };
+  }
   for (const schema of schemas) {
     const result = schema.safeParse(value);
     if (result.success) {
@@ -393,13 +405,33 @@ export function validateEntity(
 
 /**
  * Phase-specific invariant checks run at phase completion.
- * Currently: scenario probability sum must be 95-105%.
- * Extensible for future per-phase invariants.
+ * Extensible per-phase structural requirements.
  */
 export function validatePhaseInvariants(
   phase: SupportedPhase,
   entities: Array<{ type: string; data: Record<string, unknown> }>,
 ): { success: true } | { success: false; error: string } {
+  if (phase === "player-identification") {
+    const players = entities.filter((e) => e.type === "player");
+    if (players.length === 0) {
+      return {
+        success: false,
+        error:
+          "Player identification phase requires at least one player entity",
+      };
+    }
+  }
+
+  if (phase === "meta-check") {
+    const metaChecks = entities.filter((e) => e.type === "meta-check");
+    if (metaChecks.length !== 1) {
+      return {
+        success: false,
+        error: `Meta-check phase requires exactly one meta-check entity, found ${metaChecks.length}`,
+      };
+    }
+  }
+
   if (phase === "scenarios") {
     const scenarios = entities.filter((e) => e.type === "scenario");
     if (scenarios.length > 0) {

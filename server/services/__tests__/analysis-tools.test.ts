@@ -378,6 +378,20 @@ describe("analysisUpdateEntity", () => {
       entityId: "ent-1",
     });
   });
+  it("rejects update with invalid data that fails schema validation", () => {
+    const entity = makeTestEntity("ent-1", "situational-grounding", "fact");
+    mockEntities.push(entity);
+
+    const ctx = makeWriteContext("situational-grounding", ["fact"]);
+    // Set data to something that violates the fact schema (missing required fields)
+    const result = analysisUpdateEntity(
+      { id: "ent-1", updates: { data: { invalid: true } } },
+      ctx,
+    );
+
+    expect(result).toHaveProperty("error");
+    expect((result as { error: string }).error).toContain("validation failed");
+  });
 });
 
 // ── analysisDeleteEntity ──
@@ -518,6 +532,71 @@ describe("validatePhaseInvariants — scenarios phase", () => {
     );
   });
 
+  it("rejects scenario probabilities that sum above 105%", () => {
+    mockEntities.push(
+      {
+        id: "s1",
+        type: "scenario",
+        phase: "scenarios",
+        data: {
+          type: "scenario",
+          subtype: "baseline",
+          narrative: "Test A",
+          probability: { point: 70, rangeLow: 65, rangeHigh: 75 },
+          key_assumptions: [],
+          invalidation_conditions: "None",
+          model_basis: [],
+          cross_game_interactions: "",
+          prediction_basis: "equilibrium",
+          trigger: null,
+          why_unlikely: null,
+          consequences: null,
+          drift_trajectory: null,
+        },
+        confidence: "high",
+        source: "ai",
+        rationale: "test",
+        revision: 1,
+        stale: false,
+      } as unknown as AnalysisEntity,
+      {
+        id: "s2",
+        type: "scenario",
+        phase: "scenarios",
+        data: {
+          type: "scenario",
+          subtype: "tail-risk",
+          narrative: "Test B",
+          probability: { point: 50, rangeLow: 45, rangeHigh: 55 },
+          key_assumptions: [],
+          invalidation_conditions: "None",
+          model_basis: [],
+          cross_game_interactions: "",
+          prediction_basis: "discretionary",
+          trigger: "test trigger",
+          why_unlikely: "test",
+          consequences: "test",
+          drift_trajectory: "test",
+        },
+        confidence: "medium",
+        source: "ai",
+        rationale: "test",
+        revision: 1,
+        stale: false,
+      } as unknown as AnalysisEntity,
+    );
+
+    mockGetEntitiesByPhase.mockReturnValueOnce(mockEntities);
+
+    const ctx = makeWriteContext("scenarios", ["scenario", "central-thesis"]);
+    const result = analysisCompletePhase({}, ctx);
+
+    expect(result).toMatchObject({ success: false });
+    expect((result as { error: string }).error).toContain(
+      "probabilities sum to",
+    );
+  });
+
   it("accepts scenario probabilities that sum to ~100%", () => {
     mockEntities.push(
       {
@@ -612,6 +691,37 @@ describe("analysisCreateRelationship", () => {
 
     expect(result).toHaveProperty("error");
     expect((result as { error: string }).error).toContain("not found");
+  });
+
+  it("rejects relationship with missing target entity", () => {
+    mockEntities.push(makeTestEntity("ent-1", "situational-grounding", "fact"));
+
+    const ctx = makeWriteContext("situational-grounding", ["fact"]);
+    const result = analysisCreateRelationship(
+      { type: "supports", fromEntityId: "ent-1", toEntityId: "nonexistent" },
+      ctx,
+    );
+
+    expect(result).toHaveProperty("error");
+    expect((result as { error: string }).error).toContain("Target entity");
+  });
+
+  it("rejects invalid relationship type", () => {
+    mockEntities.push(
+      makeTestEntity("ent-1", "situational-grounding", "fact"),
+      makeTestEntity("ent-2", "situational-grounding", "fact"),
+    );
+
+    const ctx = makeWriteContext("situational-grounding", ["fact"]);
+    const result = analysisCreateRelationship(
+      { type: "causes", fromEntityId: "ent-1", toEntityId: "ent-2" },
+      ctx,
+    );
+
+    expect(result).toHaveProperty("error");
+    expect((result as { error: string }).error).toContain(
+      "Invalid relationship type",
+    );
   });
 });
 

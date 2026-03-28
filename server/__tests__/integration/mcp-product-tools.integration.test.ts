@@ -226,11 +226,10 @@ describe("MCP product tools integration", () => {
     const entity1Id = e1.created[0].id;
     const entity2Id = e2.created[0].id;
 
-    // Create relationship (handler uses fromId/toId, not fromEntityId/toEntityId)
     const relResult = await productTools.handleCreateRelationship({
       type: "precedes",
-      fromId: entity1Id,
-      toId: entity2Id,
+      fromEntityId: entity1Id,
+      toEntityId: entity2Id,
     });
     const rel = JSON.parse(relResult);
     expect(rel.id).toBeTruthy();

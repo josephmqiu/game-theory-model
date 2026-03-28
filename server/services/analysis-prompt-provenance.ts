@@ -103,8 +103,6 @@ export function buildPhasePromptBundle(input: {
   phaseBrief?: string;
   revisionRetryInstruction?: string;
   revisionSystemPrompt?: string;
-  /** @deprecated No-op, kept for call-site compatibility during migration. */
-  toolBased?: boolean;
 }): {
   system: string;
   user: string;

@@ -1,5 +1,6 @@
 // Claude adapter — the ONLY file that imports from @anthropic-ai/claude-agent-sdk.
-// Provides two profiles: streamChat (interactive) and runAnalysisPhase (structured).
+// Provides: streamChat (interactive chat), createToolBasedAnalysisMcpServer (analysis),
+// and runStructuredTurn (synthesis/report generation).
 
 import type { ChatEvent } from "../../../shared/types/events";
 import type {
@@ -381,8 +382,8 @@ export async function createChatMcpServer() {
       "Create a relationship between entities",
       {
         type: z.string(),
-        fromId: z.string(),
-        toId: z.string(),
+        fromEntityId: z.string(),
+        toEntityId: z.string(),
         metadata: z.record(z.string(), z.unknown()).optional(),
       },
       async (args) => ({
@@ -390,9 +391,9 @@ export async function createChatMcpServer() {
           {
             type: "text" as const,
             text: await handleCreateRelationship({
+              fromEntityId: args.fromEntityId,
+              toEntityId: args.toEntityId,
               type: args.type,
-              fromId: args.fromId,
-              toId: args.toId,
               metadata: args.metadata,
             }),
           },

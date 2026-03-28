@@ -12,7 +12,9 @@ import {
   isSupportedPhase,
   validateEntity,
   validatePhaseInvariants,
+  relationshipTypeSchema,
 } from "./analysis-entity-schemas";
+import type { SupportedPhase } from "./analysis-entity-schemas";
 
 const { getAnalysis, getRelationships } = entityGraphService;
 
@@ -274,6 +276,29 @@ export function analysisUpdateEntity(
     };
   }
 
+  // Validate merged entity against phase schema before writing
+  if (isSupportedPhase(ctx.phase)) {
+    const schemas = PHASE_ENTITY_SCHEMAS[ctx.phase as SupportedPhase];
+    if (schemas) {
+      const merged = {
+        id: entity.id,
+        ref: entity.id,
+        type: entity.type,
+        phase: entity.phase,
+        data: (args.updates.data as Record<string, unknown>) ?? entity.data,
+        confidence: (args.updates.confidence as string) ?? entity.confidence,
+        rationale: (args.updates.rationale as string) ?? entity.rationale,
+      };
+      const validation = validateEntity(merged, schemas);
+      if (!validation.success) {
+        const msg = validation.error.issues
+          .map((issue: { message: string }) => issue.message)
+          .join("; ");
+        return { error: `Update validation failed: ${msg}` };
+      }
+    }
+  }
+
   const updated = entityGraphService.updateEntity(args.id, args.updates, {
     source: "phase-derived",
     runId: ctx.runId,
@@ -347,9 +372,16 @@ export function analysisCreateRelationship(
     return { error: `Target entity "${args.toEntityId}" not found` };
   }
 
+  const typeResult = relationshipTypeSchema.safeParse(args.type);
+  if (!typeResult.success) {
+    return {
+      error: `Invalid relationship type "${args.type}". Allowed: ${relationshipTypeSchema.options.join(", ")}`,
+    };
+  }
+
   const created = entityGraphService.createRelationship(
     {
-      type: args.type as RelationshipType,
+      type: typeResult.data as RelationshipType,
       fromEntityId: args.fromEntityId,
       toEntityId: args.toEntityId,
       metadata: args.metadata,

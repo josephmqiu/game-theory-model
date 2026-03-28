@@ -112,7 +112,6 @@ export async function runPhase(
       revisionRetryInstruction: context?.revisionRetryInstruction,
       revisionSystemPrompt: context?.revisionSystemPrompt,
       effortLevel: context?.runtime?.effortLevel ?? "medium",
-      toolBased: true,
     });
 
   // Create temporary tool infrastructure
@@ -298,7 +297,6 @@ export async function runPhaseWithTools(
       topic,
       phaseBrief: context?.phaseBrief,
       effortLevel: context?.runtime?.effortLevel ?? "medium",
-      toolBased: true,
     });
 
   const model = context?.model ?? "claude-sonnet-4-20250514";

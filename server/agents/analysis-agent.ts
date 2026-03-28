@@ -546,15 +546,6 @@ async function executeSinglePhase(
     phaseCompleted: false,
   };
 
-  // Build tool-based prompt bundle
-  const toolPromptBundle = buildPhasePromptBundle({
-    phase,
-    topic,
-    phaseBrief: phaseBrief.phaseBrief,
-    effortLevel: run.runtime.effortLevel,
-    toolBased: true,
-  });
-
   const phaseAbort = new AbortController();
   const onExternalAbort = () => phaseAbort.abort();
   externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
@@ -570,9 +561,9 @@ async function executeSinglePhase(
         workspaceId: run.workspaceId,
         threadId: run.threadId,
         promptBundle: {
-          system: toolPromptBundle.system,
-          user: toolPromptBundle.user,
-          toolPolicy: toolPromptBundle.toolPolicy,
+          system: phasePromptBundle.system,
+          user: phasePromptBundle.user,
+          toolPolicy: phasePromptBundle.toolPolicy,
         },
         provider: run.provider,
         model: run.model,
@@ -606,7 +597,10 @@ async function executeSinglePhase(
     );
 
     if (toolResult.success && toolResult.phaseCompleted) {
-      const txSummary = commitPhaseTransaction();
+      const txSummary = commitPhaseTransaction(
+        undefined,
+        run.toolWriteContext!.counters,
+      );
       entityGraphService.setPhaseStatus(phase, "complete");
       run.logger.log("orchestrator", "tool-phase-complete", {
         phase,

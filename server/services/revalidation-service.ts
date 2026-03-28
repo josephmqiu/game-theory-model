@@ -414,7 +414,6 @@ async function executeRevalidation(
       topic,
       phaseBrief: phaseBrief.phaseBrief,
       effortLevel: lastRunRuntime?.effortLevel ?? "medium",
-      toolBased: true,
     });
 
     // Update mutable write context for this phase
@@ -505,7 +504,10 @@ async function executeRevalidation(
       );
 
       if (toolResult.success && toolResult.phaseCompleted) {
-        const txSummary = commitPhaseTransaction();
+        const txSummary = commitPhaseTransaction(
+          undefined,
+          writeContext.counters,
+        );
         entityGraphService.setPhaseStatus(p, "complete");
 
         // Clear stale markers for entities in this phase

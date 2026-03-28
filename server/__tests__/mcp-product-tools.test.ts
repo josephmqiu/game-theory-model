@@ -333,8 +333,8 @@ describe("relationship CRUD tools", () => {
     const result = JSON.parse(
       await handleCreateRelationship({
         type: "supports",
-        fromId: e1.id,
-        toId: e2.id,
+        fromEntityId: e1.id,
+        toEntityId: e2.id,
         metadata: { strength: "strong" },
       }),
     );

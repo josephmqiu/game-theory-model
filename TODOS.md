@@ -50,7 +50,7 @@
 
 **Effort:** XL
 **Priority:** P3
-**Depends on:** Analysis report v1
+**Depends on:** None (Analysis report v1 is done)
 
 ### Report revalidation (user-triggered)
 
@@ -62,19 +62,7 @@
 
 **Effort:** M
 **Priority:** P2
-**Depends on:** Analysis report feature
-
-### analysis-service.ts decomposition
-
-**What:** Split the ~2,000-line file into schema-builder, orchestration-setup, and thin route handler.
-
-**Why:** Largest file in codebase. Mixes API surface with business logic, making it hard to test and modify.
-
-**Context:** Straightforward refactor — extract logical boundaries that already exist in the code.
-
-**Effort:** M
-**Priority:** P2
-**Depends on:** None
+**Depends on:** None (Analysis report feature is done)
 
 ## Canvas & UX
 
@@ -89,18 +77,6 @@
 **Effort:** L
 **Priority:** P2
 **Depends on:** None (all prerequisites done)
-
-### Stream WebSearch queries into canvas status bar
-
-**What:** Show live search queries (e.g., "searching: US China tariff history 2025") instead of just "Using WebSearch".
-
-**Why:** Gives users visibility into what the AI is actually searching for during analysis.
-
-**Context:** Independent enhancement. The content stream typing work (reasoning vs output) provides a pattern for surfacing tool activity.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
 
 ### Force-directed graph layout
 
@@ -178,11 +154,11 @@
 
 ### Electron crash recovery hardening
 
-**What:** Exponential backoff array for Nitro restart [1s, 2s, 4s, 8s, 16s, 30s]. Circuit breaker after 6 failures.
+**What:** Circuit breaker after N consecutive Nitro restart failures.
 
-**Why:** Current restart logic is linear. Repeated failures should back off, not hammer.
+**Why:** Repeated failures should stop retrying, not hammer indefinitely.
 
-**Context:** Entry point is `scheduleNitroRestart` in `electron/main.ts`.
+**Context:** Exponential backoff already exists (`500 * 2^n`, caps at 10s). Missing: circuit breaker that gives up after N failures. Entry point is `scheduleNitroRestart` in `electron/main.ts`.
 
 **Effort:** S
 **Priority:** P3
@@ -225,6 +201,14 @@
 **Depends on:** None
 
 ## Completed
+
+### analysis-service.ts decomposition (2026-03-27)
+
+Split from ~2,000 lines to ~487 lines. Schema building, orchestration setup, and route handling extracted into separate modules as part of the tool-based analysis phases work.
+
+### Stream WebSearch queries into canvas status bar (2026-03-27)
+
+Live search queries surface in the canvas PhaseProgress bar during analysis. Both Claude and Codex adapters extract the query from streaming tool events, emit `phase_activity` with `kind: "web-search"` and `query`, and the client renders "Using WebSearch: {query}" via i18n. Implemented as part of the tool-based analysis phases work.
 
 ### Tool-based analysis phases (2026-03-27)
 

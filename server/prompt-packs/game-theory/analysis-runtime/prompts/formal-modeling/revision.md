@@ -29,7 +29,7 @@ HOW TO MODIFY ENTITIES — use the provided tools:
 Use `query_entities` with `phase: "formal-modeling"` to retrieve your existing entities.
 
 Use `create_entity` to add new entities. Use `update_entity` to revise existing ones.
-Use `delete_entity` to remove entities no longer relevant. Use `create_relationship` and
-`delete_relationship` to manage links.
+Use `delete_entity` to remove entities no longer relevant. Use `create_relationship` to
+add links and `delete_relationship` with the relationship `id` to remove links.
 
 When you have finished revising all formal models and relationships, call `complete_phase` to signal that the revision is done.

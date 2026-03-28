@@ -98,6 +98,11 @@ export function beginPhaseTransaction(
 
 export function commitPhaseTransaction(
   retainedEntityIds?: string[],
+  counters?: {
+    entitiesCreated: number;
+    entitiesUpdated: number;
+    relationshipsCreated: number;
+  },
 ): AppliedCommitSummary {
   if (activePhaseTransaction === null) {
     throw new Error("No active phase transaction to commit");
@@ -125,10 +130,10 @@ export function commitPhaseTransaction(
     .map((e) => e.id);
 
   const summary: AppliedCommitSummary = {
-    entitiesCreated: 0,
-    entitiesUpdated: 0,
+    entitiesCreated: counters?.entitiesCreated ?? 0,
+    entitiesUpdated: counters?.entitiesUpdated ?? 0,
     entitiesDeleted,
-    relationshipsCreated: 0,
+    relationshipsCreated: counters?.relationshipsCreated ?? 0,
     relationshipsDeleted: 0,
     currentPhaseEntityIds,
   };

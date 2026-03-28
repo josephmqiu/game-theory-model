@@ -43,4 +43,36 @@ describe("phase transactions", () => {
   it("commitPhaseTransaction throws when no transaction is active", () => {
     expect(() => commitPhaseTransaction()).toThrow();
   });
+
+  it("beginPhaseTransaction throws on double-begin", () => {
+    beginPhaseTransaction("situational-grounding", "run-1");
+
+    expect(() =>
+      beginPhaseTransaction("player-identification", "run-1"),
+    ).toThrow("already active");
+  });
+
+  it("commitPhaseTransaction populates summary from counters", () => {
+    beginPhaseTransaction("situational-grounding", "run-1");
+
+    const result = commitPhaseTransaction(undefined, {
+      entitiesCreated: 5,
+      entitiesUpdated: 2,
+      relationshipsCreated: 3,
+    });
+
+    expect(result.entitiesCreated).toBe(5);
+    expect(result.entitiesUpdated).toBe(2);
+    expect(result.relationshipsCreated).toBe(3);
+  });
+
+  it("commitPhaseTransaction defaults to zero without counters", () => {
+    beginPhaseTransaction("situational-grounding", "run-1");
+
+    const result = commitPhaseTransaction();
+
+    expect(result.entitiesCreated).toBe(0);
+    expect(result.entitiesUpdated).toBe(0);
+    expect(result.relationshipsCreated).toBe(0);
+  });
 });
