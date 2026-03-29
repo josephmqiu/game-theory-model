@@ -416,10 +416,6 @@ Thin HTTP and WebSocket endpoints. Request validation and transport only.
 No product logic.
 
 ```
-POST /api/ai/analyze
-  Request:  { topic: string, provider?: string, model?: string }
-  Response: JSON { runId: string }
-
 POST /api/ai/entity
   Request:  { action: "get" | "update" | "create" | "delete", ... }
   Response: JSON
@@ -427,10 +423,6 @@ POST /api/ai/entity
 POST /api/ai/connect
   Request:  { provider: string }
   Response: JSON { status, error? }
-
-POST /api/ai/abort
-  Request:  {}
-  Response: JSON { aborted: boolean }
 ```
 
 ### WebSocket transport (workspace runtime)
@@ -438,27 +430,22 @@ POST /api/ai/abort
 The primary real-time channel between server and client. Carries:
 
 - **Workspace state bootstrap:** Full snapshot on connect (threads, active
-  thread detail, run detail, channel revisions, pending questions).
-- **Push events:** Channel-scoped updates (`threads`, `thread-detail`,
-  `run-detail`, `analysis-mutation`, `analysis-status`,
-  `analysis-progress`, `chat-event`) with monotonic revision numbers and
-  latest-push caching.
-- **Client requests:** Thread CRUD (create, rename, delete), question
-  resolve, `analysis.state.get`, and `chat.turn.start` — bidirectional RPC
-  over the same WebSocket connection.
-- **Reconnect recovery:** Client reconnects with `lastSeenByChannel`
+  thread detail, run detail, topic revisions, pending interactions).
+- **Push events:** Topic-scoped updates (`threads`, `thread-detail`,
+  `run-detail`, `analysis`, `chat`) with `event.kind`, monotonic revisions,
+  and latest-push caching.
+- **Client requests:** `analysis.start`, `analysis.abort`,
+  `workspace.thread.create`, `workspace.thread.rename`,
+  `workspace.thread.delete`, `chat.turn.start`, `analysis.state.get`, and
+  `interaction.respond` — bidirectional RPC over the same WebSocket
+  connection.
+- **Reconnect recovery:** Client reconnects with `lastSeenByTopic`
   revisions. Server replays only missed pushes (no full re-bootstrap
   unless the connection was down long enough for the cache to evict).
   Active chat correlations are re-announced on reconnect so terminal chat
   signals can be replayed without a second live transport.
 
 Endpoint: `GET /api/workspace/runtime` (WebSocket upgrade via Nitro/crossws).
-
-### Legacy transport note
-
-The old analysis SSE stream (`/api/ai/events`) is retired. Analysis kickoff
-still uses HTTP (`POST /api/ai/analyze`), but live progress, mutations, status,
-and snapshot recovery now flow through the workspace runtime WebSocket.
 
 ### Security
 
@@ -914,13 +901,12 @@ display and input layer only.
 
 ### Communication
 
-- `analysis-client` — calls `/api/ai/analyze` for kickoff, then uses
-  `analysis.state.get` plus `analysis-mutation`, `analysis-status`, and
-  `analysis-progress` runtime channels so entities and phase state update as
-  server commits land.
+- `analysis-client` — sends `analysis.start` / `analysis.abort` over the
+  workspace runtime, then uses `analysis.state.get` plus `analysis` topic
+  events so entities and phase state update as server commits land.
 - `workspace-runtime-client` — opens `/api/workspace/runtime`, sends
-  `analysis.state.get` and `chat.turn.start`, receives analysis/chat pushes,
-  and updates renderer state.
+  live runtime requests, receives topic/event pushes, and updates renderer
+  state.
 - Entity edits — POST to `/api/ai/entity`.
 - State hydration on load/reconnect — workspace runtime request
   `analysis.state.get` (returns entity graph + active run status).

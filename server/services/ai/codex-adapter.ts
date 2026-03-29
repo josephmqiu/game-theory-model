@@ -6,10 +6,10 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { filterCodexEnv } from "../../utils/codex-client";
 import { serverLog, serverWarn } from "../../utils/ai-logger";
 import { resolveMcpProxyScript } from "../../utils/mcp-server-manager";
-import type { ChatEvent } from "../../../shared/types/events";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 import { CODEX_MCP_SERVER_NAME, installMcpServer } from "./codex-config";
 import { ANALYSIS_TOOL_NAMES, CHAT_TOOL_NAMES } from "./tool-surfaces";
+import type { RuntimeAdapterChatEvent } from "./runtime-adapter-events";
 import {
   createProcessRuntimeError,
   createProviderRuntimeError,
@@ -753,7 +753,7 @@ const PERMISSIONS_APPROVAL = "item/permissions/requestApproval";
 
 /**
  * Stream a chat turn using the Codex app-server.
- * Yields normalized ChatEvent objects.
+ * Yields normalized runtime adapter chat events.
  *
  * Note on history forwarding: the caller (`chat-service`) still extracts only the
  * last user message, and we send it as a single text item in Codex's `input`
@@ -770,7 +770,7 @@ export async function* streamChat(
     ...(options?.runId ? { runId: options.runId } : {}),
     purpose: "chat",
   }),
-): AsyncGenerator<ChatEvent> {
+): AsyncGenerator<RuntimeAdapterChatEvent> {
   console.log("[codex-adapter] streamChat entry", {
     model,
     runId: options?.runId,
@@ -851,11 +851,11 @@ export async function* streamChat(
   let turnCompleted = false;
   let aborted = false;
   let toolCallCount = 0;
-  const eventQueue: ChatEvent[] = [];
+  const eventQueue: RuntimeAdapterChatEvent[] = [];
   let resolveWait: (() => void) | null = null;
   let turnError: string | null = null;
 
-  function enqueueEvent(event: ChatEvent) {
+  function enqueueEvent(event: RuntimeAdapterChatEvent) {
     eventQueue.push(event);
     resolveWait?.();
     resolveWait = null;
@@ -1584,7 +1584,9 @@ class CodexRuntimeSession implements RuntimeAdapterSession {
     this.state = createCodexSessionState(context, binding);
   }
 
-  streamChatTurn(input: RuntimeChatTurnInput): AsyncGenerator<ChatEvent> {
+  streamChatTurn(
+    input: RuntimeChatTurnInput,
+  ): AsyncGenerator<RuntimeAdapterChatEvent> {
     // For non-resumed sessions, trim history to the model's context window and
     // prepend it into the system prompt. Resumed sessions already have the full
     // conversation in the Codex thread state.

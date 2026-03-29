@@ -1,6 +1,6 @@
 // src/services/ai/analysis-client.ts
-// Renderer-side analysis client. Uses HTTP for one-shot commands and the
-// workspace-runtime transport for analysis state, progress, and recovery.
+// Renderer-side analysis client. Uses the workspace-runtime transport for
+// analysis commands, state, progress, and recovery.
 // NEVER imports Node.js modules or server-side services.
 
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
@@ -194,25 +194,24 @@ function handleWsPush(envelope: WorkspaceRuntimePushEnvelope): void {
     return;
   }
 
-  switch (envelope.channel) {
-    case "analysis-mutation": {
-      const typed =
-        envelope as WorkspaceRuntimePushEnvelope<"analysis-mutation">;
-      const shouldRecover = applyMutationEvent(typed.payload.event);
+  if (envelope.topic !== "analysis") {
+    return;
+  }
+
+  switch (envelope.event.kind) {
+    case "analysis.mutation": {
+      const shouldRecover = applyMutationEvent(envelope.event.event);
       if (shouldRecover) {
         void recoverFromStateChange();
       }
       return;
     }
-    case "analysis-status": {
-      const typed = envelope as WorkspaceRuntimePushEnvelope<"analysis-status">;
-      applyRunStatus(typed.payload.runStatus);
+    case "analysis.status": {
+      applyRunStatus(envelope.event.runStatus);
       return;
     }
-    case "analysis-progress": {
-      const typed =
-        envelope as WorkspaceRuntimePushEnvelope<"analysis-progress">;
-      applyProgressEvent(typed.payload.event as AnalysisProgressStreamEvent);
+    case "analysis.progress": {
+      applyProgressEvent(envelope.event.event as AnalysisProgressStreamEvent);
       return;
     }
   }
@@ -296,11 +295,12 @@ export function abort(): void {
   store.clearPhaseActivityText();
 
   if (shouldAbortRunningAnalysis) {
-    void fetch("/api/ai/abort", { method: "POST" })
-      .then(async (response) => {
-        if (!response.ok) return;
-        await response.json().catch(() => null as AbortAnalysisResponse | null);
+    void workspaceRuntimeClient
+      .sendRequest<AbortAnalysisResponse>("analysis.abort", {
+        workspaceId:
+          useThreadStore.getState().workspaceId ?? "workspace-local-default",
       })
+      .then(async () => null)
       .catch((e) => {
         console.warn("[analysis-client] abort-endpoint-unreachable", e);
       });
@@ -352,34 +352,16 @@ export async function startAnalysis(
   abortRequested = false;
 
   try {
-    const response = await fetch("/api/ai/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topic, provider, model, runtime }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const err = await response
-        .json()
-        .catch(() => ({ error: `HTTP ${response.status}` }));
-      console.error("[analysis-client] start-failed", {
-        status: response.status,
-        error: err.error,
-      });
-      throw new Error(err.error || `Server error: ${response.status}`);
-    }
-
-    const contentType = response.headers.get("Content-Type") ?? "";
-    if (!contentType.includes("application/json")) {
-      throw new Error(
-        `Analyze kickoff returned non-JSON content type: ${contentType || "unknown"}`,
-      );
-    }
-
-    const payload = (await response.json().catch(() => null)) as {
+    const payload = await workspaceRuntimeClient.sendRequest<{
       runId?: string;
-    } | null;
+    }>("analysis.start", {
+      workspaceId: useThreadStore.getState().workspaceId ?? "workspace-local-default",
+      threadId: useThreadStore.getState().activeThreadId,
+      topic,
+      provider,
+      model,
+      runtime,
+    });
     const runId = payload?.runId?.trim();
     if (!runId) {
       throw new Error("Analyze kickoff response missing runId");

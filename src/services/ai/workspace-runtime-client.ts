@@ -2,25 +2,24 @@ import { nanoid } from "nanoid";
 import type {
   WorkspaceRuntimeBootstrap,
   WorkspaceRuntimeBootstrapEnvelope,
-  WorkspaceRuntimeChatEvent,
   WorkspaceRuntimeChatTurnStartRequestPayload,
-  WorkspaceRuntimeChannel,
   WorkspaceRuntimeClientHello,
+  WorkspaceRuntimeEventByTopic,
   WorkspaceRuntimePushEnvelope,
   WorkspaceRuntimeRequest,
   WorkspaceRuntimeRequestKind,
   WorkspaceRuntimeServerEnvelope,
+  WorkspaceRuntimeTopic,
   WorkspaceTransportDiagnostic,
 } from "../../../shared/types/workspace-runtime";
 
 const RECONNECT_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
-const CHANNELS: WorkspaceRuntimeChannel[] = [
+const TOPICS: WorkspaceRuntimeTopic[] = [
   "threads",
   "thread-detail",
   "run-detail",
-  "analysis-mutation",
-  "analysis-status",
-  "analysis-progress",
+  "analysis",
+  "chat",
 ];
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_DIAGNOSTICS = 100;
@@ -85,8 +84,8 @@ class WorkspaceRuntimeClient {
   private pendingRequests = new Map<string, PendingRequest>();
   private outboundQueue: QueuedOutboundRequest[] = [];
   private activeChatCorrelations = new Set<string>();
-  private latestPushByChannel = new Map<
-    WorkspaceRuntimePushEnvelope["channel"],
+  private latestPushByTopic = new Map<
+    WorkspaceRuntimePushEnvelope["topic"],
     WorkspaceRuntimePushEnvelope
   >();
   private diagnostics: WorkspaceTransportDiagnostic[] = [];
@@ -134,7 +133,7 @@ class WorkspaceRuntimeClient {
     }
 
     if (envelope.type === "push") {
-      this.latestPushByChannel.set(envelope.channel, envelope);
+      this.latestPushByTopic.set(envelope.topic, envelope);
       this.listeners.forEach((listener) => listener(envelope));
       return;
     }
@@ -296,12 +295,12 @@ class WorkspaceRuntimeClient {
             activeChatCorrelations: [...this.activeChatCorrelations].sort(),
           }
         : {}),
-      lastSeenByChannel: Object.fromEntries(
-        CHANNELS.map((ch) => [
-          ch,
-          this.latestPushByChannel.get(ch)?.revision ?? 0,
+      lastSeenByTopic: Object.fromEntries(
+        TOPICS.map((topic) => [
+          topic,
+          this.latestPushByTopic.get(topic)?.revision ?? 0,
         ]),
-      ) as Record<WorkspaceRuntimeChannel, number>,
+      ) as Record<WorkspaceRuntimeTopic, number>,
     };
 
     this.ws.send(JSON.stringify(hello));
@@ -462,8 +461,8 @@ class WorkspaceRuntimeClient {
         correlationId: string;
       }) => void;
     },
-  ): AsyncGenerator<WorkspaceRuntimeChatEvent> {
-    const queue: WorkspaceRuntimeChatEvent[] = [];
+  ): AsyncGenerator<WorkspaceRuntimeEventByTopic["chat"]> {
+    const queue: WorkspaceRuntimeEventByTopic["chat"][] = [];
     let terminal = false;
     let closed = false;
     let notifyNext: (() => void) | null = null;
@@ -484,12 +483,12 @@ class WorkspaceRuntimeClient {
     this.activeChatCorrelations.add(payload.correlationId);
 
     const unsubscribe = this.subscribe((envelope) => {
-      if (envelope.type !== "push" || envelope.channel !== "chat-event") {
+      if (envelope.type !== "push" || envelope.topic !== "chat") {
         return;
       }
 
-      const push = envelope as WorkspaceRuntimePushEnvelope<"chat-event">;
-      if (push.payload.correlationId !== payload.correlationId) {
+      const push = envelope as WorkspaceRuntimePushEnvelope<"chat">;
+      if (push.event.correlationId !== payload.correlationId) {
         return;
       }
 
@@ -497,14 +496,14 @@ class WorkspaceRuntimeClient {
         notifyResolvedThread({
           workspaceId: push.scope.workspaceId,
           threadId: push.scope.threadId,
-          correlationId: push.payload.correlationId,
+          correlationId: push.event.correlationId,
         });
       }
 
-      queue.push(push.payload.event);
+      queue.push(push.event);
       if (
-        push.payload.event.type === "chat.message.complete" ||
-        push.payload.event.type === "chat.message.error"
+        push.event.kind === "chat.message.complete" ||
+        push.event.kind === "chat.message.error"
       ) {
         terminal = true;
       }
@@ -555,8 +554,8 @@ class WorkspaceRuntimeClient {
           }
           yield next;
           if (
-            next.type === "chat.message.complete" ||
-            next.type === "chat.message.error"
+            next.kind === "chat.message.complete" ||
+            next.kind === "chat.message.error"
           ) {
             return;
           }
@@ -582,7 +581,7 @@ class WorkspaceRuntimeClient {
     this.desiredContext = null;
     this.currentConnectionId = undefined;
     this.activeChatCorrelations.clear();
-    this.latestPushByChannel.clear();
+    this.latestPushByTopic.clear();
     this.clearReconnectTimer();
     if (this.pendingBootstrap) {
       clearTimeout(this.pendingBootstrap.timeoutId);

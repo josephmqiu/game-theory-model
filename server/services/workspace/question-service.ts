@@ -93,6 +93,7 @@ export function createPendingQuestion(
   );
 
   return {
+    kind: "question",
     question,
     status: "pending",
   };

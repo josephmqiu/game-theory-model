@@ -5,16 +5,20 @@ import {
   resetWorkspaceDatabaseForTest,
 } from "../../../services/workspace";
 import { _bindWorkspaceDatabaseForInit } from "../../../services/entity-graph-service";
-import { _resetAnalysisEventBridgeForTest } from "../../../services/workspace/analysis-event-bridge";
-import { _resetWorkspaceRuntimePublisherForTest } from "../../../services/workspace/workspace-runtime-publisher";
+import {
+  _resetWorkspaceRuntimePublisherForTest,
+  publishWorkspaceRuntimeChatEvent,
+} from "../../../services/workspace/workspace-runtime-publisher";
 import { _resetWorkspaceRuntimeTransportForTest } from "../../../services/workspace/workspace-runtime-transport";
 
 const getQueryMock = vi.fn();
 const streamChatTurnMock = vi.fn();
 
-vi.mock("../../../services/entity-graph-service", async (importOriginal) => {
+vi.mock("../../../services/entity-graph-service", async () => {
   const actual =
-    await importOriginal<typeof import("../../../services/entity-graph-service")>();
+    await vi.importActual<typeof import("../../../services/entity-graph-service")>(
+      "../../../services/entity-graph-service",
+    );
   return {
     ...actual,
     getAnalysis: vi.fn(() => ({
@@ -94,7 +98,6 @@ describe("/api/workspace/runtime websocket", () => {
     });
     resetWorkspaceDatabaseForTest();
     _bindWorkspaceDatabaseForInit(getWorkspaceDatabase);
-    _resetAnalysisEventBridgeForTest();
     _resetWorkspaceRuntimePublisherForTest();
     _resetWorkspaceRuntimeTransportForTest();
   });
@@ -197,8 +200,8 @@ describe("/api/workspace/runtime websocket", () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: "push",
-          channel: "threads",
-          payload: expect.objectContaining({
+          topic: "threads",
+          event: expect.objectContaining({
             workspaceId: "workspace-1",
             threads: [
               expect.objectContaining({
@@ -380,7 +383,7 @@ describe("/api/workspace/runtime websocket", () => {
       wsMessage({
         type: "client_hello",
         workspaceId: "workspace-1",
-        lastSeenByChannel: {
+        lastSeenByTopic: {
           threads: 0,
         },
       }),
@@ -393,7 +396,7 @@ describe("/api/workspace/runtime websocket", () => {
         }),
         expect.objectContaining({
           type: "push",
-          channel: "threads",
+          topic: "threads",
           replayed: true,
         }),
       ]),
@@ -431,9 +434,10 @@ describe("/api/workspace/runtime websocket", () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: "push",
-          channel: "analysis-status",
+          topic: "analysis",
           scope: { workspaceId: "workspace-1" },
-          payload: {
+          event: {
+            kind: "analysis.status",
             runStatus: expect.objectContaining({
               status: "running",
               kind: "analysis",
@@ -566,32 +570,30 @@ describe("/api/workspace/runtime websocket", () => {
         peer1.sent.some(
           (entry) =>
             entry.type === "push" &&
-            entry.channel === "chat-event" &&
-            (entry.payload as { correlationId?: string; event?: { type?: string; content?: string } })
+            entry.topic === "chat" &&
+            (entry.event as { correlationId?: string; kind?: string; content?: string })
               ?.correlationId === "corr-1" &&
-            (entry.payload as { event?: { type?: string; content?: string } })
-              ?.event?.type === "chat.message.delta" &&
-            (entry.payload as { event?: { content?: string } })?.event
-              ?.content === "Hello ",
+            (entry.event as { kind?: string; content?: string })?.kind ===
+              "chat.message.delta" &&
+            (entry.event as { content?: string })?.content === "Hello ",
         ),
       ).toBe(true);
       expect(
         peer1.sent.some(
           (entry) =>
             entry.type === "push" &&
-            entry.channel === "chat-event" &&
-            (entry.payload as { correlationId?: string; event?: { type?: string; content?: string } })
+            entry.topic === "chat" &&
+            (entry.event as { correlationId?: string; kind?: string; content?: string })
               ?.correlationId === "corr-1" &&
-            (entry.payload as { event?: { type?: string; content?: string } })
-              ?.event?.type === "chat.message.complete" &&
-            (entry.payload as { event?: { content?: string } })?.event
-              ?.content === "Hello world",
+            (entry.event as { kind?: string; content?: string })?.kind ===
+              "chat.message.complete" &&
+            (entry.event as { content?: string })?.content === "Hello world",
         ),
       ).toBe(true);
     });
     expect(
       peer2.sent.some(
-        (entry) => entry.type === "push" && entry.channel === "chat-event",
+        (entry) => entry.type === "push" && entry.topic === "chat",
       ),
     ).toBe(false);
 
@@ -608,7 +610,7 @@ describe("/api/workspace/runtime websocket", () => {
         type: "client_hello",
         workspaceId: "workspace-1",
         activeThreadId: chatStartResponse?.result.threadId,
-        lastSeenByChannel: {
+        lastSeenByTopic: {
           threads: 0,
           "thread-detail": 0,
           "run-detail": 0,
@@ -617,7 +619,7 @@ describe("/api/workspace/runtime websocket", () => {
     );
     expect(
       peer3.sent.some(
-        (entry) => entry.type === "push" && entry.channel === "chat-event",
+        (entry) => entry.type === "push" && entry.topic === "chat",
       ),
     ).toBe(false);
   });
@@ -627,9 +629,6 @@ describe("/api/workspace/runtime websocket", () => {
       await new Promise(() => {});
     });
 
-    const { publishWorkspaceRuntimeChatEvent } = await import(
-      "../../../services/workspace/workspace-runtime-chat-publisher"
-    );
     const route = (await import("../runtime.get")).default as unknown as {
       open: (peer: FakePeer) => void;
       message: (
@@ -692,9 +691,8 @@ describe("/api/workspace/runtime websocket", () => {
     publishWorkspaceRuntimeChatEvent({
       workspaceId: "workspace-1",
       threadId: startResponse!.result.threadId,
-      correlationId: "corr-1",
       event: {
-        type: "chat.message.complete",
+        kind: "chat.message.complete",
         correlationId: "corr-1",
         messageId: "server-msg-1",
         content: "Hello world",
@@ -720,16 +718,13 @@ describe("/api/workspace/runtime websocket", () => {
         }),
         expect.objectContaining({
           type: "push",
-          channel: "chat-event",
+          topic: "chat",
           replayed: true,
-          payload: {
+          event: {
+            kind: "chat.message.complete",
             correlationId: "corr-1",
-            event: {
-              type: "chat.message.complete",
-              correlationId: "corr-1",
-              messageId: "server-msg-1",
-              content: "Hello world",
-            },
+            messageId: "server-msg-1",
+            content: "Hello world",
           },
         }),
       ]),

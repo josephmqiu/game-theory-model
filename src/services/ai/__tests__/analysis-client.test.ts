@@ -66,7 +66,7 @@ function emitWsBootstrap(): void {
       activeThreadDetail: null,
       latestRun: null,
       latestPhaseTurns: [],
-      channelRevisions: {},
+      topicRevisions: {},
       serverConnectionId: "conn-1",
     },
   } satisfies WorkspaceRuntimeBootstrapEnvelope);
@@ -216,8 +216,8 @@ async function loadModules() {
     latestRun: null,
     latestPhaseTurns: [],
     pendingTurn: null,
-    pendingQuestions: [],
-    activeQuestionIndex: 0,
+    pendingInteractions: [],
+    activeInteractionIndex: 0,
     isLoading: false,
     isCreating: false,
     isDeleting: false,
@@ -268,17 +268,18 @@ describe("analysis-client", () => {
     // Events after hydration should be applied
     emitWsPush({
       type: "push",
-      channel: "analysis-mutation",
+      topic: "analysis",
       revision: 2,
       scope: { workspaceId: "ws-1" },
-      payload: { event: { type: "entity_created", entity } },
+      event: { kind: "analysis.mutation", event: { type: "entity_created", entity } },
     });
     emitWsPush({
       type: "push",
-      channel: "analysis-mutation",
+      topic: "analysis",
       revision: 3,
       scope: { workspaceId: "ws-1" },
-      payload: {
+      event: {
+        kind: "analysis.mutation",
         event: { type: "relationship_created", relationship },
       },
     });
@@ -303,10 +304,11 @@ describe("analysis-client", () => {
 
     emitWsPush({
       type: "push",
-      channel: "analysis-status",
+      topic: "analysis",
       revision: 2,
       scope: { workspaceId: "ws-1" },
-      payload: {
+      event: {
+        kind: "analysis.status",
         runStatus: makeRunStatus({
           status: "running",
           kind: "analysis",
@@ -317,10 +319,11 @@ describe("analysis-client", () => {
     });
     emitWsPush({
       type: "push",
-      channel: "analysis-progress",
+      topic: "analysis",
       revision: 3,
       scope: { workspaceId: "ws-1" },
-      payload: {
+      event: {
+        kind: "analysis.progress",
         event: {
           type: "phase_started",
           phase: "situational-grounding",
@@ -330,10 +333,11 @@ describe("analysis-client", () => {
     });
     emitWsPush({
       type: "push",
-      channel: "analysis-progress",
+      topic: "analysis",
       revision: 4,
       scope: { workspaceId: "ws-1" },
-      payload: {
+      event: {
+        kind: "analysis.progress",
         event: {
           type: "phase_activity",
           phase: "situational-grounding",
@@ -345,10 +349,11 @@ describe("analysis-client", () => {
     });
     emitWsPush({
       type: "push",
-      channel: "analysis-progress",
+      topic: "analysis",
       revision: 5,
       scope: { workspaceId: "ws-1" },
-      payload: {
+      event: {
+        kind: "analysis.progress",
         event: {
           type: "phase_completed",
           phase: "situational-grounding",
@@ -390,10 +395,11 @@ describe("analysis-client", () => {
 
     emitWsPush({
       type: "push",
-      channel: "analysis-progress",
+      topic: "analysis",
       revision: 2,
       scope: { workspaceId: "ws-1" },
-      payload: {
+      event: {
+        kind: "analysis.progress",
         event: {
           type: "phase_activity",
           phase: "situational-grounding",
@@ -437,10 +443,10 @@ describe("analysis-client", () => {
 
     emitWsPush({
       type: "push",
-      channel: "analysis-mutation",
+      topic: "analysis",
       revision: 3,
       scope: { workspaceId: "ws-1" },
-      payload: { event: { type: "state_changed" } },
+      event: { kind: "analysis.mutation", event: { type: "state_changed" } },
     });
 
     await waitFor(() => {
@@ -482,17 +488,7 @@ describe("analysis-client", () => {
   });
 
   it("includes full runtime overrides in the analyze request body when provided", async () => {
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
-      if (input === "/api/ai/analyze") {
-        return Promise.resolve(
-          new Response(JSON.stringify({ runId: "run-runtime" }), {
-            headers: { "Content-Type": "application/json" },
-          }),
-        );
-      }
-      return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    sendRequestMock.mockResolvedValueOnce({ runId: "run-runtime" });
 
     const { client } = await loadModules();
 
@@ -504,69 +500,52 @@ describe("analysis-client", () => {
       }),
     ).resolves.toEqual({ runId: "run-runtime" });
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/ai/analyze",
+    expect(sendRequestMock).toHaveBeenCalledWith(
+      "analysis.start",
       expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({
-          topic: "Topic",
-          provider: "codex",
-          model: "gpt-5.4",
-          runtime: {
-            webSearch: false,
-            effortLevel: "thorough",
-            activePhases: ["situational-grounding", "scenarios"],
-          },
-        }),
+        workspaceId: "ws-1",
+        topic: "Topic",
+        provider: "codex",
+        model: "gpt-5.4",
+        runtime: {
+          webSearch: false,
+          effortLevel: "thorough",
+          activePhases: ["situational-grounding", "scenarios"],
+        },
       }),
     );
   });
 
-  it("rejects non-JSON analyze responses", async () => {
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
-      if (input === "/api/ai/analyze") {
-        return Promise.resolve(
-          new Response("accepted", {
-            status: 202,
-            headers: { "Content-Type": "text/plain" },
-          }),
-        );
-      }
-      return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+  it("rejects analyze responses without a runId", async () => {
+    sendRequestMock.mockResolvedValueOnce({});
 
     const { client } = await loadModules();
 
-    await expect(client.startAnalysis("Topic")).rejects.toThrow(
-      /non-JSON|runId/i,
-    );
+    await expect(client.startAnalysis("Topic")).rejects.toThrow(/runId/i);
   });
 
   it("sends a best-effort abort request and marks local running state as cancelled", async () => {
-    mockAnalysisStateResponses(
-      createAnalysisStateResponse(
-        makeAnalysis(),
-        makeRunStatus({
-          status: "running",
-          kind: "analysis",
-          runId: "run-4",
-          activePhase: "situational-grounding",
-        }),
-        1,
-      ),
+    const hydrationResponse = createAnalysisStateResponse(
+      makeAnalysis(),
+      makeRunStatus({
+        status: "running",
+        kind: "analysis",
+        runId: "run-4",
+        activePhase: "situational-grounding",
+      }),
+      1,
     );
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
-      if (input === "/api/ai/abort") {
-        return Promise.resolve(
-          new Response(JSON.stringify({ aborted: true }), {
-            headers: { "Content-Type": "application/json" },
-          }),
-        );
+    sendRequestMock.mockImplementation(async (kind: string, payload: unknown) => {
+      if (kind === "analysis.state.get") {
+        expect(payload).toEqual({ workspaceId: "ws-1" });
+        return hydrationResponse;
       }
-      return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
+      if (kind === "analysis.abort") {
+        expect(payload).toEqual({ workspaceId: "ws-1" });
+        return { aborted: true };
+      }
+      throw new Error(`Unexpected request kind: ${kind}`);
     });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { client, useRunStatusStore } = await loadModules();
 
@@ -577,8 +556,8 @@ describe("analysis-client", () => {
     client.abort();
     await flushMicrotasks();
 
-    expect(fetchMock).toHaveBeenLastCalledWith("/api/ai/abort", {
-      method: "POST",
+    expect(sendRequestMock).toHaveBeenLastCalledWith("analysis.abort", {
+      workspaceId: "ws-1",
     });
     expect(client.isRunning()).toBe(false);
     expect(useRunStatusStore.getState().runStatus).toMatchObject({

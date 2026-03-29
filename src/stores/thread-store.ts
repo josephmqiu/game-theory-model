@@ -6,7 +6,7 @@ import type {
   ThreadMessageState,
   ThreadState,
 } from "../../shared/types/workspace-state";
-import type { PendingQuestionState } from "../../shared/types/user-input";
+import type { PendingInteractionState } from "../../shared/types/user-input";
 import type {
   WorkspaceRuntimeBootstrap,
   WorkspaceRuntimePushEnvelope,
@@ -57,8 +57,8 @@ interface ThreadStoreState {
   latestRun: RunState | null;
   latestPhaseTurns: PhaseTurnSummaryState[];
   pendingTurn: PendingTurn | null;
-  pendingQuestions: PendingQuestionState[];
-  activeQuestionIndex: number;
+  pendingInteractions: PendingInteractionState[];
+  activeInteractionIndex: number;
   isLoading: boolean;
   isCreating: boolean;
   isDeleting: boolean;
@@ -89,12 +89,12 @@ interface ThreadStoreState {
   ) => void;
   completePendingTurn: (serverAssistantMessageId?: string) => void;
   clearPendingTurn: () => void;
-  setPendingQuestions: (questions: PendingQuestionState[]) => void;
-  resolveQuestion: (
-    questionId: string,
+  setPendingInteractions: (interactions: PendingInteractionState[]) => void;
+  resolveInteraction: (
+    interactionId: string,
     answer: { selectedOptions?: number[]; customText?: string },
   ) => void;
-  clearPendingQuestions: () => void;
+  clearPendingInteractions: () => void;
 }
 
 function readStoredThreadSelections(): Record<string, string> {
@@ -205,6 +205,9 @@ function applyBootstrap(bootstrap: WorkspaceRuntimeBootstrap): void {
       activeThreadDetail,
       latestRun: bootstrap.latestRun,
       latestPhaseTurns: bootstrap.latestPhaseTurns,
+      pendingInteractions:
+        bootstrap.activeThreadDetail?.pendingInteractions ?? [],
+      activeInteractionIndex: 0,
       pendingTurn: shouldClearPendingTurn(state.pendingTurn, activeThreadDetail)
         ? null
         : state.pendingTurn,
@@ -222,32 +225,32 @@ function applyThreadsPush(push: WorkspaceRuntimePushEnvelope<"threads">): void {
   } | null = null;
 
   useThreadStore.setState((state) => {
-    if (state.workspaceId !== push.payload.workspaceId) {
+    if (state.workspaceId !== push.event.workspaceId) {
       return state;
     }
 
     const nextActiveThreadId =
       state.activeThreadId &&
-      push.payload.threads.some((thread) => thread.id === state.activeThreadId)
+      push.event.threads.some((thread) => thread.id === state.activeThreadId)
         ? state.activeThreadId
         : resolveRestoredThreadId(
-            push.payload.threads,
-            getStoredThreadSelection(push.payload.workspaceId),
+            push.event.threads,
+            getStoredThreadSelection(push.event.workspaceId),
           );
 
     if (
       nextActiveThreadId &&
       nextActiveThreadId !== state.activeThreadId &&
-      push.payload.workspaceId
+      push.event.workspaceId
     ) {
       rebindTarget = {
-        workspaceId: push.payload.workspaceId,
+        workspaceId: push.event.workspaceId,
         activeThreadId: nextActiveThreadId,
       };
     }
 
     return {
-      threads: push.payload.threads,
+      threads: push.event.threads,
       activeThreadId: nextActiveThreadId,
       activeThreadDetail:
         nextActiveThreadId &&
@@ -276,36 +279,35 @@ function applyThreadDetailPush(
 ): void {
   useThreadStore.setState((state) => {
     if (
-      state.workspaceId !== push.payload.workspaceId ||
-      state.activeThreadId !== push.payload.threadId
+      state.workspaceId !== push.event.workspaceId ||
+      state.activeThreadId !== push.event.threadId
     ) {
       return state;
     }
 
-    const activeThreadDetail = push.payload.detail
+    const activeThreadDetail = push.event.detail
       ? {
-          thread: push.payload.detail.thread,
-          messages: push.payload.detail.messages,
-          activities: push.payload.detail.activities,
+          thread: push.event.detail.thread,
+          messages: push.event.detail.messages,
+          activities: push.event.detail.activities,
         }
       : null;
 
-    const serverPendingQuestions = push.payload.detail?.pendingQuestions ?? [];
+    const serverPendingInteractions =
+      push.event.detail?.pendingInteractions ?? [];
 
     return {
       activeThreadDetail,
+      pendingInteractions: serverPendingInteractions,
+      activeInteractionIndex:
+        serverPendingInteractions.length === 0
+          ? 0
+          : state.pendingInteractions.length === 0
+            ? 0
+            : state.activeInteractionIndex,
       pendingTurn: shouldClearPendingTurn(state.pendingTurn, activeThreadDetail)
         ? null
         : state.pendingTurn,
-      ...(serverPendingQuestions.length > 0
-        ? {
-            pendingQuestions: serverPendingQuestions,
-            activeQuestionIndex:
-              state.pendingQuestions.length === 0
-                ? 0
-                : state.activeQuestionIndex,
-          }
-        : {}),
       error: undefined,
     };
   });
@@ -316,15 +318,15 @@ function applyRunDetailPush(
 ): void {
   useThreadStore.setState((state) => {
     if (
-      state.workspaceId !== push.payload.workspaceId ||
-      state.activeThreadId !== push.payload.threadId
+      state.workspaceId !== push.event.workspaceId ||
+      state.activeThreadId !== push.event.threadId
     ) {
       return state;
     }
 
     return {
-      latestRun: push.payload.latestRun,
-      latestPhaseTurns: push.payload.latestPhaseTurns,
+      latestRun: push.event.latestRun,
+      latestPhaseTurns: push.event.latestPhaseTurns,
       error: undefined,
     };
   });
@@ -338,8 +340,8 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
   latestRun: null,
   latestPhaseTurns: [],
   pendingTurn: null,
-  pendingQuestions: [],
-  activeQuestionIndex: 0,
+  pendingInteractions: [],
+  activeInteractionIndex: 0,
   isLoading: false,
   isCreating: false,
   isDeleting: false,
@@ -424,8 +426,8 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
       latestRun: null,
       latestPhaseTurns: [],
       pendingTurn: null,
-      pendingQuestions: [],
-      activeQuestionIndex: 0,
+      pendingInteractions: [],
+      activeInteractionIndex: 0,
       error: undefined,
     });
 
@@ -544,8 +546,8 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
           latestRun: null,
           latestPhaseTurns: [],
           pendingTurn: null,
-          pendingQuestions: [],
-          activeQuestionIndex: 0,
+          pendingInteractions: [],
+          activeInteractionIndex: 0,
         });
       }
     }
@@ -605,8 +607,8 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
       latestRun: null,
       latestPhaseTurns: [],
       pendingTurn: null,
-      pendingQuestions: [],
-      activeQuestionIndex: 0,
+      pendingInteractions: [],
+      activeInteractionIndex: 0,
       isLoading: false,
       isCreating: false,
       isDeleting: false,
@@ -685,54 +687,56 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
     set({ pendingTurn: null });
   },
 
-  setPendingQuestions(questions) {
+  setPendingInteractions(interactions) {
     set({
-      pendingQuestions: questions,
-      activeQuestionIndex: 0,
+      pendingInteractions: interactions,
+      activeInteractionIndex: 0,
     });
   },
 
-  resolveQuestion(questionId, answer) {
+  resolveInteraction(interactionId, answer) {
     const state = get();
     const workspaceId = state.workspaceId;
     const threadId = state.activeThreadId;
 
     set((prev) => {
-      const nextQuestions = prev.pendingQuestions.map((pq) =>
-        pq.question.id === questionId
+      const nextInteractions = prev.pendingInteractions.map((interaction) =>
+        interaction.kind === "question" &&
+        interaction.question.id === interactionId
           ? {
-              ...pq,
+              ...interaction,
               status: "resolved" as const,
               answer: {
-                questionId,
+                questionId: interactionId,
                 ...answer,
                 resolvedAt: Date.now(),
               },
             }
-          : pq,
+          : interaction,
       );
-      const nextIndex = nextQuestions.findIndex(
-        (pq) => pq.status === "pending",
+      const nextIndex = nextInteractions.findIndex(
+        (interaction) => interaction.status === "pending",
       );
       return {
-        pendingQuestions: nextQuestions,
-        activeQuestionIndex:
-          nextIndex >= 0 ? nextIndex : prev.activeQuestionIndex,
+        pendingInteractions: nextInteractions,
+        activeInteractionIndex:
+          nextIndex >= 0 ? nextIndex : prev.activeInteractionIndex,
       };
     });
 
     if (workspaceId && threadId) {
-      void workspaceRuntimeClient.sendRequest("question.resolve", {
+      void workspaceRuntimeClient.sendRequest("interaction.respond", {
         workspaceId,
         threadId,
-        questionId,
+        interactionId,
+        kind: "question",
         ...answer,
       });
     }
   },
 
-  clearPendingQuestions() {
-    set({ pendingQuestions: [], activeQuestionIndex: 0 });
+  clearPendingInteractions() {
+    set({ pendingInteractions: [], activeInteractionIndex: 0 });
   },
 }));
 
@@ -742,7 +746,7 @@ workspaceRuntimeClient.subscribe((envelope) => {
     return;
   }
 
-  switch (envelope.channel) {
+  switch (envelope.topic) {
     case "threads":
       applyThreadsPush(envelope as WorkspaceRuntimePushEnvelope<"threads">);
       return;

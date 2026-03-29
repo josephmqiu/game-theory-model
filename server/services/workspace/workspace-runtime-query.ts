@@ -10,6 +10,7 @@ import type {
   ThreadMessageState,
   ThreadState,
 } from "../../../shared/types/workspace-state";
+import type { PendingInteractionState } from "../../../shared/types/user-input";
 
 export interface WorkspaceRuntimeQueryDatabase {
   threads: ThreadRepository;
@@ -71,7 +72,7 @@ function getThreadDetail(
     return null;
   }
 
-  const pendingQuestions = database.questions
+  const pendingInteractions: PendingInteractionState[] = database.questions
     ? database.questions.listByThreadId(threadId, "pending")
     : [];
 
@@ -96,7 +97,7 @@ function getThreadDetail(
         }),
       ),
     activities: database.activities.listActivitiesByThreadId(threadId),
-    ...(pendingQuestions.length > 0 ? { pendingQuestions } : {}),
+    ...(pendingInteractions.length > 0 ? { pendingInteractions } : {}),
   };
 }
 

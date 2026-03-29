@@ -78,7 +78,7 @@ function createBootstrap(overrides: Record<string, unknown> = {}) {
     },
     latestRun: null,
     latestPhaseTurns: [],
-    channelRevisions: {
+    topicRevisions: {
       threads: 1,
       "thread-detail": 1,
       "run-detail": 1,
@@ -91,7 +91,7 @@ function createBootstrap(overrides: Record<string, unknown> = {}) {
 describe("thread-store", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.resetModules();
+    vi.resetModules?.();
     bindContextMock.mockReset();
     sendRequestMock.mockReset();
     disconnectMock.mockReset();
@@ -234,13 +234,13 @@ describe("thread-store", () => {
 
     listeners[0]?.({
       type: "push",
-      channel: "thread-detail",
+      topic: "thread-detail",
       revision: 2,
       scope: {
         workspaceId: "workspace-1",
         threadId: "thread-1",
       },
-      payload: {
+      event: {
         workspaceId: "workspace-1",
         threadId: "thread-1",
         detail: {
@@ -319,13 +319,13 @@ describe("thread-store", () => {
 
     listeners[0]?.({
       type: "push",
-      channel: "thread-detail",
+      topic: "thread-detail",
       revision: 2,
       scope: {
         workspaceId: "workspace-1",
         threadId: "thread-1",
       },
-      payload: {
+      event: {
         workspaceId: "workspace-1",
         threadId: "thread-1",
         detail: {
@@ -406,13 +406,13 @@ describe("thread-store", () => {
 
     listeners[0]?.({
       type: "push",
-      channel: "run-detail",
+      topic: "run-detail",
       revision: 3,
       scope: {
         workspaceId: "workspace-1",
         threadId: "thread-1",
       },
-      payload: {
+      event: {
         workspaceId: "workspace-1",
         threadId: "thread-1",
         latestRun: {
@@ -485,6 +485,7 @@ describe("thread-store", () => {
   describe("question resolution", () => {
     function createPendingQuestion(id: string) {
       return {
+        kind: "question" as const,
         question: {
           id,
           threadId: "thread-1",
@@ -497,7 +498,7 @@ describe("thread-store", () => {
       };
     }
 
-    it("setPendingQuestions stores questions and resets activeQuestionIndex", async () => {
+    it("setPendingInteractions stores questions and resets activeInteractionIndex", async () => {
       getItemMock.mockReturnValue("{}");
       bindContextMock.mockResolvedValue(createBootstrap());
       const { useThreadStore } = await import("@/stores/thread-store");
@@ -505,16 +506,16 @@ describe("thread-store", () => {
 
       useThreadStore
         .getState()
-        .setPendingQuestions([
+        .setPendingInteractions([
           createPendingQuestion("q-1"),
           createPendingQuestion("q-2"),
         ]);
 
-      expect(useThreadStore.getState().pendingQuestions).toHaveLength(2);
-      expect(useThreadStore.getState().activeQuestionIndex).toBe(0);
+      expect(useThreadStore.getState().pendingInteractions).toHaveLength(2);
+      expect(useThreadStore.getState().activeInteractionIndex).toBe(0);
     });
 
-    it("resolveQuestion updates local state and sends server request", async () => {
+    it("resolveInteraction updates local state and sends server request", async () => {
       getItemMock.mockReturnValue("{}");
       bindContextMock.mockResolvedValue(createBootstrap());
       sendRequestMock.mockResolvedValue({});
@@ -523,8 +524,8 @@ describe("thread-store", () => {
 
       useThreadStore
         .getState()
-        .setPendingQuestions([createPendingQuestion("q-1")]);
-      useThreadStore.getState().resolveQuestion("q-1", {
+        .setPendingInteractions([createPendingQuestion("q-1")]);
+      useThreadStore.getState().resolveInteraction("q-1", {
         selectedOptions: [0],
         customText: "Important",
       });
@@ -532,20 +533,24 @@ describe("thread-store", () => {
       // Check local state
       const resolved = useThreadStore
         .getState()
-        .pendingQuestions.find((q) => q.question.id === "q-1");
+        .pendingInteractions.find(
+          (q) => q.kind === "question" && q.question.id === "q-1",
+        );
       expect(resolved?.status).toBe("resolved");
-      expect(resolved?.answer?.selectedOptions).toEqual([0]);
+      expect(
+        resolved?.kind === "question" ? resolved.answer?.selectedOptions : [],
+      ).toEqual([0]);
 
       // Check server call
       await vi.waitFor(() => {
         expect(sendRequestMock).toHaveBeenCalledWith(
-          "question.resolve",
-          expect.objectContaining({ questionId: "q-1" }),
+          "interaction.respond",
+          expect.objectContaining({ interactionId: "q-1", kind: "question" }),
         );
       });
     });
 
-    it("resolveQuestion advances activeQuestionIndex", async () => {
+    it("resolveInteraction advances activeInteractionIndex", async () => {
       getItemMock.mockReturnValue("{}");
       bindContextMock.mockResolvedValue(createBootstrap());
       sendRequestMock.mockResolvedValue({});
@@ -554,19 +559,19 @@ describe("thread-store", () => {
 
       useThreadStore
         .getState()
-        .setPendingQuestions([
+        .setPendingInteractions([
           createPendingQuestion("q-1"),
           createPendingQuestion("q-2"),
           createPendingQuestion("q-3"),
         ]);
       useThreadStore
         .getState()
-        .resolveQuestion("q-1", { selectedOptions: [0] });
+        .resolveInteraction("q-1", { selectedOptions: [0] });
 
-      expect(useThreadStore.getState().activeQuestionIndex).toBe(1);
+      expect(useThreadStore.getState().activeInteractionIndex).toBe(1);
     });
 
-    it("clearPendingQuestions empties questions and resets index", async () => {
+    it("clearPendingInteractions empties questions and resets index", async () => {
       getItemMock.mockReturnValue("{}");
       bindContextMock.mockResolvedValue(createBootstrap());
       const { useThreadStore } = await import("@/stores/thread-store");
@@ -574,14 +579,14 @@ describe("thread-store", () => {
 
       useThreadStore
         .getState()
-        .setPendingQuestions([createPendingQuestion("q-1")]);
-      useThreadStore.getState().clearPendingQuestions();
+        .setPendingInteractions([createPendingQuestion("q-1")]);
+      useThreadStore.getState().clearPendingInteractions();
 
-      expect(useThreadStore.getState().pendingQuestions).toEqual([]);
-      expect(useThreadStore.getState().activeQuestionIndex).toBe(0);
+      expect(useThreadStore.getState().pendingInteractions).toEqual([]);
+      expect(useThreadStore.getState().activeInteractionIndex).toBe(0);
     });
 
-    it("selectThread clears pending questions", async () => {
+    it("selectThread clears pending interactions", async () => {
       getItemMock.mockReturnValue("{}");
       // Call 1: hydrateWorkspace initial bindContext (activeThreadId defaults to thread-2)
       // Call 2: hydrateWorkspace rebind (resolveRestoredThreadId picks primary thread-1)
@@ -627,15 +632,15 @@ describe("thread-store", () => {
 
       useThreadStore
         .getState()
-        .setPendingQuestions([
+        .setPendingInteractions([
           createPendingQuestion("q-1"),
           createPendingQuestion("q-2"),
         ]);
-      expect(useThreadStore.getState().pendingQuestions).toHaveLength(2);
+      expect(useThreadStore.getState().pendingInteractions).toHaveLength(2);
 
       await useThreadStore.getState().selectThread("thread-1");
 
-      expect(useThreadStore.getState().pendingQuestions).toEqual([]);
+      expect(useThreadStore.getState().pendingInteractions).toEqual([]);
     });
   });
 });

@@ -8,41 +8,33 @@ import type {
 import type {
   AnalysisMutationEvent,
   AnalysisProgressEvent,
-  ChatContentKind,
 } from "./events";
+import type { AnalysisRuntimeOverrides, RuntimeProvider } from "./analysis-runtime";
 import type { AnalysisStateResponse, RunStatus } from "./api";
-import type { RuntimeProvider } from "./analysis-runtime";
 import type { RuntimeError } from "./runtime-error";
-import type { PendingQuestionState } from "./user-input";
+import type { PendingInteractionState } from "./user-input";
 
-export type WorkspaceRuntimeChannel =
+export type WorkspaceRuntimeTopic =
   | "threads"
   | "thread-detail"
   | "run-detail"
-  | "analysis-mutation"
-  | "analysis-status"
-  | "analysis-progress"
-  | "chat-event";
+  | "analysis"
+  | "chat";
 
 export interface WorkspaceRuntimeScope {
   workspaceId: string;
   threadId?: string;
 }
 
-export type WorkspaceRuntimeChannelRevisions = Partial<
-  Record<WorkspaceRuntimeChannel, number>
+export type WorkspaceRuntimeTopicRevisions = Partial<
+  Record<WorkspaceRuntimeTopic, number>
 >;
 
 export interface WorkspaceRuntimeThreadDetail {
   thread: ThreadState;
   messages: ThreadMessageState[];
   activities: ActivityEntry[];
-  pendingQuestions?: PendingQuestionState[];
-}
-
-export interface WorkspaceRuntimeRunDetail {
-  latestRun: RunState | null;
-  latestPhaseTurns: PhaseTurnSummaryState[];
+  pendingInteractions?: PendingInteractionState[];
 }
 
 export interface WorkspaceRuntimeBootstrap {
@@ -52,102 +44,116 @@ export interface WorkspaceRuntimeBootstrap {
   activeThreadDetail: WorkspaceRuntimeThreadDetail | null;
   latestRun: RunState | null;
   latestPhaseTurns: PhaseTurnSummaryState[];
-  channelRevisions: WorkspaceRuntimeChannelRevisions;
+  topicRevisions: WorkspaceRuntimeTopicRevisions;
   serverConnectionId: string;
 }
 
-export interface WorkspaceRuntimeThreadsPushPayload {
+export interface WorkspaceRuntimeThreadsUpdatedEvent {
+  kind: "threads.updated";
   workspaceId: string;
   threads: ThreadState[];
 }
 
-export interface WorkspaceRuntimeThreadDetailPushPayload {
+export interface WorkspaceRuntimeThreadDetailUpdatedEvent {
+  kind: "thread.detail.updated";
   workspaceId: string;
   threadId?: string;
   detail: WorkspaceRuntimeThreadDetail | null;
 }
 
-export interface WorkspaceRuntimeRunDetailPushPayload {
+export interface WorkspaceRuntimeRunDetailUpdatedEvent {
+  kind: "run.detail.updated";
   workspaceId: string;
   threadId?: string;
   latestRun: RunState | null;
   latestPhaseTurns: PhaseTurnSummaryState[];
 }
 
-export interface WorkspaceRuntimeAnalysisMutationPayload {
+export interface WorkspaceRuntimeAnalysisMutationEvent {
+  kind: "analysis.mutation";
   event: AnalysisMutationEvent;
 }
 
-export interface WorkspaceRuntimeAnalysisStatusPayload {
+export interface WorkspaceRuntimeAnalysisStatusEvent {
+  kind: "analysis.status";
   runStatus: RunStatus;
 }
 
-export interface WorkspaceRuntimeAnalysisProgressPayload {
+export interface WorkspaceRuntimeAnalysisProgressEvent {
+  kind: "analysis.progress";
   event: AnalysisProgressEvent;
 }
 
-export interface WorkspaceRuntimeChatTurnDeltaEvent {
-  type: "chat.message.delta";
+export interface WorkspaceRuntimeChatMessageDeltaEvent {
+  kind: "chat.message.delta";
   correlationId: string;
   content: string;
-  content_kind?: ChatContentKind;
+  contentKind?: "output" | "reasoning";
 }
 
-export interface WorkspaceRuntimeChatTurnCompleteEvent {
-  type: "chat.message.complete";
+export interface WorkspaceRuntimeChatMessageCompleteEvent {
+  kind: "chat.message.complete";
   correlationId: string;
   messageId?: string;
   content: string;
 }
 
-export interface WorkspaceRuntimeChatTurnErrorEvent {
-  type: "chat.message.error";
+export interface WorkspaceRuntimeChatMessageErrorEvent {
+  kind: "chat.message.error";
   correlationId: string;
   error: RuntimeError;
 }
 
 export interface WorkspaceRuntimeChatToolStartEvent {
-  type: "chat.tool.start";
+  kind: "chat.tool.start";
   correlationId: string;
   toolName: string;
 }
 
 export interface WorkspaceRuntimeChatToolResultEvent {
-  type: "chat.tool.result";
+  kind: "chat.tool.result";
   correlationId: string;
   toolName: string;
   output?: unknown;
 }
 
 export interface WorkspaceRuntimeChatToolErrorEvent {
-  type: "chat.tool.error";
+  kind: "chat.tool.error";
   correlationId: string;
   toolName: string;
   error: string;
 }
 
-export type WorkspaceRuntimeChatEvent =
-  | WorkspaceRuntimeChatTurnDeltaEvent
-  | WorkspaceRuntimeChatTurnCompleteEvent
-  | WorkspaceRuntimeChatTurnErrorEvent
+export type WorkspaceRuntimeEvent =
+  | WorkspaceRuntimeThreadsUpdatedEvent
+  | WorkspaceRuntimeThreadDetailUpdatedEvent
+  | WorkspaceRuntimeRunDetailUpdatedEvent
+  | WorkspaceRuntimeAnalysisMutationEvent
+  | WorkspaceRuntimeAnalysisStatusEvent
+  | WorkspaceRuntimeAnalysisProgressEvent
+  | WorkspaceRuntimeChatMessageDeltaEvent
+  | WorkspaceRuntimeChatMessageCompleteEvent
+  | WorkspaceRuntimeChatMessageErrorEvent
   | WorkspaceRuntimeChatToolStartEvent
   | WorkspaceRuntimeChatToolResultEvent
   | WorkspaceRuntimeChatToolErrorEvent;
 
-export interface WorkspaceRuntimeChatEventPayload {
-  correlationId: string;
-  event: WorkspaceRuntimeChatEvent;
-}
-
-export interface WorkspaceRuntimePushPayloadMap {
-  threads: WorkspaceRuntimeThreadsPushPayload;
-  "thread-detail": WorkspaceRuntimeThreadDetailPushPayload;
-  "run-detail": WorkspaceRuntimeRunDetailPushPayload;
-  "analysis-mutation": WorkspaceRuntimeAnalysisMutationPayload;
-  "analysis-status": WorkspaceRuntimeAnalysisStatusPayload;
-  "analysis-progress": WorkspaceRuntimeAnalysisProgressPayload;
-  "chat-event": WorkspaceRuntimeChatEventPayload;
-}
+export type WorkspaceRuntimeEventByTopic = {
+  threads: WorkspaceRuntimeThreadsUpdatedEvent;
+  "thread-detail": WorkspaceRuntimeThreadDetailUpdatedEvent;
+  "run-detail": WorkspaceRuntimeRunDetailUpdatedEvent;
+  analysis:
+    | WorkspaceRuntimeAnalysisMutationEvent
+    | WorkspaceRuntimeAnalysisStatusEvent
+    | WorkspaceRuntimeAnalysisProgressEvent;
+  chat:
+    | WorkspaceRuntimeChatMessageDeltaEvent
+    | WorkspaceRuntimeChatMessageCompleteEvent
+    | WorkspaceRuntimeChatMessageErrorEvent
+    | WorkspaceRuntimeChatToolStartEvent
+    | WorkspaceRuntimeChatToolResultEvent
+    | WorkspaceRuntimeChatToolErrorEvent;
+};
 
 export interface WorkspaceRuntimeClientHello {
   type: "client_hello";
@@ -155,7 +161,7 @@ export interface WorkspaceRuntimeClientHello {
   workspaceId: string;
   activeThreadId?: string;
   activeChatCorrelations?: string[];
-  lastSeenByChannel?: WorkspaceRuntimeChannelRevisions;
+  lastSeenByTopic?: WorkspaceRuntimeTopicRevisions;
 }
 
 export interface WorkspaceRuntimeCreateThreadRequestPayload {
@@ -166,9 +172,12 @@ export interface WorkspaceRuntimeCreateThreadRequestPayload {
 export interface WorkspaceRuntimeResolveQuestionPayload {
   workspaceId: string;
   threadId: string;
-  questionId: string;
+  interactionId: string;
+  kind: "question" | "approval";
   selectedOptions?: number[];
   customText?: string;
+  approved?: boolean;
+  reason?: string;
 }
 
 export interface WorkspaceRuntimeRenameThreadRequestPayload {
@@ -206,11 +215,26 @@ export interface WorkspaceRuntimeAnalysisStateRequestPayload {
   workspaceId: string;
 }
 
+export interface WorkspaceRuntimeAnalysisStartRequestPayload {
+  workspaceId: string;
+  threadId?: string;
+  topic: string;
+  provider?: string;
+  model?: string;
+  runtime?: AnalysisRuntimeOverrides;
+}
+
+export interface WorkspaceRuntimeAnalysisAbortRequestPayload {
+  workspaceId: string;
+}
+
 export interface WorkspaceRuntimeRequestPayloadMap {
+  "analysis.start": WorkspaceRuntimeAnalysisStartRequestPayload;
+  "analysis.abort": WorkspaceRuntimeAnalysisAbortRequestPayload;
   "workspace.thread.create": WorkspaceRuntimeCreateThreadRequestPayload;
   "workspace.thread.rename": WorkspaceRuntimeRenameThreadRequestPayload;
   "workspace.thread.delete": WorkspaceRuntimeDeleteThreadRequestPayload;
-  "question.resolve": WorkspaceRuntimeResolveQuestionPayload;
+  "interaction.respond": WorkspaceRuntimeResolveQuestionPayload;
   "chat.turn.start": WorkspaceRuntimeChatTurnStartRequestPayload;
   "analysis.state.get": WorkspaceRuntimeAnalysisStateRequestPayload;
 }
@@ -244,13 +268,13 @@ export interface WorkspaceRuntimeBootstrapEnvelope {
 }
 
 export type WorkspaceRuntimePushEnvelope<
-  TChannel extends WorkspaceRuntimeChannel = WorkspaceRuntimeChannel,
+  TTopic extends WorkspaceRuntimeTopic = WorkspaceRuntimeTopic,
 > = {
   type: "push";
-  channel: TChannel;
+  topic: TTopic;
   revision: number;
   scope: WorkspaceRuntimeScope;
-  payload: WorkspaceRuntimePushPayloadMap[TChannel];
+  event: WorkspaceRuntimeEventByTopic[TTopic];
   replayed?: boolean;
 };
 

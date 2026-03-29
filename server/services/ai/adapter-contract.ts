@@ -5,13 +5,13 @@ import type {
   RuntimeProvider,
 } from "../../../shared/types/analysis-runtime";
 import { normalizeRuntimeProvider } from "../../../shared/types/analysis-runtime";
-import type { ChatEvent } from "../../../shared/types/events";
 import type { RuntimeError } from "../../../shared/types/runtime-error";
 import {
   createProcessRuntimeError,
   createProviderRuntimeError,
 } from "../../../shared/types/runtime-error";
 import type { AnalysisActivityCallback } from "./analysis-activity";
+import type { RuntimeAdapterChatEvent } from "./runtime-adapter-events";
 import type {
   ProviderSessionBindingRecoveryOutcome,
   ProviderSessionBindingState,
@@ -83,7 +83,9 @@ export interface RuntimeSessionDiagnostics {
 export interface RuntimeAdapterSession {
   provider: RuntimeProvider;
   context: RuntimeAdapterSessionContext;
-  streamChatTurn(input: RuntimeChatTurnInput): AsyncGenerator<ChatEvent>;
+  streamChatTurn(
+    input: RuntimeChatTurnInput,
+  ): AsyncGenerator<RuntimeAdapterChatEvent>;
   runStructuredTurn<T = unknown>(input: RuntimeStructuredTurnInput): Promise<T>;
   getDiagnostics(): RuntimeSessionDiagnostics;
   getBinding(): ProviderSessionBindingState | null;

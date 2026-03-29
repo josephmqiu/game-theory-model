@@ -3,9 +3,7 @@ import type {
   AnalysisRelationship,
   EntityProvenance,
 } from "./entity";
-import type { RunStatus } from "./api";
 import type { RuntimeError } from "./runtime-error";
-import type { UserInputQuestion } from "./user-input";
 
 export interface PhaseSummary {
   entitiesCreated: number;
@@ -118,101 +116,3 @@ export type AnalysisMutationEvent =
   | { type: "state_changed" };
 
 export type AnalysisEvent = AnalysisProgressEvent | AnalysisMutationEvent;
-
-export type ChatContentKind = "output" | "reasoning";
-
-export interface ChatTextDeltaEvent {
-  type: "text_delta";
-  content: string;
-  content_kind?: ChatContentKind;
-}
-
-export interface ChatToolCallStartEvent {
-  type: "tool_call_start";
-  toolName: string;
-  input: unknown;
-}
-
-export interface ChatToolCallResultEvent {
-  type: "tool_call_result";
-  toolName: string;
-  output: unknown;
-}
-
-export interface ChatToolCallErrorEvent {
-  type: "tool_call_error";
-  toolName: string;
-  error: string;
-}
-
-export interface ChatTurnCompleteEvent {
-  type: "turn_complete";
-}
-
-export interface ChatErrorEvent {
-  type: "error";
-  error: RuntimeError;
-}
-
-export interface ChatUserInputRequestedEvent {
-  type: "user_input_requested";
-  questions: UserInputQuestion[];
-}
-
-export type ChatEvent =
-  | ChatTextDeltaEvent
-  | ChatToolCallStartEvent
-  | ChatToolCallResultEvent
-  | ChatToolCallErrorEvent
-  | ChatUserInputRequestedEvent
-  | ChatTurnCompleteEvent
-  | ChatErrorEvent;
-
-export type AnalysisMutationEnvelope = {
-  channel: "mutation";
-  revision: number;
-} & AnalysisMutationEvent;
-
-export type AnalysisProgressEnvelope = {
-  channel: "progress";
-  revision: number;
-} & AnalysisProgressEvent;
-
-export type AnalysisStatusEnvelope = {
-  channel: "status";
-  revision: number;
-} & RunStatus;
-
-export interface AnalysisPingEnvelope {
-  channel: "ping";
-  revision: number;
-}
-
-export type AnalysisStreamEnvelope =
-  | AnalysisMutationEnvelope
-  | AnalysisProgressEnvelope
-  | AnalysisStatusEnvelope
-  | AnalysisPingEnvelope;
-
-const CHAT_EVENT_TYPES = new Set([
-  "text_delta",
-  "tool_call_start",
-  "tool_call_result",
-  "tool_call_error",
-  "user_input_requested",
-  "turn_complete",
-  "error",
-]);
-
-export function isChatEvent(event: unknown): event is ChatEvent {
-  return (
-    typeof event === "object" &&
-    event !== null &&
-    "type" in event &&
-    CHAT_EVENT_TYPES.has((event as { type: string }).type)
-  );
-}
-
-export function isTerminalChatEvent(event: ChatEvent): boolean {
-  return event.type === "turn_complete" || event.type === "error";
-}

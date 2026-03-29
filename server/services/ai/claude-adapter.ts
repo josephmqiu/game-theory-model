@@ -2,7 +2,6 @@
 // Provides: streamChat (interactive chat), createToolBasedAnalysisMcpServer (analysis),
 // and runStructuredTurn (synthesis/report generation).
 
-import type { ChatEvent } from "../../../shared/types/events";
 import type {
   AnalysisRunOptions,
   RuntimeAdapter,
@@ -14,6 +13,7 @@ import type {
   StreamChatOptions,
 } from "./adapter-contract";
 import { mapRuntimeModels } from "./adapter-contract";
+import type { RuntimeAdapterChatEvent } from "./runtime-adapter-events";
 import {
   createProcessRuntimeError,
   createProviderRuntimeError,
@@ -835,7 +835,7 @@ const CHAT_TIMEOUT_MS = analysisRuntimeConfig.claude.chatTimeoutMs;
 
 /**
  * Stream a chat turn using the Claude Agent SDK.
- * Yields normalized ChatEvent objects.
+ * Yields normalized runtime adapter chat events.
  *
  * Note on single-prompt limitation: The Claude Agent SDK `query()` accepts a
  * single `prompt` string, not a multi-turn message array. The caller
@@ -857,7 +857,7 @@ async function* streamClaudeChatTurn(
   input: RuntimeChatTurnInput,
   session: ClaudeSessionState,
   allowResumeRetry = true,
-): AsyncGenerator<ChatEvent> {
+): AsyncGenerator<RuntimeAdapterChatEvent> {
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
   const { buildClaudeAgentEnv, getClaudeAgentDebugFilePath } =
     await import("../../utils/resolve-claude-agent-env");
@@ -1601,7 +1601,9 @@ class ClaudeRuntimeSession implements RuntimeAdapterSession {
     this.state = createClaudeSessionState(context, binding);
   }
 
-  streamChatTurn(input: RuntimeChatTurnInput): AsyncGenerator<ChatEvent> {
+  streamChatTurn(
+    input: RuntimeChatTurnInput,
+  ): AsyncGenerator<RuntimeAdapterChatEvent> {
     return streamClaudeChatTurn(input, this.state);
   }
 
@@ -1661,7 +1663,7 @@ export async function* streamChat(
   systemPrompt: string,
   model: string,
   options?: StreamChatOptions,
-): AsyncGenerator<ChatEvent> {
+): AsyncGenerator<RuntimeAdapterChatEvent> {
   const session = claudeRuntimeAdapter.createSession({
     threadId: options?.runId ?? "claude-chat",
     ...(options?.runId ? { runId: options.runId } : {}),

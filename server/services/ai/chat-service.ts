@@ -11,7 +11,7 @@ import {
 import { getProviderSessionBinding } from "../workspace/provider-session-binding-service";
 import { createProcessRuntimeError } from "../../../shared/types/runtime-error";
 import type {
-  WorkspaceRuntimeChatEvent,
+  WorkspaceRuntimeEventByTopic,
   WorkspaceRuntimeChatTurnStartRequestPayload,
 } from "../../../shared/types/workspace-runtime";
 import { getRuntimeAdapter } from "./adapter-contract";
@@ -142,7 +142,7 @@ export interface StartChatTurnOptions {
   correlationId?: string;
   producer?: string;
   onEvent?: (
-    event: WorkspaceRuntimeChatEvent,
+    event: WorkspaceRuntimeEventByTopic["chat"],
     context: {
       workspaceId: string;
       threadId: string;
@@ -240,11 +240,11 @@ async function executeChatTurn(
           }
           options.onEvent?.(
             {
-              type: "chat.message.delta",
+              kind: "chat.message.delta",
               correlationId: options.correlationId,
               content: eventChunk.content,
               ...(eventChunk.content_kind
-                ? { content_kind: eventChunk.content_kind }
+                ? { contentKind: eventChunk.content_kind }
                 : {}),
             },
             {
@@ -263,7 +263,7 @@ async function executeChatTurn(
           pendingToolMetadata.set(eventChunk.toolName, queue);
           options.onEvent?.(
             {
-              type: "chat.tool.start",
+              kind: "chat.tool.start",
               correlationId: options.correlationId,
               toolName: eventChunk.toolName,
             },
@@ -310,7 +310,7 @@ async function executeChatTurn(
           if (eventChunk.type === "tool_call_error") {
             options.onEvent?.(
               {
-                type: "chat.tool.error",
+                kind: "chat.tool.error",
                 correlationId: options.correlationId,
                 toolName: eventChunk.toolName,
                 error: eventChunk.error,
@@ -324,7 +324,7 @@ async function executeChatTurn(
           } else {
             options.onEvent?.(
               {
-                type: "chat.tool.result",
+                kind: "chat.tool.result",
                 correlationId: options.correlationId,
                 toolName: eventChunk.toolName,
                 output: eventChunk.output,
@@ -341,7 +341,7 @@ async function executeChatTurn(
         if (eventChunk.type === "error") {
           options.onEvent?.(
             {
-              type: "chat.message.error",
+              kind: "chat.message.error",
               correlationId: options.correlationId,
               error: eventChunk.error,
             },
@@ -395,7 +395,7 @@ async function executeChatTurn(
 
     options.onEvent?.(
       {
-        type: "chat.message.complete",
+        kind: "chat.message.complete",
         correlationId: options.correlationId,
         ...(assistantMessageId ? { messageId: assistantMessageId } : {}),
         content: assistantMessageContent,
@@ -435,7 +435,7 @@ async function executeChatTurn(
 
     options.onEvent?.(
       {
-        type: "chat.message.error",
+        kind: "chat.message.error",
         correlationId: options.correlationId,
         error: buildRuntimeChatError(message, request.provider),
       },

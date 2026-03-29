@@ -89,7 +89,7 @@ function bootstrapPayload(connectionId = "conn-1") {
       activeThreadDetail: null,
       latestRun: null,
       latestPhaseTurns: [],
-      channelRevisions: {
+      topicRevisions: {
         threads: 1,
       },
       serverConnectionId: connectionId,
@@ -142,10 +142,12 @@ describe("workspace-runtime-client", () => {
       type: "client_hello",
       workspaceId: "workspace-1",
       activeThreadId: "thread-1",
-      lastSeenByChannel: {
+      lastSeenByTopic: {
         threads: 0,
         "thread-detail": 0,
         "run-detail": 0,
+        analysis: 0,
+        chat: 0,
       },
     });
 
@@ -249,13 +251,13 @@ describe("workspace-runtime-client", () => {
     firstSocket.emitMessage(bootstrapPayload("conn-1"));
     await bootstrapPromise;
 
-    // Emit a push message with revision 5 on the "threads" channel
+    // Emit a push message with revision 5 on the "threads" topic
     firstSocket.emitMessage({
       type: "push",
-      channel: "threads",
+      topic: "threads",
       revision: 5,
       scope: { workspaceId: "workspace-1" },
-      payload: { workspaceId: "workspace-1", threads: [] },
+      event: { kind: "threads.updated", workspaceId: "workspace-1", threads: [] },
     });
 
     // Close the socket to trigger reconnect
@@ -273,7 +275,7 @@ describe("workspace-runtime-client", () => {
       type: "client_hello",
       connectionId: "conn-1",
       workspaceId: "workspace-1",
-      lastSeenByChannel: {
+      lastSeenByTopic: {
         threads: 5,
       },
     });
@@ -375,16 +377,14 @@ describe("workspace-runtime-client", () => {
 
     socket.emitMessage({
       type: "push",
-      channel: "chat-event",
+      topic: "chat",
       revision: 1,
       scope: { workspaceId: "workspace-1", threadId: "thread-1" },
-      payload: {
+      event: {
+        kind: "chat.message.delta",
         correlationId: "other-correlation",
-        event: {
-          type: "chat.message.delta",
-          correlationId: "other-correlation",
-          content: "ignore me",
-        },
+        content: "ignore me",
+        contentKind: "text",
       },
     });
     socket.emitMessage({
@@ -399,41 +399,37 @@ describe("workspace-runtime-client", () => {
     });
     socket.emitMessage({
       type: "push",
-      channel: "chat-event",
+      topic: "chat",
       revision: 1,
       scope: { workspaceId: "workspace-1", threadId: "thread-1" },
-      payload: {
+      event: {
+        kind: "chat.message.delta",
         correlationId: "corr-1",
-        event: {
-          type: "chat.message.delta",
-          correlationId: "corr-1",
-          content: "hello ",
-        },
+        content: "hello ",
+        contentKind: "text",
       },
     });
     socket.emitMessage({
       type: "push",
-      channel: "chat-event",
+      topic: "chat",
       revision: 2,
       scope: { workspaceId: "workspace-1", threadId: "thread-1" },
-      payload: {
+      event: {
+        kind: "chat.message.complete",
         correlationId: "corr-1",
-        event: {
-          type: "chat.message.complete",
-          correlationId: "corr-1",
-          content: "hello world",
-        },
+        content: "hello world",
       },
     });
 
     await expect(consume).resolves.toEqual([
       {
-        type: "chat.message.delta",
+        kind: "chat.message.delta",
         correlationId: "corr-1",
         content: "hello ",
+        contentKind: "text",
       },
       {
-        type: "chat.message.complete",
+        kind: "chat.message.complete",
         correlationId: "corr-1",
         content: "hello world",
       },
@@ -487,16 +483,13 @@ describe("workspace-runtime-client", () => {
     secondSocket.emitMessage(bootstrapPayload("conn-2"));
     secondSocket.emitMessage({
       type: "push",
-      channel: "chat-event",
+      topic: "chat",
       revision: 1,
       scope: { workspaceId: "workspace-1", threadId: "thread-1" },
-      payload: {
+      event: {
+        kind: "chat.message.complete",
         correlationId: "corr-1",
-        event: {
-          type: "chat.message.complete",
-          correlationId: "corr-1",
-          content: "done",
-        },
+        content: "done",
       },
     });
 
@@ -544,24 +537,21 @@ describe("workspace-runtime-client", () => {
     secondSocket.emitMessage(bootstrapPayload("conn-2"));
     secondSocket.emitMessage({
       type: "push",
-      channel: "chat-event",
+      topic: "chat",
       revision: 1,
       replayed: true,
       scope: { workspaceId: "workspace-1", threadId: "thread-2" },
-      payload: {
+      event: {
+        kind: "chat.message.complete",
         correlationId: "corr-1",
-        event: {
-          type: "chat.message.complete",
-          correlationId: "corr-1",
-          messageId: "server-msg-1",
-          content: "hello world",
-        },
+        messageId: "server-msg-1",
+        content: "hello world",
       },
     });
 
     await expect(consume).resolves.toEqual([
       {
-        type: "chat.message.complete",
+        kind: "chat.message.complete",
         correlationId: "corr-1",
         messageId: "server-msg-1",
         content: "hello world",

@@ -236,7 +236,7 @@ Added outbound request queueing/replay to `workspace-runtime-client`. Requests s
 
 ### Chat transport — canonical workspace runtime WebSocket (2026-03-29)
 
-Chat now flows only through the workspace runtime WebSocket with `chat.turn.start`, correlation-scoped `chat-event` pushes, reconnect reattachment for active correlations, and server-owned token-aware history budgeting from SQLite.
+Chat now flows only through the workspace runtime WebSocket with `chat.turn.start`, correlation-scoped `chat` topic pushes, reconnect reattachment for active correlations, and server-owned token-aware history budgeting from SQLite.
 
 ### Canvas navigation and entity inspection (2026-03-27)
 

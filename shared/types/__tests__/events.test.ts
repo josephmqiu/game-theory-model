@@ -4,7 +4,6 @@ import type {
   AnalysisProgressEvent,
   AnalysisMutationEvent,
   AnalysisEvent,
-  ChatEvent,
 } from "../events";
 import type {
   AnalysisEntity,
@@ -286,27 +285,5 @@ describe("AnalysisEvent union", () => {
     expect(events).toHaveLength(9);
     expect(progressEvents).toHaveLength(5);
     expect(mutationEvents).toHaveLength(8);
-  });
-});
-
-describe("ChatEvent", () => {
-  it("accepts chat event variants", () => {
-    const events: ChatEvent[] = [
-      { type: "text_delta", content: "hello" },
-      { type: "tool_call_start", toolName: "get_entities", input: {} },
-      { type: "tool_call_result", toolName: "get_entities", output: [] },
-      { type: "tool_call_error", toolName: "get_entities", error: "failed" },
-      { type: "turn_complete" },
-      {
-        type: "error",
-        error: createTransportRuntimeError("timeout", {
-          provider: "claude",
-          transport: "http",
-          retryable: false,
-        }),
-      },
-    ];
-
-    expect(events).toHaveLength(6);
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ChatEvent } from "../../../../shared/types/events";
+import type { RuntimeAdapterChatEvent as ChatEvent } from "../runtime-adapter-events";
 import { EventEmitter } from "node:events";
 
 const ORIGINAL_ENV = { ...process.env };

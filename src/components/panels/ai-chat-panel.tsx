@@ -352,9 +352,9 @@ export default function AIChatPanel({
   const threadError = useThreadStore((s) => s.error);
   const selectThread = useThreadStore((s) => s.selectThread);
   const createThread = useThreadStore((s) => s.createThread);
-  const pendingQuestions = useThreadStore((s) => s.pendingQuestions);
-  const activeQuestionIndex = useThreadStore((s) => s.activeQuestionIndex);
-  const resolveQuestion = useThreadStore((s) => s.resolveQuestion);
+  const pendingInteractions = useThreadStore((s) => s.pendingInteractions);
+  const activeInteractionIndex = useThreadStore((s) => s.activeInteractionIndex);
+  const resolveInteraction = useThreadStore((s) => s.resolveInteraction);
   const providers = useAgentSettingsStore((s) => s.providers);
   const providersHydrated = useAgentSettingsStore((s) => s.isHydrated);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
@@ -366,8 +366,11 @@ export default function AIChatPanel({
 
   const noAvailableModels = !isLoadingModels && availableModels.length === 0;
   const canUseModel = !isLoadingModels && availableModels.length > 0;
+  const pendingQuestions = pendingInteractions.filter(
+    (interaction) => interaction.kind === "question",
+  );
   const hasActivePendingQuestion = pendingQuestions.some(
-    (pq) => pq.status === "pending",
+    (interaction) => interaction.status === "pending",
   );
   const canSendMessage =
     canUseModel && !isStreaming && !hasActivePendingQuestion && !!input.trim();
@@ -998,9 +1001,9 @@ export default function AIChatPanel({
         {pendingQuestions.length > 0 && (
           <div className="flex flex-col gap-2 mt-2">
             {pendingQuestions.map((pq, idx) => {
-              if (idx > activeQuestionIndex) return null;
+              if (idx > activeInteractionIndex) return null;
               const isPending =
-                pq.status === "pending" && idx === activeQuestionIndex;
+                pq.status === "pending" && idx === activeInteractionIndex;
               const resolvedAnswer = pq.answer
                 ? formatQuestionAnswer(pq)
                 : undefined;
@@ -1013,7 +1016,7 @@ export default function AIChatPanel({
                   isPending={isPending}
                   resolvedAnswer={resolvedAnswer}
                   onResolve={(questionId, answer) =>
-                    resolveQuestion(questionId, answer)
+                    resolveInteraction(questionId, answer)
                   }
                 />
               );

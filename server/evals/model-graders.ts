@@ -73,8 +73,8 @@ async function gradeWithRubric(
 
   const model = options?.model ?? "claude-opus-4-20250514";
 
-  // streamChat is AsyncGenerator<ChatEvent>
-  // ChatEvent = { type: "text_delta"; content: string } | { type: "turn_complete" } | ...
+  // streamChat yields runtime adapter chat events such as text deltas and
+  // terminal completion markers.
   let responseText = "";
   for await (const event of streamChat(userPrompt, systemPrompt, model)) {
     if (event.type === "text_delta") {

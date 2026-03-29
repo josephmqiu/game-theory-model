@@ -37,6 +37,7 @@ function mapQuestionRow(row: Record<string, unknown>): PendingQuestionState {
       )
     : undefined;
   return {
+    kind: "question",
     question,
     status: row.status as UserInputQuestionStatus,
     answer,

@@ -4,12 +4,12 @@ import { useAIStore } from "@/stores/ai-store";
 import { useThreadStore } from "@/stores/thread-store";
 import { CHAT_STREAM_THINKING_CONFIG } from "@/services/ai/ai-runtime-config";
 import type { AIProviderType } from "@/types/agent-settings";
-import type { WorkspaceRuntimeChatEvent } from "../../../shared/types/workspace-runtime";
+import type { WorkspaceRuntimeEventByTopic } from "../../../shared/types/workspace-runtime";
 import { workspaceRuntimeClient } from "@/services/ai/workspace-runtime-client";
 
 // ---------------------------------------------------------------------------
-// Normalized internal chunk — both legacy AIStreamChunk and new ChatEvent
-// get mapped into this before the handler processes them.
+// Normalized internal chunk for workspace runtime chat events before the
+// handler processes them.
 // ---------------------------------------------------------------------------
 
 type NormalizedChunk =
@@ -22,17 +22,17 @@ type NormalizedChunk =
   | { kind: "error"; content: string };
 
 /**
- * Normalizes a WorkspaceRuntimeChatEvent into a NormalizedChunk.
+ * Normalizes a workspace runtime chat event into a NormalizedChunk.
  * Unknown shapes are silently skipped (returns null).
  */
 function normalizeChunk(
-  raw: WorkspaceRuntimeChatEvent,
+  raw: WorkspaceRuntimeEventByTopic["chat"],
 ): NormalizedChunk | null {
-  const t = raw.type;
+  const t = raw.kind;
 
   if (t === "chat.message.delta") {
     return {
-      kind: raw.content_kind === "reasoning" ? "thinking" : "text",
+      kind: raw.contentKind === "reasoning" ? "thinking" : "text",
       content: raw.content,
     };
   }

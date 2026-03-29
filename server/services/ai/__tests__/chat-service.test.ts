@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { WorkspaceRuntimeChatEvent } from "../../../../shared/types/workspace-runtime";
+import type { WorkspaceRuntimeEventByTopic } from "../../../../shared/types/workspace-runtime";
 
 const getAnalysisMock = vi.fn();
 const codexStreamChatMock = vi.fn();
@@ -171,7 +171,7 @@ describe("chat-service.startChatTurn", () => {
 
   it("persists canonical thread messages and emits chat runtime events", async () => {
     const { startChatTurn } = await import("../chat-service");
-    const events: WorkspaceRuntimeChatEvent[] = [];
+    const events: WorkspaceRuntimeEventByTopic["chat"][] = [];
 
     const started = await startChatTurn(
       {
@@ -203,28 +203,28 @@ describe("chat-service.startChatTurn", () => {
     expect(recordMessageMock).toHaveBeenCalledTimes(2);
     expect(events).toEqual([
       {
-        type: "chat.message.delta",
+        kind: "chat.message.delta",
         correlationId: "corr-1",
         content: "Hello ",
       },
       {
-        type: "chat.tool.start",
+        kind: "chat.tool.start",
         correlationId: "corr-1",
         toolName: "search",
       },
       {
-        type: "chat.tool.result",
+        kind: "chat.tool.result",
         correlationId: "corr-1",
         toolName: "search",
         output: { hits: 1 },
       },
       {
-        type: "chat.message.delta",
+        kind: "chat.message.delta",
         correlationId: "corr-1",
         content: "back",
       },
       expect.objectContaining({
-        type: "chat.message.complete",
+        kind: "chat.message.complete",
         correlationId: "corr-1",
         content: "Hello back",
         messageId: expect.any(String),
@@ -275,7 +275,7 @@ describe("chat-service.startChatTurn", () => {
     });
 
     const { startChatTurn } = await import("../chat-service");
-    const events: WorkspaceRuntimeChatEvent[] = [];
+    const events: WorkspaceRuntimeEventByTopic["chat"][] = [];
 
     const started = await startChatTurn(
       {
@@ -296,17 +296,17 @@ describe("chat-service.startChatTurn", () => {
 
     expect(events).toEqual([
       {
-        type: "chat.message.delta",
+        kind: "chat.message.delta",
         correlationId: "corr-err",
         content: "Partial ",
       },
       {
-        type: "chat.message.delta",
+        kind: "chat.message.delta",
         correlationId: "corr-err",
         content: "response",
       },
       expect.objectContaining({
-        type: "chat.message.error",
+        kind: "chat.message.error",
         correlationId: "corr-err",
         error: expect.objectContaining({
           message: "Connection lost",
