@@ -433,7 +433,7 @@ export function createEntityGraphRepository(
     // ── Bulk ──
 
     replaceAnalysis(workspaceId, analysis) {
-      db.exec("BEGIN IMMEDIATE");
+      db.exec("SAVEPOINT replace_analysis");
       try {
         // Clear existing data for this workspace
         clearEntitiesForWorkspace.run({ $workspaceId: workspaceId });
@@ -497,23 +497,23 @@ export function createEntityGraphRepository(
           });
         }
 
-        db.exec("COMMIT");
+        db.exec("RELEASE replace_analysis");
       } catch (error) {
-        db.exec("ROLLBACK");
+        db.exec("ROLLBACK TO replace_analysis");
         throw error;
       }
     },
 
     clearForWorkspace(workspaceId) {
-      db.exec("BEGIN IMMEDIATE");
+      db.exec("SAVEPOINT clear_workspace");
       try {
         clearEntitiesForWorkspace.run({ $workspaceId: workspaceId });
         clearRelationshipsForWorkspace.run({ $workspaceId: workspaceId });
         clearPhaseStatesForWorkspace.run({ $workspaceId: workspaceId });
         clearMetadataForWorkspace.run({ $workspaceId: workspaceId });
-        db.exec("COMMIT");
+        db.exec("RELEASE clear_workspace");
       } catch (error) {
-        db.exec("ROLLBACK");
+        db.exec("ROLLBACK TO clear_workspace");
         throw error;
       }
     },

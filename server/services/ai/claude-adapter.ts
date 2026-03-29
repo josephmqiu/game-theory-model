@@ -838,7 +838,8 @@ const CHAT_TIMEOUT_MS = analysisRuntimeConfig.claude.chatTimeoutMs;
  * Yields normalized ChatEvent objects.
  *
  * Note on single-prompt limitation: The Claude Agent SDK `query()` accepts a
- * single `prompt` string, not a multi-turn message array. The caller (chat.ts)
+ * single `prompt` string, not a multi-turn message array. The caller
+ * (`chat-service`)
  * extracts only the last user message. This means multi-turn conversation
  * history is not forwarded to the SDK — this is a known limitation of the
  * Agent SDK interface, not a bug. Context is provided via the systemPrompt.

@@ -4,6 +4,10 @@ import type {
 } from "../../../shared/types/workspace-runtime";
 
 const revisionByKey = new Map<string, number>();
+const terminalPushByKey = new Map<
+  string,
+  WorkspaceRuntimePushEnvelope<"chat-event">
+>();
 const listeners = new Set<
   (push: WorkspaceRuntimePushEnvelope<"chat-event">) => void
 >();
@@ -20,6 +24,12 @@ function nextRevision(key: string): number {
   const revision = (revisionByKey.get(key) ?? 0) + 1;
   revisionByKey.set(key, revision);
   return revision;
+}
+
+function isTerminalChatEvent(event: WorkspaceRuntimeChatEvent): boolean {
+  return (
+    event.type === "chat.message.complete" || event.type === "chat.message.error"
+  );
 }
 
 export function onWorkspaceRuntimeChatPush(
@@ -52,11 +62,40 @@ export function publishWorkspaceRuntimeChatEvent(input: {
     },
   };
 
+  if (isTerminalChatEvent(input.event)) {
+    terminalPushByKey.set(key, push);
+  } else {
+    terminalPushByKey.delete(key);
+  }
+
   for (const listener of listeners) {
     listener(push);
   }
 }
 
+export function listWorkspaceRuntimeChatReplayPushes(input: {
+  workspaceId: string;
+  activeChatCorrelations?: string[];
+}): WorkspaceRuntimePushEnvelope<"chat-event">[] {
+  if (!input.activeChatCorrelations?.length) {
+    return [];
+  }
+
+  const activeCorrelations = new Set(input.activeChatCorrelations);
+
+  return [...terminalPushByKey.values()]
+    .filter(
+      (push) =>
+        push.scope.workspaceId === input.workspaceId &&
+        activeCorrelations.has(push.payload.correlationId),
+    )
+    .map((push) => ({
+      ...push,
+      replayed: true,
+    }));
+}
+
 export function _resetWorkspaceRuntimeChatPublisherForTest(): void {
   revisionByKey.clear();
+  terminalPushByKey.clear();
 }

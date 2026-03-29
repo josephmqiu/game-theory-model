@@ -72,7 +72,7 @@ This is the most important architectural rule:
 
 - `src/` runs in the **browser** (via Vite). No Node.js APIs allowed.
 - `server/` runs in **Node.js**. Node.js APIs are fine here.
-- Communication between them: HTTP/SSE only.
+- Communication between them: HTTP and WebSocket only.
 - Mocked unit tests cannot catch boundary violations — test in the browser.
 
 ### Testing

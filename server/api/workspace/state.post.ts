@@ -61,17 +61,6 @@ export default defineEventHandler(async (event) => {
   const isImport = parsed.data.import === true;
   const nonEntityFields = extractNonEntityFields(snapshot);
 
-  // Import mode: load entities from snapshot into graph tables first
-  if (isImport) {
-    const snap = snapshot as Record<string, unknown> | null;
-    const analysis = snap?.analysis as Record<string, unknown> | undefined;
-    if (analysis && typeof analysis === "object") {
-      entityGraphService.loadAnalysis(analysis as never, {
-        workspaceId: ws.id,
-      });
-    }
-  }
-
   // Entity data lives exclusively in graph_entities / graph_relationships
   // tables. workspace_json stores only non-entity metadata (layout, threads, etc.).
   const record = getWorkspaceDatabase().workspaces.upsertWorkspace(
@@ -85,6 +74,18 @@ export default defineEventHandler(async (event) => {
       updatedAt: ws.updatedAt,
     }),
   );
+
+  // Import mode: load entities from snapshot into graph tables.
+  // Must run after workspace upsert so the workspace_id FK exists.
+  if (isImport) {
+    const snap = snapshot as Record<string, unknown> | null;
+    const analysis = snap?.analysis as Record<string, unknown> | undefined;
+    if (analysis && typeof analysis === "object") {
+      entityGraphService.loadAnalysis(analysis as never, {
+        workspaceId: ws.id,
+      });
+    }
+  }
 
   return {
     workspace: {

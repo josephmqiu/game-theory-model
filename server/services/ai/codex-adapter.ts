@@ -755,7 +755,7 @@ const PERMISSIONS_APPROVAL = "item/permissions/requestApproval";
  * Stream a chat turn using the Codex app-server.
  * Yields normalized ChatEvent objects.
  *
- * Note on history forwarding: the caller (chat.ts) still extracts only the
+ * Note on history forwarding: the caller (`chat-service`) still extracts only the
  * last user message, and we send it as a single text item in Codex's `input`
  * array. Multi-turn conversation history and image attachments are not
  * forwarded — this is still a known limitation of this integration layer.
@@ -771,6 +771,10 @@ export async function* streamChat(
     purpose: "chat",
   }),
 ): AsyncGenerator<ChatEvent> {
+  console.log("[codex-adapter] streamChat entry", {
+    model,
+    runId: options?.runId,
+  });
   const runId = options?.runId;
   const timeoutMs = options?.timeoutMs ?? CHAT_TIMEOUT_MS;
   const bindingService = getCodexBindingService();
@@ -780,9 +784,12 @@ export async function* streamChat(
 
   let conn: AppServerConnection;
   try {
+    console.log("[codex-adapter] starting app-server...");
     conn = await startAppServer(runId);
+    console.log("[codex-adapter] app-server started, reloading MCP config...");
     await reloadMcpServerConfig(conn, runId);
     await ensureConfiguredMcpServerAvailable(conn, CHAT_TOOL_NAMES, runId);
+    console.log("[codex-adapter] MCP config ready");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     yield {

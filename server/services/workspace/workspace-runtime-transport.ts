@@ -35,6 +35,7 @@ import {
 import { onAnalysisBroadcast } from "./analysis-event-bridge";
 import {
   _resetWorkspaceRuntimeChatPublisherForTest,
+  listWorkspaceRuntimeChatReplayPushes,
   onWorkspaceRuntimeChatPush,
   publishWorkspaceRuntimeChatEvent,
 } from "./workspace-runtime-chat-publisher";
@@ -47,6 +48,7 @@ const clientHelloSchema = z.object({
   connectionId: z.string().trim().min(1).optional(),
   workspaceId: z.string().trim().min(1),
   activeThreadId: z.string().trim().min(1).optional(),
+  activeChatCorrelations: z.array(z.string().trim().min(1)).optional(),
   lastSeenByChannel: z
     .object({
       threads: z.number().int().nonnegative().optional(),
@@ -254,6 +256,9 @@ async function handleHello(
 
   peerState.workspaceId = bootstrap.workspaceId;
   peerState.activeThreadId = bootstrap.activeThreadId;
+  peerState.activeChatCorrelations = new Set(
+    envelope.activeChatCorrelations ?? [],
+  );
 
   recordDiagnostic({
     code: "hello-received",
@@ -264,6 +269,7 @@ async function handleHello(
     threadId: envelope.activeThreadId,
     data: {
       priorConnectionId: envelope.connectionId,
+      activeChatCorrelationCount: peerState.activeChatCorrelations.size,
       lastSeenByChannel: envelope.lastSeenByChannel ?? {},
     },
   });
@@ -288,12 +294,27 @@ async function handleHello(
     threadId: bootstrap.activeThreadId,
     lastSeenByChannel: envelope.lastSeenByChannel,
   });
+  const replayChatPushes = listWorkspaceRuntimeChatReplayPushes({
+    workspaceId: bootstrap.workspaceId,
+    activeChatCorrelations: [...peerState.activeChatCorrelations],
+  });
 
   for (const replay of replayPushes) {
     sendEnvelope(peerState.peer, replay);
   }
 
-  if (replayPushes.length > 0) {
+  for (const replay of replayChatPushes) {
+    sendEnvelope(peerState.peer, replay);
+
+    if (
+      replay.payload.event.type === "chat.message.complete" ||
+      replay.payload.event.type === "chat.message.error"
+    ) {
+      peerState.activeChatCorrelations.delete(replay.payload.correlationId);
+    }
+  }
+
+  if (replayPushes.length + replayChatPushes.length > 0) {
     recordDiagnostic({
       code: "replay-sent",
       level: "info",
@@ -302,7 +323,9 @@ async function handleHello(
       workspaceId: bootstrap.workspaceId,
       threadId: bootstrap.activeThreadId,
       data: {
-        channels: replayPushes.map((push) => push.channel),
+        channels: [...replayPushes, ...replayChatPushes].map(
+          (push) => push.channel,
+        ),
       },
     });
   }
@@ -418,7 +441,14 @@ async function handleChatTurnStart(
     },
   });
 
+  console.log("[ws-transport] chat.turn.start received", {
+    provider: parsed.data.payload.provider,
+    model: parsed.data.payload.model,
+    correlationId: parsed.data.payload.correlationId,
+  });
+
   try {
+    console.log("[ws-transport] calling startChatTurn...");
     const started = await startChatTurn(parsed.data.payload, {
       correlationId: parsed.data.payload.correlationId,
       producer: "workspace-runtime-transport",
@@ -432,6 +462,7 @@ async function handleChatTurnStart(
       },
     });
 
+    console.log("[ws-transport] startChatTurn resolved, sending response");
     peerState.activeChatCorrelations.add(started.correlationId);
 
     started.completion.finally(() => {

@@ -413,6 +413,9 @@ export async function runPhaseWithTools(
           logger.error("analysis-service", "tool-phase-query-failed", {
             phase,
             error: errMsg,
+            subtype,
+            isError: (message as any).is_error,
+            rawErrors: errors,
             ...logContext,
           });
           return {

@@ -81,6 +81,7 @@ class WorkspaceRuntimeClient {
   private listeners = new Set<RuntimeListener>();
   private pendingRequests = new Map<string, PendingRequest>();
   private outboundQueue: QueuedOutboundRequest[] = [];
+  private activeChatCorrelations = new Set<string>();
   private latestPushByChannel = new Map<
     WorkspaceRuntimePushEnvelope["channel"],
     WorkspaceRuntimePushEnvelope
@@ -287,6 +288,11 @@ class WorkspaceRuntimeClient {
       ...(this.desiredContext.activeThreadId
         ? { activeThreadId: this.desiredContext.activeThreadId }
         : {}),
+      ...(this.activeChatCorrelations.size > 0
+        ? {
+            activeChatCorrelations: [...this.activeChatCorrelations].sort(),
+          }
+        : {}),
       lastSeenByChannel: Object.fromEntries(
         CHANNELS.map((ch) => [
           ch,
@@ -458,6 +464,21 @@ class WorkspaceRuntimeClient {
     let terminal = false;
     let closed = false;
     let notifyNext: (() => void) | null = null;
+    let resolvedIdentity: ChatTurnStartResult | null = null;
+    let requestError: Error | null = null;
+    let resolvedThreadNotified = false;
+
+    const notifyResolvedThread = (identity: ChatTurnStartResult) => {
+      if (resolvedThreadNotified) {
+        return;
+      }
+
+      resolvedThreadNotified = true;
+      resolvedIdentity = identity;
+      options?.onResolvedThread?.(identity);
+    };
+
+    this.activeChatCorrelations.add(payload.correlationId);
 
     const unsubscribe = this.subscribe((envelope) => {
       if (envelope.type !== "push" || envelope.channel !== "chat-event") {
@@ -467,6 +488,14 @@ class WorkspaceRuntimeClient {
       const push = envelope as WorkspaceRuntimePushEnvelope<"chat-event">;
       if (push.payload.correlationId !== payload.correlationId) {
         return;
+      }
+
+      if (!resolvedThreadNotified && push.scope.threadId) {
+        notifyResolvedThread({
+          workspaceId: push.scope.workspaceId,
+          threadId: push.scope.threadId,
+          correlationId: push.payload.correlationId,
+        });
       }
 
       queue.push(push.payload.event);
@@ -485,15 +514,29 @@ class WorkspaceRuntimeClient {
     };
     options?.signal?.addEventListener("abort", handleAbort, { once: true });
 
-    try {
-      const result = await this.sendRequest<ChatTurnStartResult>(
-        "chat.turn.start",
-        payload,
-      );
-      options?.onResolvedThread?.(result);
+    const requestPromise = this.sendRequest<ChatTurnStartResult>(
+      "chat.turn.start",
+      payload,
+    )
+      .then((result) => {
+        notifyResolvedThread(result);
+        notifyNext?.();
+        return result;
+      })
+      .catch((error: unknown) => {
+        requestError =
+          error instanceof Error
+            ? error
+            : new Error("Workspace runtime request failed");
+        notifyNext?.();
+        return null;
+      });
 
+    try {
       while (!closed) {
-        if (queue.length === 0) {
+        const shouldThrowRequestError = requestError && !resolvedIdentity;
+
+        if (queue.length === 0 && !shouldThrowRequestError) {
           await new Promise<void>((resolve) => {
             notifyNext = () => {
               notifyNext = null;
@@ -519,16 +562,23 @@ class WorkspaceRuntimeClient {
         if (terminal) {
           return;
         }
+
+        if (shouldThrowRequestError) {
+          throw requestError;
+        }
       }
     } finally {
       options?.signal?.removeEventListener("abort", handleAbort);
+      this.activeChatCorrelations.delete(payload.correlationId);
       unsubscribe();
+      void requestPromise;
     }
   }
 
   disconnect(): void {
     this.desiredContext = null;
     this.currentConnectionId = undefined;
+    this.activeChatCorrelations.clear();
     this.latestPushByChannel.clear();
     this.clearReconnectTimer();
     if (this.pendingBootstrap) {

@@ -154,6 +154,7 @@ export interface WorkspaceRuntimeClientHello {
   connectionId?: string;
   workspaceId: string;
   activeThreadId?: string;
+  activeChatCorrelations?: string[];
   lastSeenByChannel?: WorkspaceRuntimeChannelRevisions;
 }
 

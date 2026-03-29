@@ -63,13 +63,13 @@ export interface DomainEventStore {
 }
 
 function transaction<T>(db: DatabaseSync, run: () => T): T {
-  db.exec("BEGIN IMMEDIATE");
+  db.exec("SAVEPOINT domain_event_tx");
   try {
     const result = run();
-    db.exec("COMMIT");
+    db.exec("RELEASE domain_event_tx");
     return result;
   } catch (error) {
-    db.exec("ROLLBACK");
+    db.exec("ROLLBACK TO domain_event_tx");
     throw error;
   }
 }

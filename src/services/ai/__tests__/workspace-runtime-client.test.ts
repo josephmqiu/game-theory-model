@@ -3,6 +3,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const originalWebSocket = globalThis.WebSocket;
+const originalWindowWebSocket =
+  typeof window !== "undefined" ? window.WebSocket : undefined;
 
 class MockWebSocket {
   static readonly CONNECTING = 0;
@@ -100,12 +102,15 @@ describe("workspace-runtime-client", () => {
     vi.useFakeTimers();
     MockWebSocket.reset();
     globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
+    if (typeof window !== "undefined") {
+      window.WebSocket = MockWebSocket as unknown as typeof WebSocket;
+    }
   });
 
   afterEach(async () => {
     const { workspaceRuntimeClient } =
       await import("../workspace-runtime-client");
-    workspaceRuntimeClient.resetForTest();
+    expect(() => workspaceRuntimeClient.resetForTest()).not.toThrow();
     MockWebSocket.reset();
     vi.useRealTimers();
     if (originalWebSocket) {
@@ -113,6 +118,13 @@ describe("workspace-runtime-client", () => {
     } else {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       delete (globalThis as any).WebSocket;
+    }
+    if (typeof window !== "undefined") {
+      if (originalWindowWebSocket) {
+        window.WebSocket = originalWindowWebSocket;
+      } else {
+        delete (window as Partial<typeof window>).WebSocket;
+      }
     }
   });
 
@@ -429,6 +441,135 @@ describe("workspace-runtime-client", () => {
     expect(onResolvedThread).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
       threadId: "thread-1",
+      correlationId: "corr-1",
+    });
+  });
+
+  it("re-announces active chat correlations in reconnect hello", async () => {
+    const { workspaceRuntimeClient } =
+      await import("../workspace-runtime-client");
+    const bootstrapPromise = workspaceRuntimeClient.bindContext({
+      workspaceId: "workspace-1",
+      activeThreadId: "thread-1",
+    });
+    const firstSocket = MockWebSocket.latest();
+    firstSocket.emitOpen();
+    firstSocket.emitMessage(bootstrapPayload("conn-1"));
+    await bootstrapPromise;
+
+    const consume = (async () => {
+      for await (const _event of workspaceRuntimeClient.streamChatTurn({
+        workspaceId: "workspace-1",
+        threadId: "thread-1",
+        correlationId: "corr-1",
+        message: { content: "hello" },
+        provider: "codex",
+        model: "gpt-5.4",
+      })) {
+        // drain
+      }
+    })();
+
+    firstSocket.emitClose({ code: 1006, reason: "drop" });
+    vi.advanceTimersByTime(1000);
+
+    const secondSocket = MockWebSocket.latest();
+    secondSocket.emitOpen();
+
+    expect(JSON.parse(secondSocket.sent[0])).toMatchObject({
+      type: "client_hello",
+      connectionId: "conn-1",
+      workspaceId: "workspace-1",
+      activeThreadId: "thread-1",
+      activeChatCorrelations: ["corr-1"],
+    });
+
+    secondSocket.emitMessage(bootstrapPayload("conn-2"));
+    secondSocket.emitMessage({
+      type: "push",
+      channel: "chat-event",
+      revision: 1,
+      scope: { workspaceId: "workspace-1", threadId: "thread-1" },
+      payload: {
+        correlationId: "corr-1",
+        event: {
+          type: "chat.message.complete",
+          correlationId: "corr-1",
+          content: "done",
+        },
+      },
+    });
+
+    await expect(consume).resolves.toBeUndefined();
+  });
+
+  it("completes a chat turn from a replayed terminal push even if the start response is lost", async () => {
+    const { workspaceRuntimeClient } =
+      await import("../workspace-runtime-client");
+    const bootstrapPromise = workspaceRuntimeClient.bindContext({
+      workspaceId: "workspace-1",
+      activeThreadId: "thread-1",
+    });
+    const firstSocket = MockWebSocket.latest();
+    firstSocket.emitOpen();
+    firstSocket.emitMessage(bootstrapPayload("conn-1"));
+    await bootstrapPromise;
+
+    const onResolvedThread = vi.fn();
+    const consume = (async () => {
+      const events = [];
+      for await (const event of workspaceRuntimeClient.streamChatTurn(
+        {
+          workspaceId: "workspace-1",
+          threadId: "thread-1",
+          correlationId: "corr-1",
+          message: { content: "hello" },
+          provider: "codex",
+          model: "gpt-5.4",
+        },
+        {
+          onResolvedThread,
+        },
+      )) {
+        events.push(event);
+      }
+      return events;
+    })();
+
+    firstSocket.emitClose({ code: 1006, reason: "drop" });
+    vi.advanceTimersByTime(1000);
+
+    const secondSocket = MockWebSocket.latest();
+    secondSocket.emitOpen();
+    secondSocket.emitMessage(bootstrapPayload("conn-2"));
+    secondSocket.emitMessage({
+      type: "push",
+      channel: "chat-event",
+      revision: 1,
+      replayed: true,
+      scope: { workspaceId: "workspace-1", threadId: "thread-2" },
+      payload: {
+        correlationId: "corr-1",
+        event: {
+          type: "chat.message.complete",
+          correlationId: "corr-1",
+          messageId: "server-msg-1",
+          content: "hello world",
+        },
+      },
+    });
+
+    await expect(consume).resolves.toEqual([
+      {
+        type: "chat.message.complete",
+        correlationId: "corr-1",
+        messageId: "server-msg-1",
+        content: "hello world",
+      },
+    ]);
+    expect(onResolvedThread).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      threadId: "thread-2",
       correlationId: "corr-1",
     });
   });

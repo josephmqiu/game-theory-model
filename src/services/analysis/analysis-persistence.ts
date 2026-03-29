@@ -489,11 +489,15 @@ export async function loadAnalysisFromText(
 
 export async function initializeWorkspacePersistence(): Promise<void> {
   const workspace = buildWorkspaceSnapshot();
-  await syncWorkspaceState(workspace, {
-    fileName: null,
-    filePath: null,
-    fileHandle: null,
-  });
+  await syncWorkspaceState(
+    workspace,
+    {
+      fileName: null,
+      filePath: null,
+      fileHandle: null,
+    },
+    true, // import mode — replace server-side entity graph with current (empty) state
+  );
   try {
     await useThreadStore.getState().hydrateWorkspace(workspace.id);
   } catch (error) {

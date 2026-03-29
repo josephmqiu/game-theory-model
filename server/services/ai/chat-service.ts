@@ -3,8 +3,6 @@ import { mkdirSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { nanoid } from "nanoid";
-import type { H3Event } from "h3";
-import { z } from "zod";
 import * as entityGraphService from "../entity-graph-service";
 import {
   createThreadService,
@@ -12,8 +10,10 @@ import {
 } from "../workspace/thread-service";
 import { getProviderSessionBinding } from "../workspace/provider-session-binding-service";
 import { createProcessRuntimeError } from "../../../shared/types/runtime-error";
-import type { ChatEvent } from "../../../shared/types/events";
-import type { WorkspaceRuntimeChatEvent } from "../../../shared/types/workspace-runtime";
+import type {
+  WorkspaceRuntimeChatEvent,
+  WorkspaceRuntimeChatTurnStartRequestPayload,
+} from "../../../shared/types/workspace-runtime";
 import { getRuntimeAdapter } from "./adapter-contract";
 import { resolvePromptTemplate } from "../prompt-pack-registry";
 import {
@@ -23,7 +23,6 @@ import {
 
 import {
   isAllowedRuntimeProvider,
-  normalizeRuntimeProvider,
   type RuntimeProvider,
 } from "../../../shared/types/analysis-runtime";
 
@@ -41,59 +40,6 @@ export interface ChatAttachmentWire {
   name: string;
   mediaType: string;
   data: string;
-}
-
-export interface CanonicalChatRequest {
-  workspaceId?: string;
-  threadId?: string;
-  threadTitle?: string;
-  message: {
-    content: string;
-    attachments?: ChatAttachmentWire[];
-  };
-  provider: RuntimeProvider;
-  model: string;
-  thinkingMode?: "adaptive" | "disabled" | "enabled";
-  thinkingBudgetTokens?: number;
-  effort?: "low" | "medium" | "high" | "max";
-}
-
-const chatAttachmentSchema = z.object({
-  name: z.string(),
-  mediaType: z.string(),
-  data: z.string(),
-});
-
-const canonicalChatRequestSchema = z.object({
-  workspaceId: z.string().trim().min(1).optional(),
-  threadId: z.string().trim().min(1).optional(),
-  threadTitle: z.string().trim().min(1).optional(),
-  message: z.object({
-    content: z.string(),
-    attachments: z.array(chatAttachmentSchema).optional(),
-  }),
-  provider: z.string().trim().min(1),
-  model: z.string().trim().min(1),
-  thinkingMode: z.enum(["adaptive", "disabled", "enabled"]).optional(),
-  thinkingBudgetTokens: z.number().positive().optional(),
-  effort: z.enum(["low", "medium", "high", "max"]).optional(),
-});
-
-export function parseChatRequest(raw: unknown): CanonicalChatRequest {
-  const result = canonicalChatRequestSchema.safeParse(raw);
-  if (!result.success) {
-    throw new Error("Missing or invalid required fields for chat request.");
-  }
-
-  const provider = normalizeRuntimeProvider(result.data.provider);
-  if (!provider) {
-    throw new Error("Missing or invalid required fields for chat request.");
-  }
-
-  return {
-    ...result.data,
-    provider,
-  };
 }
 
 const isAllowedProvider = isAllowedRuntimeProvider;
@@ -224,7 +170,7 @@ function buildRuntimeChatError(
 }
 
 async function executeChatTurn(
-  request: CanonicalChatRequest,
+  request: WorkspaceRuntimeChatTurnStartRequestPayload,
   options: Required<Pick<StartChatTurnOptions, "correlationId" | "producer">> &
     Pick<StartChatTurnOptions, "runId" | "onEvent"> & {
       workspaceId: string;
@@ -507,7 +453,7 @@ async function executeChatTurn(
 }
 
 export async function startChatTurn(
-  request: CanonicalChatRequest,
+  request: WorkspaceRuntimeChatTurnStartRequestPayload,
   options: StartChatTurnOptions = {},
 ): Promise<StartedChatTurn> {
   if (!isAllowedProvider(request.provider)) {
@@ -516,7 +462,14 @@ export async function startChatTurn(
     );
   }
 
-  const correlationId = options.correlationId?.trim() || `chat-${nanoid()}`;
+  console.log("[chat-service] startChatTurn entry", {
+    provider: request.provider,
+    model: request.model,
+  });
+  const correlationId =
+    options.correlationId?.trim() ||
+    request.correlationId?.trim() ||
+    `chat-${nanoid()}`;
   const producer = options.producer ?? "chat-service";
   const threadService = createThreadService();
   const occurredAt = Date.now();
@@ -571,104 +524,4 @@ export async function startChatTurn(
     correlationId,
     completion,
   };
-}
-
-export async function createChatResponse(
-  event: H3Event,
-  request: CanonicalChatRequest,
-  runId?: string,
-): Promise<Response> {
-  // Transitional shim: the workspace runtime websocket is the canonical live
-  // transport. Keep this adapter only until all direct callers are removed.
-  type LegacySseChatEvent =
-    | ChatEvent
-    | {
-        type: "done";
-        content: string;
-      };
-
-  const queuedEvents: LegacySseChatEvent[] = [];
-  const waiters: Array<(event: LegacySseChatEvent | null) => void> = [];
-
-  const enqueue = (eventChunk: LegacySseChatEvent | null) => {
-    const waiter = waiters.shift();
-    if (waiter) {
-      waiter(eventChunk);
-      return;
-    }
-    if (eventChunk) {
-      queuedEvents.push(eventChunk);
-    }
-  };
-
-  const started = await startChatTurn(request, {
-    runId,
-    producer: "chat-service",
-    onEvent: (chatEvent) => {
-      switch (chatEvent.type) {
-        case "chat.message.delta":
-          enqueue({ type: "text_delta", content: chatEvent.content });
-          return;
-        case "chat.message.complete":
-          enqueue({ type: "done", content: "" });
-          return;
-        case "chat.message.error":
-          enqueue({ type: "error", error: chatEvent.error });
-          return;
-        default:
-          return;
-      }
-    },
-  });
-
-  started.completion.finally(() => {
-    enqueue(null);
-  });
-
-  const req = event.node?.req;
-  if (req) {
-    req.on("close", () => enqueue(null));
-  }
-
-  const stream = new ReadableStream({
-    async start(controller) {
-      const encoder = new TextEncoder();
-
-      while (true) {
-        const nextEvent =
-          queuedEvents.shift() ??
-          (await new Promise<LegacySseChatEvent | null>((resolve) => {
-            waiters.push(resolve);
-          }));
-
-        if (!nextEvent) {
-          break;
-        }
-
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify(nextEvent)}\n\n`),
-        );
-
-        if (
-          nextEvent.type === "turn_complete" ||
-          nextEvent.type === "done" ||
-          nextEvent.type === "error"
-        ) {
-          break;
-        }
-      }
-
-      controller.close();
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-      "X-Workspace-Id": started.workspaceId,
-      "X-Thread-Id": started.threadId,
-    },
-  });
 }

@@ -32,7 +32,7 @@ Layer 1: AI Connectors       (Claude, Codex — transport to AI models)
 The frontend is a separate process (browser/renderer). It communicates with
 the backend via HTTP (REST endpoints) and WebSocket (workspace runtime
 transport for real-time state sync, streaming events, and bidirectional
-commands). Chat streaming currently uses SSE but is migrating to WebSocket.
+commands). Live chat streaming uses the workspace runtime WebSocket.
 The frontend never imports backend code.
 
 ---
@@ -425,11 +425,6 @@ POST /api/ai/analyze
     { channel: "error",     message: string }
     { type: "done" }
 
-POST /api/ai/chat
-  Request:  { messages: ChatMessage[], provider?: string, model?: string }
-  Response: SSE stream
-    { ...ChatEvent }
-
 POST /api/ai/entity
   Request:  { action: "get" | "update" | "create" | "delete", ... }
   Response: JSON
@@ -453,25 +448,23 @@ The primary real-time channel between server and client. Carries:
 - **Workspace state bootstrap:** Full snapshot on connect (threads, active
   thread detail, run status, entity graph, pending questions).
 - **Push events:** Channel-scoped updates (`threads`, `thread-detail`,
-  `run-detail`) with monotonic revision numbers and latest-push caching.
+  `run-detail`, `chat-event`) with monotonic revision numbers and latest-push caching.
 - **Client requests:** Thread CRUD (create, rename, delete), question
-  resolve — bidirectional RPC over the same WebSocket connection.
+  resolve, and `chat.turn.start` — bidirectional RPC over the same WebSocket
+  connection.
 - **Reconnect recovery:** Client reconnects with `lastSeenByChannel`
   revisions. Server replays only missed pushes (no full re-bootstrap
   unless the connection was down long enough for the cache to evict).
+  Active chat correlations are re-announced on reconnect so terminal chat
+  signals can be replayed without a second live transport.
 
 Endpoint: `GET /api/workspace/runtime` (WebSocket upgrade via Nitro/crossws).
 
-Chat streaming currently uses SSE (`POST /api/ai/chat`) but is planned to
-migrate to this WebSocket transport using a command/push-event pattern
-with `correlationId` for request-response correlation.
-
 ### SSE endpoints (legacy — migrating to WebSocket)
 
-Analysis and chat currently stream responses via SSE:
+Analysis currently streams responses via SSE:
 
 - `POST /api/ai/analyze` → SSE stream of analysis progress events
-- `POST /api/ai/chat` → SSE stream of chat events
 
 The frontend also recovers state via:
 
@@ -937,8 +930,8 @@ display and input layer only.
   entity_updated, entity_deleted) so entities appear on the canvas
   as they are committed, not only in the final snapshot. Also processes
   progress events for phase status.
-- `chat-client` — calls `/api/ai/chat`, reads SSE stream, updates chat
-  store.
+- `workspace-runtime-client` — opens `/api/workspace/runtime`, sends
+  `chat.turn.start`, receives `chat-event` pushes, and updates chat state.
 - Entity edits — POST to `/api/ai/entity`.
 - State hydration on load/reconnect — GET `/api/ai/state` (returns
   entity graph + active run status).
@@ -958,7 +951,7 @@ The backend is an HTTP server.
   process (forked, not embedded — keeps the main process event loop free).
   Frontend loads in a BrowserWindow and calls localhost.
 
-Same HTTP/SSE transport in both environments. No IPC-specific code.
+Same HTTP/WebSocket transport in both environments. No IPC-specific code.
 
 ### Process lifecycle
 
@@ -981,14 +974,12 @@ src/                              # Frontend (browser/renderer)
   stores/                         # Zustand stores (projections)
   canvas/                         # Skia rendering engine
   hooks/                          # React hooks
-  clients/                        # HTTP/SSE clients
+  clients/                        # HTTP/WebSocket clients
     analysis-client.ts
-    chat-client.ts
 
 server/                           # Backend (Node.js)
-  api/ai/                         # HTTP/SSE endpoints
+  api/ai/                         # HTTP endpoints
     analyze.ts
-    chat.ts
     entity.ts
     connect.ts
     state.ts                      # GET — hydration/reconnection

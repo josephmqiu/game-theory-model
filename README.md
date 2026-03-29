@@ -136,11 +136,11 @@ src/                   # React frontend (renderer)
   services/            # Domain services (analysis client, etc.)
   stores/              # Zustand state stores
 server/                # Node.js backend (AI pipeline, MCP, services)
-  api/ai/              # AI route handlers (analyze, chat, events SSE)
+  api/ai/              # AI HTTP route handlers (analyze, entity, connect, state, abort)
   mcp/                 # MCP server and product tools
   services/            # Runtime status, revalidation, entity graph
 electron/              # Electron main process + persistence
-smoke-tests/           # Integration smoke tests (SSE, MCP, desktop)
+smoke-tests/           # Integration smoke tests (runtime, MCP, desktop)
 public/                # Static assets
 ```
 

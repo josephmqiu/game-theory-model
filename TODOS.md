@@ -234,9 +234,9 @@ Wrapped entity writes in single SQLite transactions with batched WebSocket broad
 
 Added outbound request queueing/replay to `workspace-runtime-client`. Requests survive connect/reconnect transitions. Commit: `943c680`.
 
-### Chat transport — T3 WebSocket pattern (2026-03-27)
+### Chat transport — canonical workspace runtime WebSocket (2026-03-29)
 
-Chat streaming migrated from SSE to workspace runtime WebSocket with `chat.turn.start`, correlation-scoped live push events, and server-owned token-aware history budgeting from SQLite.
+Chat now flows only through the workspace runtime WebSocket with `chat.turn.start`, correlation-scoped `chat-event` pushes, reconnect reattachment for active correlations, and server-owned token-aware history budgeting from SQLite.
 
 ### Canvas navigation and entity inspection (2026-03-27)
 

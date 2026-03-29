@@ -481,4 +481,118 @@ describe("/api/workspace/runtime websocket", () => {
       ),
     ).toBe(false);
   });
+
+  it("replays a terminal chat push for active correlations after reconnect", async () => {
+    streamChatTurnMock.mockImplementation(async function* () {
+      await new Promise(() => {});
+    });
+
+    const { publishWorkspaceRuntimeChatEvent } = await import(
+      "../../../services/workspace/workspace-runtime-chat-publisher"
+    );
+    const route = (await import("../runtime.get")).default as unknown as {
+      open: (peer: FakePeer) => void;
+      message: (
+        peer: FakePeer,
+        message: ReturnType<typeof wsMessage>,
+      ) => Promise<void>;
+      close: (
+        peer: FakePeer,
+        details?: { code?: number; reason?: string },
+      ) => void;
+    };
+    const peer1 = new FakePeer("conn-1");
+
+    route.open(peer1);
+    await route.message(
+      peer1,
+      wsMessage({
+        type: "client_hello",
+        workspaceId: "workspace-1",
+      }),
+    );
+    peer1.sent.splice(0, peer1.sent.length);
+
+    await route.message(
+      peer1,
+      wsMessage({
+        type: "request",
+        requestId: "req-chat-1",
+        kind: "chat.turn.start",
+        payload: {
+          workspaceId: "workspace-1",
+          correlationId: "corr-1",
+          message: {
+            content: "hello",
+          },
+          provider: "codex",
+          model: "gpt-5.4",
+        },
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(
+        peer1.sent.some(
+          (entry) =>
+            entry.type === "response" &&
+            entry.requestId === "req-chat-1" &&
+            entry.ok === true,
+        ),
+      ).toBe(true);
+    });
+
+    const startResponse = peer1.sent.find(
+      (entry) => entry.type === "response" && entry.requestId === "req-chat-1",
+    ) as { result: { threadId: string } } | undefined;
+    expect(startResponse?.result.threadId).toBeTruthy();
+
+    route.close(peer1, { code: 1006, reason: "drop" });
+
+    publishWorkspaceRuntimeChatEvent({
+      workspaceId: "workspace-1",
+      threadId: startResponse!.result.threadId,
+      correlationId: "corr-1",
+      event: {
+        type: "chat.message.complete",
+        correlationId: "corr-1",
+        messageId: "server-msg-1",
+        content: "Hello world",
+      },
+    });
+
+    const peer2 = new FakePeer("conn-2");
+    route.open(peer2);
+    await route.message(
+      peer2,
+      wsMessage({
+        type: "client_hello",
+        workspaceId: "workspace-1",
+        activeThreadId: startResponse?.result.threadId,
+        activeChatCorrelations: ["corr-1"],
+      }),
+    );
+
+    expect(peer2.sent).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "bootstrap",
+        }),
+        expect.objectContaining({
+          type: "push",
+          channel: "chat-event",
+          replayed: true,
+          payload: {
+            correlationId: "corr-1",
+            event: {
+              type: "chat.message.complete",
+              correlationId: "corr-1",
+              messageId: "server-msg-1",
+              content: "Hello world",
+            },
+          },
+        }),
+      ]),
+    );
+  });
 });

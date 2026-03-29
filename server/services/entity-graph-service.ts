@@ -781,7 +781,7 @@ export function beginBatch(): void {
   }
   let transactionOpen = false;
   if (hasWorkspaceContext()) {
-    getWorkspaceDatabase().db.exec("BEGIN IMMEDIATE");
+    getWorkspaceDatabase().db.exec("SAVEPOINT entity_batch");
     transactionOpen = true;
   }
   _batch = {
@@ -805,9 +805,10 @@ export function commitBatch(): AnalysisMutationEvent[] {
   const { deferredEvents, transactionOpen } = _batch;
   if (transactionOpen) {
     try {
-      getWorkspaceDatabase().db.exec("COMMIT");
+      getWorkspaceDatabase().db.exec("RELEASE entity_batch");
     } catch (error) {
-      // COMMIT failed — SQLite auto-rolls back. Restore in-memory state.
+      // RELEASE failed — roll back to the savepoint. Restore in-memory state.
+      getWorkspaceDatabase().db.exec("ROLLBACK TO entity_batch");
       analysis = _batch.snapshot;
       _batch = null;
       throw error;
@@ -831,7 +832,7 @@ export function rollbackBatch(): void {
   }
   const { transactionOpen, snapshot } = _batch;
   if (transactionOpen) {
-    getWorkspaceDatabase().db.exec("ROLLBACK");
+    getWorkspaceDatabase().db.exec("ROLLBACK TO entity_batch");
   }
   analysis = snapshot;
   _batch = null;
