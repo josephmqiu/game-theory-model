@@ -6,8 +6,13 @@ import {
 import type { MethodologyPhase } from "../../../shared/types/methodology";
 import * as entityGraphService from "../entity-graph-service";
 import * as runtimeStatus from "../runtime-status";
+import * as analysisOrchestrator from "../../agents/analysis-agent";
 import { getWorkspaceDatabase } from "./workspace-db";
 import { resolveWorkspaceId } from "./workspace-context";
+import {
+  listPendingByRun,
+  reattachPendingQuestionWait,
+} from "./question-service";
 import {
   clearProviderSessionBinding,
   getProviderSessionBinding,
@@ -89,6 +94,8 @@ function recordRecoveryLog(input: {
     | "recovery-scan-completed"
     | "recovery-binding-found"
     | "recovery-binding-missing"
+    | "resume-deferred-on-question"
+    | "resume-attempt"
     | "fallback-selected"
     | "run-recovery-failed"
     | "recovery-questions-dismissed";
@@ -329,7 +336,7 @@ async function runStartupRecovery(): Promise<void> {
       },
     });
 
-    if (binding.provider !== run.provider) {
+    if (binding.provider !== "claude") {
       appendRecoveryFailure({
         run,
         reason: "binding_provider_mismatch",
@@ -338,33 +345,90 @@ async function runStartupRecovery(): Promise<void> {
       continue;
     }
 
-    appendRecoveryFailure({
-      run,
-      reason: "resume_unsupported_for_active_turn",
-      binding,
-    });
-  }
+    const pendingQuestions = listPendingByRun(run.id);
+    const resumeRun = async (): Promise<void> => {
+      recordRecoveryLog({
+        code: "resume-attempt",
+        level: "info",
+        message: "Attempting durable run resume during startup recovery",
+        workspaceId: run.workspaceId,
+        threadId: run.threadId,
+        runId: run.id,
+        phaseTurnId: run.latestPhaseTurnId,
+        provider: binding.provider,
+        providerSessionId: binding.providerSessionId,
+      });
 
-  // Dismiss all persisted pending questions on startup. Question waits are
-  // backed by in-memory resolvers only, so they cannot be resumed after a
-  // process restart even if the originating run was not "running".
-  const pendingQuestions = database.questions.listByStatus("pending");
-  let dismissedCount = 0;
-  for (const pq of pendingQuestions) {
-    database.questions.updateStatus(pq.question.id, "dismissed");
-    dismissedCount += 1;
-  }
+      try {
+        await analysisOrchestrator.resumeDurableRun({
+          runId: run.id,
+        });
+      } catch (error) {
+        recordRecoveryLog({
+          code: "run-recovery-failed",
+          level: "error",
+          message: "Startup recovery could not resume durable run",
+          workspaceId: run.workspaceId,
+          threadId: run.threadId,
+          runId: run.id,
+          phaseTurnId: run.latestPhaseTurnId,
+          provider: binding.provider,
+          providerSessionId: binding.providerSessionId,
+          data: {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+        appendRecoveryFailure({
+          run,
+          reason: "process_terminated",
+          binding,
+        });
+      }
+    };
 
-  if (dismissedCount > 0) {
-    recordRecoveryLog({
-      code: "recovery-questions-dismissed",
-      level: "info",
-      message: `Dismissed ${dismissedCount} pending question(s) that could not resume after restart`,
-      data: {
-        dismissedCount,
-        reason: "question_resolvers_are_process_local",
-      },
-    });
+    if (pendingQuestions.length > 0) {
+      const pendingQuestion = pendingQuestions[0];
+      recordRecoveryLog({
+        code: "resume-deferred-on-question",
+        level: "info",
+        message:
+          "Deferred durable run resume until persisted pending question is answered",
+        workspaceId: run.workspaceId,
+        threadId: run.threadId,
+        runId: run.id,
+        phaseTurnId: run.latestPhaseTurnId,
+        provider: binding.provider,
+        providerSessionId: binding.providerSessionId,
+        data: {
+          questionId: pendingQuestion.question.id,
+          pendingQuestionCount: pendingQuestions.length,
+        },
+      });
+
+      void reattachPendingQuestionWait(pendingQuestion.question.id)
+        .then(() => resumeRun())
+        .catch((error) => {
+          recordRecoveryLog({
+            code: "run-recovery-failed",
+            level: "error",
+            message:
+              "Deferred durable run resume could not reattach pending question",
+            workspaceId: run.workspaceId,
+            threadId: run.threadId,
+            runId: run.id,
+            phaseTurnId: run.latestPhaseTurnId,
+            provider: binding.provider,
+            providerSessionId: binding.providerSessionId,
+            data: {
+              questionId: pendingQuestion.question.id,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          });
+        });
+      continue;
+    }
+
+    await resumeRun();
   }
 
   recordRecoveryLog({
@@ -373,7 +437,7 @@ async function runStartupRecovery(): Promise<void> {
     message: "Completed startup recovery scan",
     data: {
       runningRunCount: runningRuns.length,
-      dismissedQuestionCount: dismissedCount,
+      dismissedQuestionCount: 0,
     },
   });
 }

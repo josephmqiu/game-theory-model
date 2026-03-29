@@ -60,6 +60,7 @@ export interface PhaseContext {
   onActivity?: AnalysisActivityCallback;
   historyMessages?: Array<{ role: string; content: string }>;
   binding?: ProviderSessionBindingState | null;
+  allowResumeRetryFallback?: boolean;
   /** Pre-built prompts from the orchestrator. Skips redundant buildPhasePromptBundle call. */
   promptBundle?: {
     system: string;
@@ -602,6 +603,7 @@ export async function runPhaseWithTools(
     if (
       providerSessionId &&
       context?.threadId &&
+      context?.allowResumeRetryFallback !== false &&
       shouldRetryToolPhaseWithoutResume(errMsg) &&
       (writeContext.counters?.entitiesCreated ?? 0) === 0 &&
       (writeContext.counters?.entitiesUpdated ?? 0) === 0 &&

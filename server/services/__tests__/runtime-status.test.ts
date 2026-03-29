@@ -157,6 +157,9 @@ describe("runtime-status", () => {
     expect(
       runtimeStatus.inferRuntimeError("Provider API returned 401 unauthorized"),
     ).toMatchObject({ tag: "provider", reason: "unauthorized" });
+    expect(
+      runtimeStatus.inferRuntimeError("AI did not call complete_phase"),
+    ).toMatchObject({ tag: "validation" });
   });
 
   it("derives a readable failure message from the tagged runtime error", () => {

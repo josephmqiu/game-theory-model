@@ -10,6 +10,7 @@ import type {
 import type {
   AnalysisProgressEvent,
 } from "../../shared/types/events";
+import type { PhaseTurnSummaryState } from "../../shared/types/workspace-state";
 import { getRuntimeErrorMessage } from "../../shared/types/runtime-error";
 import type {
   AnalysisRuntimeOverrides,
@@ -112,6 +113,26 @@ interface ActiveRun {
   /** Tool-based phase execution state */
   toolWriteContext: AnalysisWriteContext | null;
   toolMcpServer: unknown | null;
+  resumedPhaseTurn:
+    | {
+        phaseTurnId: string;
+        turnIndex: number;
+        startedAt: number;
+      }
+    | null;
+}
+
+interface RunExecutionOptions {
+  topic: string;
+  combinedSignal: AbortSignal;
+  runTimeoutSignal: AbortSignal;
+  runTimeoutHandle: ReturnType<typeof setTimeout>;
+  analysisTimer: ReturnType<typeof timer>;
+  userSignal?: AbortSignal;
+}
+
+interface ResumeDurableRunInput {
+  runId: string;
 }
 
 function clearAnalysisRunBinding(
@@ -122,6 +143,46 @@ function clearAnalysisRunBinding(
     purpose: "analysis",
     reason: "process_terminated",
   });
+}
+
+function resolveCompletedPhases(
+  promptActivePhases: SupportedPhase[],
+  phaseSummaries: PhaseTurnSummaryState[],
+): MethodologyPhase[] {
+  const completed = new Set<MethodologyPhase>();
+  for (const summary of phaseSummaries) {
+    if (summary.status === "completed") {
+      completed.add(summary.phase);
+    }
+  }
+
+  return promptActivePhases.filter((phase) => completed.has(phase));
+}
+
+function resolvePhaseTurnCounts(
+  phaseSummaries: PhaseTurnSummaryState[],
+): Partial<Record<MethodologyPhase, number>> {
+  const counts: Partial<Record<MethodologyPhase, number>> = {};
+  for (const summary of phaseSummaries) {
+    counts[summary.phase] = Math.max(
+      counts[summary.phase] ?? 0,
+      summary.turnIndex,
+    );
+  }
+  return counts;
+}
+
+function resolveResumePhaseIndex(run: ActiveRun): number {
+  if (run.activePhase) {
+    const activeIndex = run.activePhases.findIndex(
+      (phase) => phase === run.activePhase,
+    );
+    if (activeIndex !== -1) {
+      return activeIndex;
+    }
+  }
+
+  return Math.min(run.phasesCompleted.length, run.activePhases.length);
 }
 
 // ── Constants ──
@@ -422,6 +483,11 @@ async function executeSinglePhase(
   run.activePhase = phase;
   runtimeStatus.setActivePhase(run.runId, phase);
   entityGraphService.setPhaseStatus(phase, "running");
+  const resumedPhaseTurn =
+    run.resumedPhaseTurn && run.resumedPhaseTurn.phaseTurnId
+      ? run.resumedPhaseTurn
+      : null;
+  run.resumedPhaseTurn = null;
 
   const phaseAbort = new AbortController();
   const onExternalAbort = () => phaseAbort.abort();
@@ -449,6 +515,7 @@ async function executeSinglePhase(
         logger: run.logger,
         producer: "analysis-agent",
         onProgress: emitProgress,
+        ...(resumedPhaseTurn ? { resumePhaseTurn: resumedPhaseTurn } : {}),
       },
     );
     run.activePhaseTurnId = result.phaseTurnId;
@@ -488,199 +555,17 @@ async function executeSinglePhase(
   }
 }
 
-// ── Public API ──
-
-export async function runFull(
-  topic: string,
-  provider?: string,
-  model?: string,
-  signal?: AbortSignal,
-  runtimeOverrides?: AnalysisRuntimeOverrides,
-  persistenceContext: RunPersistenceContext = {},
-): Promise<{ runId: string; workspaceId: string; threadId: string }> {
-  // Guard: check both status AND whether the async execution is still unwinding
-  if (activeRun && activeRun.status === "running") {
-    throw new Error("A run is already active");
-  }
-  if (runPromise !== null) {
-    throw new Error("A run is already active");
-  }
-
-  const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const canonicalProvider = normalizeRuntimeProvider(provider);
-  const analysisTimer = timer();
-  const abortController = new AbortController();
-  const runtime = resolveAnalysisRuntime(runtimeOverrides);
-  const activePhases = normalizeRequestedActivePhases(
-    runtimeOverrides?.activePhases,
-  );
-  const promptProvenance = createRunPromptProvenance(activePhases);
-  const autoRevalidationEnabled =
-    activePhases.length === SUPPORTED_PHASES.length;
-  const workspaceDatabase = getWorkspaceDatabase();
-  const runOccurredAt = Date.now();
-  const resolvedThreadContext =
-    workspaceDatabase.eventStore.resolveThreadContext({
-      workspaceId: persistenceContext.workspaceId,
-      threadId: persistenceContext.threadId,
-      producer: persistenceContext.producer ?? "analysis-agent",
-      commandId: persistenceContext.commandId,
-      receiptId: persistenceContext.receiptId,
-      correlationId: persistenceContext.correlationId,
-      causationId: persistenceContext.causationId,
-      occurredAt: runOccurredAt,
-    });
-  const logger = createRunLogger(runId, {
-    workspaceId: resolvedThreadContext.workspaceId,
-    threadId: resolvedThreadContext.threadId,
-  });
-
-  if (
-    !runtimeStatus.acquireRun("analysis", runId, {
-      totalPhases: activePhases.length,
-    })
-  ) {
-    throw new Error("A run is already active");
-  }
-
-  // Use an explicit timeout controller so runtime behavior is testable with fake timers.
-  const runTimeoutController = new AbortController();
-  const runTimeoutHandle = setTimeout(
-    () => runTimeoutController.abort(),
-    RUN_TIMEOUT_MS,
-  );
-  const runTimeoutSignal = runTimeoutController.signal;
-
-  // Combine all abort sources: user signal, run timeout, internal controller
-  const signals: AbortSignal[] = [abortController.signal, runTimeoutSignal];
-  if (signal) signals.push(signal);
-  const combinedSignal = AbortSignal.any(signals);
-
-  // When combined signal fires, propagate to internal controller
-  combinedSignal.addEventListener(
-    "abort",
-    () => {
-      if (!abortController.signal.aborted) abortController.abort();
-    },
-    { once: true },
-  );
-
-  activeRun = {
-    runId,
-    workspaceId: resolvedThreadContext.workspaceId,
-    threadId: resolvedThreadContext.threadId,
-    status: "running",
-    activePhase: null,
-    provider: canonicalProvider,
-    model,
-    runtime,
-    activePhases,
-    autoRevalidationEnabled,
-    editQueue: [],
-    startTime: Date.now(),
-    phasesCompleted: [],
-    phaseTurnCounts: {},
-    activePhaseTurnId: null,
-    abortController,
-    logger,
-    promptProvenance,
-    toolWriteContext: null,
-    toolMcpServer: null,
-  };
-
-  try {
-    workspaceDatabase.eventStore.appendEvents([
-      ...(resolvedThreadContext.createdThreadEvent
-        ? [resolvedThreadContext.createdThreadEvent]
-        : []),
-      {
-        kind: "explicit" as const,
-        type: "run.created",
-        workspaceId: resolvedThreadContext.workspaceId,
-        threadId: resolvedThreadContext.threadId,
-        runId,
-        payload: {
-          kind: "analysis",
-          provider: canonicalProvider ?? null,
-          model: model ?? null,
-          effort: runtime.effortLevel,
-          status: "running",
-          startedAt: runOccurredAt,
-          totalPhases: activePhases.length,
-          promptProvenance,
-          logCorrelation: {
-            logFileName: `${runId}.jsonl`,
-          },
-        },
-        commandId: persistenceContext.commandId,
-        receiptId: persistenceContext.receiptId,
-        correlationId: persistenceContext.correlationId,
-        causationId: persistenceContext.causationId,
-        occurredAt: runOccurredAt,
-        producer: persistenceContext.producer ?? "analysis-agent",
-      },
-      {
-        kind: "explicit" as const,
-        type: "run.status.changed",
-        workspaceId: resolvedThreadContext.workspaceId,
-        threadId: resolvedThreadContext.threadId,
-        runId,
-        payload: {
-          status: "running",
-          activePhase: null,
-          progress: {
-            completed: 0,
-            total: activePhases.length,
-          },
-          summary: {
-            statusMessage: "Run started",
-            completedPhases: 0,
-          },
-        },
-        commandId: persistenceContext.commandId,
-        receiptId: persistenceContext.receiptId,
-        correlationId: persistenceContext.correlationId,
-        causationId: persistenceContext.causationId,
-        occurredAt: runOccurredAt,
-        producer: persistenceContext.producer ?? "analysis-agent",
-      },
-    ]);
-  } catch (error) {
-    activeRun = null;
-    clearTimeout(runTimeoutHandle);
-    runtimeStatus.releaseRun(runId, "failed", {
-      failureMessage:
-        error instanceof Error ? error.message : "Failed to persist run start",
-      provider: canonicalProvider,
-    });
-    throw error;
-  }
-
-  // Reset the graph only after the run lock is held so losing concurrent
-  // requests cannot wipe the canvas before acquireRun rejects them.
-  entityGraphService.newAnalysis(topic, activeRun.workspaceId);
-
-  logger.log("orchestrator", "analysis-start", {
-    mode: "analysis",
-    topic,
-    model,
-    provider,
-    runtime,
-    activePhases,
-    autoRevalidationEnabled,
-    phases: activePhases.length,
-  });
-
-  // Execute phases async — don't await here, return immediately
-  const run = activeRun;
+function startRunExecution(
+  run: ActiveRun,
+  options: RunExecutionOptions,
+): Promise<void> {
   const executeAsync = async () => {
     try {
-      // Set up tool-based execution infrastructure
       const writeContext: AnalysisWriteContext = {
         workspaceId: run.workspaceId,
         threadId: run.threadId,
         runId: run.runId,
-        phase: run.activePhases[0],
+        phase: run.activePhases[resolveResumePhaseIndex(run)] ?? run.activePhases[0],
         allowedEntityTypes: [],
         onProgress: emitProgress,
       };
@@ -690,27 +575,23 @@ export async function runFull(
       run.toolMcpServer = await createToolBasedAnalysisMcpServer(writeContext);
       run.logger.log("orchestrator", "tool-based-setup", {});
 
-      let phaseIndex = 0;
-      // Count backward loopback jumps across the whole run so repeated
-      // replay cycles converge or fail deterministically.
+      let phaseIndex = resolveResumePhaseIndex(run);
       let passCount = 0;
 
       while (phaseIndex < run.activePhases.length) {
         if (run.status !== "running") break;
 
         const phase = run.activePhases[phaseIndex];
-
         const result = await executeSinglePhase(
           phase,
-          topic,
+          options.topic,
           run,
-          combinedSignal,
+          options.combinedSignal,
         );
 
         if (!result.success) {
-          if (combinedSignal.aborted || result.error === "Aborted") {
-            // Distinguish run-level timeout from user abort
-            if (runTimeoutSignal.aborted && !signal?.aborted) {
+          if (options.combinedSignal.aborted || result.error === "Aborted") {
+            if (options.runTimeoutSignal.aborted && !options.userSignal?.aborted) {
               run.status = "failed";
               run.error = "Run-level timeout exceeded";
               const finishedAt = Date.now();
@@ -763,7 +644,7 @@ export async function runFull(
                 provider: run.provider,
               });
               run.logger.error("orchestrator", "run-timeout", {
-                elapsedMs: analysisTimer.elapsed(),
+                elapsedMs: options.analysisTimer.elapsed(),
                 phase,
               });
               emitProgress({
@@ -872,7 +753,6 @@ export async function runFull(
           run.phasesCompleted.push(phase);
         }
 
-        // Check for loopback triggers after each phase
         const triggers = getRecordedLoopbackTriggers(run.runId);
         if (triggers.length > 0) {
           clearRecordedLoopbackTriggers(run.runId);
@@ -1000,13 +880,11 @@ export async function runFull(
           status: "success",
           phasesCompleted: run.phasesCompleted.length,
           totalEntities: snapshot2.entities.length,
-          elapsedMs: analysisTimer.elapsed(),
+          elapsedMs: options.analysisTimer.elapsed(),
         });
 
-        // Snapshot the result so getResult(runId) returns point-in-time data
         const snapshot = entityGraphService.getAnalysis();
         if (resultSnapshots.size >= MAX_RESULT_SNAPSHOTS) {
-          // Evict oldest entry
           const oldestKey = resultSnapshots.keys().next().value;
           if (oldestKey !== undefined) resultSnapshots.delete(oldestKey);
         }
@@ -1016,8 +894,6 @@ export async function runFull(
         });
 
         emitProgress({ type: "analysis_completed", runId: run.runId });
-
-        // Trigger synthesis report generation
         emitProgress({ type: "synthesis_started", runId: run.runId });
         try {
           const adapter = await loadSynthesisAdapter(run.provider);
@@ -1050,39 +926,32 @@ export async function runFull(
           run.logger.log("orchestrator", "synthesis-failed", {
             error: err instanceof Error ? err.message : String(err),
           });
-          // Synthesis failure does not affect run completion
         }
 
         runtimeStatus.releaseRun(run.runId, "completed");
       } else {
-        // Run ended with failure or interruption — log the terminal event
         run.logger.log("orchestrator", "analysis-finished", {
           status: run.status,
           phasesCompleted: run.phasesCompleted.length,
           error: run.error,
-          elapsedMs: analysisTimer.elapsed(),
+          elapsedMs: options.analysisTimer.elapsed(),
         });
       }
     } finally {
-      clearTimeout(runTimeoutHandle);
-      // Clean up tool-based execution state
+      clearTimeout(options.runTimeoutHandle);
       run.toolWriteContext = null;
       run.toolMcpServer = null;
-      // Drain any remaining queued edits
       drainEditQueue();
       run.activePhase = null;
       if (run.status !== "running") {
         clearAnalysisRunBinding(run);
       }
-      // Flush logger before clearing run state
       try {
         await run.logger.flush();
       } catch {
         // Logger flush must not prevent cleanup
       }
-      // Clear runPromise so new runs can start
       runPromise = null;
-      // Flush deferred revalidations that were suppressed during this run
       revalidationService.onRunComplete(
         run.provider,
         run.model,
@@ -1092,13 +961,367 @@ export async function runFull(
     }
   };
 
-  // Track the async execution so concurrent run guard works
-  runPromise = executeAsync();
+  return executeAsync();
+}
+
+// ── Public API ──
+
+export async function runFull(
+  topic: string,
+  provider?: string,
+  model?: string,
+  signal?: AbortSignal,
+  runtimeOverrides?: AnalysisRuntimeOverrides,
+  persistenceContext: RunPersistenceContext = {},
+): Promise<{ runId: string; workspaceId: string; threadId: string }> {
+  // Guard: check both status AND whether the async execution is still unwinding
+  if (activeRun && activeRun.status === "running") {
+    throw new Error("A run is already active");
+  }
+  if (runPromise !== null) {
+    throw new Error("A run is already active");
+  }
+
+  const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const canonicalProvider = normalizeRuntimeProvider(provider);
+  const analysisTimer = timer();
+  const abortController = new AbortController();
+  const runtime = resolveAnalysisRuntime(runtimeOverrides);
+  const activePhases = normalizeRequestedActivePhases(
+    runtimeOverrides?.activePhases,
+  );
+  const promptProvenance = createRunPromptProvenance(activePhases);
+  const autoRevalidationEnabled =
+    activePhases.length === SUPPORTED_PHASES.length;
+  const workspaceDatabase = getWorkspaceDatabase();
+  const runOccurredAt = Date.now();
+  const resolvedThreadContext =
+    workspaceDatabase.eventStore.resolveThreadContext({
+      workspaceId: persistenceContext.workspaceId,
+      threadId: persistenceContext.threadId,
+      producer: persistenceContext.producer ?? "analysis-agent",
+      commandId: persistenceContext.commandId,
+      receiptId: persistenceContext.receiptId,
+      correlationId: persistenceContext.correlationId,
+      causationId: persistenceContext.causationId,
+      occurredAt: runOccurredAt,
+    });
+  const logger = createRunLogger(runId, {
+    workspaceId: resolvedThreadContext.workspaceId,
+    threadId: resolvedThreadContext.threadId,
+  });
+
+  if (
+    !runtimeStatus.acquireRun("analysis", runId, {
+      totalPhases: activePhases.length,
+    })
+  ) {
+    throw new Error("A run is already active");
+  }
+
+  // Use an explicit timeout controller so runtime behavior is testable with fake timers.
+  const runTimeoutController = new AbortController();
+  const runTimeoutHandle = setTimeout(
+    () => runTimeoutController.abort(),
+    RUN_TIMEOUT_MS,
+  );
+  const runTimeoutSignal = runTimeoutController.signal;
+
+  // Combine all abort sources: user signal, run timeout, internal controller
+  const signals: AbortSignal[] = [abortController.signal, runTimeoutSignal];
+  if (signal) signals.push(signal);
+  const combinedSignal = AbortSignal.any(signals);
+
+  // When combined signal fires, propagate to internal controller
+  combinedSignal.addEventListener(
+    "abort",
+    () => {
+      if (!abortController.signal.aborted) abortController.abort();
+    },
+    { once: true },
+  );
+
+  activeRun = {
+    runId,
+    workspaceId: resolvedThreadContext.workspaceId,
+    threadId: resolvedThreadContext.threadId,
+    status: "running",
+    activePhase: null,
+    provider: canonicalProvider,
+    model,
+    runtime,
+    activePhases,
+    autoRevalidationEnabled,
+    editQueue: [],
+    startTime: Date.now(),
+    phasesCompleted: [],
+    phaseTurnCounts: {},
+    activePhaseTurnId: null,
+    abortController,
+    logger,
+    promptProvenance,
+    toolWriteContext: null,
+    toolMcpServer: null,
+    resumedPhaseTurn: null,
+  };
+
+  try {
+    workspaceDatabase.eventStore.appendEvents([
+      ...(resolvedThreadContext.createdThreadEvent
+        ? [resolvedThreadContext.createdThreadEvent]
+        : []),
+      {
+        kind: "explicit" as const,
+        type: "run.created",
+        workspaceId: resolvedThreadContext.workspaceId,
+        threadId: resolvedThreadContext.threadId,
+        runId,
+        payload: {
+          kind: "analysis",
+          provider: canonicalProvider ?? null,
+          model: model ?? null,
+          effort: runtime.effortLevel,
+          status: "running",
+          startedAt: runOccurredAt,
+          totalPhases: activePhases.length,
+          promptProvenance,
+          logCorrelation: {
+            logFileName: `${runId}.jsonl`,
+          },
+        },
+        commandId: persistenceContext.commandId,
+        receiptId: persistenceContext.receiptId,
+        correlationId: persistenceContext.correlationId,
+        causationId: persistenceContext.causationId,
+        occurredAt: runOccurredAt,
+        producer: persistenceContext.producer ?? "analysis-agent",
+      },
+      {
+        kind: "explicit" as const,
+        type: "run.status.changed",
+        workspaceId: resolvedThreadContext.workspaceId,
+        threadId: resolvedThreadContext.threadId,
+        runId,
+        payload: {
+          status: "running",
+          activePhase: null,
+          progress: {
+            completed: 0,
+            total: activePhases.length,
+          },
+          summary: {
+            statusMessage: "Run started",
+            completedPhases: 0,
+          },
+        },
+        commandId: persistenceContext.commandId,
+        receiptId: persistenceContext.receiptId,
+        correlationId: persistenceContext.correlationId,
+        causationId: persistenceContext.causationId,
+        occurredAt: runOccurredAt,
+        producer: persistenceContext.producer ?? "analysis-agent",
+      },
+    ]);
+  } catch (error) {
+    activeRun = null;
+    clearTimeout(runTimeoutHandle);
+    runtimeStatus.releaseRun(runId, "failed", {
+      failureMessage:
+        error instanceof Error ? error.message : "Failed to persist run start",
+      provider: canonicalProvider,
+    });
+    throw error;
+  }
+
+  // Reset the graph only after the run lock is held so losing concurrent
+  // requests cannot wipe the canvas before acquireRun rejects them.
+  entityGraphService.newAnalysis(topic, activeRun.workspaceId);
+
+  logger.log("orchestrator", "analysis-start", {
+    mode: "analysis",
+    topic,
+    model,
+    provider,
+    runtime,
+    activePhases,
+    autoRevalidationEnabled,
+    phases: activePhases.length,
+  });
+
+  const run = activeRun;
+  runPromise = startRunExecution(run, {
+    topic,
+    combinedSignal,
+    runTimeoutSignal,
+    runTimeoutHandle,
+    analysisTimer,
+    userSignal: signal,
+  });
 
   return {
     runId,
     workspaceId: resolvedThreadContext.workspaceId,
     threadId: resolvedThreadContext.threadId,
+  };
+}
+
+export async function resumeDurableRun(
+  input: ResumeDurableRunInput,
+): Promise<{ runId: string; workspaceId: string; threadId: string }> {
+  if (activeRun && activeRun.status === "running") {
+    throw new Error("A run is already active");
+  }
+  if (runPromise !== null) {
+    throw new Error("A run is already active");
+  }
+
+  const workspaceDatabase = getWorkspaceDatabase();
+  const persistedRun = workspaceDatabase.runs.getRunState(input.runId);
+  if (!persistedRun) {
+    throw new Error(`Cannot resume missing run "${input.runId}"`);
+  }
+  if (persistedRun.status !== "running") {
+    throw new Error(
+      `Cannot resume run "${input.runId}" with status "${persistedRun.status}"`,
+    );
+  }
+
+  const provider = normalizeRuntimeProvider(persistedRun.provider);
+  const topic = entityGraphService.getAnalysis().topic.trim();
+  if (topic.length === 0) {
+    throw new Error(`Cannot resume run "${input.runId}" without analysis topic`);
+  }
+
+  const activePhases = normalizeRequestedActivePhases(
+    persistedRun.promptProvenance?.activePhases,
+  );
+  const phaseSummaries =
+    workspaceDatabase.phaseTurnSummaries.listPhaseTurnSummariesByRunId(
+      persistedRun.id,
+    );
+  const completedPhases = resolveCompletedPhases(activePhases, phaseSummaries);
+  while (
+    completedPhases.length < persistedRun.progress.completed &&
+    completedPhases.length < activePhases.length
+  ) {
+    const phase = activePhases[completedPhases.length];
+    if (!completedPhases.includes(phase)) {
+      completedPhases.push(phase);
+    }
+  }
+
+  const resumedPhaseTurn =
+    persistedRun.activePhase && persistedRun.latestPhaseTurnId
+      ? phaseSummaries.find(
+          (summary) =>
+            summary.id === persistedRun.latestPhaseTurnId &&
+            summary.phase === persistedRun.activePhase &&
+            summary.status === "running",
+        ) ?? null
+      : null;
+
+  if (persistedRun.activePhase && !resumedPhaseTurn) {
+    throw new Error(
+      `Cannot resume run "${input.runId}" without running phase turn "${persistedRun.latestPhaseTurnId ?? "unknown"}"`,
+    );
+  }
+
+  const runtime = resolveAnalysisRuntime({
+    effortLevel: persistedRun.effort as AnalysisRuntimeOverrides["effortLevel"],
+  });
+  const analysisTimer = timer();
+  const abortController = new AbortController();
+  const autoRevalidationEnabled =
+    activePhases.length === SUPPORTED_PHASES.length;
+  const logger = createRunLogger(persistedRun.id, {
+    workspaceId: persistedRun.workspaceId,
+    threadId: persistedRun.threadId,
+  });
+
+  if (
+    !runtimeStatus.acquireRun("analysis", persistedRun.id, {
+      totalPhases: activePhases.length,
+    })
+  ) {
+    throw new Error("A run is already active");
+  }
+  runtimeStatus.setProgress(persistedRun.id, persistedRun.progress);
+  runtimeStatus.setActivePhase(persistedRun.id, persistedRun.activePhase);
+
+  const remainingTimeoutMs = Math.max(
+    0,
+    RUN_TIMEOUT_MS - (Date.now() - persistedRun.startedAt),
+  );
+  const runTimeoutController = new AbortController();
+  const runTimeoutHandle = setTimeout(
+    () => runTimeoutController.abort(),
+    remainingTimeoutMs,
+  );
+  const runTimeoutSignal = runTimeoutController.signal;
+  const combinedSignal = AbortSignal.any([
+    abortController.signal,
+    runTimeoutSignal,
+  ]);
+  combinedSignal.addEventListener(
+    "abort",
+    () => {
+      if (!abortController.signal.aborted) abortController.abort();
+    },
+    { once: true },
+  );
+
+  activeRun = {
+    runId: persistedRun.id,
+    workspaceId: persistedRun.workspaceId,
+    threadId: persistedRun.threadId,
+    status: "running",
+    activePhase: persistedRun.activePhase,
+    provider,
+    model: persistedRun.model ?? undefined,
+    runtime,
+    activePhases,
+    autoRevalidationEnabled,
+    editQueue: [],
+    startTime: persistedRun.startedAt,
+    phasesCompleted: completedPhases,
+    phaseTurnCounts: resolvePhaseTurnCounts(phaseSummaries),
+    activePhaseTurnId: persistedRun.latestPhaseTurnId ?? null,
+    abortController,
+    logger,
+    promptProvenance:
+      persistedRun.promptProvenance ?? createRunPromptProvenance(activePhases),
+    toolWriteContext: null,
+    toolMcpServer: null,
+    resumedPhaseTurn: resumedPhaseTurn
+      ? {
+          phaseTurnId: resumedPhaseTurn.id,
+          turnIndex: resumedPhaseTurn.turnIndex,
+          startedAt: resumedPhaseTurn.startedAt,
+        }
+      : null,
+  };
+
+  logger.log("orchestrator", "analysis-resume-start", {
+    topic,
+    provider,
+    model: persistedRun.model,
+    activePhase: persistedRun.activePhase,
+    progress: persistedRun.progress,
+    resumedPhaseTurnId: resumedPhaseTurn?.id,
+  });
+
+  runPromise = startRunExecution(activeRun, {
+    topic,
+    combinedSignal,
+    runTimeoutSignal,
+    runTimeoutHandle,
+    analysisTimer,
+  });
+
+  return {
+    runId: persistedRun.id,
+    workspaceId: persistedRun.workspaceId,
+    threadId: persistedRun.threadId,
   };
 }
 

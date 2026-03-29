@@ -178,6 +178,103 @@ function flushAsync(ms = 10): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function appendResumableRun(runId = "run-resume") {
+  const database = getWorkspaceDatabase();
+  const now = Date.now();
+  const context = database.eventStore.resolveThreadContext({
+    workspaceId: "workspace-1",
+    producer: "test",
+    occurredAt: now,
+  });
+
+  database.eventStore.appendEvents([
+    ...(context.createdThreadEvent ? [context.createdThreadEvent] : []),
+    {
+      kind: "explicit" as const,
+      type: "run.created",
+      workspaceId: context.workspaceId,
+      threadId: context.threadId,
+      runId,
+      payload: {
+        kind: "analysis",
+        provider: "claude",
+        model: "claude-sonnet-4-20250514",
+        effort: "medium",
+        status: "running",
+        startedAt: now,
+        totalPhases: 2,
+        promptProvenance: {
+          analysisType: "game-theory",
+          activePhases: ["situational-grounding", "player-identification"],
+          promptPackId: DEFAULT_PROMPT_PACK_ID,
+          promptPackVersion: DEFAULT_PROMPT_PACK_VERSION,
+          promptPackMode: DEFAULT_PROMPT_PACK_MODE,
+          promptPackSource: { kind: "bundled", path: "/test/pack.json" },
+          templateSetIdentity: DEFAULT_PROMPT_PACK_ID,
+          templateSetHash: "template-set-hash",
+          toolPolicyByPhase: {},
+        },
+        logCorrelation: {
+          logFileName: `${runId}.jsonl`,
+        },
+      },
+      occurredAt: now,
+      producer: "test",
+    },
+    {
+      kind: "explicit" as const,
+      type: "phase.started",
+      workspaceId: context.workspaceId,
+      threadId: context.threadId,
+      runId,
+      payload: {
+        phase: "situational-grounding",
+        phaseTurnId: "phase-turn-1",
+        turnIndex: 1,
+        promptProvenance: {
+          promptPackId: DEFAULT_PROMPT_PACK_ID,
+          promptPackVersion: DEFAULT_PROMPT_PACK_VERSION,
+          promptPackMode: DEFAULT_PROMPT_PACK_MODE,
+          promptPackSource: { kind: "bundled", path: "/test/pack.json" },
+          phase: "situational-grounding",
+          templateIdentity: `${DEFAULT_PROMPT_PACK_ID}:situational-grounding:initial`,
+          templateHash: "phase-template-hash",
+          effectivePromptHash: "phase-effective-hash",
+          variant: "initial",
+          toolPolicy: { enabledAnalysisTools: [], webSearch: true },
+          doneCondition: "done",
+        },
+      },
+      occurredAt: now + 1,
+      producer: "test",
+    },
+    {
+      kind: "explicit" as const,
+      type: "run.status.changed",
+      workspaceId: context.workspaceId,
+      threadId: context.threadId,
+      runId,
+      payload: {
+        status: "running",
+        activePhase: "situational-grounding",
+        progress: {
+          completed: 0,
+          total: 2,
+        },
+        summary: {
+          statusMessage: "Run started",
+          completedPhases: 0,
+        },
+        latestPhaseTurnId: "phase-turn-1",
+      },
+      occurredAt: now + 2,
+      producer: "test",
+    },
+  ]);
+
+  return context;
+}
+
 // ── Tests ──
 
 describe("analysis-orchestrator", () => {
@@ -190,6 +287,7 @@ describe("analysis-orchestrator", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockRunPhase.mockReset();
     mockTriggers = [];
     mockCommitPhaseTransaction.mockImplementation(() => ({
       entitiesCreated: 0,
@@ -1175,6 +1273,40 @@ describe("analysis-orchestrator", () => {
       const result = orchestrator.getResult("unknown-run-id");
       expect(result.runId).toBe("unknown-run-id");
       expect(result.entities).toEqual(mockEntities);
+    });
+  });
+
+  describe("resumeDurableRun", () => {
+    it("reconstructs a running durable run and reuses the persisted phase turn", async () => {
+      const context = appendResumableRun();
+      mockRunPhase
+        .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
+        .mockResolvedValueOnce(makeFailedResult("Stop after resume test"));
+
+      await orchestrator.resumeDurableRun({ runId: "run-resume" });
+      await flushAsync();
+
+      expect(mockRunPhase).toHaveBeenCalled();
+      expect((mockRunPhase.mock.calls[0][4] as any)?.phaseTurnId).toBe(
+        "phase-turn-1",
+      );
+
+      const database = getWorkspaceDatabase();
+      const resumedTurn =
+        database.phaseTurnSummaries.getPhaseTurnSummary("phase-turn-1");
+      expect(resumedTurn).toMatchObject({
+        id: "phase-turn-1",
+        status: "completed",
+      });
+
+      const resumedUserMessages = database.messages
+        .listMessagesByThreadId(context.threadId)
+        .filter(
+          (message) =>
+            message.messageJson.includes("\"phaseTurnId\":\"phase-turn-1\"") &&
+            message.role === "user",
+        );
+      expect(resumedUserMessages).toHaveLength(0);
     });
   });
 

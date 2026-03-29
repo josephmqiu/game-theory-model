@@ -161,6 +161,12 @@ export function inferRuntimeError(
       retryable: true,
     });
   }
+  if (/did not call complete_phase|complete_phase/i.test(error)) {
+    return createValidationRuntimeError(error, {
+      ...(provider ? { provider } : {}),
+      retryable: false,
+    });
+  }
   if (/parse|json|syntax|zod|validation/i.test(error)) {
     return createValidationRuntimeError(error, {
       ...(provider ? { provider } : {}),

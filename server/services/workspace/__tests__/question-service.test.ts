@@ -13,6 +13,7 @@ const mockAppendEvents = vi.fn();
 const mockGetById = vi.fn();
 const mockUpdateStatus = vi.fn();
 const mockListByThreadId = vi.fn();
+const mockListByRunId = vi.fn();
 const mockGetThreadState = vi.fn();
 
 vi.mock("../workspace-db", () => ({
@@ -22,6 +23,7 @@ vi.mock("../workspace-db", () => ({
       getById: mockGetById,
       updateStatus: mockUpdateStatus,
       listByThreadId: mockListByThreadId,
+      listByRunId: mockListByRunId,
     },
     threads: { getThreadState: mockGetThreadState },
   }),
@@ -29,11 +31,16 @@ vi.mock("../workspace-db", () => ({
 
 import {
   createPendingQuestion,
+  getOrCreatePendingQuestion,
   waitForAnswer,
   resolveQuestion,
   dismissQuestion,
   listPendingByThread,
+  listPendingByRun,
   getPendingQuestion,
+  getQuestionAnswer,
+  getQuestionStatus,
+  reattachPendingQuestionWait,
   hasPendingResolver,
 } from "../question-service";
 import type { CreateQuestionInput } from "../question-service";
@@ -59,6 +66,14 @@ function makeInput(
 describe("question-service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAppendEvents.mockReset();
+    mockGetById.mockReset();
+    mockUpdateStatus.mockReset();
+    mockListByThreadId.mockReset();
+    mockListByRunId.mockReset();
+    mockGetThreadState.mockReset();
+    mockListByRunId.mockReturnValue([]);
+    mockListByThreadId.mockReturnValue([]);
   });
 
   // ── createPendingQuestion ──
@@ -114,9 +129,60 @@ describe("question-service", () => {
     });
   });
 
+  describe("getOrCreatePendingQuestion", () => {
+    it("reuses a matching persisted pending question instead of creating a duplicate", () => {
+      const existing = {
+        kind: "question" as const,
+        status: "pending" as const,
+        question: {
+          id: "uiq-existing",
+          threadId: "ws-1:primary-thread",
+          runId: "run-1",
+          phase: "player-identification",
+          header: "Choose actors",
+          question: "Which actors should we model?",
+          options: [{ label: "USA" }, { label: "China" }, { label: "EU" }],
+          multiSelect: true,
+          createdAt: 100,
+        },
+      };
+      mockListByRunId.mockReturnValue([existing]);
+
+      const result = getOrCreatePendingQuestion(makeInput());
+
+      expect(result).toBe(existing);
+      expect(mockAppendEvents).not.toHaveBeenCalled();
+    });
+  });
+
   // ── waitForAnswer ──
 
   describe("waitForAnswer", () => {
+    it("returns an already-resolved persisted answer immediately", async () => {
+      mockGetById.mockReturnValue({
+        kind: "question",
+        status: "resolved",
+        question: {
+          id: "uiq-resolved",
+          threadId: "ws-1:primary-thread",
+          header: "Choose actors",
+          question: "Which actors should we model?",
+          createdAt: 100,
+        },
+        answer: {
+          questionId: "uiq-resolved",
+          selectedOptions: [1],
+          resolvedAt: 200,
+        },
+      });
+
+      await expect(waitForAnswer("uiq-resolved")).resolves.toMatchObject({
+        questionId: "uiq-resolved",
+        selectedOptions: [1],
+      });
+      expect(hasPendingResolver("uiq-resolved")).toBe(false);
+    });
+
     it("registers a pending resolver that blocks until resolveQuestion is called", async () => {
       const state = createPendingQuestion(makeInput());
       const questionId = state.question.id;
@@ -165,6 +231,27 @@ describe("question-service", () => {
 
       await expect(promise).rejects.toThrow("Question wait aborted");
       expect(hasPendingResolver("uiq-will-abort")).toBe(false);
+    });
+
+    it("reattaches a waiter for a persisted pending question", async () => {
+      const state = createPendingQuestion(makeInput());
+      mockGetById.mockReturnValueOnce(state);
+      const promise = reattachPendingQuestionWait(state.question.id);
+
+      expect(hasPendingResolver(state.question.id)).toBe(true);
+
+      mockGetById.mockReturnValue(state);
+      mockGetThreadState.mockReturnValue({ workspaceId: "ws-1" });
+
+      resolveQuestion({
+        questionId: state.question.id,
+        customText: "Recovered answer",
+      });
+
+      await expect(promise).resolves.toMatchObject({
+        questionId: state.question.id,
+        customText: "Recovered answer",
+      });
     });
   });
 
@@ -299,6 +386,18 @@ describe("question-service", () => {
     });
   });
 
+  describe("listPendingByRun", () => {
+    it("delegates to questions.listByRunId with pending status", () => {
+      const fakeList = [{ question: { id: "q1" }, status: "pending" }];
+      mockListByRunId.mockReturnValue(fakeList);
+
+      const result = listPendingByRun("run-1");
+
+      expect(mockListByRunId).toHaveBeenCalledWith("run-1", "pending");
+      expect(result).toBe(fakeList);
+    });
+  });
+
   // ── getPendingQuestion ──
 
   describe("getPendingQuestion", () => {
@@ -319,6 +418,36 @@ describe("question-service", () => {
       mockGetById.mockReturnValue(undefined);
 
       expect(getPendingQuestion("q-missing")).toBeUndefined();
+    });
+  });
+
+  describe("getQuestionAnswer", () => {
+    it("returns the stored answer for a resolved question", () => {
+      const answer = {
+        questionId: "q1",
+        customText: "Stored answer",
+        resolvedAt: 123,
+      };
+      mockGetById.mockReturnValue({
+        kind: "question",
+        status: "resolved",
+        question: { id: "q1" },
+        answer,
+      });
+
+      expect(getQuestionAnswer("q1")).toEqual(answer);
+    });
+  });
+
+  describe("getQuestionStatus", () => {
+    it("returns the current persisted status", () => {
+      mockGetById.mockReturnValue({
+        kind: "question",
+        status: "pending",
+        question: { id: "q1" },
+      });
+
+      expect(getQuestionStatus("q1")).toBe("pending");
     });
   });
 

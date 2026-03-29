@@ -12,6 +12,10 @@ export interface QuestionRepository {
     workspaceId: string,
     question: UserInputQuestion,
   ): PendingQuestionState;
+  listByRunId(
+    runId: string,
+    statusFilter?: UserInputQuestionStatus,
+  ): PendingQuestionState[];
   resolvePendingQuestion(
     questionId: string,
     answer: UserInputAnswer,
@@ -69,6 +73,18 @@ export function createQuestionRepository(db: DatabaseSync): QuestionRepository {
      WHERE status = $status
      ORDER BY created_at ASC`,
   );
+  const listByRunStatement = db.prepare(
+    `SELECT status, question_json, answer_json
+     FROM pending_questions
+     WHERE run_id = $runId
+     ORDER BY created_at ASC`,
+  );
+  const listByRunAndStatusStatement = db.prepare(
+    `SELECT status, question_json, answer_json
+     FROM pending_questions
+     WHERE run_id = $runId AND status = $status
+     ORDER BY created_at ASC`,
+  );
   const upsertStatement = db.prepare(
     `INSERT INTO pending_questions (
        id, workspace_id, thread_id, run_id, phase,
@@ -122,6 +138,17 @@ export function createQuestionRepository(db: DatabaseSync): QuestionRepository {
         throw new Error(`Failed to persist pending question "${question.id}".`);
       }
       return mapQuestionRow(stored);
+    },
+
+    listByRunId(runId, statusFilter) {
+      if (statusFilter) {
+        return listByRunAndStatusStatement
+          .all({ $runId: runId, $status: statusFilter })
+          .map((row) => mapQuestionRow(row));
+      }
+      return listByRunStatement
+        .all({ $runId: runId })
+        .map((row) => mapQuestionRow(row));
     },
 
     resolvePendingQuestion(questionId, answer) {

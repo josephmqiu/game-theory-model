@@ -16,12 +16,16 @@ import {
 let currentDatabase: WorkspaceDatabase | null = null;
 const {
   clearProviderSessionBindingMock,
+  getProviderSessionBindingMock,
   initializeFromDatabaseMock,
   getStaleEntityIdsMock,
+  resumeDurableRunMock,
 } = vi.hoisted(() => ({
   clearProviderSessionBindingMock: vi.fn(),
+  getProviderSessionBindingMock: vi.fn(() => null),
   initializeFromDatabaseMock: vi.fn(),
   getStaleEntityIdsMock: vi.fn(() => []),
+  resumeDurableRunMock: vi.fn(),
 }));
 
 vi.mock("../../utils/ai-logger", () => ({
@@ -36,7 +40,11 @@ vi.mock("../../entity-graph-service", () => ({
 
 vi.mock("../provider-session-binding-service", () => ({
   clearProviderSessionBinding: clearProviderSessionBindingMock,
-  getProviderSessionBinding: vi.fn(() => null),
+  getProviderSessionBinding: getProviderSessionBindingMock,
+}));
+
+vi.mock("../../../agents/analysis-agent", () => ({
+  resumeDurableRun: resumeDurableRunMock,
 }));
 
 vi.mock("../workspace-db", async (importOriginal) => {
@@ -54,6 +62,7 @@ vi.mock("../workspace-db", async (importOriginal) => {
 });
 
 import * as runtimeStatus from "../../../services/runtime-status";
+import { resolveQuestion } from "../question-service";
 import {
   _resetWorkspaceRecoveryDiagnosticsForTest,
   listWorkspaceRecoveryDiagnostics,
@@ -144,9 +153,12 @@ describe("runtime-recovery-service", () => {
     _resetWorkspaceRecoveryDiagnosticsForTest();
     runtimeStatus._resetForTest();
     clearProviderSessionBindingMock.mockReset();
+    getProviderSessionBindingMock.mockReset();
     initializeFromDatabaseMock.mockReset();
     getStaleEntityIdsMock.mockReset();
+    resumeDurableRunMock.mockReset();
     getStaleEntityIdsMock.mockReturnValue([]);
+    getProviderSessionBindingMock.mockReturnValue(null);
 
     if (currentDatabase) {
       currentDatabase.close();
@@ -244,55 +256,6 @@ describe("runtime-recovery-service", () => {
     return context;
   }
 
-  function appendCompletedRun(threadId: string) {
-    getDatabase().eventStore.appendEvents([
-      {
-        kind: "explicit" as const,
-        type: "run.created",
-        workspaceId: "workspace-1",
-        threadId,
-        runId: "run-completed",
-        payload: {
-          kind: "analysis",
-          provider: null,
-          model: null,
-          effort: "medium",
-          status: "running",
-          startedAt: 200,
-          totalPhases: 2,
-          promptProvenance: createRunPromptProvenance(),
-          logCorrelation: {
-            logFileName: "run-completed.jsonl",
-          },
-        },
-        occurredAt: 200,
-        producer: "test",
-      },
-      {
-        kind: "explicit" as const,
-        type: "run.status.changed",
-        workspaceId: "workspace-1",
-        threadId,
-        runId: "run-completed",
-        payload: {
-          status: "completed",
-          activePhase: null,
-          progress: {
-            completed: 2,
-            total: 2,
-          },
-          finishedAt: 210,
-          summary: {
-            statusMessage: "Complete",
-            completedPhases: 2,
-          },
-        },
-        occurredAt: 210,
-        producer: "test",
-      },
-    ]);
-  }
-
   function appendPendingQuestion(questionId: string, threadId: string, runId?: string) {
     getDatabase().eventStore.appendEvents([
       {
@@ -314,7 +277,7 @@ describe("runtime-recovery-service", () => {
     ]);
   }
 
-  it("marks stale running runs failed and dismisses their pending questions", async () => {
+  it("fails a running run when its provider binding is missing", async () => {
     const context = appendRunningRun();
     appendPendingQuestion("q-running", context.threadId, "run-1");
 
@@ -332,7 +295,7 @@ describe("runtime-recovery-service", () => {
       getDatabase().runs.getRunState("run-1")?.summary?.statusMessage,
     ).toContain("missing local provider session binding");
     expect(getDatabase().questions.getById("q-running")).toMatchObject({
-      status: "dismissed",
+      status: "pending",
     });
     expect(clearProviderSessionBindingMock).toHaveBeenCalledWith(
       context.threadId,
@@ -345,35 +308,84 @@ describe("runtime-recovery-service", () => {
     expect(initializeFromDatabaseMock).toHaveBeenCalledWith("workspace-1");
   });
 
-  it("dismisses persisted pending questions for completed, missing, and runless cases", async () => {
+  it("starts durable resume immediately when a running run has a valid binding", async () => {
     const context = appendRunningRun();
-    appendCompletedRun(context.threadId);
-    appendPendingQuestion("q-completed", context.threadId, "run-completed");
-    appendPendingQuestion("q-missing", context.threadId, "run-missing");
-    appendPendingQuestion("q-runless", context.threadId);
+    getProviderSessionBindingMock.mockReturnValue({
+      version: 1,
+      provider: "claude",
+      workspaceId: context.workspaceId,
+      threadId: context.threadId,
+      purpose: "analysis",
+      runId: "run-1",
+      phaseTurnId: "phase-turn-1",
+      providerSessionId: "claude-session-1",
+      claudeSessionId: "claude-session-1",
+      updatedAt: 200,
+    } as any);
+    resumeDurableRunMock.mockResolvedValue({
+      runId: "run-1",
+      workspaceId: context.workspaceId,
+      threadId: context.threadId,
+    });
 
     await waitForRuntimeRecovery();
 
-    expect(getDatabase().questions.getById("q-completed")).toMatchObject({
-      status: "dismissed",
+    expect(resumeDurableRunMock).toHaveBeenCalledWith({
+      runId: "run-1",
     });
-    expect(getDatabase().questions.getById("q-missing")).toMatchObject({
-      status: "dismissed",
+    expect(getDatabase().runs.getRunState("run-1")).toMatchObject({
+      status: "running",
+      activePhase: "situational-grounding",
     });
-    expect(getDatabase().questions.getById("q-runless")).toMatchObject({
-      status: "dismissed",
+  });
+
+  it("defers durable resume until a persisted pending question is answered", async () => {
+    const context = appendRunningRun();
+    appendPendingQuestion("q-running", context.threadId, "run-1");
+    getProviderSessionBindingMock.mockReturnValue({
+      version: 1,
+      provider: "claude",
+      workspaceId: context.workspaceId,
+      threadId: context.threadId,
+      purpose: "analysis",
+      runId: "run-1",
+      phaseTurnId: "phase-turn-1",
+      providerSessionId: "claude-session-1",
+      claudeSessionId: "claude-session-1",
+      updatedAt: 200,
+    } as any);
+    resumeDurableRunMock.mockResolvedValue({
+      runId: "run-1",
+      workspaceId: context.workspaceId,
+      threadId: context.threadId,
     });
 
-    const questionDiagnostics = listWorkspaceRecoveryDiagnostics().filter(
-      (diagnostic) => diagnostic.code === "recovery-questions-dismissed",
+    await waitForRuntimeRecovery();
+
+    expect(resumeDurableRunMock).not.toHaveBeenCalled();
+    expect(getDatabase().questions.getById("q-running")).toMatchObject({
+      status: "pending",
+    });
+
+    const diagnostics = listWorkspaceRecoveryDiagnostics().filter(
+      (diagnostic) => diagnostic.code === "resume-deferred-on-question",
     );
-    expect(questionDiagnostics).toHaveLength(1);
-    expect(questionDiagnostics[0]).toMatchObject({
-      level: "info",
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toMatchObject({
       data: expect.objectContaining({
-        dismissedCount: 3,
-        reason: "question_resolvers_are_process_local",
+        questionId: "q-running",
+        pendingQuestionCount: 1,
       }),
+    });
+
+    resolveQuestion({
+      questionId: "q-running",
+      customText: "Recovered answer",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(resumeDurableRunMock).toHaveBeenCalledWith({
+      runId: "run-1",
     });
   });
 
@@ -394,7 +406,7 @@ describe("runtime-recovery-service", () => {
       ),
     ).toHaveLength(1);
     expect(getDatabase().questions.getById("q-once")).toMatchObject({
-      status: "dismissed",
+      status: "pending",
     });
   });
 });

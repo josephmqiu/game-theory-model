@@ -152,4 +152,26 @@ describe("provider-session-binding-service", () => {
     });
     expect(getProviderSessionBinding("thread-1", "analysis")).toBeNull();
   });
+
+  it("persists exact Codex thread and turn identifiers", () => {
+    upsertProviderSessionBinding({
+      version: 1,
+      provider: "codex",
+      workspaceId: "workspace-1",
+      threadId: "thread-1",
+      purpose: "chat",
+      runId: "run-codex",
+      providerSessionId: "codex-thread-1",
+      codexThreadId: "codex-thread-1",
+      codexTurnId: "codex-turn-9",
+      updatedAt: 300,
+    });
+
+    expect(getProviderSessionBinding("thread-1", "chat")).toMatchObject({
+      provider: "codex",
+      providerSessionId: "codex-thread-1",
+      codexThreadId: "codex-thread-1",
+      codexTurnId: "codex-turn-9",
+    });
+  });
 });

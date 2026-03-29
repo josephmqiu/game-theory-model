@@ -315,6 +315,7 @@ export type WorkspaceRecoveryDiagnosticCode =
   | "recovery-scan-completed"
   | "recovery-binding-found"
   | "recovery-binding-missing"
+  | "resume-deferred-on-question"
   | "resume-attempt"
   | "resume-succeeded"
   | "resume-failed"

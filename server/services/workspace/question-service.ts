@@ -4,6 +4,7 @@ import type {
   UserInputAnswer,
   UserInputOption,
   UserInputQuestion,
+  UserInputQuestionStatus,
 } from "../../../shared/types/user-input";
 import { getWorkspaceDatabase } from "./workspace-db";
 import { serverLog, serverWarn } from "../../utils/ai-logger";
@@ -32,6 +33,54 @@ interface PendingResolver {
 }
 
 const pendingResolvers = new Map<string, PendingResolver>();
+
+function questionsMatch(
+  existing: UserInputQuestion,
+  input: CreateQuestionInput,
+): boolean {
+  if (existing.threadId !== input.threadId) {
+    return false;
+  }
+  if ((existing.runId ?? null) !== (input.runId ?? null)) {
+    return false;
+  }
+  if ((existing.phase ?? null) !== (input.phase ?? null)) {
+    return false;
+  }
+  if (existing.header !== input.header || existing.question !== input.question) {
+    return false;
+  }
+  if ((existing.multiSelect ?? false) !== (input.multiSelect ?? false)) {
+    return false;
+  }
+
+  const existingOptions = existing.options ?? [];
+  const inputOptions = input.options ?? [];
+  if (existingOptions.length !== inputOptions.length) {
+    return false;
+  }
+
+  return existingOptions.every(
+    (option, index) =>
+      option.label === inputOptions[index]?.label &&
+      option.description === inputOptions[index]?.description,
+  );
+}
+
+function findReusableQuestion(
+  input: CreateQuestionInput,
+): PendingQuestionState | undefined {
+  const db = getWorkspaceDatabase();
+  const candidates = input.runId
+    ? db.questions.listByRunId(input.runId)
+    : db.questions.listByThreadId(input.threadId);
+
+  return candidates.find(
+    (candidate) =>
+      candidate.status !== "dismissed" &&
+      questionsMatch(candidate.question, input),
+  );
+}
 
 export function createPendingQuestion(
   input: CreateQuestionInput,
@@ -99,10 +148,34 @@ export function createPendingQuestion(
   };
 }
 
+export function getOrCreatePendingQuestion(
+  input: CreateQuestionInput,
+): PendingQuestionState {
+  const existing = findReusableQuestion(input);
+  if (existing) {
+    serverLog(
+      existing.question.runId,
+      "question-service",
+      `Reused persisted question "${existing.question.id}" in thread ${existing.question.threadId}`,
+    );
+    return existing;
+  }
+
+  return createPendingQuestion(input);
+}
+
 export function waitForAnswer(
   questionId: string,
   signal?: AbortSignal,
 ): Promise<UserInputAnswer> {
+  const existing = getWorkspaceDatabase().questions.getById(questionId);
+  if (existing?.status === "resolved" && existing.answer) {
+    return Promise.resolve(existing.answer);
+  }
+  if (existing?.status === "dismissed") {
+    return Promise.reject(new Error(`Question "${questionId}" was dismissed`));
+  }
+
   return new Promise<UserInputAnswer>((resolve, reject) => {
     if (signal?.aborted) {
       reject(new Error("Question wait aborted before starting"));
@@ -123,6 +196,13 @@ export function waitForAnswer(
       signal.addEventListener("abort", onAbort, { once: true });
     }
   });
+}
+
+export function reattachPendingQuestionWait(
+  questionId: string,
+  signal?: AbortSignal,
+): Promise<UserInputAnswer> {
+  return waitForAnswer(questionId, signal);
 }
 
 export function resolveQuestion(input: ResolveQuestionInput): void {
@@ -225,10 +305,27 @@ export function listPendingByThread(threadId: string): PendingQuestionState[] {
   return getWorkspaceDatabase().questions.listByThreadId(threadId, "pending");
 }
 
+export function listPendingByRun(runId: string): PendingQuestionState[] {
+  return getWorkspaceDatabase().questions.listByRunId(runId, "pending");
+}
+
 export function getPendingQuestion(
   questionId: string,
 ): PendingQuestionState | undefined {
   return getWorkspaceDatabase().questions.getById(questionId);
+}
+
+export function getQuestionAnswer(
+  questionId: string,
+): UserInputAnswer | undefined {
+  const question = getWorkspaceDatabase().questions.getById(questionId);
+  return question?.status === "resolved" ? question.answer : undefined;
+}
+
+export function getQuestionStatus(
+  questionId: string,
+): UserInputQuestionStatus | undefined {
+  return getWorkspaceDatabase().questions.getById(questionId)?.status;
 }
 
 export function hasPendingResolver(questionId: string): boolean {

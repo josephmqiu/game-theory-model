@@ -139,6 +139,11 @@ export interface ExecutePhaseTurnContext {
   logger: RunLogger;
   producer: string;
   onProgress?: (event: AnalysisProgressEvent) => void;
+  resumePhaseTurn?: {
+    phaseTurnId: string;
+    turnIndex: number;
+    startedAt: number;
+  };
 }
 
 export interface ExecutePhaseTurnResult {
@@ -164,11 +169,17 @@ export async function executePhaseTurn(
     toolMcpServer,
     toolWriteContext,
   };
-  const turnIndex = (input.phaseTurnCounts[input.phase] ?? 0) + 1;
-  input.phaseTurnCounts[input.phase] = turnIndex;
-  const phaseTurnId = `phase-turn-${nanoid()}`;
+  const resumedPhaseTurn = input.resumePhaseTurn;
+  const turnIndex =
+    resumedPhaseTurn?.turnIndex ?? (input.phaseTurnCounts[input.phase] ?? 0) + 1;
+  input.phaseTurnCounts[input.phase] = Math.max(
+    input.phaseTurnCounts[input.phase] ?? 0,
+    turnIndex,
+  );
+  const phaseTurnId =
+    resumedPhaseTurn?.phaseTurnId ?? `phase-turn-${nanoid()}`;
   const threadService = createThreadService();
-  const phaseStart = Date.now();
+  const phaseStart = resumedPhaseTurn?.startedAt ?? Date.now();
   const phaseIndex =
     input.activePhases.findIndex((phase) => phase === input.phase) + 1;
   const phaseBrief = buildPhaseBrief({
@@ -194,64 +205,66 @@ export async function executePhaseTurn(
     });
   }
 
-  appendRunEvents(
-    {
+  if (!resumedPhaseTurn) {
+    appendRunEvents(
+      {
+        workspaceId: input.workspaceId,
+        threadId: input.threadId,
+        runId: input.runId,
+        producer: input.producer,
+      },
+      [
+        {
+          type: "phase.started",
+          payload: {
+            phase: input.phase,
+            phaseTurnId,
+            turnIndex,
+            promptProvenance: phasePromptBundle.promptProvenance,
+          },
+          occurredAt: phaseStart,
+        },
+        {
+          type: "run.status.changed",
+          payload: {
+            status: "running",
+            activePhase: input.phase,
+            progress: {
+              completed: input.progressCompletedBefore,
+              total: input.progressTotal,
+            },
+            summary: buildRunSummaryState(
+              `Running ${input.phase}`,
+              input.progressCompletedBefore,
+            ),
+            latestPhaseTurnId: phaseTurnId,
+          },
+          occurredAt: phaseStart,
+        },
+      ],
+    );
+
+    threadService.recordMessage({
       workspaceId: input.workspaceId,
       threadId: input.threadId,
+      role: "user",
+      content: buildVisiblePhaseUserMessage({
+        phase: input.phase,
+        phaseNumber: phaseIndex,
+        objective: phaseBrief.phaseConfig.objective,
+        doneCondition: phaseBrief.phaseConfig.doneCondition,
+        phaseBrief: phaseBrief.phaseBrief,
+      }),
       runId: input.runId,
-      producer: input.producer,
-    },
-    [
-      {
-        type: "phase.started",
-        payload: {
-          phase: input.phase,
-          phaseTurnId,
-          turnIndex,
-          promptProvenance: phasePromptBundle.promptProvenance,
-        },
-        occurredAt: phaseStart,
-      },
-      {
-        type: "run.status.changed",
-        payload: {
-          status: "running",
-          activePhase: input.phase,
-          progress: {
-            completed: input.progressCompletedBefore,
-            total: input.progressTotal,
-          },
-          summary: buildRunSummaryState(
-            `Running ${input.phase}`,
-            input.progressCompletedBefore,
-          ),
-          latestPhaseTurnId: phaseTurnId,
-        },
-        occurredAt: phaseStart,
-      },
-    ],
-  );
-
-  threadService.recordMessage({
-    workspaceId: input.workspaceId,
-    threadId: input.threadId,
-    role: "user",
-    content: buildVisiblePhaseUserMessage({
+      phaseTurnId,
       phase: input.phase,
-      phaseNumber: phaseIndex,
-      objective: phaseBrief.phaseConfig.objective,
-      doneCondition: phaseBrief.phaseConfig.doneCondition,
-      phaseBrief: phaseBrief.phaseBrief,
-    }),
-    runId: input.runId,
-    phaseTurnId,
-    phase: input.phase,
-    runKind: input.runKind,
-    source: "analysis",
-    kind: "user-turn",
-    occurredAt: phaseStart,
-    producer: input.producer,
-  });
+      runKind: input.runKind,
+      source: "analysis",
+      kind: "user-turn",
+      occurredAt: phaseStart,
+      producer: input.producer,
+    });
+  }
 
   input.onProgress?.({
     type: "phase_started",
@@ -297,6 +310,7 @@ export async function executePhaseTurn(
         signal: input.signal,
         logger: input.logger,
         binding: existingBinding,
+        allowResumeRetryFallback: !resumedPhaseTurn,
         historyMessages: existingBinding
           ? []
           : buildPhaseHistoryMessages({

@@ -633,7 +633,7 @@ export async function handleAskUser(args: {
   }> = [];
 
   for (const q of args.questions) {
-    const pending = questionService.createPendingQuestion({
+    const pending = questionService.getOrCreatePendingQuestion({
       workspaceId: context.workspaceId,
       threadId: context.threadId,
       runId: context.runId,
