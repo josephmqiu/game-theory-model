@@ -1,10 +1,11 @@
 import type { GraderResult } from "./eval-types";
+import type { RuntimeAdapterChatEvent } from "../services/ai/runtime-adapter-events";
 
 type StreamChatImpl = (
   userPrompt: string,
   systemPrompt: string,
   model: string,
-) => AsyncIterable<{ type: string; content?: string }>;
+) => AsyncIterable<RuntimeAdapterChatEvent>;
 
 export async function runModelGraders(
   entities: unknown[],
@@ -13,6 +14,7 @@ export async function runModelGraders(
   options?: {
     provider?: string;
     model?: string;
+    relationships?: unknown[];
     streamChatImpl?: StreamChatImpl;
   },
 ): Promise<GraderResult[]> {
@@ -40,6 +42,11 @@ export async function runModelGraders(
   return results;
 }
 
+/** Strip <thinking>...</thinking> blocks from response text. */
+function stripThinkingTags(text: string): string {
+  return text.replace(/<thinking>[\s\S]*?<\/thinking>/g, "").trim();
+}
+
 async function gradeWithRubric(
   entities: unknown[],
   phase: string,
@@ -47,6 +54,7 @@ async function gradeWithRubric(
   options?: {
     provider?: string;
     model?: string;
+    relationships?: unknown[];
     streamChatImpl?: StreamChatImpl;
   },
 ): Promise<number> {
@@ -56,25 +64,37 @@ async function gradeWithRubric(
 
   const systemPrompt =
     "You are a strict evaluator of AI-generated game theory analysis. " +
-    "Score outputs against criteria. Respond with ONLY a JSON object: " +
-    '{ "score": <0.0-1.0>, "reasoning": "<explanation>" }';
+    "Score outputs against criteria. Reason step-by-step inside <thinking> tags, " +
+    "then output ONLY a JSON object outside the tags: " +
+    '{ "score": <0.0-1.0>, "reasoning": "<one-line summary>" }';
 
-  const userPrompt = [
+  const parts = [
     `Phase: ${phase}`,
     "",
     "Entities produced:",
     JSON.stringify(entities, null, 2),
+  ];
+
+  if (options?.relationships?.length) {
+    parts.push(
+      "",
+      "Relationships:",
+      JSON.stringify(options.relationships, null, 2),
+    );
+  }
+
+  parts.push(
     "",
     "Criterion to evaluate:",
     rubric,
     "",
     "Score 0.0 (criterion fully violated) to 1.0 (criterion fully met).",
-  ].join("\n");
+  );
+
+  const userPrompt = parts.join("\n");
 
   const model = options?.model ?? "claude-opus-4-20250514";
 
-  // streamChat yields runtime adapter chat events such as text deltas and
-  // terminal completion markers.
   let responseText = "";
   for await (const event of streamChat(userPrompt, systemPrompt, model)) {
     if (event.type === "text_delta") {
@@ -82,7 +102,9 @@ async function gradeWithRubric(
     }
   }
 
-  const match = responseText.match(/"score"\s*:\s*([\d.]+)/);
+  // Strip thinking blocks before extracting score
+  const cleanText = stripThinkingTags(responseText);
+  const match = cleanText.match(/"score"\s*:\s*([\d.]+)/);
   const score = match ? Math.min(1, Math.max(0, parseFloat(match[1]))) : 0;
   return score;
 }

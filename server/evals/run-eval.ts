@@ -105,6 +105,22 @@ function formatReport(report: PhaseEvalReport): string {
     `  pass rate: ${passRatePct}% (${report.trials.length} trials)  ${consistency}`,
   );
 
+  // Aggregate metrics
+  if (report.passAtK != null) {
+    const passAtKPct = (report.passAtK * 100).toFixed(1);
+    const passHatKPct = ((report.passHatK ?? 0) * 100).toFixed(1);
+    const semStr = (report.sem ?? 0).toFixed(3);
+    const ci = report.ci95 ?? [0, 0];
+    lines.push(
+      `  pass@${report.trials.length}: ${passAtKPct}%  pass^${report.trials.length}: ${passHatKPct}%  SEM: ${semStr}  95% CI: [${(ci[0] * 100).toFixed(0)}%, ${(ci[1] * 100).toFixed(0)}%]`,
+    );
+  }
+  if (report.meanLatencyMs != null) {
+    lines.push(
+      `  latency: mean=${(report.meanLatencyMs / 1000).toFixed(1)}s  median=${((report.medianLatencyMs ?? 0) / 1000).toFixed(1)}s`,
+    );
+  }
+
   return lines.join("\n");
 }
 
@@ -151,11 +167,49 @@ async function main() {
     console.log(formatReport(report));
   }
 
-  mkdirSync(RESULTS_DIR, { recursive: true });
+  // Save results with metadata envelope
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const resultFile = join(RESULTS_DIR, `eval-${timestamp}.json`);
-  writeFileSync(resultFile, JSON.stringify(reports, null, 2));
-  console.log(`\nResults saved to ${resultFile}`);
+  const evalDir = join(RESULTS_DIR, `eval-${timestamp}`);
+  mkdirSync(evalDir, { recursive: true });
+
+  const evalMeta = {
+    timestamp: new Date().toISOString(),
+    model: args.model ?? "claude-sonnet-4-20250514",
+    graderModel: args.graderModel ?? "claude-opus-4-20250514",
+    efforts,
+    trials: args.trials,
+    fast: args.fast,
+    chain: args.chain,
+    evalVersion: "2.0.0",
+  };
+
+  writeFileSync(
+    join(evalDir, "report.json"),
+    JSON.stringify({ evalMeta, reports }, null, 2),
+  );
+
+  // Save transcripts per trial
+  const transcriptsDir = join(evalDir, "transcripts");
+  let hasTranscripts = false;
+  for (const report of reports) {
+    for (const trial of report.trials) {
+      if (trial.transcript) {
+        if (!hasTranscripts) {
+          mkdirSync(transcriptsDir, { recursive: true });
+          hasTranscripts = true;
+        }
+        writeFileSync(
+          join(
+            transcriptsDir,
+            `${report.fixture}--${report.phase}--trial-${trial.trial}.txt`,
+          ),
+          trial.transcript,
+        );
+      }
+    }
+  }
+
+  console.log(`\nResults saved to ${evalDir}`);
 }
 
 // Only run main() when executed directly (not imported in tests)

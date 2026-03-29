@@ -4,19 +4,10 @@
   "complexityTier": "trivial",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [
-        2,
-        5
-      ],
-      "requiredFactCategories": [
-        "rule"
-      ],
+      "entityCountRange": [2, 5],
+      "requiredFactCategories": ["rule"],
       "minDistinctFactCategories": 1,
-      "allowedRelationshipTypes": [
-        "supports",
-        "contradicts",
-        "precedes"
-      ],
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
       "forbiddenPatterns": [
         "evolutionary",
         "biological",
@@ -31,10 +22,7 @@
       ]
     },
     "player-identification": {
-      "entityCountRange": [
-        2,
-        6
-      ],
+      "entityCountRange": [2, 6],
       "forbiddenPatterns": [
         "referee",
         "internal agent",
@@ -50,6 +38,29 @@
         "Every player entity should be a genuine actor who independently chooses actions in the game, not a cognitive mode, rule enforcer, or abstract concept.",
         "Player count should match the actual number of independent decision-makers in the game.",
         "Objectives should be specific to the game described, not generic game-theory goals like \"maximize utility\"."
+      ]
+    },
+    "baseline-model": {
+      "entityCountRange": [2, 6],
+      "forbiddenPatterns": ["iterated", "repeated", "evolutionary"],
+      "rubrics": [
+        "Should identify the prisoner's dilemma as a simultaneous game with dominant strategy structure.",
+        "Strategies should reflect cooperate/defect choices, not mixed strategies for a pure dominant-strategy game."
+      ]
+    },
+    "assumptions": {
+      "entityCountRange": [2, 6],
+      "rubrics": [
+        "Assumptions should include rationality, one-shot nature, and simultaneous move structure.",
+        "Assumptions should not include communication or repeated interaction."
+      ]
+    },
+    "scenarios": {
+      "entityCountRange": [2, 5],
+      "rubrics": [
+        "Should include mutual defection as the dominant equilibrium scenario.",
+        "Scenario probabilities should sum to approximately 100%.",
+        "Should acknowledge the tension between individual and collective rationality."
       ]
     }
   },

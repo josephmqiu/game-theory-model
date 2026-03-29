@@ -4,10 +4,7 @@
   "complexityTier": "complex",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [
-        8,
-        20
-      ],
+      "entityCountRange": [8, 20],
       "requiredFactCategories": [
         "economic",
         "position",
@@ -16,14 +13,8 @@
         "capability"
       ],
       "minDistinctFactCategories": 4,
-      "allowedRelationshipTypes": [
-        "supports",
-        "contradicts",
-        "precedes"
-      ],
-      "requiredRelationshipTypes": [
-        "precedes"
-      ],
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredRelationshipTypes": ["precedes"],
       "requiredPatterns": [
         "US|United States",
         "China",
@@ -39,19 +30,48 @@
       ]
     },
     "player-identification": {
-      "entityCountRange": [
-        6,
-        20
-      ],
-      "forbiddenPatterns": [
-        "internal agent",
-        "cognitive",
-        "heuristic"
-      ],
+      "entityCountRange": [6, 20],
+      "forbiddenPatterns": ["internal agent", "cognitive", "heuristic"],
       "rubrics": [
         "Every player entity should be a genuine actor with independent agency — name specific actors rather than generic blocs when possible.",
         "Each player should have objectives that reflect their distinct position and incentives.",
         "The player set should cover the key decision-makers without inflating the count with observers, commentators, or abstract forces."
+      ]
+    },
+    "baseline-model": {
+      "entityCountRange": [3, 10],
+      "rubrics": [
+        "Should identify multiple interacting games (trade, technology, diplomacy).",
+        "Strategies should be specific to semiconductor trade, not generic trade war strategies."
+      ]
+    },
+    "historical-game": {
+      "entityCountRange": [2, 10],
+      "rubrics": [
+        "Should reference the escalation sequence (CHIPS Act, export controls, Chinese retaliation).",
+        "Should identify trust dynamics between the three blocs."
+      ]
+    },
+    "formal-modeling": {
+      "entityCountRange": [2, 12],
+      "rubrics": [
+        "Should model cross-game constraints between the trade and technology competition.",
+        "Equilibrium analysis should account for the multi-player dynamic, not just US-China bilateral."
+      ]
+    },
+    "assumptions": {
+      "entityCountRange": [3, 10],
+      "rubrics": [
+        "Assumptions should cover information availability, commitment credibility, and coalition stability.",
+        "Should include assumptions about technological catch-up timelines."
+      ]
+    },
+    "scenarios": {
+      "entityCountRange": [2, 6],
+      "rubrics": [
+        "Should include escalation, de-escalation, and strategic decoupling scenarios.",
+        "Scenario probabilities should sum to approximately 100%.",
+        "Should distinguish between short-term and structural outcomes."
       ]
     }
   },

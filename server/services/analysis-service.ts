@@ -37,6 +37,7 @@ export interface PhaseResult {
   entities: PhaseOutputEntity[];
   relationships: PhaseOutputRelationship[];
   error?: string;
+  assistantResponse?: string;
 }
 
 interface PhaseRuntimeContext {
@@ -221,6 +222,9 @@ export async function runPhase(
       success: true,
       entities: phaseEntities,
       relationships: phaseRelationships,
+      ...(toolResult.assistantResponse
+        ? { assistantResponse: toolResult.assistantResponse }
+        : {}),
     };
   } catch (err) {
     rollbackPhaseTransaction();

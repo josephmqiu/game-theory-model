@@ -1,5 +1,12 @@
 import type { GraderResult, PhaseExpectations } from "./eval-types";
-import { ALLOWED_ENTITY_TYPES } from "./eval-types";
+import {
+  PHASE_ENTITY_TYPES,
+  PHASE_ENTITY_SCHEMAS,
+  validateEntity,
+  validatePhaseInvariants,
+  isSupportedPhase,
+} from "../services/analysis-entity-schemas";
+import type { SupportedPhase } from "../services/analysis-entity-schemas";
 
 interface GradeableEntity {
   type: string;
@@ -39,7 +46,8 @@ export function runCodeGraders(
   });
 
   // 2. allowed-types: every entity.type in ALLOWED_ENTITY_TYPES[phase]
-  const allowedTypes = ALLOWED_ENTITY_TYPES[phase] ?? [];
+  const allowedTypes =
+    PHASE_ENTITY_TYPES[phase as keyof typeof PHASE_ENTITY_TYPES] ?? [];
   const invalidTypes = entities
     .map((e) => e.type)
     .filter((t) => !allowedTypes.includes(t));
@@ -241,6 +249,53 @@ export function runCodeGraders(
       ? "All relationship refs resolve to known entities"
       : `Dangling relationship refs: ${danglingRefs.join(", ")}`,
   });
+
+  // 10. phase-invariants: structural requirements per phase
+  // (e.g. player-identification needs >=1 player, scenarios probabilities ~100%)
+  if (isSupportedPhase(phase as any)) {
+    const invariantResult = validatePhaseInvariants(
+      phase as SupportedPhase,
+      entities.map((e) => ({
+        type: e.type,
+        data: (e.data ?? {}) as Record<string, unknown>,
+      })),
+    );
+    results.push({
+      grader: "phase-invariants",
+      passed: invariantResult.success,
+      score: invariantResult.success ? 1 : 0,
+      message: invariantResult.success
+        ? "Phase invariants satisfied"
+        : `Phase invariant violation: ${(invariantResult as { error: string }).error}`,
+    });
+  }
+
+  // 11. schema-validation: validate each entity against its phase Zod schema
+  if (isSupportedPhase(phase as any)) {
+    const schemas = PHASE_ENTITY_SCHEMAS[phase as SupportedPhase] ?? [];
+    if (schemas.length > 0 && entities.length > 0) {
+      const failures: string[] = [];
+      for (const entity of entities) {
+        const result = validateEntity(entity, schemas);
+        if (!result.success) {
+          const issues = result.error.issues
+            .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+            .slice(0, 3)
+            .join("; ");
+          failures.push(`${entity.type}/${entity.ref ?? "?"}: ${issues}`);
+        }
+      }
+      const schemaPassed = failures.length === 0;
+      results.push({
+        grader: "schema-validation",
+        passed: schemaPassed,
+        score: schemaPassed ? 1 : 0,
+        message: schemaPassed
+          ? "All entities pass Zod schema validation"
+          : `Schema violations: ${failures.slice(0, 5).join("; ")}`,
+      });
+    }
+  }
 
   return results;
 }

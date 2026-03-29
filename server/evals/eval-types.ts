@@ -41,6 +41,7 @@ export interface TrialResult {
   graderResults: GraderResult[];
   latencyMs: number;
   error?: string;
+  transcript?: string;
 }
 
 export interface PhaseEvalReport {
@@ -50,47 +51,11 @@ export interface PhaseEvalReport {
   trials: TrialResult[];
   passRate: number; // fraction of trials where all graders passed
   allPass: boolean; // true only if every trial passed all graders
+  // Aggregate metrics (Anthropic eval best practices)
+  passAtK?: number; // P(>=1 pass in k trials)
+  passHatK?: number; // P(all k pass)
+  sem?: number; // Standard error of the mean
+  ci95?: [number, number]; // 95% confidence interval
+  meanLatencyMs?: number;
+  medianLatencyMs?: number;
 }
-
-export const ALLOWED_ENTITY_TYPES: Record<string, string[]> = {
-  "situational-grounding": ["fact"],
-  "player-identification": ["player", "objective"],
-  "baseline-model": ["game", "strategy"],
-  "historical-game": [
-    "interaction-history",
-    "repeated-game-pattern",
-    "trust-assessment",
-    "dynamic-inconsistency",
-    "signaling-effect",
-  ],
-  "formal-modeling": [
-    "payoff-matrix",
-    "game-tree",
-    "equilibrium-result",
-    "cross-game-constraint-table",
-    "cross-game-effect",
-    "signal-classification",
-    "bargaining-dynamics",
-    "option-value-assessment",
-    "behavioral-overlay",
-  ],
-  assumptions: ["assumption"],
-  elimination: ["eliminated-outcome"],
-  scenarios: ["scenario", "central-thesis"],
-  "meta-check": ["meta-check"],
-};
-
-export const ALLOWED_FACT_CATEGORIES: FactCategory[] = [
-  "capability",
-  "economic",
-  "position",
-  "impact",
-  "action",
-  "rule",
-];
-
-export const ALLOWED_PHASE_1_RELATIONSHIP_TYPES: RelationshipType[] = [
-  "supports",
-  "contradicts",
-  "precedes",
-];

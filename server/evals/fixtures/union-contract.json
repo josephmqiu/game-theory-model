@@ -4,27 +4,11 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [
-        4,
-        10
-      ],
-      "requiredFactCategories": [
-        "position",
-        "economic",
-        "rule",
-        "action"
-      ],
+      "entityCountRange": [4, 10],
+      "requiredFactCategories": ["position", "economic", "rule", "action"],
       "minDistinctFactCategories": 3,
-      "allowedRelationshipTypes": [
-        "supports",
-        "contradicts",
-        "precedes"
-      ],
-      "requiredPatterns": [
-        "union|management",
-        "contract",
-        "fallback|strike"
-      ],
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredPatterns": ["union|management", "contract", "fallback|strike"],
       "rubrics": [
         "Facts should cover the bargaining structure and the information asymmetry between the parties.",
         "Facts should include fallback positions or strike leverage without assuming a specific industry.",
@@ -32,10 +16,7 @@
       ]
     },
     "player-identification": {
-      "entityCountRange": [
-        4,
-        10
-      ],
+      "entityCountRange": [4, 10],
       "forbiddenPatterns": [
         "internal agent",
         "cognitive",
@@ -47,6 +28,28 @@
         "Every player entity should be a genuine actor with independent agency in the situation.",
         "Each player should have at least one objective that is specific to their position in this scenario.",
         "Do not invent players not implied by the prompt — if the prompt describes two parties, there should be two players unless a third party is clearly relevant."
+      ]
+    },
+    "baseline-model": {
+      "entityCountRange": [2, 8],
+      "rubrics": [
+        "Should identify the bargaining game between union and management.",
+        "Strategies should include strike, lockout, compromise, and concession options."
+      ]
+    },
+    "assumptions": {
+      "entityCountRange": [3, 8],
+      "rubrics": [
+        "Assumptions should cover bargaining power, information asymmetry, and legal constraints.",
+        "Should include assumptions about strike fund and management financial reserves."
+      ]
+    },
+    "scenarios": {
+      "entityCountRange": [2, 5],
+      "rubrics": [
+        "Should include a negotiated settlement scenario.",
+        "Should include a strike/lockout escalation scenario.",
+        "Scenario probabilities should sum to approximately 100%."
       ]
     }
   },

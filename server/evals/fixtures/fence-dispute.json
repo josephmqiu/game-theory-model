@@ -4,23 +4,11 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [
-        4,
-        8
-      ],
-      "requiredFactCategories": [
-        "position",
-        "rule"
-      ],
+      "entityCountRange": [4, 8],
+      "requiredFactCategories": ["position", "rule"],
       "minDistinctFactCategories": 2,
-      "allowedRelationshipTypes": [
-        "supports",
-        "contradicts",
-        "precedes"
-      ],
-      "requiredPatterns": [
-        "fence|boundary|property line"
-      ],
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredPatterns": ["fence|boundary|property line"],
       "forbiddenPatterns": [
         "geopolitical",
         "international",
@@ -35,10 +23,7 @@
       ]
     },
     "player-identification": {
-      "entityCountRange": [
-        4,
-        10
-      ],
+      "entityCountRange": [4, 10],
       "forbiddenPatterns": [
         "internal agent",
         "cognitive",
@@ -50,6 +35,35 @@
         "Every player entity should be a genuine actor with independent agency in the situation.",
         "Each player should have at least one objective that is specific to their position in this scenario.",
         "Do not invent players not implied by the prompt — if the prompt describes two parties, there should be two players unless a third party is clearly relevant."
+      ]
+    },
+    "baseline-model": {
+      "entityCountRange": [2, 6],
+      "rubrics": [
+        "Should identify the bargaining structure between the two neighbors.",
+        "Strategies should include negotiation, escalation, and mediation options."
+      ]
+    },
+    "assumptions": {
+      "entityCountRange": [2, 8],
+      "rubrics": [
+        "Assumptions should cover property rights, communication availability, and relationship value.",
+        "Should not assume litigation is the only resolution mechanism."
+      ]
+    },
+    "elimination": {
+      "entityCountRange": [1, 5],
+      "rubrics": [
+        "Eliminated outcomes should include clearly dominated strategies like mutual litigation for a low-stakes dispute.",
+        "Elimination rationale should reference costs vs. stakes."
+      ]
+    },
+    "scenarios": {
+      "entityCountRange": [2, 5],
+      "rubrics": [
+        "Should include a cooperative resolution scenario (mediation or negotiation).",
+        "Should include an escalation scenario.",
+        "Scenario probabilities should sum to approximately 100%."
       ]
     }
   },

@@ -4,8 +4,28 @@ import { runCodeGraders } from "../code-graders";
 describe("runCodeGraders", () => {
   it("passes when all checks pass", () => {
     const entities = [
-      { type: "player", ref: "p1", data: { name: "Alice" } },
-      { type: "objective", ref: "o1", data: { name: "Win" } },
+      {
+        id: null,
+        ref: "p1",
+        type: "player",
+        phase: "player-identification",
+        confidence: "high",
+        rationale: "Key decision-maker",
+        data: { type: "player", name: "Alice", playerType: "primary" },
+      },
+      {
+        id: null,
+        ref: "o1",
+        type: "objective",
+        phase: "player-identification",
+        confidence: "high",
+        rationale: "Core goal",
+        data: {
+          type: "objective",
+          description: "Win the game",
+          priority: "high",
+        },
+      },
     ];
     const relationships = [{ id: "r1", fromEntityId: "p1", toEntityId: "o1" }];
     const results = runCodeGraders(
@@ -138,15 +158,10 @@ describe("runCodeGraders", () => {
         data: { category: "economic", content: "Costs changed" },
       },
     ];
-    const results = runCodeGraders(
-      entities,
-      [],
-      "situational-grounding",
-      {
-        entityCountRange: [2, 6],
-        requiredFactCategories: ["action", "rule", "position"],
-      },
-    );
+    const results = runCodeGraders(entities, [], "situational-grounding", {
+      entityCountRange: [2, 6],
+      requiredFactCategories: ["action", "rule", "position"],
+    });
     const categoryResult = results.find(
       (r) => r.grader === "required-fact-categories",
     );
@@ -173,15 +188,10 @@ describe("runCodeGraders", () => {
         data: { category: "action", content: "Action" },
       },
     ];
-    const results = runCodeGraders(
-      entities,
-      [],
-      "situational-grounding",
-      {
-        entityCountRange: [2, 6],
-        minDistinctFactCategories: 3,
-      },
-    );
+    const results = runCodeGraders(entities, [], "situational-grounding", {
+      entityCountRange: [2, 6],
+      minDistinctFactCategories: 3,
+    });
     const distinctResult = results.find(
       (r) => r.grader === "distinct-fact-categories",
     );
@@ -277,23 +287,109 @@ describe("runCodeGraders", () => {
       {
         type: "fact",
         ref: "fact-5",
-        data: { category: "impact", content: "Evolutionary biology studies exist" },
+        data: {
+          category: "impact",
+          content: "Evolutionary biology studies exist",
+        },
       },
     ];
-    const results = runCodeGraders(
-      entities,
-      [],
-      "situational-grounding",
-      {
-        entityCountRange: [3, 4],
-        forbiddenPatterns: ["lizard", "evolutionary"],
-      },
-    );
+    const results = runCodeGraders(entities, [], "situational-grounding", {
+      entityCountRange: [3, 4],
+      forbiddenPatterns: ["lizard", "evolutionary"],
+    });
     expect(results.find((r) => r.grader === "entity-count")?.passed).toBe(
       false,
     );
-    expect(
-      results.find((r) => r.grader === "forbidden-pattern")?.passed,
-    ).toBe(false);
+    expect(results.find((r) => r.grader === "forbidden-pattern")?.passed).toBe(
+      false,
+    );
+  });
+
+  it("phase-invariants catches missing player in player-identification", () => {
+    const entities = [
+      { type: "objective", ref: "o1", data: { name: "Win the game" } },
+    ];
+    const results = runCodeGraders(entities, [], "player-identification", {
+      entityCountRange: [1, 6],
+    });
+    const invariantsResult = results.find(
+      (r) => r.grader === "phase-invariants",
+    );
+    expect(invariantsResult).toBeDefined();
+    expect(invariantsResult?.passed).toBe(false);
+    expect(invariantsResult?.message).toContain("at least one player");
+  });
+
+  it("phase-invariants passes when invariants satisfied", () => {
+    const entities = [
+      { type: "player", ref: "p1", data: { name: "Alice" } },
+      { type: "objective", ref: "o1", data: { name: "Win" } },
+    ];
+    const results = runCodeGraders(entities, [], "player-identification", {
+      entityCountRange: [1, 6],
+    });
+    const invariantsResult = results.find(
+      (r) => r.grader === "phase-invariants",
+    );
+    expect(invariantsResult?.passed).toBe(true);
+  });
+
+  it("schema-validation catches malformed entity data", () => {
+    // A fact entity missing required data fields (date, source, content, category)
+    const entities = [
+      {
+        id: null,
+        ref: "fact-1",
+        confidence: "high",
+        rationale: "test",
+        type: "fact",
+        phase: "situational-grounding",
+        data: { type: "fact" }, // missing date, source, content, category
+      },
+    ];
+    const results = runCodeGraders(entities, [], "situational-grounding", {
+      entityCountRange: [1, 6],
+    });
+    const schemaResult = results.find((r) => r.grader === "schema-validation");
+    expect(schemaResult).toBeDefined();
+    expect(schemaResult?.passed).toBe(false);
+    expect(schemaResult?.message).toContain("Schema violations");
+  });
+
+  it("schema-validation passes for well-formed entities", () => {
+    const entities = [
+      {
+        id: null,
+        ref: "fact-1",
+        confidence: "high",
+        rationale: "test rationale",
+        type: "fact",
+        phase: "situational-grounding",
+        data: {
+          type: "fact",
+          date: "2024-01-01",
+          source: "test source",
+          content: "A key fact",
+          category: "rule",
+        },
+      },
+    ];
+    const results = runCodeGraders(entities, [], "situational-grounding", {
+      entityCountRange: [1, 6],
+    });
+    const schemaResult = results.find((r) => r.grader === "schema-validation");
+    expect(schemaResult).toBeDefined();
+    expect(schemaResult?.passed).toBe(true);
+  });
+
+  it("uses canonical PHASE_ENTITY_TYPES, not a local copy", () => {
+    // Verify the code graders reference the canonical source by checking
+    // that a type valid in analysis-entity-schemas passes the allowed-types check
+    const entities = [{ type: "interaction-history", ref: "ih-1", data: {} }];
+    const results = runCodeGraders(entities, [], "historical-game", {
+      entityCountRange: [1, 10],
+    });
+    const allowedResult = results.find((r) => r.grader === "allowed-types");
+    expect(allowedResult?.passed).toBe(true);
   });
 });
