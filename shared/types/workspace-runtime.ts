@@ -10,7 +10,7 @@ import type {
   AnalysisProgressEvent,
   ChatContentKind,
 } from "./events";
-import type { RunStatus } from "./api";
+import type { AnalysisStateResponse, RunStatus } from "./api";
 import type { RuntimeProvider } from "./analysis-runtime";
 import type { RuntimeError } from "./runtime-error";
 import type { PendingQuestionState } from "./user-input";
@@ -202,12 +202,17 @@ export interface WorkspaceRuntimeChatTurnStartRequestPayload {
   effort?: "low" | "medium" | "high" | "max";
 }
 
+export interface WorkspaceRuntimeAnalysisStateRequestPayload {
+  workspaceId: string;
+}
+
 export interface WorkspaceRuntimeRequestPayloadMap {
   "workspace.thread.create": WorkspaceRuntimeCreateThreadRequestPayload;
   "workspace.thread.rename": WorkspaceRuntimeRenameThreadRequestPayload;
   "workspace.thread.delete": WorkspaceRuntimeDeleteThreadRequestPayload;
   "question.resolve": WorkspaceRuntimeResolveQuestionPayload;
   "chat.turn.start": WorkspaceRuntimeChatTurnStartRequestPayload;
+  "analysis.state.get": WorkspaceRuntimeAnalysisStateRequestPayload;
 }
 
 export type WorkspaceRuntimeRequestKind =
@@ -257,6 +262,8 @@ export type WorkspaceRuntimeServerEnvelope =
   | WorkspaceRuntimeBootstrapEnvelope
   | WorkspaceRuntimePushEnvelope
   | WorkspaceRuntimeResponse;
+
+export type WorkspaceRuntimeAnalysisStateResult = AnalysisStateResponse;
 
 export type WorkspaceTransportDiagnosticCode =
   | "connect"

@@ -418,19 +418,11 @@ No product logic.
 ```
 POST /api/ai/analyze
   Request:  { topic: string, provider?: string, model?: string }
-  Response: SSE stream
-    { channel: "progress",  ...AnalysisProgressEvent }
-    { channel: "mutation",  ...AnalysisMutationEvent }
-    { channel: "snapshot",  analysis: Analysis }
-    { channel: "error",     message: string }
-    { type: "done" }
+  Response: JSON { runId: string }
 
 POST /api/ai/entity
   Request:  { action: "get" | "update" | "create" | "delete", ... }
   Response: JSON
-
-GET  /api/ai/state
-  Response: JSON { analysis: Analysis, runStatus: RunStatus }
 
 POST /api/ai/connect
   Request:  { provider: string }
@@ -446,12 +438,14 @@ POST /api/ai/abort
 The primary real-time channel between server and client. Carries:
 
 - **Workspace state bootstrap:** Full snapshot on connect (threads, active
-  thread detail, run status, entity graph, pending questions).
+  thread detail, run detail, channel revisions, pending questions).
 - **Push events:** Channel-scoped updates (`threads`, `thread-detail`,
-  `run-detail`, `chat-event`) with monotonic revision numbers and latest-push caching.
+  `run-detail`, `analysis-mutation`, `analysis-status`,
+  `analysis-progress`, `chat-event`) with monotonic revision numbers and
+  latest-push caching.
 - **Client requests:** Thread CRUD (create, rename, delete), question
-  resolve, and `chat.turn.start` — bidirectional RPC over the same WebSocket
-  connection.
+  resolve, `analysis.state.get`, and `chat.turn.start` — bidirectional RPC
+  over the same WebSocket connection.
 - **Reconnect recovery:** Client reconnects with `lastSeenByChannel`
   revisions. Server replays only missed pushes (no full re-bootstrap
   unless the connection was down long enough for the cache to evict).
@@ -460,16 +454,11 @@ The primary real-time channel between server and client. Carries:
 
 Endpoint: `GET /api/workspace/runtime` (WebSocket upgrade via Nitro/crossws).
 
-### SSE endpoints (legacy — migrating to WebSocket)
+### Legacy transport note
 
-Analysis currently streams responses via SSE:
-
-- `POST /api/ai/analyze` → SSE stream of analysis progress events
-
-The frontend also recovers state via:
-
-- `GET /api/ai/state` returns the current entity graph snapshot AND
-  the active run status (running/idle, current phase, progress).
+The old analysis SSE stream (`/api/ai/events`) is retired. Analysis kickoff
+still uses HTTP (`POST /api/ai/analyze`), but live progress, mutations, status,
+and snapshot recovery now flow through the workspace runtime WebSocket.
 
 ### Security
 
@@ -925,16 +914,16 @@ display and input layer only.
 
 ### Communication
 
-- `analysis-client` — calls `/api/ai/analyze`, reads SSE stream.
-  Processes mutation events incrementally (entity_created,
-  entity_updated, entity_deleted) so entities appear on the canvas
-  as they are committed, not only in the final snapshot. Also processes
-  progress events for phase status.
+- `analysis-client` — calls `/api/ai/analyze` for kickoff, then uses
+  `analysis.state.get` plus `analysis-mutation`, `analysis-status`, and
+  `analysis-progress` runtime channels so entities and phase state update as
+  server commits land.
 - `workspace-runtime-client` — opens `/api/workspace/runtime`, sends
-  `chat.turn.start`, receives `chat-event` pushes, and updates chat state.
+  `analysis.state.get` and `chat.turn.start`, receives analysis/chat pushes,
+  and updates renderer state.
 - Entity edits — POST to `/api/ai/entity`.
-- State hydration on load/reconnect — GET `/api/ai/state` (returns
-  entity graph + active run status).
+- State hydration on load/reconnect — workspace runtime request
+  `analysis.state.get` (returns entity graph + active run status).
 
 The frontend never imports from `server/`. This boundary is physical
 (directory-based), not conventional.

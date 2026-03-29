@@ -16,29 +16,18 @@ import * as entityGraphService from "./entity-graph-service";
 import * as orchestrator from "../agents/analysis-agent";
 import * as runtimeStatus from "./runtime-status";
 import {
-  getProviderSessionBinding,
   getWorkspaceDatabase,
-  upsertProviderSessionBinding,
 } from "./workspace";
-import { runPhaseWithTools } from "./analysis-service";
+import { executePhaseTurn } from "./analysis-phase-turn-service";
 import {
-  buildPhasePromptBundle,
   createRunPromptProvenance,
 } from "./analysis-prompt-provenance";
-import { buildPhaseBrief } from "./analysis-phase-brief";
-import {
-  beginPhaseTransaction,
-  commitPhaseTransaction,
-  rollbackPhaseTransaction,
-} from "./revision-diff";
-import { PHASE_ENTITY_TYPES } from "./analysis-entity-schemas";
 import type { AnalysisWriteContext } from "./analysis-tools";
 import { createRunLogger, serverWarn, timer } from "../utils/ai-logger";
 import type {
   AnyDomainEventInput,
   DomainEventInputBare,
 } from "./workspace/domain-event-types";
-import { nanoid } from "nanoid";
 import type { RunSummaryState } from "../../shared/types/workspace-state";
 
 // ── Constants ──
@@ -385,130 +374,39 @@ async function executeRevalidation(
   const toolMcpServer = await createToolBasedAnalysisMcpServer(writeContext);
 
   for (const p of phases) {
-    const turnIndex = (phaseTurnCounts[p] ?? 0) + 1;
-    phaseTurnCounts[p] = turnIndex;
-    const phaseTurnId = `phase-turn-${nanoid()}`;
-    latestPhaseTurnId = phaseTurnId;
-    const existingBinding = getProviderSessionBinding(
-      runState.threadId,
-      "analysis",
-    );
-    if (existingBinding) {
-      upsertProviderSessionBinding({
-        ...existingBinding,
-        runId,
-        phaseTurnId,
-        updatedAt: Date.now(),
-      });
-    }
     runtimeStatus.setActivePhase(runId, p);
-    const completedPhases = V2_PHASES.slice(0, V2_PHASES.indexOf(p));
-    const phaseBrief = buildPhaseBrief({
-      phase: p,
-      topic,
-      completedPhases,
-      activePhases: phases,
-    });
-    const phasePromptBundle = buildPhasePromptBundle({
-      phase: p,
-      topic,
-      phaseBrief: phaseBrief.phaseBrief,
-      effortLevel: lastRunRuntime?.effortLevel ?? "medium",
-    });
-
-    // Update mutable write context for this phase
-    writeContext.phase = p;
-    writeContext.phaseTurnId = phaseTurnId;
-    writeContext.runId = runId;
-    writeContext.allowedEntityTypes =
-      PHASE_ENTITY_TYPES[
-        p as import("./analysis-entity-schemas").SupportedPhase
-      ] ?? [];
-    writeContext.counters = {
-      entitiesCreated: 0,
-      entitiesUpdated: 0,
-      entitiesDeleted: 0,
-      relationshipsCreated: 0,
-      phaseCompleted: false,
-    };
-
-    appendRevalidationEvents(runId, [
-      {
-        type: "phase.started",
-        payload: {
-          phase: p,
-          phaseTurnId,
-          turnIndex,
-          promptProvenance: phasePromptBundle.promptProvenance,
-        },
-        occurredAt: Date.now(),
-      },
-      {
-        type: "run.status.changed",
-        payload: {
-          status: "running",
-          activePhase: p,
-          progress: {
-            completed: phasesCompleted,
-            total: phases.length,
-          },
-          summary: buildRevalidationSummary(phasesCompleted, `Running ${p}`),
-          latestPhaseTurnId: phaseTurnId,
-        },
-        occurredAt: Date.now(),
-      },
-    ]);
-    emitProgress({ type: "phase_started", phase: p, runId });
     logger.log("revalidation", "phase-rerun", { phase: p, runId });
-    const phaseStart = Date.now();
-
-    beginPhaseTransaction(p, runId);
     try {
-      const toolResult = await runPhaseWithTools(
+      const completedPhases = V2_PHASES.slice(0, V2_PHASES.indexOf(p));
+      const result = await executePhaseTurn(
         p,
         topic,
         toolMcpServer,
         writeContext,
         {
+          runId,
+          runKind: "revalidation",
           workspaceId: runState.workspaceId,
           threadId: runState.threadId,
-          promptBundle: {
-            system: phasePromptBundle.system,
-            user: phasePromptBundle.user,
-            toolPolicy: phasePromptBundle.toolPolicy,
-          },
+          activePhases: phases,
+          completedPhases,
+          progressCompletedBefore: phasesCompleted,
+          progressTotal: phases.length,
+          phaseTurnCounts,
           provider: lastRunProvider,
           model: lastRunModel,
-          runtime: lastRunRuntime,
-          phaseBrief: phaseBrief.phaseBrief,
-          logger,
-          runId,
-          phaseTurnId,
-          onActivity: (activity) => {
-            appendRevalidationEvents(runId, [
-              {
-                type: "phase.activity.recorded",
-                payload: {
-                  phase: p,
-                  phaseTurnId,
-                  kind: activity.kind,
-                  message: activity.message,
-                  ...(activity.toolName ? { toolName: activity.toolName } : {}),
-                  ...(activity.query ? { query: activity.query } : {}),
-                },
-                occurredAt: Date.now(),
-              },
-            ]);
+          runtime: lastRunRuntime ?? {
+            effortLevel: "medium",
+            webSearch: true,
           },
+          logger,
+          producer: "revalidation-service",
+          onProgress: emitProgress,
         },
       );
+      latestPhaseTurnId = result.phaseTurnId;
 
-      if (toolResult.success && toolResult.phaseCompleted) {
-        const txSummary = commitPhaseTransaction(
-          undefined,
-          writeContext.counters,
-        );
-        entityGraphService.setPhaseStatus(p, "complete");
+      if (result.success) {
 
         // Clear stale markers for entities in this phase
         const phaseEntities = entityGraphService.getEntitiesByPhase(p);
@@ -524,57 +422,15 @@ async function executeRevalidation(
           phasesCompleted,
         });
         runtimeStatus.completePhase(runId);
-        const phaseSummary = {
-          entitiesCreated: txSummary.entitiesCreated,
-          relationshipsCreated: txSummary.relationshipsCreated,
-          entitiesUpdated: txSummary.entitiesUpdated,
-          durationMs: Date.now() - phaseStart,
-        };
-        appendRevalidationEvents(runId, [
-          {
-            type: "phase.completed",
-            payload: {
-              phase: p,
-              phaseTurnId,
-              summary: phaseSummary,
-            },
-            occurredAt: Date.now(),
-          },
-          {
-            type: "run.status.changed",
-            payload: {
-              status: "running",
-              activePhase: null,
-              progress: {
-                completed: phasesCompleted,
-                total: phases.length,
-              },
-              summary: buildRevalidationSummary(
-                phasesCompleted,
-                `Completed ${p}`,
-              ),
-              latestPhaseTurnId: phaseTurnId,
-            },
-            occurredAt: Date.now(),
-          },
-        ]);
-
-        emitProgress({
-          type: "phase_completed",
-          phase: p,
-          runId,
-          summary: phaseSummary,
-        });
       } else {
-        rollbackPhaseTransaction();
-        const error = toolResult.error ?? "Revalidation phase failed";
+        const error = result.error ?? "Revalidation phase failed";
         const failure = runtimeStatus.inferRuntimeError(error, lastRunProvider);
         appendRevalidationEvents(runId, [
           {
             type: "run.failed",
             payload: {
               activePhase: p,
-              latestPhaseTurnId: phaseTurnId,
+              latestPhaseTurnId: result.phaseTurnId,
               failedPhase: p,
               error: failure,
               finishedAt: Date.now(),
@@ -595,7 +451,7 @@ async function executeRevalidation(
               failure,
               finishedAt: Date.now(),
               summary: buildRevalidationSummary(phasesCompleted, error, p),
-              latestPhaseTurnId: phaseTurnId,
+              latestPhaseTurnId: result.phaseTurnId,
             },
             occurredAt: Date.now(),
           },
@@ -619,7 +475,6 @@ async function executeRevalidation(
         return;
       }
     } catch (err) {
-      rollbackPhaseTransaction();
       const error =
         err instanceof Error
           ? `Phase execution error: ${err.message}`
@@ -630,7 +485,7 @@ async function executeRevalidation(
           type: "run.failed",
           payload: {
             activePhase: p,
-            latestPhaseTurnId: phaseTurnId,
+            latestPhaseTurnId,
             failedPhase: p,
             error: failure,
             finishedAt: Date.now(),
@@ -647,14 +502,14 @@ async function executeRevalidation(
               completed: phasesCompleted,
               total: phases.length,
             },
-            failedPhase: p,
-            failure,
-            finishedAt: Date.now(),
-            summary: buildRevalidationSummary(phasesCompleted, error, p),
-            latestPhaseTurnId: phaseTurnId,
+              failedPhase: p,
+              failure,
+              finishedAt: Date.now(),
+              summary: buildRevalidationSummary(phasesCompleted, error, p),
+              latestPhaseTurnId,
+            },
+            occurredAt: Date.now(),
           },
-          occurredAt: Date.now(),
-        },
       ]);
       revalRunStatuses.set(runId, {
         runId,

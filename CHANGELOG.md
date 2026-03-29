@@ -9,13 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Persistent SSE endpoint (`GET /api/ai/events`) streams analysis state, phase progress, and entity graph changes to the renderer in real time
-- Runtime-status service tracks analysis lifecycle server-side — the renderer now receives state via SSE instead of polling or owning it directly
+- Workspace runtime transport streams analysis state, phase progress, entity graph changes, and chat events to the renderer over one WebSocket channel family
+- Runtime-status service tracks analysis lifecycle server-side — the renderer now projects server-owned state from workspace runtime events instead of polling or owning it directly
 - Run-status store in the renderer projects server-owned analysis state for UI components
 - MCP product tools run in-process with Nitro for Claude; Codex gets a dedicated stdio proxy
 - Dismiss API (`POST /api/ai/dismiss`) lets the renderer acknowledge and clear completed analysis runs
-- Smoke test suite covering SSE streaming, MCP tool execution, desktop launch, and live provider connectivity
-- Integration test suite for the analysis pipeline, orchestrator, revalidation service, SSE contract, and MCP product tools
+- Smoke test suite covering runtime transport boot, MCP tool execution, desktop launch, and live provider connectivity
+- Integration test suite for the analysis pipeline, orchestrator, revalidation service, workspace runtime transport, and MCP product tools
 - Electron persistence layer for durable prefs/settings writes across app restarts
 
 ### Fixed

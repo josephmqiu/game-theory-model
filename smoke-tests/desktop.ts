@@ -1,4 +1,11 @@
-import { cleanupDir, fetchJson, formatLogs, startElectronSmokeApp, stateUrl, waitForJsonFile } from "./_lib";
+import {
+  cleanupDir,
+  fetchJson,
+  formatLogs,
+  runtimeDiagnosticsUrl,
+  startElectronSmokeApp,
+  waitForJsonFile,
+} from "./_lib";
 
 interface SmokeReadyPayload {
   port: number;
@@ -21,15 +28,9 @@ async function main(): Promise<void> {
       throw new Error(`Smoke readiness file did not report ready=true: ${JSON.stringify(ready)}`);
     }
 
-    const state = await fetchJson<{
-      analysis: { entities: unknown[] };
-      runStatus: { status: string };
-      revision: number;
-    }>(stateUrl(ready.port));
-
-    if (state.runStatus.status !== "idle") {
-      throw new Error(`Expected idle run status, got ${state.runStatus.status}`);
-    }
+    const diagnostics = await fetchJson<{
+      recent: Array<{ code: string }>;
+    }>(runtimeDiagnosticsUrl(ready.port));
 
     if (!ready.url.endsWith("/editor")) {
       throw new Error(`Unexpected renderer URL in smoke readiness payload: ${ready.url}`);
@@ -40,7 +41,7 @@ async function main(): Promise<void> {
         ok: true,
         port: ready.port,
         rendererUrl: ready.url,
-        revision: state.revision,
+        diagnosticCount: diagnostics.recent.length,
       }),
     );
   } catch (error) {

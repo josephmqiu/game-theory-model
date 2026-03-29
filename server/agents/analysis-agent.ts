@@ -1,5 +1,5 @@
 // analysis-orchestrator.ts — run lifecycle, retry, edit queueing, progress events.
-// Calls analysis-service.runPhaseWithTools() per phase. Does NOT call streamChat directly.
+// Executes durable analysis phase turns through the shared phase-turn service.
 // Consolidates analysis-run-store state into module-level singleton.
 
 import type { MethodologyPhase } from "../../shared/types/methodology";
@@ -9,7 +9,6 @@ import type {
 } from "../../shared/types/entity";
 import type {
   AnalysisProgressEvent,
-  PhaseSummary,
 } from "../../shared/types/events";
 import { getRuntimeErrorMessage } from "../../shared/types/runtime-error";
 import type {
@@ -18,12 +17,10 @@ import type {
   RuntimeProvider,
 } from "../../shared/types/analysis-runtime";
 import { normalizeRuntimeProvider } from "../../shared/types/analysis-runtime";
-import { runPhaseWithTools } from "../services/analysis-service";
+import { executePhaseTurn } from "../services/analysis-phase-turn-service";
 import {
-  buildPhasePromptBundle,
   createRunPromptProvenance,
 } from "../services/analysis-prompt-provenance";
-import { buildPhaseBrief } from "../services/analysis-phase-brief";
 import {
   SUPPORTED_ANALYSIS_PHASES,
   getCanonicalAnalysisPhaseIndex,
@@ -33,25 +30,17 @@ import {
 import * as entityGraphService from "../services/entity-graph-service";
 import * as revalidationService from "../services/revalidation-service";
 import {
-  beginPhaseTransaction,
-  commitPhaseTransaction,
-  rollbackPhaseTransaction,
-} from "../services/revision-diff";
-import {
   getRecordedLoopbackTriggers,
   clearRecordedLoopbackTriggers,
   type AnalysisWriteContext,
 } from "../services/analysis-tools";
 import type { LoopbackTriggerType } from "../services/analysis-tools";
-import { PHASE_ENTITY_TYPES } from "../services/analysis-entity-schemas";
 import { analysisRuntimeConfig } from "../config/analysis-runtime";
 import { resolveAnalysisRuntime } from "../config/analysis-runtime-resolver";
 import * as runtimeStatus from "../services/runtime-status";
 import {
   clearProviderSessionBinding,
-  getProviderSessionBinding,
   getWorkspaceDatabase,
-  upsertProviderSessionBinding,
 } from "../services/workspace";
 import { createRunLogger, timer } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
@@ -61,11 +50,7 @@ import {
   synthesizeReport,
   getSynthesisSystemPrompt,
 } from "../services/synthesis-service";
-import type {
-  AnyDomainEventInput,
-  DomainEventInputBare,
-} from "../services/workspace/domain-event-types";
-import { nanoid } from "nanoid";
+import type { AnyDomainEventInput, DomainEventInputBare } from "../services/workspace/domain-event-types";
 import type { RunSummaryState } from "../../shared/types/workspace-state";
 
 // ── Types ──
@@ -284,27 +269,6 @@ function emitProgress(event: AnalysisProgressEvent): void {
   }
 }
 
-function emitPhaseActivity(
-  runId: string,
-  phase: MethodologyPhase,
-  message: string,
-  options?: {
-    kind?: Extract<AnalysisProgressEvent, { type: "phase_activity" }>["kind"];
-    toolName?: string;
-    query?: string;
-  },
-): void {
-  emitProgress({
-    type: "phase_activity",
-    phase,
-    runId,
-    kind: options?.kind ?? "note",
-    message,
-    ...(options?.toolName ? { toolName: options.toolName } : {}),
-    ...(options?.query ? { query: options.query } : {}),
-  });
-}
-
 function appendRunLifecycleEvents(
   run: Pick<ActiveRun, "runId" | "workspaceId" | "threadId">,
   producer: string,
@@ -323,21 +287,6 @@ function appendRunLifecycleEvents(
         }) as AnyDomainEventInput,
     ),
   );
-}
-
-function nextPhaseTurn(
-  run: ActiveRun,
-  phase: MethodologyPhase,
-): {
-  phaseTurnId: string;
-  turnIndex: number;
-} {
-  const turnIndex = (run.phaseTurnCounts[phase] ?? 0) + 1;
-  run.phaseTurnCounts[phase] = turnIndex;
-  return {
-    phaseTurnId: `phase-turn-${nanoid()}`,
-    turnIndex,
-  };
 }
 
 function buildRunSummary(
@@ -389,20 +338,6 @@ function drainEditQueue(): void {
       // Edit errors must not break orchestrator flow
     }
   }
-}
-
-function syncAnalysisBindingPhaseTurn(run: ActiveRun): void {
-  const binding = getProviderSessionBinding(run.threadId, "analysis");
-  if (!binding || !run.activePhaseTurnId) {
-    return;
-  }
-
-  upsertProviderSessionBinding({
-    ...binding,
-    runId: run.runId,
-    phaseTurnId: run.activePhaseTurnId,
-    updatedAt: Date.now(),
-  });
 }
 
 function resolveLoopbackJumpIndex(
@@ -487,192 +422,63 @@ async function executeSinglePhase(
   run.activePhase = phase;
   runtimeStatus.setActivePhase(run.runId, phase);
   entityGraphService.setPhaseStatus(phase, "running");
-  const phaseBrief = buildPhaseBrief({
-    phase,
-    topic,
-    completedPhases: run.phasesCompleted,
-    activePhases: run.activePhases,
-  });
-  const { phaseTurnId, turnIndex } = nextPhaseTurn(run, phase);
-  run.activePhaseTurnId = phaseTurnId;
-  syncAnalysisBindingPhaseTurn(run);
-  const phasePromptBundle = buildPhasePromptBundle({
-    phase,
-    topic,
-    phaseBrief: phaseBrief.phaseBrief,
-    effortLevel: run.runtime.effortLevel,
-  });
-  appendRunLifecycleEvents(run, "analysis-agent", [
-    {
-      type: "phase.started",
-      payload: {
-        phase,
-        phaseTurnId,
-        turnIndex,
-        promptProvenance: phasePromptBundle.promptProvenance,
-      },
-      occurredAt: phaseStart,
-    },
-    {
-      type: "run.status.changed",
-      payload: {
-        status: "running",
-        activePhase: phase,
-        progress: {
-          completed: run.phasesCompleted.length,
-          total: run.activePhases.length,
-        },
-        summary: buildRunSummary(run, `Running ${phase}`),
-        latestPhaseTurnId: phaseTurnId,
-      },
-      occurredAt: phaseStart,
-    },
-  ]);
-  emitProgress({ type: "phase_started", phase, runId: run.runId });
-  run.logger.log("orchestrator", "phase-start", { phase, phaseTurnId });
-
-  // ── Tool-based execution path ──
-
-  // Update the mutable write context for this phase
-  run.toolWriteContext!.phase = phase;
-  run.toolWriteContext!.phaseTurnId = phaseTurnId;
-  run.toolWriteContext!.runId = run.runId;
-  run.toolWriteContext!.allowedEntityTypes = PHASE_ENTITY_TYPES[phase] ?? [];
-  run.toolWriteContext!.counters = {
-    entitiesCreated: 0,
-    entitiesUpdated: 0,
-    entitiesDeleted: 0,
-    relationshipsCreated: 0,
-    phaseCompleted: false,
-  };
 
   const phaseAbort = new AbortController();
   const onExternalAbort = () => phaseAbort.abort();
   externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
-
-  beginPhaseTransaction(phase, run.runId);
   try {
-    const toolResult = await runPhaseWithTools(
+    const result = await executePhaseTurn(
       phase,
       topic,
       run.toolMcpServer!,
       run.toolWriteContext!,
       {
+        runId: run.runId,
+        runKind: "analysis",
         workspaceId: run.workspaceId,
         threadId: run.threadId,
-        promptBundle: {
-          system: phasePromptBundle.system,
-          user: phasePromptBundle.user,
-          toolPolicy: phasePromptBundle.toolPolicy,
-        },
+        activePhases: run.activePhases,
+        completedPhases: run.phasesCompleted,
+        progressCompletedBefore: run.phasesCompleted.length,
+        progressTotal: run.activePhases.length,
+        phaseTurnCounts: run.phaseTurnCounts,
         provider: run.provider,
         model: run.model,
         runtime: run.runtime,
-        runId: run.runId,
-        phaseTurnId,
         signal: phaseAbort.signal,
         logger: run.logger,
-        onActivity: (activity) => {
-          appendRunLifecycleEvents(run, "analysis-agent", [
-            {
-              type: "phase.activity.recorded",
-              payload: {
-                phase,
-                phaseTurnId,
-                kind: activity.kind,
-                message: activity.message,
-                ...(activity.toolName ? { toolName: activity.toolName } : {}),
-                ...(activity.query ? { query: activity.query } : {}),
-              },
-              occurredAt: Date.now(),
-            },
-          ]);
-          emitPhaseActivity(run.runId, phase, activity.message, {
-            kind: activity.kind,
-            toolName: activity.toolName,
-            query: activity.query,
-          });
-        },
+        producer: "analysis-agent",
+        onProgress: emitProgress,
       },
     );
-
-    if (toolResult.success && toolResult.phaseCompleted) {
-      const txSummary = commitPhaseTransaction(
-        undefined,
-        run.toolWriteContext!.counters,
-      );
-      entityGraphService.setPhaseStatus(phase, "complete");
+    run.activePhaseTurnId = result.phaseTurnId;
+    if (result.success) {
       run.logger.log("orchestrator", "tool-phase-complete", {
         phase,
-        phaseTurnId,
+        phaseTurnId: result.phaseTurnId,
         elapsedMs: Date.now() - phaseStart,
-        entitiesCreated: txSummary.entitiesCreated,
-        entitiesUpdated: txSummary.entitiesUpdated,
-        entitiesDeleted: txSummary.entitiesDeleted,
-        relationshipsCreated: txSummary.relationshipsCreated,
-      });
-      const summary: PhaseSummary = {
-        entitiesCreated: txSummary.entitiesCreated,
-        entitiesUpdated: txSummary.entitiesUpdated,
-        relationshipsCreated: txSummary.relationshipsCreated,
-        durationMs: Date.now() - phaseStart,
-      };
-      appendRunLifecycleEvents(run, "analysis-agent", [
-        {
-          type: "phase.completed",
-          payload: {
-            phase,
-            phaseTurnId,
-            summary,
-          },
-          occurredAt: Date.now(),
-        },
-        {
-          type: "run.status.changed",
-          payload: {
-            status: "running",
-            activePhase: null,
-            progress: {
-              completed: run.phasesCompleted.length + 1,
-              total: run.activePhases.length,
-            },
-            summary: {
-              statusMessage: `Completed ${phase}`,
-              completedPhases: run.phasesCompleted.length + 1,
-            },
-            latestPhaseTurnId: phaseTurnId,
-          },
-          occurredAt: Date.now(),
-        },
-      ]);
-      emitProgress({
-        type: "phase_completed",
-        phase,
-        runId: run.runId,
-        summary,
+        entitiesCreated: result.summary?.entitiesCreated ?? 0,
+        entitiesUpdated: result.summary?.entitiesUpdated ?? 0,
+        relationshipsCreated: result.summary?.relationshipsCreated ?? 0,
       });
       runtimeStatus.completePhase(run.runId);
       drainEditQueue();
       return { success: true };
     } else {
-      rollbackPhaseTransaction();
-      entityGraphService.setPhaseStatus(phase, "failed");
-      const errMsg = toolResult.error ?? "Phase did not complete";
+      const errMsg = result.error ?? "Phase did not complete";
       run.logger.error("orchestrator", "tool-phase-failed", {
         phase,
-        phaseTurnId,
+        phaseTurnId: result.phaseTurnId,
         elapsedMs: Date.now() - phaseStart,
         error: errMsg,
       });
       return { success: false, error: errMsg };
     }
   } catch (err) {
-    rollbackPhaseTransaction();
-    entityGraphService.setPhaseStatus(phase, "failed");
     const errMsg = err instanceof Error ? err.message : String(err);
     run.logger.error("orchestrator", "tool-phase-error", {
       phase,
-      phaseTurnId,
+      phaseTurnId: run.activePhaseTurnId ?? undefined,
       elapsedMs: Date.now() - phaseStart,
       error: errMsg,
     });

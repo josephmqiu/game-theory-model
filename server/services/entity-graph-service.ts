@@ -12,7 +12,8 @@
 //    — Non-entity metadata (layout, threads, artifacts).
 //    — Entity data derived from (1) at write time. Never read as authoritative.
 // 4. Zustand entity-graph-store (renderer)
-//    — Client projection. Hydrated from (2) via GET /api/ai/state.
+//    — Client projection. Hydrated from (2) via workspace-runtime analysis
+//      state sync.
 //    — Owns layout. Not authoritative for entities.
 // 5. .gta files (disk)
 //    — Portable snapshot. Entities from (2) at export. On import, flows into (1).

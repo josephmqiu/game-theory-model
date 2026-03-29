@@ -92,6 +92,43 @@ describe("thread-service", () => {
     database.close();
   });
 
+  it("persists analysis message metadata on durable thread turns", () => {
+    const database = createDatabase();
+    const threadService = createThreadService(database);
+    const context = threadService.ensureThread({
+      workspaceId: "workspace-1",
+      threadTitle: "Durable analysis",
+      producer: "test",
+      occurredAt: 100,
+    });
+
+    const message = threadService.recordMessage({
+      workspaceId: context.workspaceId,
+      threadId: context.threadId,
+      role: "assistant",
+      content: "Completed Situational Grounding.",
+      runId: "run-1",
+      phaseTurnId: "phase-turn-1",
+      phase: "situational-grounding",
+      runKind: "analysis",
+      source: "analysis",
+      kind: "assistant-turn",
+      producer: "test",
+      occurredAt: 101,
+    });
+
+    expect(message).toMatchObject({
+      runId: "run-1",
+      phaseTurnId: "phase-turn-1",
+      phase: "situational-grounding",
+      runKind: "analysis",
+      source: "analysis",
+      kind: "assistant-turn",
+    });
+
+    database.close();
+  });
+
   describe("createThread", () => {
     it("generates threadId in workspaceId:thread-{nanoid} format", () => {
       const database = createDatabase();

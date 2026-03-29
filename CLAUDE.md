@@ -25,7 +25,7 @@ React 19, TanStack Router, Zustand, Tailwind v4, Skia (CanvasKit), Vitest, Elect
 
 ### Runtime boundary
 
-Code that imports Node.js APIs (`child_process`, `node:fs`, Agent SDK, `global`) must live in `server/`, never in `src/`. The renderer runs in a browser via Vite — Node.js imports cause immediate crashes. Communicate across the boundary via HTTP/SSE only. Unit tests with mocks cannot catch boundary violations; verify by running the app in the browser.
+Code that imports Node.js APIs (`child_process`, `node:fs`, Agent SDK, `global`) must live in `server/`, never in `src/`. The renderer runs in a browser via Vite — Node.js imports cause immediate crashes. Communicate across the boundary via HTTP/WebSocket only. Unit tests with mocks cannot catch boundary violations; verify by running the app in the browser.
 
 ### Integration modes
 

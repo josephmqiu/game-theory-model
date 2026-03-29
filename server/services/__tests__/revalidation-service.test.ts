@@ -135,8 +135,7 @@ function makeFailedToolResult(error: string) {
 
 async function advanceTimersByTimeAsync(ms: number): Promise<void> {
   vi.advanceTimersByTime(ms);
-  // Each phase requires multiple microtask rounds (await runPhaseWithTools,
-  // appendRevalidationEvents, commitPhaseTransaction, etc.)
+  // Each phase requires multiple microtask rounds.
   for (let i = 0; i < 50; i += 1) {
     await Promise.resolve();
   }

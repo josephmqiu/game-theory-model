@@ -5,6 +5,7 @@ import {
   resetWorkspaceDatabaseForTest,
 } from "../../../services/workspace";
 import { _bindWorkspaceDatabaseForInit } from "../../../services/entity-graph-service";
+import { _resetAnalysisEventBridgeForTest } from "../../../services/workspace/analysis-event-bridge";
 import { _resetWorkspaceRuntimePublisherForTest } from "../../../services/workspace/workspace-runtime-publisher";
 import { _resetWorkspaceRuntimeTransportForTest } from "../../../services/workspace/workspace-runtime-transport";
 
@@ -93,6 +94,7 @@ describe("/api/workspace/runtime websocket", () => {
     });
     resetWorkspaceDatabaseForTest();
     _bindWorkspaceDatabaseForInit(getWorkspaceDatabase);
+    _resetAnalysisEventBridgeForTest();
     _resetWorkspaceRuntimePublisherForTest();
     _resetWorkspaceRuntimeTransportForTest();
   });
@@ -220,6 +222,96 @@ describe("/api/workspace/runtime websocket", () => {
     );
   });
 
+  it("returns the canonical analysis snapshot via analysis.state.get", async () => {
+    const route = (await import("../runtime.get")).default as unknown as {
+      open: (peer: FakePeer) => void;
+      message: (
+        peer: FakePeer,
+        message: ReturnType<typeof wsMessage>,
+      ) => Promise<void>;
+    };
+    const peer = new FakePeer("conn-1");
+
+    route.open(peer);
+    await route.message(
+      peer,
+      wsMessage({
+        type: "client_hello",
+        workspaceId: "workspace-1",
+      }),
+    );
+    peer.sent.splice(0, peer.sent.length);
+
+    await route.message(
+      peer,
+      wsMessage({
+        type: "request",
+        requestId: "req-analysis-state",
+        kind: "analysis.state.get",
+        payload: {
+          workspaceId: "workspace-1",
+        },
+      }),
+    );
+
+    expect(peer.sent).toContainEqual(
+      expect.objectContaining({
+        type: "response",
+        requestId: "req-analysis-state",
+        ok: true,
+        result: expect.objectContaining({
+          analysis: expect.objectContaining({
+            id: "analysis-1",
+            topic: "topic",
+          }),
+          runStatus: expect.objectContaining({
+            status: "idle",
+            runId: null,
+          }),
+          revision: expect.any(Number),
+        }),
+      }),
+    );
+  });
+
+  it("rejects invalid analysis.state.get payloads", async () => {
+    const route = (await import("../runtime.get")).default as unknown as {
+      open: (peer: FakePeer) => void;
+      message: (
+        peer: FakePeer,
+        message: ReturnType<typeof wsMessage>,
+      ) => Promise<void>;
+    };
+    const peer = new FakePeer("conn-1");
+
+    route.open(peer);
+    await route.message(
+      peer,
+      wsMessage({
+        type: "client_hello",
+        workspaceId: "workspace-1",
+      }),
+    );
+    peer.sent.splice(0, peer.sent.length);
+
+    await route.message(
+      peer,
+      wsMessage({
+        type: "request",
+        requestId: "req-analysis-state-invalid",
+        kind: "analysis.state.get",
+        payload: {},
+      }),
+    );
+
+    expect(peer.sent).toContainEqual({
+      type: "response",
+      requestId: "req-analysis-state-invalid",
+      ok: false,
+      error: "Invalid analysis.state.get payload",
+    });
+  });
+
   it("replays latest cached pushes on reconnect and exposes diagnostics", async () => {
     const route = (await import("../runtime.get")).default as unknown as {
       open: (peer: FakePeer) => void;
@@ -306,6 +398,54 @@ describe("/api/workspace/runtime websocket", () => {
         }),
       ]),
     );
+  });
+
+  it("pushes analysis status updates over the workspace runtime websocket after client_hello", async () => {
+    const runtimeStatus = await import("../../../services/runtime-status");
+    const route = (await import("../runtime.get")).default as unknown as {
+      open: (peer: FakePeer) => void;
+      message: (
+        peer: FakePeer,
+        message: ReturnType<typeof wsMessage>,
+      ) => Promise<void>;
+    };
+    const peer = new FakePeer("conn-1");
+
+    route.open(peer);
+    await route.message(
+      peer,
+      wsMessage({
+        type: "client_hello",
+        workspaceId: "workspace-1",
+      }),
+    );
+    peer.sent.splice(0, peer.sent.length);
+
+    expect(
+      runtimeStatus.acquireRun("analysis", "run-analysis-ws", {
+        totalPhases: 9,
+      }),
+    ).toBe(true);
+
+    expect(peer.sent).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "push",
+          channel: "analysis-status",
+          scope: { workspaceId: "workspace-1" },
+          payload: {
+            runStatus: expect.objectContaining({
+              status: "running",
+              kind: "analysis",
+              runId: "run-analysis-ws",
+              progress: { completed: 0, total: 9 },
+            }),
+          },
+        }),
+      ]),
+    );
+
+    runtimeStatus.releaseRun("run-analysis-ws", "cancelled");
   });
 
   it("forwards explicit activeThreadId in bootstrap", async () => {

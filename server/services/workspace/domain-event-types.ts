@@ -11,9 +11,12 @@ import type {
   ActivityScope,
   ActivityStatus,
   DurableMessageRole,
+  DurableRunKind,
   PhaseTurnPromptProvenance,
   RunPromptProvenance,
   RunSummaryState,
+  ThreadMessageKind,
+  ThreadMessageSource,
 } from "../../../shared/types/workspace-state";
 
 export const DOMAIN_EVENT_SCHEMA_VERSION = 1;
@@ -97,6 +100,12 @@ export interface MessageRecordedEventPayload {
   messageId: string;
   role: DurableMessageRole;
   content: string;
+  runId?: string;
+  phaseTurnId?: string;
+  phase?: MethodologyPhase;
+  runKind?: DurableRunKind;
+  source?: ThreadMessageSource;
+  kind?: ThreadMessageKind;
   attachments?: Array<{
     name: string;
     mediaType: string;

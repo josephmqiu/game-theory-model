@@ -4,7 +4,10 @@ import type {
   ActivityScope,
   ActivityStatus,
   DurableMessageRole,
+  DurableRunKind,
   ThreadMessageState,
+  ThreadMessageKind,
+  ThreadMessageSource,
   ThreadState,
 } from "../../../shared/types/workspace-state";
 import { getWorkspaceDatabase, type WorkspaceDatabase } from "./workspace-db";
@@ -68,6 +71,12 @@ export interface RecordThreadMessageInput {
   threadId: string;
   role: DurableMessageRole;
   content: string;
+  runId?: string;
+  phaseTurnId?: string;
+  phase?: ThreadMessageState["phase"];
+  runKind?: DurableRunKind;
+  source?: ThreadMessageSource;
+  kind?: ThreadMessageKind;
   attachments?: ThreadMessageState["attachments"];
   messageId?: string;
   producer: string;
@@ -98,15 +107,7 @@ export interface RecordThreadActivityInput {
 
 function parseThreadMessageState(
   raw: string,
-  fallback: {
-    id: string;
-    workspaceId: string;
-    threadId: string;
-    role: DurableMessageRole;
-    content: string;
-    createdAt: number;
-    updatedAt: number;
-  },
+  fallback: ThreadMessageState,
 ): ThreadMessageState {
   try {
     return JSON.parse(raw) as ThreadMessageState;
@@ -156,6 +157,11 @@ export function createThreadService(
               content: message.content,
               createdAt: message.createdAt,
               updatedAt: message.updatedAt,
+              source: "chat",
+              kind:
+                (message.role as DurableMessageRole) === "user"
+                  ? "user-turn"
+                  : "assistant-turn",
             }),
           ),
         activities: database.activities.listActivitiesByThreadId(threadId),
@@ -270,6 +276,11 @@ export function createThreadService(
           content: message.content,
           createdAt: message.createdAt,
           updatedAt: message.updatedAt,
+          source: "chat",
+          kind:
+            (message.role as DurableMessageRole) === "user"
+              ? "user-turn"
+              : "assistant-turn",
         }),
       );
     },
@@ -287,6 +298,12 @@ export function createThreadService(
             messageId,
             role: input.role,
             content: input.content,
+            ...(input.runId ? { runId: input.runId } : {}),
+            ...(input.phaseTurnId ? { phaseTurnId: input.phaseTurnId } : {}),
+            ...(input.phase ? { phase: input.phase } : {}),
+            ...(input.runKind ? { runKind: input.runKind } : {}),
+            ...(input.source ? { source: input.source } : {}),
+            ...(input.kind ? { kind: input.kind } : {}),
             ...(input.attachments?.length
               ? { attachments: input.attachments }
               : {}),
@@ -315,6 +332,11 @@ export function createThreadService(
         content: stored.content,
         createdAt: stored.createdAt,
         updatedAt: stored.updatedAt,
+        source: "chat",
+        kind:
+          (stored.role as DurableMessageRole) === "user"
+            ? "user-turn"
+            : "assistant-turn",
       });
     },
 

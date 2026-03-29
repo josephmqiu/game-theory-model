@@ -13,6 +13,9 @@ export type ThreadTerminalStatus = "completed" | "failed" | "cancelled";
 export type DurableMessageRole = "user" | "assistant";
 export type ActivityScope = "analysis-phase" | "chat-turn";
 export type ActivityStatus = "completed" | "failed";
+export type DurableRunKind = RunKind | "analysis";
+export type ThreadMessageSource = "chat" | "analysis";
+export type ThreadMessageKind = "user-turn" | "assistant-turn";
 
 export interface ThreadState {
   id: string;
@@ -35,6 +38,12 @@ export interface ThreadMessageState {
   content: string;
   createdAt: number;
   updatedAt: number;
+  runId?: string;
+  phaseTurnId?: string;
+  phase?: MethodologyPhase;
+  runKind?: DurableRunKind;
+  source?: ThreadMessageSource;
+  kind?: ThreadMessageKind;
   attachments?: Array<{
     name: string;
     mediaType: string;

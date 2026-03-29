@@ -272,7 +272,7 @@ function scheduleNitroRestart(reason: string): void {
       .then(async (newPort) => {
         serverPort = newPort;
         await writePortFile(newPort);
-        await waitForAnalysisStateReady(newPort);
+        await waitForServerRuntimeReady(newPort);
         nitroRestartAttempt = 0;
         log.info(`[nitro] Restarted successfully on port ${newPort}`);
         if (mainWindow && !mainWindow.isDestroyed()) {
@@ -389,12 +389,12 @@ async function startNitroServer(): Promise<number> {
   });
 }
 
-async function waitForAnalysisStateReady(
+async function waitForServerRuntimeReady(
   port: number,
   timeoutMs = 15_000,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  const url = `http://${NITRO_HOST}:${port}/api/ai/state`;
+  const url = `http://${NITRO_HOST}:${port}/api/workspace/runtime-diagnostics`;
 
   while (Date.now() < deadline) {
     try {
@@ -570,7 +570,7 @@ function createWindow(): void {
 
     if (!isDev) {
       try {
-        await waitForAnalysisStateReady(serverPort);
+        await waitForServerRuntimeReady(serverPort);
         await writeSmokeReadyFile({
           ready: true,
           port: serverPort,

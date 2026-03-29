@@ -20,6 +20,15 @@ import type { AnalysisActivityCallback } from "./ai/analysis-activity";
 import type { AnalysisEffortLevel } from "../../shared/types/analysis-runtime";
 import type { PromptPackToolPolicy } from "../../shared/types/prompt-pack";
 import { buildPhasePromptBundle } from "./analysis-prompt-provenance";
+import type { ProviderSessionBindingState } from "./workspace/provider-session-binding-service";
+import { clearProviderSessionBinding } from "./workspace/provider-session-binding-service";
+import {
+  buildHistoryInjectedPrompt,
+  buildRecoveryOutcome,
+  getBindingService,
+  recordResumeDiag,
+} from "./ai/adapter-session-utils";
+import { buildTokenBudgetedChatHistory } from "./ai/chat-history-budget";
 
 // ── Public types ──
 
@@ -49,6 +58,8 @@ export interface PhaseContext {
   signal?: AbortSignal;
   logger?: RunLogger;
   onActivity?: AnalysisActivityCallback;
+  historyMessages?: Array<{ role: string; content: string }>;
+  binding?: ProviderSessionBindingState | null;
   /** Pre-built prompts from the orchestrator. Skips redundant buildPhasePromptBundle call. */
   promptBundle?: {
     system: string;
@@ -236,9 +247,80 @@ export interface PhaseToolResult {
   entitiesDeleted: number;
   relationshipsCreated: number;
   phaseCompleted: boolean;
+  assistantResponse?: string;
 }
 
 const TOOL_BASED_MAX_TURNS = 36;
+
+function shouldRetryToolPhaseWithoutResume(errorMessage: string): boolean {
+  return /resume|session|conversation|not found|invalid|stale|expired/i.test(
+    errorMessage,
+  );
+}
+
+function captureToolPhaseProviderSessionId(
+  message: unknown,
+  input: {
+    workspaceId?: string;
+    threadId?: string;
+    runId?: string;
+    phaseTurnId?: string;
+    binding: ProviderSessionBindingState | null | undefined;
+    providerSessionId?: string;
+  },
+): { providerSessionId?: string; binding: ProviderSessionBindingState | null } {
+  if (!message || typeof message !== "object") {
+    return {
+      providerSessionId: input.providerSessionId,
+      binding: input.binding ?? null,
+    };
+  }
+
+  const record = message as Record<string, unknown>;
+  const nestedMessage =
+    record.message && typeof record.message === "object"
+      ? (record.message as Record<string, unknown>)
+      : null;
+  const candidate =
+    typeof record.session_id === "string"
+      ? record.session_id
+      : typeof nestedMessage?.session_id === "string"
+        ? nestedMessage.session_id
+        : undefined;
+
+  if (!candidate || candidate === input.providerSessionId) {
+    return {
+      providerSessionId: input.providerSessionId,
+      binding: input.binding ?? null,
+    };
+  }
+
+  if (!input.workspaceId || !input.threadId) {
+    return {
+      providerSessionId: candidate,
+      binding: input.binding ?? null,
+    };
+  }
+
+  const bindingService = getBindingService();
+  const binding = bindingService.upsertBinding({
+    version: 1,
+    provider: "claude",
+    workspaceId: input.workspaceId,
+    threadId: input.threadId,
+    purpose: "analysis",
+    ...(input.runId ? { runId: input.runId } : {}),
+    ...(input.phaseTurnId ? { phaseTurnId: input.phaseTurnId } : {}),
+    providerSessionId: candidate,
+    claudeSessionId: candidate,
+    updatedAt: Date.now(),
+  });
+
+  return {
+    providerSessionId: candidate,
+    binding,
+  };
+}
 
 /**
  * Run a single analysis phase using the tool-based execution path.
@@ -303,6 +385,30 @@ export async function runPhaseWithTools(
   const logContext = context?.phaseTurnId
     ? { phaseTurnId: context.phaseTurnId }
     : {};
+  const bindingService = getBindingService();
+  let binding = context?.binding ?? null;
+  let providerSessionId =
+    binding?.provider === "claude"
+      ? (binding.claudeSessionId ?? binding.providerSessionId)
+      : undefined;
+  const hadResumeBinding = Boolean(providerSessionId);
+
+  if (providerSessionId && context?.workspaceId && context?.threadId) {
+    recordResumeDiag(
+      bindingService,
+      {
+        workspaceId: context.workspaceId,
+        threadId: context.threadId,
+        ...(context.runId ? { runId: context.runId } : {}),
+        ...(context.phaseTurnId ? { phaseTurnId: context.phaseTurnId } : {}),
+        purpose: "analysis",
+      },
+      "claude",
+      "resume-attempt",
+      "Attempting Claude Code session resume for analysis phase",
+      providerSessionId,
+    );
+  }
 
   logger.log("analysis-service", "tool-phase-start", {
     phase,
@@ -342,7 +448,19 @@ export async function runPhaseWithTools(
       };
     })(),
     options: {
-      systemPrompt: system,
+      systemPrompt:
+        !providerSessionId && context?.historyMessages?.length
+          ? buildHistoryInjectedPrompt(
+              system,
+              buildTokenBudgetedChatHistory({
+                messages: context.historyMessages,
+                provider: "claude",
+                model,
+                systemPrompt: system,
+                nextUserMessage: user,
+              }),
+            )
+          : system,
       model,
       maxTurns: TOOL_BASED_MAX_TURNS,
       allowedTools,
@@ -355,6 +473,7 @@ export async function runPhaseWithTools(
       settingSources: [],
       plugins: [],
       env,
+      ...(providerSessionId ? { resume: providerSessionId } : {}),
       ...(debugFile ? { debugFile } : {}),
       ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
     },
@@ -362,9 +481,21 @@ export async function runPhaseWithTools(
 
   const onAbort = () => q.close();
   context?.signal?.addEventListener("abort", onAbort, { once: true });
+  let assistantResponse = "";
 
   try {
     for await (const message of q) {
+      ({ providerSessionId, binding } = captureToolPhaseProviderSessionId(
+        message,
+        {
+          workspaceId: context?.workspaceId,
+          threadId: context?.threadId,
+          runId: context?.runId,
+          phaseTurnId: context?.phaseTurnId,
+          binding: binding ?? null,
+          providerSessionId,
+        },
+      ));
       if (context?.signal?.aborted) {
         logger.warn("analysis-service", "tool-phase-aborted", {
           phase,
@@ -403,10 +534,31 @@ export async function runPhaseWithTools(
             });
           }
         }
+      } else if (message.type === "assistant") {
+        const assistantMessage = message as {
+          message?: { content?: Array<{ type?: string; text?: string }> };
+          content?: Array<{ type?: string; text?: string }>;
+        };
+        const content =
+          assistantMessage.message?.content ?? assistantMessage.content ?? [];
+        const text = content
+          .filter((block) => block?.type === "text")
+          .map((block) => block.text ?? "")
+          .join("");
+        if (text.trim().length > 0) {
+          assistantResponse = text.trim();
+        }
       }
 
       if (message.type === "result") {
         const subtype = (message as any).subtype;
+        const resultText =
+          typeof (message as { result?: unknown }).result === "string"
+            ? ((message as { result?: string }).result ?? "")
+            : "";
+        if (resultText.trim().length > 0) {
+          assistantResponse = resultText.trim();
+        }
         if (subtype !== "success" || (message as any).is_error) {
           const errors: string[] = (message as any).errors ?? [];
           const errMsg = errors.join("; ") || "Query ended without success";
@@ -427,6 +579,7 @@ export async function runPhaseWithTools(
             relationshipsCreated:
               writeContext.counters?.relationshipsCreated ?? 0,
             phaseCompleted: writeContext.counters?.phaseCompleted ?? false,
+            ...(assistantResponse ? { assistantResponse } : {}),
           };
         }
         break;
@@ -442,9 +595,29 @@ export async function runPhaseWithTools(
         entitiesDeleted: writeContext.counters?.entitiesDeleted ?? 0,
         relationshipsCreated: writeContext.counters?.relationshipsCreated ?? 0,
         phaseCompleted: writeContext.counters?.phaseCompleted ?? false,
+        ...(assistantResponse ? { assistantResponse } : {}),
       };
     }
     const errMsg = err instanceof Error ? err.message : String(err);
+    if (
+      providerSessionId &&
+      context?.threadId &&
+      shouldRetryToolPhaseWithoutResume(errMsg) &&
+      (writeContext.counters?.entitiesCreated ?? 0) === 0 &&
+      (writeContext.counters?.entitiesUpdated ?? 0) === 0 &&
+      (writeContext.counters?.entitiesDeleted ?? 0) === 0 &&
+      (writeContext.counters?.relationshipsCreated ?? 0) === 0
+    ) {
+      clearProviderSessionBinding(context.threadId, {
+        runId: context.runId,
+        purpose: "analysis",
+        reason: "provider_rejected_binding",
+      });
+      return runPhaseWithTools(phase, topic, toolMcpServer, writeContext, {
+        ...context,
+        binding: null,
+      });
+    }
     logger.error("analysis-service", "tool-phase-error", {
       phase,
       error: errMsg,
@@ -458,9 +631,22 @@ export async function runPhaseWithTools(
       entitiesDeleted: writeContext.counters?.entitiesDeleted ?? 0,
       relationshipsCreated: writeContext.counters?.relationshipsCreated ?? 0,
       phaseCompleted: writeContext.counters?.phaseCompleted ?? false,
+      ...(assistantResponse ? { assistantResponse } : {}),
     };
   } finally {
     context?.signal?.removeEventListener("abort", onAbort);
+  }
+
+  if (binding) {
+    bindingService.recordOutcome(
+      binding,
+      buildRecoveryOutcome(
+        hadResumeBinding ? "resumed" : "started_fresh",
+        hadResumeBinding
+          ? "Claude Code resumed a persisted analysis session"
+          : "Claude Code started a fresh analysis session",
+      ),
+    );
   }
 
   const counters = writeContext.counters;
@@ -483,6 +669,7 @@ export async function runPhaseWithTools(
     entitiesDeleted: counters?.entitiesDeleted ?? 0,
     relationshipsCreated: counters?.relationshipsCreated ?? 0,
     phaseCompleted,
+    ...(assistantResponse ? { assistantResponse } : {}),
     ...(!phaseCompleted ? { error: "AI did not call complete_phase" } : {}),
   };
 }

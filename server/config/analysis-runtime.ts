@@ -1,7 +1,6 @@
 const ENV_PREFIX = "GAME_THEORY_ANALYSIS_RUNTIME_";
 const DEFAULT_ORCHESTRATOR_PHASE_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_ORCHESTRATOR_RUN_TIMEOUT_MS = 30 * 60 * 1000;
-const DEFAULT_ANALYZE_SSE_STREAM_TIMEOUT_BUFFER_MS = 60 * 1000;
 
 export interface AnalysisRuntimeConfig {
   orchestrator: {
@@ -10,11 +9,6 @@ export interface AnalysisRuntimeConfig {
     phaseTimeoutMs: number;
     runTimeoutMs: number;
     maxResultSnapshots: number;
-  };
-  analyzeSse: {
-    keepaliveIntervalMs: number;
-    streamTimeoutMs: number;
-    snapshotSettleDelayMs: number;
   };
   claude: {
     chatTimeoutMs: number;
@@ -69,9 +63,6 @@ const orchestratorRunTimeoutMs = parseIntegerEnv(
   DEFAULT_ORCHESTRATOR_RUN_TIMEOUT_MS,
 );
 
-const defaultAnalyzeSseStreamTimeoutMs =
-  orchestratorRunTimeoutMs + DEFAULT_ANALYZE_SSE_STREAM_TIMEOUT_BUFFER_MS;
-
 export const analysisRuntimeConfig: AnalysisRuntimeConfig = Object.freeze({
   orchestrator: Object.freeze({
     maxRetries: parseIntegerEnv("ORCHESTRATOR_MAX_RETRIES", 2),
@@ -84,20 +75,6 @@ export const analysisRuntimeConfig: AnalysisRuntimeConfig = Object.freeze({
     maxResultSnapshots: parseIntegerEnv(
       "ORCHESTRATOR_MAX_RESULT_SNAPSHOTS",
       10,
-    ),
-  }),
-  analyzeSse: Object.freeze({
-    keepaliveIntervalMs: parseIntegerEnv(
-      "ANALYZE_SSE_KEEPALIVE_INTERVAL_MS",
-      15_000,
-    ),
-    streamTimeoutMs: parseIntegerEnv(
-      "ANALYZE_SSE_STREAM_TIMEOUT_MS",
-      defaultAnalyzeSseStreamTimeoutMs,
-    ),
-    snapshotSettleDelayMs: parseIntegerEnv(
-      "ANALYZE_SSE_SNAPSHOT_SETTLE_DELAY_MS",
-      100,
     ),
   }),
   claude: Object.freeze({

@@ -1,11 +1,12 @@
 // src/services/ai/analysis-client.ts
-// Renderer-side analysis client. Communicates with server via HTTP and receives
-// real-time events through the workspace-runtime WebSocket transport.
+// Renderer-side analysis client. Uses HTTP for one-shot commands and the
+// workspace-runtime transport for analysis state, progress, and recovery.
 // NEVER imports Node.js modules or server-side services.
 
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useCanvasStore } from "@/stores/canvas-store";
 import { useRunStatusStore } from "@/stores/run-status-store";
+import { useThreadStore } from "@/stores/thread-store";
 import type {
   AbortAnalysisResponse,
   AnalysisStateResponse,
@@ -18,6 +19,7 @@ import type {
 } from "../../../shared/types/events";
 import type {
   WorkspaceRuntimeBootstrapEnvelope,
+  WorkspaceRuntimeAnalysisStateResult,
   WorkspaceRuntimePushEnvelope,
 } from "../../../shared/types/workspace-runtime";
 import type { Analysis } from "../../../shared/types/entity";
@@ -55,11 +57,17 @@ function notifyProgress(event: AnalysisProgressStreamEvent): void {
 }
 
 async function fetchAnalysisState(): Promise<AnalysisStateResponse> {
-  const response = await fetch("/api/ai/state");
-  if (!response.ok) {
-    throw new Error(`State sync failed: HTTP ${response.status}`);
+  const workspaceId = useThreadStore.getState().workspaceId;
+  if (!workspaceId) {
+    throw new Error(
+      "Analysis runtime is not bound to a workspace yet. Bind workspace runtime context before hydrating analysis state.",
+    );
   }
-  return response.json() as Promise<AnalysisStateResponse>;
+
+  return await workspaceRuntimeClient.sendRequest<WorkspaceRuntimeAnalysisStateResult>(
+    "analysis.state.get",
+    { workspaceId },
+  );
 }
 
 function applyAnalysisSnapshot(analysis: Analysis): void {

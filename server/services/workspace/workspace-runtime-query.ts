@@ -45,15 +45,7 @@ function resolveActiveThreadId(
 
 function parseThreadMessageState(
   raw: string,
-  fallback: {
-    id: string;
-    workspaceId: string;
-    threadId: string;
-    role: DurableMessageRole;
-    content: string;
-    createdAt: number;
-    updatedAt: number;
-  },
+  fallback: ThreadMessageState,
 ): ThreadMessageState {
   try {
     return JSON.parse(raw) as ThreadMessageState;
@@ -96,6 +88,11 @@ function getThreadDetail(
           content: message.content,
           createdAt: message.createdAt,
           updatedAt: message.updatedAt,
+          source: "chat",
+          kind:
+            (message.role as DurableMessageRole) === "user"
+              ? "user-turn"
+              : "assistant-turn",
         }),
       ),
     activities: database.activities.listActivitiesByThreadId(threadId),

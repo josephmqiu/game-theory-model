@@ -18,6 +18,9 @@ const CHANNELS: WorkspaceRuntimeChannel[] = [
   "threads",
   "thread-detail",
   "run-detail",
+  "analysis-mutation",
+  "analysis-status",
+  "analysis-progress",
 ];
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_DIAGNOSTICS = 100;

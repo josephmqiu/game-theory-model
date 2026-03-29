@@ -695,6 +695,54 @@ describe("domain-event-store", () => {
     database.close();
   });
 
+  it("projects analysis message metadata through the durable message read model", () => {
+    const database = createDatabase();
+    const context = database.eventStore.resolveThreadContext({
+      workspaceId: "workspace-1",
+      threadTitle: "Analysis thread",
+      producer: "test",
+      occurredAt: 700,
+    });
+
+    database.eventStore.appendEvents([
+      ...(context.createdThreadEvent ? [context.createdThreadEvent] : []),
+      {
+        kind: "explicit" as const,
+        type: "message.recorded",
+        workspaceId: context.workspaceId,
+        threadId: context.threadId,
+        runId: "run-1",
+        payload: {
+          messageId: "msg-analysis-1",
+          role: "assistant",
+          content: "Completed Player Identification.",
+          runId: "run-1",
+          phaseTurnId: "phase-turn-2",
+          phase: "player-identification",
+          runKind: "analysis",
+          source: "analysis",
+          kind: "assistant-turn",
+          createdAt: 701,
+          updatedAt: 701,
+        },
+        occurredAt: 701,
+        producer: "test",
+      },
+    ]);
+
+    const [message] = database.messages.listMessagesByThreadId(context.threadId);
+    expect(JSON.parse(message!.messageJson)).toMatchObject({
+      runId: "run-1",
+      phaseTurnId: "phase-turn-2",
+      phase: "player-identification",
+      runKind: "analysis",
+      source: "analysis",
+      kind: "assistant-turn",
+    });
+
+    database.close();
+  });
+
   it("projects run.cancelled onto run state and phase turn", () => {
     const database = createDatabase();
     const { context } = appendStartedRun(database);

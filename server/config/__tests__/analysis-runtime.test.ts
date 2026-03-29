@@ -36,11 +36,6 @@ describe("analysis-runtime config", () => {
         runTimeoutMs: 30 * 60 * 1000,
         maxResultSnapshots: 10,
       },
-      analyzeSse: {
-        keepaliveIntervalMs: 15_000,
-        streamTimeoutMs: 31 * 60 * 1000,
-        snapshotSettleDelayMs: 100,
-      },
       claude: {
         chatTimeoutMs: 5 * 60 * 1000,
         analysisMaxTurns: 12,
@@ -76,12 +71,6 @@ describe("analysis-runtime config", () => {
       "5678";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_ORCHESTRATOR_MAX_RESULT_SNAPSHOTS =
       "9";
-    process.env.GAME_THEORY_ANALYSIS_RUNTIME_ANALYZE_SSE_KEEPALIVE_INTERVAL_MS =
-      "111";
-    process.env.GAME_THEORY_ANALYSIS_RUNTIME_ANALYZE_SSE_STREAM_TIMEOUT_MS =
-      "222";
-    process.env.GAME_THEORY_ANALYSIS_RUNTIME_ANALYZE_SSE_SNAPSHOT_SETTLE_DELAY_MS =
-      "333";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_CLAUDE_CHAT_TIMEOUT_MS = "444";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_CLAUDE_ANALYSIS_MAX_TURNS = "5";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_CODEX_ANALYSIS_IDLE_TIMEOUT_MS =
@@ -113,11 +102,6 @@ describe("analysis-runtime config", () => {
         runTimeoutMs: 5678,
         maxResultSnapshots: 9,
       },
-      analyzeSse: {
-        keepaliveIntervalMs: 111,
-        streamTimeoutMs: 222,
-        snapshotSettleDelayMs: 333,
-      },
       claude: {
         chatTimeoutMs: 444,
         analysisMaxTurns: 5,
@@ -142,19 +126,6 @@ describe("analysis-runtime config", () => {
     });
   });
 
-  it("derives the default stream timeout from the configured run timeout", async () => {
-    resetAnalysisRuntimeEnv();
-    process.env.GAME_THEORY_ANALYSIS_RUNTIME_ORCHESTRATOR_RUN_TIMEOUT_MS =
-      "5678";
-
-    const { analysisRuntimeConfig } = await importAnalysisRuntime();
-
-    expect(analysisRuntimeConfig.orchestrator.runTimeoutMs).toBe(5678);
-    expect(analysisRuntimeConfig.analyzeSse.streamTimeoutMs).toBe(
-      5678 + 60 * 1000,
-    );
-  });
-
   it("falls back to defaults for invalid numeric and boolean env vars", async () => {
     resetAnalysisRuntimeEnv();
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_ORCHESTRATOR_MAX_RETRIES = "NaN";
@@ -166,12 +137,6 @@ describe("analysis-runtime config", () => {
       "still-nope";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_ORCHESTRATOR_MAX_RESULT_SNAPSHOTS =
       "";
-    process.env.GAME_THEORY_ANALYSIS_RUNTIME_ANALYZE_SSE_KEEPALIVE_INTERVAL_MS =
-      "bad";
-    process.env.GAME_THEORY_ANALYSIS_RUNTIME_ANALYZE_SSE_STREAM_TIMEOUT_MS =
-      "bad";
-    process.env.GAME_THEORY_ANALYSIS_RUNTIME_ANALYZE_SSE_SNAPSHOT_SETTLE_DELAY_MS =
-      "bad";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_CLAUDE_CHAT_TIMEOUT_MS = "bad";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_CLAUDE_ANALYSIS_MAX_TURNS = "bad";
     process.env.GAME_THEORY_ANALYSIS_RUNTIME_CODEX_ANALYSIS_IDLE_TIMEOUT_MS =
@@ -203,11 +168,6 @@ describe("analysis-runtime config", () => {
         phaseTimeoutMs: 20 * 60 * 1000,
         runTimeoutMs: 30 * 60 * 1000,
         maxResultSnapshots: 10,
-      },
-      analyzeSse: {
-        keepaliveIntervalMs: 15_000,
-        streamTimeoutMs: 31 * 60 * 1000,
-        snapshotSettleDelayMs: 100,
       },
       claude: {
         chatTimeoutMs: 5 * 60 * 1000,

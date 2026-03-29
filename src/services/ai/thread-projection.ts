@@ -171,14 +171,20 @@ export function buildTranscript(
 
   // Build a timeline from both sources
   type TimelineItem =
-    | { type: "message"; ts: number; message: ChatMessage }
+    | {
+        type: "message";
+        ts: number;
+        message: ChatMessage;
+        sourceMessage: ThreadMessageState;
+      }
     | { type: "activity"; ts: number; activity: ActivityEntry };
 
   const timeline: TimelineItem[] = [
-    ...projected.map((m) => ({
+    ...projected.map((m, index) => ({
       type: "message" as const,
       ts: m.timestamp,
       message: m,
+      sourceMessage: messages[index]!,
     })),
     ...activities.map((a) => ({
       type: "activity" as const,
@@ -195,6 +201,34 @@ export function buildTranscript(
 
   for (const item of timeline) {
     if (item.type === "message") {
+      const messagePhase =
+        item.sourceMessage.source === "analysis"
+          ? item.sourceMessage.phase
+          : undefined;
+      if (messagePhase && messagePhase !== lastPhase) {
+        lastPhase = messagePhase;
+        const phaseNum = PHASE_ORDER[messagePhase] ?? 0;
+        const phaseName = PHASE_DISPLAY_NAMES[messagePhase] ?? messagePhase;
+
+        let status: TranscriptPhaseDividerEntry["status"] = "pending";
+        if (options?.activePhase === messagePhase) {
+          status = "running";
+        } else if (options?.completedPhases?.has(messagePhase)) {
+          status = "completed";
+        } else if (options?.failedPhases?.has(messagePhase)) {
+          status = "failed";
+        }
+
+        result.push({
+          kind: "phase-divider",
+          id: `phase-divider-${messagePhase}-${item.message.id}`,
+          phaseNumber: phaseNum,
+          phaseName,
+          phase: messagePhase,
+          status,
+        });
+      }
+
       result.push({
         kind: "message",
         id: item.message.id,

@@ -1,4 +1,4 @@
-// Architecture: In browser mode, state comes via analysis-client SSE.
+// Architecture: In browser mode, state comes via analysis-client runtime sync.
 // In Electron, local mutations still work.
 // This store is now purely a local state container — no server-side service imports.
 
@@ -68,7 +68,7 @@ interface EntityGraphStoreState extends AnalysisFileReference {
   }) => void;
   markDirty: () => void;
 
-  // SSE sync methods — used by analysis-client for renderer-side updates
+  // Server sync methods — used by analysis-client for renderer-side updates
   upsertEntityFromServer: (entity: AnalysisEntity) => void;
   removeEntityFromServer: (id: string) => void;
   upsertRelationshipFromServer: (relationship: AnalysisRelationship) => void;
@@ -177,7 +177,7 @@ function reconcileLayoutState(
 
 // ── Store ──
 // This store is a LOCAL state container for the renderer.
-// In browser mode, state arrives via analysis-client SSE (syncAnalysis).
+// In browser mode, state arrives via analysis-client runtime sync.
 // Local mutations (addEntities, updateEntity, etc.) still work for Electron mode
 // and for offline/backward-compat scenarios.
 
@@ -530,7 +530,7 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
         };
       }),
 
-    // syncAnalysis: like loadAnalysis but preserves isDirty and file refs (for SSE sync)
+    // syncAnalysis: like loadAnalysis but preserves isDirty and file refs during server sync
     syncAnalysis: (analysis) => {
       get().syncAnalysisFromServer(analysis);
     },

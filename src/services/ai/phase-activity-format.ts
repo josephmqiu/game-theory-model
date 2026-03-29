@@ -2,7 +2,7 @@ import i18n from "@/i18n";
 import type { AnalysisPhaseActivityEvent } from "./analysis-client";
 
 /**
- * Convert a phase_activity SSE event into a human-readable status line.
+ * Convert a streamed phase_activity event into a human-readable status line.
  * Uses i18n for localised labels; falls back to the event kind.
  */
 export function formatPhaseActivityNote(

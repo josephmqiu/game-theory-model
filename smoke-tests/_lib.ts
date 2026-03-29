@@ -37,8 +37,8 @@ export function rootPath(...segments: string[]): string {
   return resolve(ROOT, ...segments);
 }
 
-export function stateUrl(port: number): string {
-  return `http://${HOST}:${port}/api/ai/state`;
+export function runtimeDiagnosticsUrl(port: number): string {
+  return `http://${HOST}:${port}/api/workspace/runtime-diagnostics`;
 }
 
 export function smokeReadyFilePath(userDataDir: string): string {
@@ -245,7 +245,6 @@ export async function startBuiltServer(options?: {
     args: ["run", SERVER_ENTRY],
     env: {
       GAME_THEORY_ANALYSIS_TEST_MODE: "1",
-      GAME_THEORY_ANALYSIS_RUNTIME_ANALYZE_SSE_KEEPALIVE_INTERVAL_MS: "250",
       GAME_THEORY_ANALYZER_USER_DATA_DIR: userDataDir,
       HOST,
       MCP_PORT: String(mcpPort),
@@ -259,7 +258,7 @@ export async function startBuiltServer(options?: {
   });
 
   try {
-    await waitForHttpOk(stateUrl(port), 20_000);
+    await waitForHttpOk(runtimeDiagnosticsUrl(port), 20_000);
   } catch (error) {
     await processHandle.stop();
     throw new Error(

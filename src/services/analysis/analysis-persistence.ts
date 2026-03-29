@@ -1,6 +1,7 @@
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import { useThreadStore } from "@/stores/thread-store";
 import { layoutEntities } from "@/services/entity/entity-layout";
+import * as analysisClient from "@/services/ai/analysis-client";
 import type {
   Analysis,
   AnalysisFileReference,
@@ -479,9 +480,10 @@ export async function loadAnalysisFromText(
   await syncWorkspaceState(workspace, source, true); // import mode — load entities into graph tables
   try {
     await useThreadStore.getState().hydrateWorkspace(workspace.id);
+    await analysisClient.hydrateAnalysisState();
   } catch (error) {
     console.warn(
-      "[analysis-persistence] thread hydration failed, continuing without threads:",
+      "[analysis-persistence] workspace runtime hydration failed, continuing without threads:",
       error,
     );
   }
@@ -500,9 +502,10 @@ export async function initializeWorkspacePersistence(): Promise<void> {
   );
   try {
     await useThreadStore.getState().hydrateWorkspace(workspace.id);
+    await analysisClient.hydrateAnalysisState();
   } catch (error) {
     console.warn(
-      "[analysis-persistence] thread hydration failed, continuing without threads:",
+      "[analysis-persistence] workspace runtime hydration failed, continuing without threads:",
       error,
     );
   }

@@ -14,6 +14,7 @@ import type {
   WorkspaceRuntimeServerEnvelope,
   WorkspaceTransportDiagnostic,
 } from "../../../shared/types/workspace-runtime";
+import type { AnalysisStateResponse } from "../../../shared/types/api";
 import { getWorkspaceDatabase } from "./workspace-db";
 import { createThreadService } from "./thread-service";
 import * as questionService from "./question-service";
@@ -32,13 +33,19 @@ import {
   listWorkspaceRuntimeReplayPushes,
   onWorkspaceRuntimePush,
 } from "./workspace-runtime-publisher";
-import { onAnalysisBroadcast } from "./analysis-event-bridge";
+import {
+  getAnalysisBroadcastChannelRevisions,
+  listAnalysisBroadcastReplayPushes,
+  onAnalysisBroadcast,
+} from "./analysis-event-bridge";
 import {
   _resetWorkspaceRuntimeChatPublisherForTest,
   listWorkspaceRuntimeChatReplayPushes,
   onWorkspaceRuntimeChatPush,
   publishWorkspaceRuntimeChatEvent,
 } from "./workspace-runtime-chat-publisher";
+import * as entityGraphService from "../entity-graph-service";
+import * as runtimeStatus from "../runtime-status";
 
 const MAX_RECENT_DIAGNOSTICS = 200;
 const MAX_CONNECTION_DIAGNOSTICS = 50;
@@ -54,6 +61,9 @@ const clientHelloSchema = z.object({
       threads: z.number().int().nonnegative().optional(),
       "thread-detail": z.number().int().nonnegative().optional(),
       "run-detail": z.number().int().nonnegative().optional(),
+      "analysis-mutation": z.number().int().nonnegative().optional(),
+      "analysis-status": z.number().int().nonnegative().optional(),
+      "analysis-progress": z.number().int().nonnegative().optional(),
     })
     .optional(),
 });
@@ -131,6 +141,15 @@ const chatTurnStartRequestSchema = z.object({
   }),
 });
 
+const analysisStateGetRequestSchema = z.object({
+  type: z.literal("request"),
+  requestId: z.string().trim().min(1),
+  kind: z.literal("analysis.state.get"),
+  payload: z.object({
+    workspaceId: z.string().trim().min(1),
+  }),
+});
+
 interface PeerState {
   connectionId: string;
   peer: WebSocketPeer;
@@ -198,10 +217,13 @@ function buildBootstrap(
 
   return {
     ...snapshot,
-    channelRevisions: getWorkspaceRuntimeChannelRevisions({
-      workspaceId: snapshot.workspaceId,
-      threadId: snapshot.activeThreadId,
-    }),
+    channelRevisions: {
+      ...getWorkspaceRuntimeChannelRevisions({
+        workspaceId: snapshot.workspaceId,
+        threadId: snapshot.activeThreadId,
+      }),
+      ...getAnalysisBroadcastChannelRevisions(),
+    },
     serverConnectionId: connectionId,
   } satisfies WorkspaceRuntimeBootstrap;
 }
@@ -294,12 +316,20 @@ async function handleHello(
     threadId: bootstrap.activeThreadId,
     lastSeenByChannel: envelope.lastSeenByChannel,
   });
+  const replayAnalysisPushes = listAnalysisBroadcastReplayPushes({
+    workspaceId: bootstrap.workspaceId,
+    lastSeenByChannel: envelope.lastSeenByChannel,
+  });
   const replayChatPushes = listWorkspaceRuntimeChatReplayPushes({
     workspaceId: bootstrap.workspaceId,
     activeChatCorrelations: [...peerState.activeChatCorrelations],
   });
 
   for (const replay of replayPushes) {
+    sendEnvelope(peerState.peer, replay);
+  }
+
+  for (const replay of replayAnalysisPushes) {
     sendEnvelope(peerState.peer, replay);
   }
 
@@ -314,7 +344,10 @@ async function handleHello(
     }
   }
 
-  if (replayPushes.length + replayChatPushes.length > 0) {
+  if (
+    replayPushes.length + replayAnalysisPushes.length + replayChatPushes.length >
+    0
+  ) {
     recordDiagnostic({
       code: "replay-sent",
       level: "info",
@@ -323,9 +356,11 @@ async function handleHello(
       workspaceId: bootstrap.workspaceId,
       threadId: bootstrap.activeThreadId,
       data: {
-        channels: [...replayPushes, ...replayChatPushes].map(
-          (push) => push.channel,
-        ),
+        channels: [
+          ...replayPushes,
+          ...replayAnalysisPushes,
+          ...replayChatPushes,
+        ].map((push) => push.channel),
       },
     });
   }
@@ -518,7 +553,7 @@ async function handleChatTurnStart(
   }
 }
 
-function handleSyncRequest(
+async function handleSyncRequest(
   peerState: PeerState,
   envelope: WorkspaceRuntimeRequest,
   schema: z.ZodType,
@@ -526,7 +561,7 @@ function handleSyncRequest(
     requestId: string;
     kind: string;
     payload: Record<string, unknown>;
-  }) => unknown,
+  }) => unknown | Promise<unknown>,
 ) {
   const parsed = schema.safeParse(envelope);
   if (!parsed.success) {
@@ -564,7 +599,7 @@ function handleSyncRequest(
   });
 
   try {
-    const result = execute(data);
+    const result = await execute(data);
     sendEnvelope(peerState.peer, {
       type: "response",
       requestId: data.requestId,
@@ -607,6 +642,23 @@ async function handleRequest(
   peerState: PeerState,
   envelope: WorkspaceRuntimeRequest,
 ) {
+  if (envelope.kind === "analysis.state.get") {
+    await handleSyncRequest(
+      peerState,
+      envelope,
+      analysisStateGetRequestSchema,
+      async () => {
+        await waitForRuntimeRecovery();
+        return {
+          analysis: entityGraphService.getAnalysis(),
+          runStatus: runtimeStatus.getSnapshot(),
+          revision: runtimeStatus.getRevision(),
+        } satisfies AnalysisStateResponse;
+      },
+    );
+    return;
+  }
+
   if (envelope.kind === "question.resolve") {
     await handleResolveQuestion(peerState, envelope);
     return;
@@ -621,7 +673,7 @@ async function handleRequest(
 
   switch (envelope.kind) {
     case "workspace.thread.create":
-      handleSyncRequest(
+      await handleSyncRequest(
         peerState,
         envelope,
         createThreadRequestSchema,
@@ -641,7 +693,7 @@ async function handleRequest(
       return;
 
     case "workspace.thread.rename":
-      handleSyncRequest(
+      await handleSyncRequest(
         peerState,
         envelope,
         renameThreadRequestSchema,
@@ -663,7 +715,7 @@ async function handleRequest(
       return;
 
     case "workspace.thread.delete":
-      handleSyncRequest(
+      await handleSyncRequest(
         peerState,
         envelope,
         deleteThreadRequestSchema,

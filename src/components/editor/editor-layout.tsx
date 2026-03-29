@@ -191,7 +191,12 @@ export default function EditorLayout() {
     void initAppStorage().then(() => {
       useAgentSettingsStore.getState().hydrate();
       useThreadSettingsStore.getState().hydrate();
-      void analysisClient.hydrateAnalysisState();
+      void initializeWorkspacePersistence().catch((error) => {
+        console.warn(
+          "[editor] workspace runtime initialization failed",
+          error instanceof Error ? error.message : String(error),
+        );
+      });
     });
   }, []);
 

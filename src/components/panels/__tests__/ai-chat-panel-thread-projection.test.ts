@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { projectThreadMessagesToChatMessages } from "@/services/ai/thread-projection";
+import {
+  buildTranscript,
+  projectThreadMessagesToChatMessages,
+} from "@/services/ai/thread-projection";
 import type { ThreadMessageState } from "../../../../shared/types/workspace-state";
 
 describe("projectThreadMessagesToChatMessages", () => {
@@ -79,5 +82,58 @@ describe("projectThreadMessagesToChatMessages", () => {
       data: "AQID",
     });
     expect(result[0].attachments![0].size).toBeGreaterThan(0);
+  });
+
+  it("builds a phase divider from durable analysis messages even before activities arrive", () => {
+    const threadMessages: ThreadMessageState[] = [
+      {
+        id: "msg-phase-user",
+        workspaceId: "ws-1",
+        threadId: "thread-1",
+        role: "user",
+        content: "Phase 1 brief",
+        createdAt: 100,
+        updatedAt: 100,
+        source: "analysis",
+        kind: "user-turn",
+        runId: "run-1",
+        phaseTurnId: "phase-turn-1",
+        phase: "situational-grounding",
+        runKind: "analysis",
+      },
+      {
+        id: "msg-phase-assistant",
+        workspaceId: "ws-1",
+        threadId: "thread-1",
+        role: "assistant",
+        content: "Phase 1 result",
+        createdAt: 200,
+        updatedAt: 200,
+        source: "analysis",
+        kind: "assistant-turn",
+        runId: "run-1",
+        phaseTurnId: "phase-turn-1",
+        phase: "situational-grounding",
+        runKind: "analysis",
+      },
+    ];
+
+    const transcript = buildTranscript(threadMessages, [], {
+      completedPhases: new Set(["situational-grounding"]),
+    });
+
+    expect(transcript[0]).toMatchObject({
+      kind: "phase-divider",
+      phase: "situational-grounding",
+      status: "completed",
+    });
+    expect(transcript[1]).toMatchObject({
+      kind: "message",
+      message: expect.objectContaining({ id: "msg-phase-user" }),
+    });
+    expect(transcript[2]).toMatchObject({
+      kind: "message",
+      message: expect.objectContaining({ id: "msg-phase-assistant" }),
+    });
   });
 });

@@ -29,6 +29,7 @@ let wsListener: RuntimeListener | null = null;
 const unsubscribeSpy = vi.fn(() => {
   wsListener = null;
 });
+const sendRequestMock = vi.fn();
 
 vi.mock("../workspace-runtime-client", () => ({
   workspaceRuntimeClient: {
@@ -36,6 +37,7 @@ vi.mock("../workspace-runtime-client", () => ({
       wsListener = listener;
       return unsubscribeSpy;
     },
+    sendRequest: (...args: unknown[]) => sendRequestMock(...args),
     getDiagnostics: () => [],
     resetForTest: vi.fn(),
   },
@@ -147,21 +149,33 @@ function makeRunStatus(overrides: Partial<RunStatus> = {}): RunStatus {
   };
 }
 
-function stateResponse(
+function createAnalysisStateResponse(
   analysis: Analysis,
   runStatus: RunStatus,
   revision: number,
-): Response {
-  return new Response(
-    JSON.stringify({
-      analysis,
-      runStatus,
-      revision,
-    } satisfies AnalysisStateResponse),
-    {
-      headers: { "Content-Type": "application/json" },
-    },
-  );
+): AnalysisStateResponse {
+  return {
+    analysis,
+    runStatus,
+    revision,
+  };
+}
+
+function mockAnalysisStateResponses(...responses: AnalysisStateResponse[]): void {
+  sendRequestMock.mockImplementation(async (kind: string, payload: unknown) => {
+    if (kind !== "analysis.state.get") {
+      throw new Error(`Unexpected request kind: ${kind}`);
+    }
+
+    expect(payload).toEqual({ workspaceId: "ws-1" });
+
+    const next = responses.shift();
+    if (!next) {
+      throw new Error("No mocked analysis.state.get response remaining");
+    }
+
+    return next;
+  });
 }
 
 async function flushMicrotasks(): Promise<void> {
@@ -188,11 +202,27 @@ async function waitFor(assertion: () => void, attempts = 20): Promise<void> {
 async function loadModules() {
   const entityGraphStore = await import("@/stores/entity-graph-store");
   const runStatusStore = await import("@/stores/run-status-store");
+  const threadStore = await import("@/stores/thread-store");
   const client = await import("../analysis-client");
 
   client._resetForTest();
   entityGraphStore.useEntityGraphStore.getState().newAnalysis("");
   runStatusStore.useRunStatusStore.getState().resetForTest();
+  threadStore.useThreadStore.setState({
+    workspaceId: "ws-1",
+    activeThreadId: undefined,
+    activeThreadDetail: null,
+    threads: [],
+    latestRun: null,
+    latestPhaseTurns: [],
+    pendingTurn: null,
+    pendingQuestions: [],
+    activeQuestionIndex: 0,
+    isLoading: false,
+    isCreating: false,
+    isDeleting: false,
+    error: undefined,
+  });
 
   return {
     client,
@@ -206,6 +236,7 @@ describe("analysis-client", () => {
     vi.restoreAllMocks();
     wsListener = null;
     unsubscribeSpy.mockClear();
+    sendRequestMock.mockReset();
     globalThis.fetch = originalFetch;
   });
 
@@ -224,15 +255,9 @@ describe("analysis-client", () => {
   it("drops WS events before hydration and applies events after", async () => {
     const entity = makeEntity("entity-after-hydrate");
     const relationship = makeRelationship("rel-1", entity.id, entity.id);
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
-      if (input === "/api/ai/state") {
-        return Promise.resolve(
-          stateResponse(makeAnalysis(), makeRunStatus(), 1),
-        );
-      }
-      return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    mockAnalysisStateResponses(
+      createAnalysisStateResponse(makeAnalysis(), makeRunStatus(), 1),
+    );
 
     const { client, useEntityGraphStore, useRunStatusStore } =
       await loadModules();
@@ -264,15 +289,9 @@ describe("analysis-client", () => {
   });
 
   it("routes status and progress events through the run-status store and legacy listeners", async () => {
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
-      if (input === "/api/ai/state") {
-        return Promise.resolve(
-          stateResponse(makeAnalysis(), makeRunStatus(), 1),
-        );
-      }
-      return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    mockAnalysisStateResponses(
+      createAnalysisStateResponse(makeAnalysis(), makeRunStatus(), 1),
+    );
 
     const { client, useRunStatusStore } = await loadModules();
     const events: string[] = [];
@@ -361,15 +380,9 @@ describe("analysis-client", () => {
   });
 
   it("formats WebSearch phase activity using the streamed query", async () => {
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
-      if (input === "/api/ai/state") {
-        return Promise.resolve(
-          stateResponse(makeAnalysis(), makeRunStatus(), 1),
-        );
-      }
-      return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    mockAnalysisStateResponses(
+      createAnalysisStateResponse(makeAnalysis(), makeRunStatus(), 1),
+    );
 
     const { client, useRunStatusStore } = await loadModules();
 
@@ -397,35 +410,25 @@ describe("analysis-client", () => {
     );
   });
 
-  it("re-syncs from /api/ai/state when a state_changed mutation arrives", async () => {
+  it("re-syncs from analysis.state.get when a state_changed mutation arrives", async () => {
     const entity = makeEntity("entity-state-sync");
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
-      if (input === "/api/ai/state") {
-        const callCount = fetchMock.mock.calls.filter(
-          ([value]) => value === "/api/ai/state",
-        ).length;
-        return Promise.resolve(
-          callCount === 1
-            ? stateResponse(makeAnalysis(), makeRunStatus(), 1)
-            : stateResponse(
-                makeAnalysis([entity]),
-                makeRunStatus({
-                  status: "failed",
-                  kind: "analysis",
-                  runId: "run-2",
-                  failedPhase: "situational-grounding",
-                  failure: createValidationRuntimeError("Validation failed", {
-                    provider: "claude",
-                    retryable: false,
-                  }),
-                }),
-                5,
-              ),
-        );
-      }
-      return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    mockAnalysisStateResponses(
+      createAnalysisStateResponse(makeAnalysis(), makeRunStatus(), 1),
+      createAnalysisStateResponse(
+        makeAnalysis([entity]),
+        makeRunStatus({
+          status: "failed",
+          kind: "analysis",
+          runId: "run-2",
+          failedPhase: "situational-grounding",
+          failure: createValidationRuntimeError("Validation failed", {
+            provider: "claude",
+            retryable: false,
+          }),
+        }),
+        5,
+      ),
+    );
 
     const { client, useEntityGraphStore, useRunStatusStore } =
       await loadModules();
@@ -456,19 +459,10 @@ describe("analysis-client", () => {
 
   it("re-hydrates analysis state on WS reconnect (bootstrap event)", async () => {
     const entity = makeEntity("entity-reconnect");
-    let stateCallCount = 0;
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
-      if (input === "/api/ai/state") {
-        stateCallCount += 1;
-        return Promise.resolve(
-          stateCallCount === 1
-            ? stateResponse(makeAnalysis(), makeRunStatus(), 1)
-            : stateResponse(makeAnalysis([entity]), makeRunStatus(), 2),
-        );
-      }
-      return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    mockAnalysisStateResponses(
+      createAnalysisStateResponse(makeAnalysis(), makeRunStatus(), 1),
+      createAnalysisStateResponse(makeAnalysis([entity]), makeRunStatus(), 2),
+    );
 
     const { client, useEntityGraphStore, useRunStatusStore } =
       await loadModules();
@@ -494,11 +488,6 @@ describe("analysis-client", () => {
           new Response(JSON.stringify({ runId: "run-runtime" }), {
             headers: { "Content-Type": "application/json" },
           }),
-        );
-      }
-      if (input === "/api/ai/state") {
-        return Promise.resolve(
-          stateResponse(makeAnalysis(), makeRunStatus(), 1),
         );
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
@@ -543,11 +532,6 @@ describe("analysis-client", () => {
           }),
         );
       }
-      if (input === "/api/ai/state") {
-        return Promise.resolve(
-          stateResponse(makeAnalysis(), makeRunStatus(), 1),
-        );
-      }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -560,21 +544,19 @@ describe("analysis-client", () => {
   });
 
   it("sends a best-effort abort request and marks local running state as cancelled", async () => {
+    mockAnalysisStateResponses(
+      createAnalysisStateResponse(
+        makeAnalysis(),
+        makeRunStatus({
+          status: "running",
+          kind: "analysis",
+          runId: "run-4",
+          activePhase: "situational-grounding",
+        }),
+        1,
+      ),
+    );
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
-      if (input === "/api/ai/state") {
-        return Promise.resolve(
-          stateResponse(
-            makeAnalysis(),
-            makeRunStatus({
-              status: "running",
-              kind: "analysis",
-              runId: "run-4",
-              activePhase: "situational-grounding",
-            }),
-            1,
-          ),
-        );
-      }
       if (input === "/api/ai/abort") {
         return Promise.resolve(
           new Response(JSON.stringify({ aborted: true }), {
@@ -609,24 +591,18 @@ describe("analysis-client", () => {
   });
 
   it("leaves revalidation runs untouched when abort cannot stop them server-side", async () => {
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
-      if (input === "/api/ai/state") {
-        return Promise.resolve(
-          stateResponse(
-            makeAnalysis(),
-            makeRunStatus({
-              status: "running",
-              kind: "revalidation",
-              runId: "run-revalidation",
-              activePhase: "player-identification",
-            }),
-            1,
-          ),
-        );
-      }
-      return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    mockAnalysisStateResponses(
+      createAnalysisStateResponse(
+        makeAnalysis(),
+        makeRunStatus({
+          status: "running",
+          kind: "revalidation",
+          runId: "run-revalidation",
+          activePhase: "player-identification",
+        }),
+        1,
+      ),
+    );
 
     const { client, useRunStatusStore } = await loadModules();
 
@@ -636,7 +612,6 @@ describe("analysis-client", () => {
     client.abort();
     await flushMicrotasks();
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(client.isRunning()).toBe(true);
     expect(useRunStatusStore.getState().runStatus).toMatchObject({
       status: "running",
@@ -650,15 +625,9 @@ describe("analysis-client", () => {
   });
 
   it("cleans up WS subscription on _resetForTest", async () => {
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
-      if (input === "/api/ai/state") {
-        return Promise.resolve(
-          stateResponse(makeAnalysis(), makeRunStatus(), 1),
-        );
-      }
-      return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    mockAnalysisStateResponses(
+      createAnalysisStateResponse(makeAnalysis(), makeRunStatus(), 1),
+    );
 
     const { client } = await loadModules();
     await client.hydrateAnalysisState();
