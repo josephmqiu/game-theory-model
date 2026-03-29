@@ -300,6 +300,7 @@ function projectEvent(
         threadId: event.threadId,
         runId: event.runId!,
         phase: event.payload.phase,
+        phaseTurnId: event.payload.phaseTurnId,
         scope: "analysis-phase",
         kind: event.payload.kind,
         message: event.payload.message,
@@ -355,6 +356,9 @@ function projectEvent(
         sequence: event.sequence,
         workspaceId: event.workspaceId,
         threadId: event.threadId,
+        runId: event.payload.runId ?? event.runId ?? undefined,
+        phase: event.payload.phase,
+        phaseTurnId: event.payload.phaseTurnId,
         scope: event.payload.scope,
         kind: event.payload.kind,
         message: event.payload.message,
@@ -365,6 +369,40 @@ function projectEvent(
         causedByEventId: event.causedByEventId,
       };
       repositories.activities.upsertActivityEntry(activity);
+
+      if (activity.phaseTurnId) {
+        const turn = repositories.phaseTurnSummaries.getPhaseTurnSummary(
+          activity.phaseTurnId,
+        );
+        if (turn) {
+          repositories.phaseTurnSummaries.upsertPhaseTurnSummary({
+            ...turn,
+            activitySummary: {
+              lastKind: activity.kind,
+              lastMessage: activity.message,
+              lastOccurredAt: activity.occurredAt,
+            },
+            lastEventId: event.id,
+            updatedAt: activity.occurredAt,
+          });
+        }
+      }
+
+      if (activity.runId) {
+        const run = repositories.runs.getRunState(activity.runId);
+        if (run) {
+          repositories.runs.upsertRunState({
+            ...run,
+            latestActivityAt: activity.occurredAt,
+            latestActivity: {
+              kind: activity.kind,
+              message: activity.message,
+            },
+            latestPhaseTurnId: activity.phaseTurnId ?? run.latestPhaseTurnId,
+            updatedAt: Math.max(run.updatedAt, activity.occurredAt),
+          });
+        }
+      }
 
       const thread = repositories.threads.getThreadState(event.threadId);
       if (thread) {

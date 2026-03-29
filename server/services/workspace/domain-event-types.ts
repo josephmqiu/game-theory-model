@@ -120,6 +120,9 @@ export interface ThreadActivityRecordedEventPayload {
   scope: ActivityScope;
   kind: AnalysisPhaseActivityKind;
   message: string;
+  runId?: string;
+  phase?: MethodologyPhase;
+  phaseTurnId?: string;
   status?: ActivityStatus;
   toolName?: string;
   query?: string;

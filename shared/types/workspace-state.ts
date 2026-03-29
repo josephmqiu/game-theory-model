@@ -116,6 +116,7 @@ export interface ActivityEntry {
   threadId: string;
   runId?: string;
   phase?: MethodologyPhase;
+  phaseTurnId?: string;
   scope: ActivityScope;
   kind: AnalysisPhaseActivityKind;
   message: string;

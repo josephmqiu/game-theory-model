@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const WORKSPACE_SCHEMA_VERSION = 7;
+export const WORKSPACE_SCHEMA_VERSION = 8;
 
 const BASE_SCHEMA_SQL = `
 PRAGMA foreign_keys = ON;
@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS activities (
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
   run_id TEXT,
+  phase_turn_id TEXT,
   kind TEXT NOT NULL,
   activity_json TEXT NOT NULL,
   created_at INTEGER NOT NULL,
@@ -461,6 +462,7 @@ function ensureProjectionColumns(db: DatabaseSync): void {
   ensureColumn(db, "runs", "log_file_name", "log_file_name TEXT");
 
   ensureColumn(db, "activities", "phase", "phase TEXT");
+  ensureColumn(db, "activities", "phase_turn_id", "phase_turn_id TEXT");
   ensureColumn(
     db,
     "activities",

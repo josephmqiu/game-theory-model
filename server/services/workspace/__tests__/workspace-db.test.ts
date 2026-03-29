@@ -120,6 +120,14 @@ describe("workspace database", () => {
       ]),
     );
 
+    const activityColumns = database.db
+      .prepare(`PRAGMA table_info(activities)`)
+      .all()
+      .map((row) => String(row.name));
+    expect(activityColumns).toEqual(
+      expect.arrayContaining(["run_id", "phase", "phase_turn_id", "scope"]),
+    );
+
     const workspace = createWorkspaceRecordFromSnapshot({
       id: "workspace-1",
       name: "Trade war",

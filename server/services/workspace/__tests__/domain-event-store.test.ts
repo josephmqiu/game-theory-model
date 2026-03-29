@@ -433,6 +433,86 @@ describe("domain-event-store", () => {
     database.close();
   });
 
+  it("projects analysis metadata from canonical thread activities onto runs and phase turns", () => {
+    const database = createDatabase();
+    const { context } = appendStartedRun(database);
+
+    database.eventStore.appendEvents([
+      {
+        kind: "explicit" as const,
+        type: "phase.started",
+        workspaceId: context.workspaceId,
+        threadId: context.threadId,
+        runId: "run-1",
+        payload: {
+          phase: "situational-grounding",
+          phaseTurnId: "phase-turn-1",
+          turnIndex: 1,
+          promptProvenance: createPhasePromptProvenance(
+            "situational-grounding",
+          ),
+        },
+        occurredAt: 200,
+        producer: "test",
+      },
+      {
+        kind: "explicit" as const,
+        type: "thread.activity.recorded",
+        workspaceId: context.workspaceId,
+        threadId: context.threadId,
+        runId: "run-1",
+        payload: {
+          activityId: "activity-analysis-1",
+          runId: "run-1",
+          phase: "situational-grounding",
+          phaseTurnId: "phase-turn-1",
+          scope: "analysis-phase",
+          kind: "tool",
+          message: "Used query_entities",
+          status: "completed",
+          toolName: "query_entities",
+          occurredAt: 201,
+        },
+        occurredAt: 201,
+        producer: "test",
+      },
+    ]);
+
+    const [activity] = database.activities.listActivitiesByRunId("run-1");
+    expect(activity).toMatchObject({
+      id: "activity-analysis-1",
+      runId: "run-1",
+      phase: "situational-grounding",
+      phaseTurnId: "phase-turn-1",
+      scope: "analysis-phase",
+      kind: "tool",
+      status: "completed",
+      toolName: "query_entities",
+    });
+
+    const run = database.runs.getRunState("run-1");
+    expect(run).toMatchObject({
+      latestActivity: {
+        kind: "tool",
+        message: "Used query_entities",
+      },
+      latestActivityAt: 201,
+      latestPhaseTurnId: "phase-turn-1",
+    });
+
+    const turn =
+      database.phaseTurnSummaries.getPhaseTurnSummary("phase-turn-1");
+    expect(turn).toMatchObject({
+      activitySummary: {
+        lastKind: "tool",
+        lastMessage: "Used query_entities",
+        lastOccurredAt: 201,
+      },
+    });
+
+    database.close();
+  });
+
   it("projects analysis and revalidation runs separately on the same thread", () => {
     const database = createDatabase();
     const { context } = appendStartedRun(database);

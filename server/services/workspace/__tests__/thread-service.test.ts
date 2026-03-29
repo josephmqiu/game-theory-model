@@ -129,6 +129,43 @@ describe("thread-service", () => {
     database.close();
   });
 
+  it("persists analysis activity metadata on durable phase activities", () => {
+    const database = createDatabase();
+    const threadService = createThreadService(database);
+    const context = threadService.ensureThread({
+      workspaceId: "workspace-1",
+      threadTitle: "Durable analysis",
+      producer: "test",
+      occurredAt: 100,
+    });
+
+    const activity = threadService.recordActivity({
+      workspaceId: context.workspaceId,
+      threadId: context.threadId,
+      runId: "run-1",
+      phase: "situational-grounding",
+      phaseTurnId: "phase-turn-1",
+      scope: "analysis-phase",
+      kind: "tool",
+      message: "Used query_entities",
+      status: "completed",
+      toolName: "query_entities",
+      producer: "test",
+      occurredAt: 101,
+    });
+
+    expect(activity).toMatchObject({
+      runId: "run-1",
+      phase: "situational-grounding",
+      phaseTurnId: "phase-turn-1",
+      scope: "analysis-phase",
+      kind: "tool",
+      toolName: "query_entities",
+    });
+
+    database.close();
+  });
+
   describe("createThread", () => {
     it("generates threadId in workspaceId:thread-{nanoid} format", () => {
       const database = createDatabase();

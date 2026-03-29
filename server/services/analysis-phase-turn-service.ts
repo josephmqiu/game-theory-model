@@ -5,6 +5,7 @@ import type { MethodologyPhase } from "../../shared/types/methodology";
 import type { RunSummaryState } from "../../shared/types/workspace-state";
 import { nanoid } from "nanoid";
 import * as entityGraphService from "./entity-graph-service";
+import { createPhaseTurnThreadWriter } from "./analysis-thread-turn";
 import { buildPhaseBrief } from "./analysis-phase-brief";
 import { buildPhasePromptBundle } from "./analysis-prompt-provenance";
 import { PHASE_ENTITY_TYPES } from "./analysis-entity-schemas";
@@ -15,7 +16,6 @@ import {
   rollbackPhaseTransaction,
 } from "./revision-diff";
 import {
-  createThreadService,
   getProviderSessionBinding,
   getWorkspaceDatabase,
   upsertProviderSessionBinding,
@@ -102,26 +102,6 @@ function buildFallbackAssistantSummary(input: {
   ].join(" ");
 }
 
-function buildPhaseHistoryMessages(input: {
-  threadId: string;
-  runId: string;
-  phaseTurnId: string;
-}) {
-  const threadService = createThreadService();
-  return threadService
-    .listMessagesByThreadId(input.threadId)
-    .filter(
-      (message) =>
-        message.source === "analysis" &&
-        message.runId === input.runId &&
-        message.phaseTurnId !== input.phaseTurnId,
-    )
-    .map((message) => ({
-      role: message.role,
-      content: message.content,
-    }));
-}
-
 export interface ExecutePhaseTurnContext {
   runId: string;
   runKind: RunKind;
@@ -178,7 +158,6 @@ export async function executePhaseTurn(
   );
   const phaseTurnId =
     resumedPhaseTurn?.phaseTurnId ?? `phase-turn-${nanoid()}`;
-  const threadService = createThreadService();
   const phaseStart = resumedPhaseTurn?.startedAt ?? Date.now();
   const phaseIndex =
     input.activePhases.findIndex((phase) => phase === input.phase) + 1;
@@ -196,6 +175,15 @@ export async function executePhaseTurn(
   });
 
   const existingBinding = getProviderSessionBinding(input.threadId, "analysis");
+  const phaseTurnThread = createPhaseTurnThreadWriter({
+    workspaceId: input.workspaceId,
+    threadId: input.threadId,
+    runId: input.runId,
+    runKind: input.runKind,
+    phase: input.phase,
+    phaseTurnId,
+    producer: input.producer,
+  });
   if (existingBinding) {
     upsertProviderSessionBinding({
       ...existingBinding,
@@ -244,26 +232,16 @@ export async function executePhaseTurn(
       ],
     );
 
-    threadService.recordMessage({
-      workspaceId: input.workspaceId,
-      threadId: input.threadId,
-      role: "user",
-      content: buildVisiblePhaseUserMessage({
+    phaseTurnThread.ensureUserTurn(
+      buildVisiblePhaseUserMessage({
         phase: input.phase,
         phaseNumber: phaseIndex,
         objective: phaseBrief.phaseConfig.objective,
         doneCondition: phaseBrief.phaseConfig.doneCondition,
         phaseBrief: phaseBrief.phaseBrief,
       }),
-      runId: input.runId,
-      phaseTurnId,
-      phase: input.phase,
-      runKind: input.runKind,
-      source: "analysis",
-      kind: "user-turn",
-      occurredAt: phaseStart,
-      producer: input.producer,
-    });
+      phaseStart,
+    );
   }
 
   input.onProgress?.({
@@ -311,37 +289,16 @@ export async function executePhaseTurn(
         logger: input.logger,
         binding: existingBinding,
         allowResumeRetryFallback: !resumedPhaseTurn,
-        historyMessages: existingBinding
-          ? []
-          : buildPhaseHistoryMessages({
-              threadId: input.threadId,
-              runId: input.runId,
-              phaseTurnId,
-            }),
+        historyMessages: existingBinding ? [] : phaseTurnThread.buildHistoryMessages(),
         onActivity: (activity) => {
           const occurredAt = Date.now();
-          appendRunEvents(
-            {
-              workspaceId: input.workspaceId,
-              threadId: input.threadId,
-              runId: input.runId,
-              producer: input.producer,
-            },
-            [
-              {
-                type: "phase.activity.recorded",
-                payload: {
-                  phase: input.phase,
-                  phaseTurnId,
-                  kind: activity.kind,
-                  message: activity.message,
-                  ...(activity.toolName ? { toolName: activity.toolName } : {}),
-                  ...(activity.query ? { query: activity.query } : {}),
-                },
-                occurredAt,
-              },
-            ],
-          );
+          phaseTurnThread.recordActivity({
+            kind: activity.kind,
+            message: activity.message,
+            toolName: activity.toolName,
+            query: activity.query,
+            occurredAt,
+          });
           input.onProgress?.({
             type: "phase_activity",
             phase: input.phase,
@@ -374,20 +331,7 @@ export async function executePhaseTurn(
           summary,
         });
 
-      threadService.recordMessage({
-        workspaceId: input.workspaceId,
-        threadId: input.threadId,
-        role: "assistant",
-        content: assistantMessage,
-        runId: input.runId,
-        phaseTurnId,
-        phase: input.phase,
-        runKind: input.runKind,
-        source: "analysis",
-        kind: "assistant-turn",
-        occurredAt: Date.now(),
-        producer: input.producer,
-      });
+      phaseTurnThread.ensureAssistantTurn(assistantMessage, Date.now());
 
       appendRunEvents(
         {
@@ -450,41 +394,13 @@ export async function executePhaseTurn(
       error,
     });
 
-    threadService.recordMessage({
-      workspaceId: input.workspaceId,
-      threadId: input.threadId,
-      role: "assistant",
-      content: assistantMessage,
-      runId: input.runId,
-      phaseTurnId,
-      phase: input.phase,
-      runKind: input.runKind,
-      source: "analysis",
-      kind: "assistant-turn",
+    phaseTurnThread.ensureAssistantTurn(assistantMessage, Date.now());
+    phaseTurnThread.recordActivity({
+      kind: "note",
+      message: error,
+      status: "failed",
       occurredAt: Date.now(),
-      producer: input.producer,
     });
-
-    appendRunEvents(
-      {
-        workspaceId: input.workspaceId,
-        threadId: input.threadId,
-        runId: input.runId,
-        producer: input.producer,
-      },
-      [
-        {
-          type: "phase.activity.recorded",
-          payload: {
-            phase: input.phase,
-            phaseTurnId,
-            kind: "note",
-            message: error,
-          },
-          occurredAt: Date.now(),
-        },
-      ],
-    );
     input.onProgress?.({
       type: "phase_activity",
       phase: input.phase,
@@ -510,41 +426,13 @@ export async function executePhaseTurn(
       error: message,
     });
 
-    threadService.recordMessage({
-      workspaceId: input.workspaceId,
-      threadId: input.threadId,
-      role: "assistant",
-      content: assistantMessage,
-      runId: input.runId,
-      phaseTurnId,
-      phase: input.phase,
-      runKind: input.runKind,
-      source: "analysis",
-      kind: "assistant-turn",
+    phaseTurnThread.ensureAssistantTurn(assistantMessage, Date.now());
+    phaseTurnThread.recordActivity({
+      kind: "note",
+      message,
+      status: "failed",
       occurredAt: Date.now(),
-      producer: input.producer,
     });
-
-    appendRunEvents(
-      {
-        workspaceId: input.workspaceId,
-        threadId: input.threadId,
-        runId: input.runId,
-        producer: input.producer,
-      },
-      [
-        {
-          type: "phase.activity.recorded",
-          payload: {
-            phase: input.phase,
-            phaseTurnId,
-            kind: "note",
-            message,
-          },
-          occurredAt: Date.now(),
-        },
-      ],
-    );
     input.onProgress?.({
       type: "phase_activity",
       phase: input.phase,

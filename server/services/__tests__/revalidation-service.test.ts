@@ -3,7 +3,7 @@ import type { MethodologyPhase } from "../../../shared/types/methodology";
 import type { AnalysisProgressEvent } from "../../../shared/types/events";
 import type { AnalysisEntity } from "../../../shared/types/entity";
 import * as runtimeStatus from "../runtime-status";
-import { resetWorkspaceDatabaseForTest } from "../workspace";
+import { getWorkspaceDatabase, resetWorkspaceDatabaseForTest } from "../workspace";
 
 // ── Mock analysis-service ──
 
@@ -402,6 +402,87 @@ describe("revalidation-service", () => {
   it("revalidate returns a runId", () => {
     const result = revalidation.revalidate();
     expect(result.runId).toMatch(/^reval-/);
+  });
+
+  it("persists canonical thread turns for revalidation phases", async () => {
+    mockEntityGraph.getAnalysis.mockReturnValue({
+      id: "test",
+      name: "test",
+      topic: "test topic",
+      entities: [],
+      relationships: [],
+      phases: [],
+    });
+    mockRunPhaseWithTools.mockImplementationOnce(async (...args: unknown[]) => {
+      const context = args[4] as {
+        onActivity?: (activity: {
+          kind: "tool" | "note" | "web-search";
+          message: string;
+          toolName?: string;
+        }) => void;
+      };
+      context.onActivity?.({
+        kind: "tool",
+        message: "Used query_entities",
+        toolName: "query_entities",
+      });
+      return {
+        success: true,
+        entitiesCreated: 1,
+        entitiesUpdated: 0,
+        entitiesDeleted: 0,
+        relationshipsCreated: 0,
+        phaseCompleted: true,
+        assistantResponse: "Revalidated assumptions.",
+      };
+    });
+
+    const { runId } = revalidation.revalidate(undefined, "assumptions");
+    await advanceTimersByTimeAsync(0);
+
+    const database = getWorkspaceDatabase();
+    const run = database.runs.getRunState(runId);
+    expect(run?.kind).toBe("revalidation");
+
+    const threadMessages = database.messages
+      .listMessagesByThreadId(run!.threadId)
+      .map((record) => JSON.parse(record.messageJson))
+      .filter((message) => message.runId === runId);
+    expect(threadMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          runId,
+          phase: "assumptions",
+          runKind: "revalidation",
+          source: "analysis",
+          kind: "user-turn",
+        }),
+        expect.objectContaining({
+          role: "assistant",
+          content: "Revalidated assumptions.",
+          runId,
+          phase: "assumptions",
+          runKind: "revalidation",
+          source: "analysis",
+          kind: "assistant-turn",
+        }),
+      ]),
+    );
+
+    const activities = database.activities
+      .listActivitiesByRunId(runId)
+      .filter((activity) => activity.phase === "assumptions");
+    expect(activities).toEqual([
+      expect.objectContaining({
+        runId,
+        phase: "assumptions",
+        scope: "analysis-phase",
+        kind: "tool",
+        message: "Used query_entities",
+        toolName: "query_entities",
+      }),
+    ]);
   });
 
   // ── 8. Emits progress events during revalidation ──

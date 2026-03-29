@@ -90,6 +90,9 @@ export interface RecordThreadMessageInput {
 export interface RecordThreadActivityInput {
   workspaceId: string;
   threadId: string;
+  runId?: string;
+  phase?: ActivityEntry["phase"];
+  phaseTurnId?: ActivityEntry["phaseTurnId"];
   scope: ActivityScope;
   kind: ActivityEntry["kind"];
   message: string;
@@ -349,11 +352,15 @@ export function createThreadService(
           type: "thread.activity.recorded",
           workspaceId: input.workspaceId,
           threadId: input.threadId,
+          ...(input.runId ? { runId: input.runId } : {}),
           payload: {
             activityId,
             scope: input.scope,
             kind: input.kind,
             message: input.message,
+            ...(input.runId ? { runId: input.runId } : {}),
+            ...(input.phase ? { phase: input.phase } : {}),
+            ...(input.phaseTurnId ? { phaseTurnId: input.phaseTurnId } : {}),
             status: input.status,
             toolName: input.toolName,
             query: input.query,

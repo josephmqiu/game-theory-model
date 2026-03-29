@@ -480,6 +480,83 @@ describe("analysis-orchestrator", () => {
     expect(run?.latestPhaseTurnId).toBe(latestPhaseTurn?.id);
   });
 
+  it("persists canonical analysis thread turns and activities for each phase", async () => {
+    mockRunPhase.mockImplementationOnce(async (...args: unknown[]) => {
+      const context = args[4] as {
+        onActivity?: (activity: {
+          kind: "tool" | "note" | "web-search";
+          message: string;
+          toolName?: string;
+          query?: string;
+        }) => void;
+      };
+      context.onActivity?.({
+        kind: "tool",
+        message: "Used query_entities",
+        toolName: "query_entities",
+      });
+      return {
+        success: true,
+        entitiesCreated: 1,
+        entitiesUpdated: 0,
+        entitiesDeleted: 0,
+        relationshipsCreated: 0,
+        phaseCompleted: true,
+        assistantResponse: "Completed Situational Grounding.",
+      };
+    });
+
+    const { runId, threadId } = await orchestrator.runFull(
+      "Test topic",
+      undefined,
+      undefined,
+      undefined,
+      {
+        activePhases: ["situational-grounding"],
+      },
+    );
+    await flushAsync();
+
+    const database = getWorkspaceDatabase();
+    const messages = database.messages
+      .listMessagesByThreadId(threadId)
+      .map((record) => JSON.parse(record.messageJson));
+    expect(messages).toEqual([
+      expect.objectContaining({
+        role: "user",
+        runId,
+        phase: "situational-grounding",
+        phaseTurnId: expect.any(String),
+        runKind: "analysis",
+        source: "analysis",
+        kind: "user-turn",
+      }),
+      expect.objectContaining({
+        role: "assistant",
+        content: "Completed Situational Grounding.",
+        runId,
+        phase: "situational-grounding",
+        phaseTurnId: expect.any(String),
+        runKind: "analysis",
+        source: "analysis",
+        kind: "assistant-turn",
+      }),
+    ]);
+
+    const activities = database.activities.listActivitiesByRunId(runId);
+    expect(activities).toEqual([
+      expect.objectContaining({
+        runId,
+        phase: "situational-grounding",
+        phaseTurnId: messages[0].phaseTurnId,
+        scope: "analysis-phase",
+        kind: "tool",
+        message: "Used query_entities",
+        toolName: "query_entities",
+      }),
+    ]);
+  });
+
   it("rejects unsupported activePhases before starting a run", async () => {
     await expect(
       orchestrator.runFull("Test topic", undefined, undefined, undefined, {
@@ -1307,6 +1384,109 @@ describe("analysis-orchestrator", () => {
             message.role === "user",
         );
       expect(resumedUserMessages).toHaveLength(0);
+    });
+
+    it("dedupes persisted phase-turn transcript rows when resuming", async () => {
+      const context = appendResumableRun();
+      const database = getWorkspaceDatabase();
+      database.eventStore.appendEvents([
+        {
+          kind: "explicit" as const,
+          type: "message.recorded",
+          workspaceId: context.workspaceId,
+          threadId: context.threadId,
+          runId: "run-resume",
+          payload: {
+            messageId: "msg-phase-turn-1-user",
+            role: "user",
+            content: "Phase 1 brief",
+            runId: "run-resume",
+            phaseTurnId: "phase-turn-1",
+            phase: "situational-grounding",
+            runKind: "analysis",
+            source: "analysis",
+            kind: "user-turn",
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          },
+          occurredAt: Date.now(),
+          producer: "test",
+        },
+        {
+          kind: "explicit" as const,
+          type: "thread.activity.recorded",
+          workspaceId: context.workspaceId,
+          threadId: context.threadId,
+          runId: "run-resume",
+          payload: {
+            activityId: "activity-phase-turn-1-0001",
+            runId: "run-resume",
+            phase: "situational-grounding",
+            phaseTurnId: "phase-turn-1",
+            scope: "analysis-phase",
+            kind: "tool",
+            message: "Used query_entities",
+            toolName: "query_entities",
+            occurredAt: Date.now(),
+          },
+          occurredAt: Date.now(),
+          producer: "test",
+        },
+      ]);
+
+      mockRunPhase.mockImplementationOnce(async (...args: unknown[]) => {
+        const runtimeContext = args[4] as {
+          onActivity?: (activity: {
+            kind: "tool" | "note" | "web-search";
+            message: string;
+            toolName?: string;
+          }) => void;
+        };
+        runtimeContext.onActivity?.({
+          kind: "tool",
+          message: "Used query_entities",
+          toolName: "query_entities",
+        });
+        return {
+          success: true,
+          entitiesCreated: 1,
+          entitiesUpdated: 0,
+          entitiesDeleted: 0,
+          relationshipsCreated: 0,
+          phaseCompleted: true,
+          assistantResponse: "Completed Situational Grounding.",
+        };
+      });
+      mockRunPhase.mockResolvedValueOnce(makeFailedResult("Stop after resume test"));
+
+      await orchestrator.resumeDurableRun({ runId: "run-resume" });
+      await flushAsync();
+
+      const phaseTurnMessages = database.messages
+        .listMessagesByThreadId(context.threadId)
+        .map((record) => JSON.parse(record.messageJson))
+        .filter((message) => message.phaseTurnId === "phase-turn-1");
+      expect(
+        phaseTurnMessages.filter((message) => message.kind === "user-turn"),
+      ).toHaveLength(1);
+      expect(
+        phaseTurnMessages.filter((message) => message.kind === "assistant-turn"),
+      ).toHaveLength(1);
+
+      const phaseTurnActivities = database.activities
+        .listActivitiesByRunId("run-resume")
+        .filter((activity) => activity.phaseTurnId === "phase-turn-1");
+      expect(
+        phaseTurnActivities.filter(
+          (activity) =>
+            activity.kind === "tool" &&
+            activity.message === "Used query_entities",
+        ),
+      ).toHaveLength(1);
+      expect(phaseTurnActivities.find((activity) => activity.kind === "tool")).toMatchObject({
+        message: "Used query_entities",
+        toolName: "query_entities",
+      });
     });
   });
 

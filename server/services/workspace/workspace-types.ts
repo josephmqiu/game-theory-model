@@ -37,6 +37,7 @@ export interface ActivityRecord {
   workspaceId: string;
   threadId: string;
   runId: string | null;
+  phaseTurnId: string | null;
   kind: string;
   activityJson: string;
   createdAt: number;
