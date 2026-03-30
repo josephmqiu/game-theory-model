@@ -46,14 +46,6 @@ STRATEGY ENTITY SCHEMA:
 "rationale": "<why this strategy is available to the player>"
 }
 
-RELATIONSHIPS:
-
-- Use "plays-in" from player to game.
-- Use "has-strategy" from player to strategy.
-- Use "informed-by" from game/strategy to prior-phase entities when priorContext
-  is provided.
-- Use "derived-from" when a strategy is derived from an objective.
-
 HOW TO MODIFY ENTITIES — use the provided tools:
 
 Use `query_entities` with `phase: "baseline-model"` to retrieve your existing games and strategies.
@@ -86,4 +78,18 @@ Use `delete_relationship` to remove outdated relationships. Parameters:
 
 - `id`: the relationship ID
 
-When you have finished revising all games, strategies, and relationships, call `complete_phase` to signal that the revision is done.
+REQUIRED: Verify and update relationships after revising entities.
+
+Every baseline model MUST have relationships connecting players to games and strategies.
+Use `query_entities` with `phase: "player-identification", type: "player"` to get player IDs,
+then ensure each player has:
+
+- "plays-in" relationship from player to each game they participate in.
+- "has-strategy" relationship from player to each strategy available to them.
+- "informed-by" from game/strategy to prior-phase entities when relevant.
+- "derived-from" when a strategy is derived from an objective.
+
+Use `query_relationships` to check existing relationships. Add missing ones with
+`create_relationship` and remove outdated ones with `delete_relationship`.
+
+When you have finished revising all games, strategies, AND relationships, call `complete_phase` to signal that the revision is done.

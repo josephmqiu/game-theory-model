@@ -64,14 +64,6 @@ STRATEGY ENTITY SCHEMA:
 "rationale": "<why this strategy is available to the player>"
 }
 
-RELATIONSHIPS:
-
-- Use "plays-in" from player to game.
-- Use "has-strategy" from player to strategy.
-- Use "informed-by" from game/strategy to prior-phase entities when priorContext
-  is provided.
-- Use "derived-from" when a strategy is derived from an objective.
-
 HOW TO CREATE ENTITIES — use the provided tools:
 
 Use the `create_entity` tool to create each game and strategy entity. Parameters:
@@ -83,17 +75,44 @@ Use the `create_entity` tool to create each game and strategy entity. Parameters
 - `confidence`: "high", "medium", or "low"
 - `rationale`: one sentence justifying this entity
 
-Use the `create_relationship` tool to link entities. Parameters:
-
-- `type`: one of "plays-in", "has-strategy", "informed-by", "derived-from"
-- `fromEntityId`: the ref of the source entity
-- `toEntityId`: the ref of the target entity
-
 If you make an error, use `update_entity` to correct an entity's data, or `delete_entity` to remove it entirely.
 
-When you have built the baseline model with all games, strategies, and relationships, call `complete_phase` to signal that Phase 3 is done.
+STEP 3d — Link players to games and strategies with relationships.
 
-EXAMPLE — creating a game and strategy:
+This step is REQUIRED. Every baseline model must have relationships connecting
+players (from Phase 2) to the games and strategies you just created.
+
+First, retrieve the player entities from Phase 2:
+
+Call query_entities with: phase: "player-identification", type: "player"
+
+Then create the following relationships:
+
+- "plays-in": from each player to the game they participate in.
+- "has-strategy": from each player to each strategy available to them.
+- "informed-by": from game/strategy to prior-phase entities when relevant.
+- "derived-from": when a strategy is derived from an objective.
+
+Use the `create_relationship` tool. Parameters:
+
+- `type`: one of "plays-in", "has-strategy", "informed-by", "derived-from"
+- `fromEntityId`: the ID of the source entity (use the ID returned by query_entities)
+- `toEntityId`: the ID of the target entity (use the ref you assigned when creating it)
+
+BEFORE calling complete_phase, verify this checklist:
+
+✓ At least one game entity created
+✓ At least two strategy entities created
+✓ If Phase 2 players are available (query_entities returns results), every player
+has a "plays-in" relationship to the game and at least one "has-strategy"
+relationship to a strategy
+
+A baseline model with entities AND relationships is stronger than entities alone.
+Always attempt to create relationships if player entities are available.
+
+EXAMPLE — full workflow for one game:
+
+1. Create the game:
 
 Call create_entity with:
 ref: "game-semiconductor"
@@ -103,6 +122,8 @@ data: { "type": "game", "name": "Semiconductor Supply Chain Control", "gameType"
 confidence: "high"
 rationale: "Core tension: both want dominance but mutual exclusion destroys value"
 
+2. Create strategies:
+
 Call create_entity with:
 ref: "strat-us-restrict"
 type: "strategy"
@@ -111,6 +132,21 @@ data: { "type": "strategy", "name": "Expand export controls", "feasibility": "ac
 confidence: "high"
 rationale: "Already being implemented via Commerce Department actions"
 
-Then link with create_relationship: type "has-strategy", from player to strategy, and type "plays-in", from player to game.
+3. Retrieve players and link with relationships:
+
+Call query_entities with: phase: "player-identification", type: "player"
+→ Returns player entities with their IDs (e.g. "player-us" with id "abc123")
+
+Call create_relationship with:
+type: "plays-in"
+fromEntityId: "abc123"
+toEntityId: "game-semiconductor"
+
+Call create_relationship with:
+type: "has-strategy"
+fromEntityId: "abc123"
+toEntityId: "strat-us-restrict"
+
+Repeat for each player-game and player-strategy pair.
 
 Call complete_phase when done.
