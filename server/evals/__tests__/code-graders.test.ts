@@ -383,13 +383,171 @@ describe("runCodeGraders", () => {
   });
 
   it("uses canonical PHASE_ENTITY_TYPES, not a local copy", () => {
-    // Verify the code graders reference the canonical source by checking
-    // that a type valid in analysis-entity-schemas passes the allowed-types check
     const entities = [{ type: "interaction-history", ref: "ih-1", data: {} }];
     const results = runCodeGraders(entities, [], "historical-game", {
       entityCountRange: [1, 10],
     });
     const allowedResult = results.find((r) => r.grader === "allowed-types");
     expect(allowedResult?.passed).toBe(true);
+  });
+
+  // ── entity-type-mix grader ──
+
+  it("entity-type-mix passes when counts are in range", () => {
+    const entities = [
+      { type: "player", ref: "p1", data: { name: "Alice" } },
+      { type: "player", ref: "p2", data: { name: "Bob" } },
+      { type: "objective", ref: "o1", data: { description: "Win" } },
+    ];
+    const results = runCodeGraders(entities, [], "player-identification", {
+      entityCountRange: [2, 6],
+      entityTypeMix: { player: [2, 2], objective: [1, 3] },
+    });
+    const mixResult = results.find((r) => r.grader === "entity-type-mix");
+    expect(mixResult?.passed).toBe(true);
+  });
+
+  it("entity-type-mix fails when a type count is out of range", () => {
+    const entities = [
+      { type: "player", ref: "p1", data: { name: "Alice" } },
+      { type: "objective", ref: "o1", data: { description: "Win" } },
+    ];
+    const results = runCodeGraders(entities, [], "player-identification", {
+      entityCountRange: [2, 6],
+      entityTypeMix: { player: [2, 4], objective: [1, 3] },
+    });
+    const mixResult = results.find((r) => r.grader === "entity-type-mix");
+    expect(mixResult?.passed).toBe(false);
+    expect(mixResult?.message).toContain("player: 1");
+  });
+
+  // ── central-thesis-present grader ──
+
+  it("central-thesis-present passes with exactly 1 central-thesis", () => {
+    const entities = [
+      { type: "scenario", ref: "s1", data: { subtype: "baseline" } },
+      { type: "central-thesis", ref: "ct1", data: { thesis: "X is likely" } },
+    ];
+    const results = runCodeGraders(entities, [], "scenarios", {
+      entityCountRange: [2, 5],
+    });
+    const thesisResult = results.find(
+      (r) => r.grader === "central-thesis-present",
+    );
+    expect(thesisResult?.passed).toBe(true);
+  });
+
+  it("central-thesis-present fails with 0 central-thesis", () => {
+    const entities = [
+      { type: "scenario", ref: "s1", data: { subtype: "baseline" } },
+      { type: "scenario", ref: "s2", data: { subtype: "tail-risk" } },
+    ];
+    const results = runCodeGraders(entities, [], "scenarios", {
+      entityCountRange: [2, 5],
+    });
+    const thesisResult = results.find(
+      (r) => r.grader === "central-thesis-present",
+    );
+    expect(thesisResult?.passed).toBe(false);
+    expect(thesisResult?.message).toContain("found 0");
+  });
+
+  // ── meta-check-completeness grader ──
+
+  it("meta-check-completeness passes with 10 numbered answered questions", () => {
+    const questions = Array.from({ length: 10 }, (_, i) => ({
+      question_number: i + 1,
+      answer: `Answer to question ${i + 1}`,
+      disruption_trigger_identified: false,
+    }));
+    const entities = [
+      {
+        type: "meta-check",
+        ref: "mc1",
+        data: { type: "meta-check", questions },
+      },
+    ];
+    const results = runCodeGraders(entities, [], "meta-check", {
+      entityCountRange: [1, 1],
+    });
+    const mcResult = results.find(
+      (r) => r.grader === "meta-check-completeness",
+    );
+    expect(mcResult?.passed).toBe(true);
+  });
+
+  it("meta-check-completeness fails with only 5 questions", () => {
+    const questions = Array.from({ length: 5 }, (_, i) => ({
+      question_number: i + 1,
+      answer: `Answer ${i + 1}`,
+      disruption_trigger_identified: false,
+    }));
+    const entities = [
+      {
+        type: "meta-check",
+        ref: "mc1",
+        data: { type: "meta-check", questions },
+      },
+    ];
+    const results = runCodeGraders(entities, [], "meta-check", {
+      entityCountRange: [1, 1],
+    });
+    const mcResult = results.find(
+      (r) => r.grader === "meta-check-completeness",
+    );
+    expect(mcResult?.passed).toBe(false);
+    expect(mcResult?.message).toContain("5 questions");
+  });
+
+  // ── cross-phase-refs grader ──
+
+  it("cross-phase-refs passes when dependencies reference prior entities", () => {
+    const entities = [
+      {
+        type: "assumption",
+        ref: "a1",
+        data: { dependencies: ["fact-1", "fact-2"] },
+      },
+    ];
+    const priorContext = JSON.stringify([
+      { ref: "fact-1", id: "id-1" },
+      { ref: "fact-2", id: "id-2" },
+    ]);
+    const results = runCodeGraders(
+      entities,
+      [],
+      "assumptions",
+      {
+        entityCountRange: [1, 5],
+        requireCrossPhaseRefs: true,
+      },
+      priorContext,
+    );
+    const crossResult = results.find((r) => r.grader === "cross-phase-refs");
+    expect(crossResult?.passed).toBe(true);
+  });
+
+  it("cross-phase-refs fails when dependencies reference unknown entities", () => {
+    const entities = [
+      {
+        type: "assumption",
+        ref: "a1",
+        data: { dependencies: ["fact-1", "nonexistent-99"] },
+      },
+    ];
+    const priorContext = JSON.stringify([{ ref: "fact-1", id: "id-1" }]);
+    const results = runCodeGraders(
+      entities,
+      [],
+      "assumptions",
+      {
+        entityCountRange: [1, 5],
+        requireCrossPhaseRefs: true,
+      },
+      priorContext,
+    );
+    const crossResult = results.find((r) => r.grader === "cross-phase-refs");
+    expect(crossResult?.passed).toBe(false);
+    expect(crossResult?.message).toContain("nonexistent-99");
   });
 });

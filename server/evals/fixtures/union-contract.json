@@ -25,31 +25,56 @@
         "pattern.?exploiter"
       ],
       "rubrics": [
-        "Every player entity should be a genuine actor with independent agency in the situation.",
-        "Each player should have at least one objective that is specific to their position in this scenario.",
-        "Do not invent players not implied by the prompt — if the prompt describes two parties, there should be two players unless a third party is clearly relevant."
-      ]
+        "2-3 players: union, management, optionally a mediator or government regulator with genuine power.",
+        "Each player must have has-objective relationship. Objectives must be specific: wage targets, cost control, job security.",
+        "Player entities must include playerType and knowledge array reflecting information asymmetry."
+      ],
+      "entityTypeMix": { "player": [2, 4], "objective": [2, 8] },
+      "allowedRelationshipTypes": [
+        "has-objective",
+        "conflicts-with",
+        "informed-by"
+      ],
+      "requiredRelationshipTypes": ["has-objective"]
     },
     "baseline-model": {
-      "entityCountRange": [2, 8],
+      "entityCountRange": [3, 10],
+      "entityTypeMix": { "game": [1, 2], "strategy": [2, 8] },
+      "allowedRelationshipTypes": [
+        "plays-in",
+        "has-strategy",
+        "informed-by",
+        "derived-from"
+      ],
+      "requiredPatterns": ["bargaining"],
       "rubrics": [
-        "Should identify the bargaining game between union and management.",
-        "Strategies should include strike, lockout, compromise, and concession options."
+        "Should identify a bargaining game with gameType 'bargaining'.",
+        "Strategies should include: strike/work stoppage, lockout, compromise, concession, delay.",
+        "In a full pipeline run, plays-in and has-strategy relationships should link players to games and strategies."
       ]
     },
     "assumptions": {
       "entityCountRange": [3, 8],
+      "entityTypeMix": { "assumption": [3, 8] },
+      "allowedRelationshipTypes": ["depends-on", "links"],
+      "requireCrossPhaseRefs": true,
       "rubrics": [
-        "Assumptions should cover bargaining power, information asymmetry, and legal constraints.",
-        "Should include assumptions about strike fund and management financial reserves."
+        "Must include assumption about relative bargaining power (capability category).",
+        "Must include assumption about information asymmetry (information category).",
+        "Each assumption must have sensitivity rating and dependencies referencing prior-phase entities."
       ]
     },
     "scenarios": {
-      "entityCountRange": [2, 5],
+      "entityCountRange": [3, 6],
+      "entityTypeMix": { "scenario": [2, 5], "central-thesis": [1, 1] },
+      "allowedRelationshipTypes": ["depends-on", "derived-from", "supports"],
+      "requireCrossPhaseRefs": true,
       "rubrics": [
-        "Should include a negotiated settlement scenario.",
-        "Should include a strike/lockout escalation scenario.",
-        "Scenario probabilities should sum to approximately 100%."
+        "Must include a negotiated settlement scenario as baseline.",
+        "Must include a strike/lockout escalation scenario with tail-risk subtype.",
+        "Scenario probabilities must sum to 95-105%.",
+        "Central thesis must be falsifiable and specific to this negotiation.",
+        "Each scenario must specify prediction_basis and reference key_assumptions."
       ]
     }
   },

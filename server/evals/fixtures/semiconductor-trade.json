@@ -31,47 +31,88 @@
     },
     "player-identification": {
       "entityCountRange": [6, 20],
+      "entityTypeMix": { "player": [3, 8], "objective": [3, 12] },
+      "allowedRelationshipTypes": [
+        "has-objective",
+        "conflicts-with",
+        "informed-by"
+      ],
+      "requiredRelationshipTypes": ["has-objective", "conflicts-with"],
       "forbiddenPatterns": ["internal agent", "cognitive", "heuristic"],
       "rubrics": [
-        "Every player entity should be a genuine actor with independent agency — name specific actors rather than generic blocs when possible.",
-        "Each player should have objectives that reflect their distinct position and incentives.",
-        "The player set should cover the key decision-makers without inflating the count with observers, commentators, or abstract forces."
+        "3-6 named decision-makers: US government, China government, EU/European Commission, ASML, key semiconductor companies — not generic 'the West'.",
+        "Each player must have has-objective relationship. Objectives must reflect their distinct strategic incentives.",
+        "conflicts-with relationships must exist between competing objectives (e.g., US tech leadership vs China self-reliance).",
+        "Player entities must include playerType and knowledge array reflecting information asymmetry."
       ]
     },
     "baseline-model": {
-      "entityCountRange": [3, 10],
+      "entityCountRange": [4, 12],
+      "entityTypeMix": { "game": [2, 4], "strategy": [4, 10] },
+      "allowedRelationshipTypes": [
+        "plays-in",
+        "has-strategy",
+        "informed-by",
+        "derived-from"
+      ],
       "rubrics": [
-        "Should identify multiple interacting games (trade, technology, diplomacy).",
-        "Strategies should be specific to semiconductor trade, not generic trade war strategies."
+        "Should identify 2-3 interacting games: technology competition, trade/export controls, diplomatic alliance.",
+        "Strategies must be specific to semiconductor trade: export controls, subsidies, retaliation, coalition-building.",
+        "Each game must have timing specified.",
+        "In a full pipeline run, plays-in and has-strategy relationships should link players to games and strategies."
       ]
     },
     "historical-game": {
-      "entityCountRange": [2, 10],
+      "entityCountRange": [3, 12],
+      "entityTypeMix": {
+        "interaction-history": [1, 4],
+        "repeated-game-pattern": [0, 3],
+        "trust-assessment": [1, 4],
+        "dynamic-inconsistency": [0, 3],
+        "signaling-effect": [0, 3]
+      },
+      "allowedRelationshipTypes": ["informed-by", "derived-from"],
+      "requiredPatterns": ["CHIPS|export control|gallium"],
       "rubrics": [
-        "Should reference the escalation sequence (CHIPS Act, export controls, Chinese retaliation).",
-        "Should identify trust dynamics between the three blocs."
+        "Must include interaction-history for US-China and US-EU semiconductor interactions.",
+        "Must reference the escalation sequence: CHIPS Act → export controls → gallium/germanium retaliation.",
+        "Trust assessments should cover US-EU alliance cohesion and US-China competitive trust.",
+        "Signaling effects should capture how US controls signal to EU and third parties."
       ]
     },
     "formal-modeling": {
-      "entityCountRange": [2, 12],
+      "entityCountRange": [3, 15],
+      "allowedRelationshipTypes": ["derived-from", "informed-by", "depends-on"],
       "rubrics": [
-        "Should model cross-game constraints between the trade and technology competition.",
-        "Equilibrium analysis should account for the multi-player dynamic, not just US-China bilateral."
+        "Must include cross-game-effect or cross-game-constraint-table showing how games interact.",
+        "Equilibrium analysis should account for the 3-player dynamic, not just US-China bilateral.",
+        "Payoff matrices must have rationale and dependency references on every payoff estimate.",
+        "Signal classification should assess whether US/China public statements are cheap talk or costly signals."
       ]
     },
     "assumptions": {
-      "entityCountRange": [3, 10],
+      "entityCountRange": [4, 12],
+      "entityTypeMix": { "assumption": [4, 12] },
+      "allowedRelationshipTypes": ["depends-on", "links"],
+      "requireCrossPhaseRefs": true,
       "rubrics": [
-        "Assumptions should cover information availability, commitment credibility, and coalition stability.",
-        "Should include assumptions about technological catch-up timelines."
+        "Must include assumption about China's technological catch-up timeline (capability category).",
+        "Must include assumption about EU coalition stability (institutional category).",
+        "Must include assumption about information availability on each bloc's capabilities (information category).",
+        "Each assumption must have sensitivity rating and dependencies referencing prior-phase entities."
       ]
     },
     "scenarios": {
-      "entityCountRange": [2, 6],
+      "entityCountRange": [3, 7],
+      "entityTypeMix": { "scenario": [2, 6], "central-thesis": [1, 1] },
+      "allowedRelationshipTypes": ["depends-on", "derived-from", "supports"],
+      "requireCrossPhaseRefs": true,
       "rubrics": [
-        "Should include escalation, de-escalation, and strategic decoupling scenarios.",
-        "Scenario probabilities should sum to approximately 100%.",
-        "Should distinguish between short-term and structural outcomes."
+        "Must include escalation scenario (further controls/retaliation) and de-escalation scenario.",
+        "Must include strategic decoupling scenario as tail-risk subtype.",
+        "Scenario probabilities must sum to 95-105%.",
+        "Should distinguish between short-term (1-2 year) and structural (5-10 year) outcomes.",
+        "Central thesis must be falsifiable and reference the multi-player dynamic."
       ]
     }
   },

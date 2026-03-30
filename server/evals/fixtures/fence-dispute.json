@@ -4,7 +4,7 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [4, 8],
+      "entityCountRange": [4, 10],
       "requiredFactCategories": ["position", "rule"],
       "minDistinctFactCategories": 2,
       "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
@@ -24,6 +24,16 @@
     },
     "player-identification": {
       "entityCountRange": [4, 10],
+      "entityTypeMix": {
+        "player": [2, 4],
+        "objective": [2, 8]
+      },
+      "allowedRelationshipTypes": [
+        "has-objective",
+        "conflicts-with",
+        "informed-by"
+      ],
+      "requiredRelationshipTypes": ["has-objective"],
       "forbiddenPatterns": [
         "internal agent",
         "cognitive",
@@ -32,38 +42,73 @@
         "pattern.?exploiter"
       ],
       "rubrics": [
-        "Every player entity should be a genuine actor with independent agency in the situation.",
-        "Each player should have at least one objective that is specific to their position in this scenario.",
-        "Do not invent players not implied by the prompt — if the prompt describes two parties, there should be two players unless a third party is clearly relevant."
+        "2-3 players: Neighbor A, Neighbor B, optionally a mediator or local authority with genuine veto power.",
+        "Each player must have has-objective relationship to at least one specific objective.",
+        "Objectives must be specific to the fence dispute — property value, cost sharing, relationship preservation.",
+        "Player entities must include playerType and knowledge array."
       ]
     },
     "baseline-model": {
-      "entityCountRange": [2, 6],
+      "entityCountRange": [3, 10],
+      "entityTypeMix": {
+        "game": [1, 2],
+        "strategy": [2, 6]
+      },
+      "allowedRelationshipTypes": [
+        "plays-in",
+        "has-strategy",
+        "informed-by",
+        "derived-from"
+      ],
+      "requiredPatterns": ["bargaining|coordination"],
       "rubrics": [
-        "Should identify the bargaining structure between the two neighbors.",
-        "Strategies should include negotiation, escalation, and mediation options."
+        "Should identify a bargaining game between the two neighbors.",
+        "Strategies should include: negotiate cost-sharing, unilateral action, seek mediation, litigate.",
+        "Strategy feasibility should distinguish 'actual' from 'rhetoric-only' based on power dynamics.",
+        "In a full pipeline run, plays-in and has-strategy relationships should link players to games and strategies."
       ]
     },
     "assumptions": {
-      "entityCountRange": [2, 8],
+      "entityCountRange": [3, 8],
+      "entityTypeMix": {
+        "assumption": [3, 8]
+      },
+      "allowedRelationshipTypes": ["depends-on", "links"],
+      "requireCrossPhaseRefs": true,
       "rubrics": [
-        "Assumptions should cover property rights, communication availability, and relationship value.",
-        "Should not assume litigation is the only resolution mechanism."
+        "Must include assumption about property boundary ownership (structural).",
+        "Must include assumption about ongoing neighbor relationship value (behavioral).",
+        "Each assumption must have sensitivity rating and non-empty dependencies array.",
+        "Should NOT treat property law basics as assumptions — those are rules from Phase 1."
       ]
     },
     "elimination": {
       "entityCountRange": [1, 5],
+      "entityTypeMix": {
+        "eliminated-outcome": [1, 5]
+      },
+      "allowedRelationshipTypes": ["invalidated-by"],
+      "requireCrossPhaseRefs": true,
       "rubrics": [
-        "Eliminated outcomes should include clearly dominated strategies like mutual litigation for a low-stakes dispute.",
-        "Elimination rationale should reference costs vs. stakes."
+        "Should eliminate mutual litigation as dominated (costs exceed fence value).",
+        "Each elimination must reference source_entity_ids from prior phases.",
+        "Elimination rationale should be traced to specific phase findings, not generic reasoning."
       ]
     },
     "scenarios": {
-      "entityCountRange": [2, 5],
+      "entityCountRange": [3, 6],
+      "entityTypeMix": {
+        "scenario": [2, 5],
+        "central-thesis": [1, 1]
+      },
+      "allowedRelationshipTypes": ["depends-on", "derived-from", "supports"],
+      "requireCrossPhaseRefs": true,
       "rubrics": [
-        "Should include a cooperative resolution scenario (mediation or negotiation).",
-        "Should include an escalation scenario.",
-        "Scenario probabilities should sum to approximately 100%."
+        "Must include a cooperative resolution scenario (mediation/negotiation) as likely baseline.",
+        "Must include an escalation scenario as tail-risk.",
+        "Scenario probabilities must sum to 95-105%.",
+        "Central thesis must be falsifiable and reference specific structural features of the dispute.",
+        "Each scenario must specify prediction_basis and reference key_assumptions."
       ]
     }
   },

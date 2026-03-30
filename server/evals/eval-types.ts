@@ -19,6 +19,11 @@ export interface PhaseExpectations {
   allowedRelationshipTypes?: RelationshipType[];
   requiredRelationshipTypes?: RelationshipType[];
   rubrics?: string[];
+  /** Per-type entity count constraints. E.g. { player: [1, 4], objective: [1, 6] } */
+  entityTypeMix?: Record<string, [min: number, max: number]>;
+  /** If true, entities must reference prior-phase entity IDs in their data fields
+   *  (e.g. assumption.dependencies, scenario.key_assumptions, eliminated-outcome.source_entity_ids) */
+  requireCrossPhaseRefs?: boolean;
 }
 
 export interface GraderResult {

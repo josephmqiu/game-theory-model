@@ -25,47 +25,90 @@
     },
     "player-identification": {
       "entityCountRange": [6, 20],
+      "entityTypeMix": { "player": [3, 8], "objective": [3, 12] },
+      "allowedRelationshipTypes": [
+        "has-objective",
+        "conflicts-with",
+        "informed-by"
+      ],
+      "requiredRelationshipTypes": ["has-objective", "conflicts-with"],
       "forbiddenPatterns": ["internal agent", "cognitive", "heuristic"],
+      "requiredPatterns": ["Saudi|Arabia", "Russia"],
       "rubrics": [
-        "Every player entity should be a genuine actor with independent agency — name specific actors rather than generic blocs when possible.",
-        "Each player should have objectives that reflect their distinct position and incentives.",
-        "The player set should cover the key decision-makers without inflating the count with observers, commentators, or abstract forces."
+        "Must include Saudi Arabia, Russia, and UAE as named players — not 'OPEC' as a monolithic actor.",
+        "Each player must have has-objective relationship. Objectives must reflect heterogeneous fiscal/market-share incentives.",
+        "conflicts-with relationships must exist between competing objectives (price stability vs market share).",
+        "Player entities must include playerType and knowledge array."
       ]
     },
     "baseline-model": {
-      "entityCountRange": [3, 10],
+      "entityCountRange": [4, 12],
+      "entityTypeMix": { "game": [1, 3], "strategy": [3, 10] },
+      "allowedRelationshipTypes": [
+        "plays-in",
+        "has-strategy",
+        "informed-by",
+        "derived-from"
+      ],
+      "requiredPatterns": ["coordination|coalition"],
       "rubrics": [
-        "Should model the quota-setting game as a multi-player coordination problem.",
-        "Strategies should include compliance, defection, and unilateral cut options."
+        "Should model the quota-setting game as a coordination or coalition game with defection incentives.",
+        "Strategies should include: comply with quota, partial compliance, unilateral cut, unilateral increase.",
+        "Each game must have timing 'repeated' reflecting quarterly reviews.",
+        "In a full pipeline run, plays-in and has-strategy relationships should link players to games and strategies."
       ]
     },
     "historical-game": {
-      "entityCountRange": [2, 10],
+      "entityCountRange": [3, 12],
+      "entityTypeMix": {
+        "interaction-history": [1, 4],
+        "repeated-game-pattern": [1, 3],
+        "trust-assessment": [1, 4],
+        "dynamic-inconsistency": [0, 3],
+        "signaling-effect": [0, 3]
+      },
+      "allowedRelationshipTypes": ["informed-by", "derived-from"],
+      "requiredPatterns": ["compliance|defection|quota"],
       "rubrics": [
-        "Should reference historical quota compliance patterns and price wars.",
-        "Should identify repeated game dynamics and trust/defection cycles."
+        "Must include interaction-history for Saudi-Russia and Saudi-UAE quota negotiations.",
+        "Must identify the repeated-game-pattern of compliance cycles and periodic price wars.",
+        "Trust assessments should cover Saudi-Russia cooperation durability and Iraq/Nigeria compliance reliability.",
+        "Should reference specific historical episodes (e.g., 2020 price war, OPEC+ formation)."
       ]
     },
     "formal-modeling": {
-      "entityCountRange": [2, 12],
+      "entityCountRange": [3, 15],
+      "allowedRelationshipTypes": ["derived-from", "informed-by", "depends-on"],
       "rubrics": [
-        "Should model the cartel stability problem with heterogeneous players.",
-        "Equilibrium analysis should account for Saudi swing producer role."
+        "Must model the cartel stability problem: why members want to defect from agreed quotas.",
+        "Equilibrium analysis should account for Saudi's unique swing producer role and commitment capability.",
+        "Payoff matrices must have rationale and dependency references on every payoff estimate.",
+        "Should include cross-game effects if US shale response interacts with OPEC coordination."
       ]
     },
     "assumptions": {
-      "entityCountRange": [3, 10],
+      "entityCountRange": [4, 12],
+      "entityTypeMix": { "assumption": [4, 12] },
+      "allowedRelationshipTypes": ["depends-on", "links"],
+      "requireCrossPhaseRefs": true,
       "rubrics": [
-        "Assumptions should cover demand elasticity, member fiscal constraints, and monitoring capability.",
-        "Should include assumptions about US shale response to price changes."
+        "Must include assumption about demand elasticity (structural category).",
+        "Must include assumption about member fiscal constraints and compliance incentives (institutional category).",
+        "Must include assumption about US shale production response (capability category).",
+        "Each assumption must have sensitivity rating and dependencies referencing prior-phase entities."
       ]
     },
     "scenarios": {
-      "entityCountRange": [2, 6],
+      "entityCountRange": [3, 7],
+      "entityTypeMix": { "scenario": [2, 6], "central-thesis": [1, 1] },
+      "allowedRelationshipTypes": ["depends-on", "derived-from", "supports"],
+      "requireCrossPhaseRefs": true,
       "rubrics": [
-        "Should include cooperation, defection/price war, and partial compliance scenarios.",
-        "Scenario probabilities should sum to approximately 100%.",
-        "Should distinguish between short-term quota decisions and long-term market structure."
+        "Must include cooperation scenario (maintained quotas), defection/price war scenario, and partial compliance scenario.",
+        "Scenario probabilities must sum to 95-105%.",
+        "Should distinguish between short-term quota decisions and long-term cartel stability.",
+        "Central thesis must be falsifiable and reference the heterogeneous incentive structure.",
+        "Each scenario must specify prediction_basis and reference key_assumptions."
       ]
     }
   },
