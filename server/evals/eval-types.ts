@@ -64,3 +64,30 @@ export interface PhaseEvalReport {
   meanLatencyMs?: number;
   medianLatencyMs?: number;
 }
+
+// --- Phase artifact types for incremental eval ---
+
+/** Per-trial output captured in an artifact file. */
+export interface PhaseArtifactTrial {
+  trial: number;
+  success: boolean;
+  entities: unknown[];
+  relationships: unknown[];
+}
+
+/** Artifact file for a single fixture/phase/effort — enables cross-invocation resumption. */
+export interface PhaseArtifact {
+  artifactVersion: string;
+  fixture: string;
+  phase: MethodologyPhase;
+  effort: AnalysisEffortLevel;
+  timestamp: string;
+  model: string;
+  trials: PhaseArtifactTrial[];
+}
+
+/** Return type for runEval — includes both reports and saveable artifacts. */
+export interface EvalResult {
+  reports: PhaseEvalReport[];
+  artifacts: PhaseArtifact[];
+}

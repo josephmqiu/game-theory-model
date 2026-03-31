@@ -1,4 +1,10 @@
-import type { EvalFixture, TrialResult, PhaseEvalReport } from "./eval-types";
+import type {
+  EvalFixture,
+  TrialResult,
+  PhaseEvalReport,
+  PhaseArtifact,
+  EvalResult,
+} from "./eval-types";
 import type { AnalysisEffortLevel } from "../../shared/types/analysis-runtime";
 import type { MethodologyPhase } from "../../shared/types/methodology";
 import { runCodeGraders } from "./code-graders";
@@ -18,6 +24,8 @@ export interface EvalOptions {
   graderModel?: string; // model for rubric grading (default: opus)
   fast?: boolean; // skip model graders
   chain?: boolean; // feed phase output as prior context to next phase
+  chainPerTrial?: boolean; // propagate each trial's output independently (not just trial 0)
+  resumeArtifacts?: Map<string, Map<MethodologyPhase, PhaseArtifact>>;
   runPhaseImpl?: RunPhaseImpl;
 }
 
@@ -30,9 +38,7 @@ function isolateEvalState(topic?: string): void {
   }
 }
 
-export async function runEval(
-  options: EvalOptions,
-): Promise<PhaseEvalReport[]> {
+export async function runEval(options: EvalOptions): Promise<EvalResult> {
   const {
     fixtures,
     trials = 3,
@@ -41,23 +47,84 @@ export async function runEval(
     model,
     fast = false,
     chain = false,
+    chainPerTrial = false,
     graderModel,
+    resumeArtifacts,
   } = options;
 
   const runPhase =
     options.runPhaseImpl ??
     (await import("../services/analysis-service")).runPhase;
   const reports: PhaseEvalReport[] = [];
+  const artifacts: PhaseArtifact[] = [];
 
   for (const fixture of fixtures) {
+    // Full phase order from the fixture (used for predecessor lookup in resume)
+    const allFixturePhases = Object.keys(fixture.phases) as MethodologyPhase[];
     const phaseNames = options.phases
       ? options.phases.filter((p) => p in fixture.phases)
-      : (Object.keys(fixture.phases) as MethodologyPhase[]);
+      : allFixturePhases;
 
     for (const effort of efforts) {
+      // Chain state: trial-0-only (existing) + per-trial (new)
       let chainedPriorContext: string | undefined;
+      const chainedPerTrial = new Map<number, string>();
 
-      for (const phase of phaseNames) {
+      /** Resolve prior context for a given phase and trial index.
+       *  Priority: 1) chained output from this run, 2) resumed artifact, 3) fixture static */
+      function resolveContext(
+        phaseIndex: number,
+        trialIndex: number,
+      ): string | undefined {
+        const phase = phaseNames[phaseIndex];
+        // 1. Chained output from earlier phase in this run
+        if (chain) {
+          if (chainPerTrial && chainedPerTrial.has(trialIndex)) {
+            return chainedPerTrial.get(trialIndex);
+          }
+          if (chainedPriorContext) return chainedPriorContext;
+        }
+        // 2. Resumed artifact from a previous eval run
+        // Use the fixture's full phase list to find the predecessor,
+        // so --phase player-identification can resume from situational-grounding
+        if (resumeArtifacts) {
+          const fixturePhaseIdx = allFixturePhases.indexOf(phase);
+          if (fixturePhaseIdx > 0) {
+            const predecessorPhase = allFixturePhases[fixturePhaseIdx - 1];
+            const artifact = resumeArtifacts
+              .get(fixture.name)
+              ?.get(predecessorPhase);
+            if (artifact) {
+              if (chainPerTrial) {
+                // Validate trial count match
+                if (artifact.trials.length !== trials) {
+                  throw new Error(
+                    `Per-trial chaining requires matching trial counts. ` +
+                      `Artifact "${fixture.name}/${predecessorPhase}" has ${artifact.trials.length} trials ` +
+                      `but --trials ${trials} was requested.`,
+                  );
+                }
+                const trialData = artifact.trials.find(
+                  (t) => t.trial === trialIndex + 1,
+                );
+                if (trialData?.success && trialData.entities.length > 0) {
+                  return JSON.stringify(trialData.entities);
+                }
+              } else {
+                const trialData = artifact.trials[0];
+                if (trialData?.success && trialData.entities.length > 0) {
+                  return JSON.stringify(trialData.entities);
+                }
+              }
+            }
+          }
+        }
+        // 3. Fixture static priorContext
+        return fixture.priorContext?.[phase];
+      }
+
+      for (let phaseIndex = 0; phaseIndex < phaseNames.length; phaseIndex++) {
+        const phase = phaseNames[phaseIndex];
         const expectations = fixture.phases[phase]!;
         const trialResults: TrialResult[] = [];
 
@@ -66,13 +133,12 @@ export async function runEval(
           isolateEvalState(fixture.topic);
 
           try {
+            const phaseBrief = resolveContext(phaseIndex, t);
             const start = Date.now();
             const result = await runPhase(phase, fixture.topic, {
               provider,
               model,
-              phaseBrief: chain
-                ? chainedPriorContext
-                : fixture.priorContext?.[phase],
+              phaseBrief,
               runtime: { webSearch: false, effortLevel: effort },
             });
             const latencyMs = Date.now() - start;
@@ -95,15 +161,12 @@ export async function runEval(
               continue;
             }
 
-            const priorCtx = chain
-              ? chainedPriorContext
-              : fixture.priorContext?.[phase];
             const codeResults = runCodeGraders(
               result.entities as any,
               result.relationships as any,
               phase,
               expectations,
-              priorCtx,
+              phaseBrief,
             );
 
             const modelResults = fast
@@ -137,17 +200,37 @@ export async function runEval(
               transcript: result.assistantResponse,
             });
 
-            // Chain mode: capture first trial's output for next phase.
-            // Only trial 0 — subsequent trials reuse this context intentionally
-            // to test prompt quality against stable input.
-            if (chain && t === 0 && result.entities.length > 0) {
-              chainedPriorContext = JSON.stringify(result.entities);
+            // Chain mode: capture output for next phase
+            if (chain && result.entities.length > 0) {
+              if (chainPerTrial) {
+                chainedPerTrial.set(t, JSON.stringify(result.entities));
+              }
+              // Always capture trial 0 for backwards-compatible chain behavior
+              if (t === 0) {
+                chainedPriorContext = JSON.stringify(result.entities);
+              }
             }
           } finally {
             // Guarantee cleanup even on error
             isolateEvalState();
           }
         }
+
+        // Build artifact for this phase
+        artifacts.push({
+          artifactVersion: "1.0.0",
+          fixture: fixture.name,
+          phase,
+          effort,
+          timestamp: new Date().toISOString(),
+          model: model ?? "claude-sonnet-4-20250514",
+          trials: trialResults.map((t) => ({
+            trial: t.trial,
+            success: t.success,
+            entities: t.entities,
+            relationships: t.relationships,
+          })),
+        });
 
         const trialsPassed = trialResults.filter(
           (t) => t.success && t.graderResults.every((g) => g.passed),
@@ -193,5 +276,5 @@ export async function runEval(
     }
   }
 
-  return reports;
+  return { reports, artifacts };
 }

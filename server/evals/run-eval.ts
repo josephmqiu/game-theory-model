@@ -1,7 +1,13 @@
-import { readFileSync, readdirSync, mkdirSync, writeFileSync } from "node:fs";
+import {
+  readFileSync,
+  readdirSync,
+  mkdirSync,
+  writeFileSync,
+  existsSync,
+} from "node:fs";
 import { join } from "node:path";
 import { runEval } from "./eval-runner";
-import type { EvalFixture, PhaseEvalReport } from "./eval-types";
+import type { EvalFixture, PhaseEvalReport, PhaseArtifact } from "./eval-types";
 import type { AnalysisEffortLevel } from "../../shared/types/analysis-runtime";
 import { normalizeRuntimeEffort } from "../../shared/types/analysis-runtime";
 import type { MethodologyPhase } from "../../shared/types/methodology";
@@ -17,6 +23,8 @@ export function parseArgs(): {
   trials: number;
   fast: boolean;
   chain: boolean;
+  chainPerTrial: boolean;
+  resumeFrom?: string;
   provider?: string;
   model?: string;
   graderModel?: string;
@@ -25,6 +33,7 @@ export function parseArgs(): {
   const parsed: Record<string, string> = {};
   let fast = false;
   let chain = false;
+  let chainPerTrial = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--fast") {
@@ -33,6 +42,10 @@ export function parseArgs(): {
     }
     if (args[i] === "--chain") {
       chain = true;
+      continue;
+    }
+    if (args[i] === "--chain-per-trial") {
+      chainPerTrial = true;
       continue;
     }
     if (args[i].startsWith("--") && i + 1 < args.length) {
@@ -48,6 +61,8 @@ export function parseArgs(): {
     trials: parseInt(parsed.trials ?? "3", 10),
     fast,
     chain,
+    chainPerTrial,
+    resumeFrom: parsed["resume-from"],
     provider: parsed.provider,
     model: parsed.model,
     graderModel: parsed["grader-model"],
@@ -124,6 +139,29 @@ function formatReport(report: PhaseEvalReport): string {
   return lines.join("\n");
 }
 
+export function loadResumeArtifacts(
+  resumePath: string,
+): Map<string, Map<MethodologyPhase, PhaseArtifact>> {
+  const artifactsDir = join(resumePath, "artifacts");
+  if (!existsSync(artifactsDir)) {
+    throw new Error(
+      `No artifacts directory found at ${artifactsDir}. Was this eval run created with artifact support?`,
+    );
+  }
+  const files = readdirSync(artifactsDir).filter((f) => f.endsWith(".json"));
+  const result = new Map<string, Map<MethodologyPhase, PhaseArtifact>>();
+  for (const file of files) {
+    const artifact = JSON.parse(
+      readFileSync(join(artifactsDir, file), "utf8"),
+    ) as PhaseArtifact;
+    if (!result.has(artifact.fixture)) {
+      result.set(artifact.fixture, new Map());
+    }
+    result.get(artifact.fixture)!.set(artifact.phase, artifact);
+  }
+  return result;
+}
+
 async function main() {
   const args = parseArgs();
   const fixtures = loadFixtures(args.fixture);
@@ -147,17 +185,33 @@ async function main() {
     ? (args.phase.split(",") as MethodologyPhase[])
     : undefined;
 
+  // Load resume artifacts if provided
+  const resumeArtifacts = args.resumeFrom
+    ? loadResumeArtifacts(args.resumeFrom)
+    : undefined;
+
+  const flags = [
+    args.fast && "fast mode",
+    args.chain && "chain mode",
+    args.chainPerTrial && "chain-per-trial",
+    args.resumeFrom && `resuming from ${args.resumeFrom}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
   console.log(
-    `Running eval: ${fixtures.length} fixture(s), ${efforts.length} effort level(s), ${args.trials} trial(s)${args.fast ? " [fast mode]" : ""}${args.chain ? " [chain mode]" : ""}\n`,
+    `Running eval: ${fixtures.length} fixture(s), ${efforts.length} effort level(s), ${args.trials} trial(s)${flags ? ` [${flags}]` : ""}\n`,
   );
 
-  const reports = await runEval({
+  const { reports, artifacts } = await runEval({
     fixtures,
     phases,
     efforts,
     trials: args.trials,
     fast: args.fast,
     chain: args.chain,
+    chainPerTrial: args.chainPerTrial,
+    resumeArtifacts,
     provider: args.provider,
     model: args.model,
     graderModel: args.graderModel,
@@ -180,13 +234,30 @@ async function main() {
     trials: args.trials,
     fast: args.fast,
     chain: args.chain,
-    evalVersion: "2.0.0",
+    chainPerTrial: args.chainPerTrial || undefined,
+    resumeFrom: args.resumeFrom,
+    evalVersion: "2.1.0",
   };
 
   writeFileSync(
     join(evalDir, "report.json"),
     JSON.stringify({ evalMeta, reports }, null, 2),
   );
+
+  // Save phase artifacts
+  if (artifacts.length > 0) {
+    const artifactsDir = join(evalDir, "artifacts");
+    mkdirSync(artifactsDir, { recursive: true });
+    for (const artifact of artifacts) {
+      writeFileSync(
+        join(
+          artifactsDir,
+          `${artifact.fixture}--${artifact.phase}--${artifact.effort}.json`,
+        ),
+        JSON.stringify(artifact, null, 2),
+      );
+    }
+  }
 
   // Save transcripts per trial
   const transcriptsDir = join(evalDir, "transcripts");
