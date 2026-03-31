@@ -4,25 +4,14 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [
-        4,
-        10
-      ],
-      "requiredFactCategories": [
-        "economic",
-        "position",
-        "impact"
-      ],
+      "entityCountRange": [4, 10],
+      "requiredFactCategories": ["economic", "position", "impact"],
       "minDistinctFactCategories": 3,
-      "allowedRelationshipTypes": [
-        "supports",
-        "contradicts",
-        "precedes"
-      ],
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
       "requiredPatterns": [
-        "subscriber|viewership|ratings",
-        "renewal",
-        "competitor|competition"
+        "subscriber|viewership|ratings|audience|engagement|watch",
+        "renew|cancel|season",
+        "compet|rival|market|Netflix|Disney|Amazon|streaming"
       ],
       "rubrics": [
         "Facts should cover the cost-benefit dynamics that drive the renewal choice.",
@@ -31,10 +20,7 @@
       ]
     },
     "player-identification": {
-      "entityCountRange": [
-        4,
-        10
-      ],
+      "entityCountRange": [4, 10],
       "forbiddenPatterns": [
         "internal agent",
         "cognitive",

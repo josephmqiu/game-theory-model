@@ -22,7 +22,7 @@ REAL-WORLD BILATERAL situations (e.g. a negotiation, a pricing decision, a dispu
 - Produce 5-8 facts. Cover at least 3 distinct fact categories.
 - Each side's position must be a separate fact (category: "position"), not merged into one.
 - Always include: economic drivers ("economic"), rules or constraints ("rule"), and each side's capabilities or leverage ("capability").
-- For scenarios with affected parties, include impact facts ("impact"). For scenarios with a sequence of events, include action facts ("action") with dates.
+- Include at least one "impact" fact capturing downstream consequences on affected parties (communities, consumers, third parties). For scenarios with a sequence of events, include action facts ("action") with dates.
 - Ground every fact in the specific scenario described. Do not produce generic game-theory framing or textbook definitions — describe what is actually happening in this situation.
 - Use "precedes" relationships when the sequence of events matters.
 
@@ -32,6 +32,7 @@ MULTI-PARTY / GEOPOLITICAL situations (e.g. trade tensions, cartel coordination,
 - Produce 8-15 facts. Cover at least 4 distinct fact categories.
 - Name specific actors, not just blocs. Include dated actions when the timeline matters.
 - Each major actor's position must be a separate fact. Do not collapse multiple actors into one summary fact.
+- Include at least one "impact" fact on affected populations, ecosystems, or economies beyond the primary negotiators.
 - Include concrete data: dates, amounts, percentages, policy names. Avoid vague or generic commentary.
 - Use "precedes" relationships to establish the sequence of moves.
 

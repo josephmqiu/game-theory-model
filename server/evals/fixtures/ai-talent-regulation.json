@@ -4,26 +4,14 @@
   "complexityTier": "complex",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [
-        8,
-        18
-      ],
-      "requiredFactCategories": [
-        "economic",
-        "position",
-        "rule",
-        "action"
-      ],
+      "entityCountRange": [8, 18],
+      "requiredFactCategories": ["economic", "position", "rule", "action"],
       "minDistinctFactCategories": 4,
-      "allowedRelationshipTypes": [
-        "supports",
-        "contradicts",
-        "precedes"
-      ],
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
       "requiredPatterns": [
-        "talent",
-        "lobby|lobbying",
-        "regulat|regulation"
+        "talent|hiring|recruit|engineer|researcher",
+        "lobby|lobbying|advocacy|influence|campaign",
+        "regulat|regulation|legislation|compliance|policy"
       ],
       "rubrics": [
         "Facts should keep talent-market competition and regulatory lobbying as distinct but interacting domains.",
@@ -33,15 +21,8 @@
       ]
     },
     "player-identification": {
-      "entityCountRange": [
-        6,
-        20
-      ],
-      "forbiddenPatterns": [
-        "internal agent",
-        "cognitive",
-        "heuristic"
-      ],
+      "entityCountRange": [6, 20],
+      "forbiddenPatterns": ["internal agent", "cognitive", "heuristic"],
       "rubrics": [
         "Every player entity should be a genuine actor with independent agency — name specific actors rather than generic blocs when possible.",
         "Each player should have objectives that reflect their distinct position and incentives.",

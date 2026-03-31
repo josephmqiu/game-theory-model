@@ -4,10 +4,7 @@
   "complexityTier": "complex",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [
-        8,
-        20
-      ],
+      "entityCountRange": [8, 20],
       "requiredFactCategories": [
         "position",
         "economic",
@@ -16,17 +13,11 @@
         "impact"
       ],
       "minDistinctFactCategories": 4,
-      "allowedRelationshipTypes": [
-        "supports",
-        "contradicts",
-        "precedes"
-      ],
-      "requiredRelationshipTypes": [
-        "precedes"
-      ],
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
+      "requiredRelationshipTypes": ["precedes"],
       "requiredPatterns": [
-        "emission",
-        "financing|finance"
+        "emission|carbon|greenhouse|GHG|CO2|pollut",
+        "financ|fund|billion|trillion|pledge"
       ],
       "rubrics": [
         "Facts should identify the key blocs or camps and keep their positions separate.",
@@ -36,15 +27,8 @@
       ]
     },
     "player-identification": {
-      "entityCountRange": [
-        6,
-        20
-      ],
-      "forbiddenPatterns": [
-        "internal agent",
-        "cognitive",
-        "heuristic"
-      ],
+      "entityCountRange": [6, 20],
+      "forbiddenPatterns": ["internal agent", "cognitive", "heuristic"],
       "rubrics": [
         "Every player entity should be a genuine actor with independent agency — name specific actors rather than generic blocs when possible.",
         "Each player should have objectives that reflect their distinct position and incentives.",

@@ -4,25 +4,14 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [
-        4,
-        10
-      ],
-      "requiredFactCategories": [
-        "position",
-        "economic",
-        "rule"
-      ],
+      "entityCountRange": [4, 10],
+      "requiredFactCategories": ["position", "economic", "rule"],
       "minDistinctFactCategories": 3,
-      "allowedRelationshipTypes": [
-        "supports",
-        "contradicts",
-        "precedes"
-      ],
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
       "requiredPatterns": [
-        "valuation|price",
-        "fallback|alternative",
-        "acquisition|offer"
+        "valuation|price|worth|premium|bid",
+        "fallback|alternative|BATNA|walk away|reject",
+        "acquisition|offer|takeover|merger|deal"
       ],
       "rubrics": [
         "Facts should separate each side's position from the valuation facts that shape the deal.",
@@ -31,10 +20,7 @@
       ]
     },
     "player-identification": {
-      "entityCountRange": [
-        4,
-        10
-      ],
+      "entityCountRange": [4, 10],
       "forbiddenPatterns": [
         "internal agent",
         "cognitive",

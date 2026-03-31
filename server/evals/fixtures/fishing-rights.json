@@ -4,26 +4,14 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [
-        4,
-        10
-      ],
-      "requiredFactCategories": [
-        "position",
-        "economic",
-        "rule",
-        "impact"
-      ],
+      "entityCountRange": [4, 10],
+      "requiredFactCategories": ["position", "economic", "rule", "impact"],
       "minDistinctFactCategories": 3,
-      "allowedRelationshipTypes": [
-        "supports",
-        "contradicts",
-        "precedes"
-      ],
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
       "requiredPatterns": [
-        "treaty|quota",
-        "enforcement",
-        "sustainability"
+        "treaty|quota|agreement|allocation",
+        "enforc|compliance|monitor|inspect|patrol",
+        "sustainab|conservation|depletion|stock decline|overfish"
       ],
       "rubrics": [
         "Facts should cover the bilateral negotiation over the shared resource itself.",
@@ -32,10 +20,7 @@
       ]
     },
     "player-identification": {
-      "entityCountRange": [
-        4,
-        10
-      ],
+      "entityCountRange": [4, 10],
       "forbiddenPatterns": [
         "internal agent",
         "cognitive",

@@ -4,10 +4,7 @@
   "complexityTier": "complex",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [
-        8,
-        20
-      ],
+      "entityCountRange": [8, 20],
       "requiredFactCategories": [
         "economic",
         "position",
@@ -16,14 +13,10 @@
         "action"
       ],
       "minDistinctFactCategories": 4,
-      "allowedRelationshipTypes": [
-        "supports",
-        "contradicts",
-        "precedes"
-      ],
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
       "requiredPatterns": [
-        "patent",
-        "pharma|pharmaceutical"
+        "patent|intellectual property|IP|licens",
+        "pharma|pharmaceutical|drug.?maker|biotech|vaccine.?manufactur"
       ],
       "rubrics": [
         "Facts should cover the multi-player dynamics rather than framing the issue as a single corporate choice.",
@@ -33,15 +26,8 @@
       ]
     },
     "player-identification": {
-      "entityCountRange": [
-        6,
-        20
-      ],
-      "forbiddenPatterns": [
-        "internal agent",
-        "cognitive",
-        "heuristic"
-      ],
+      "entityCountRange": [6, 20],
+      "forbiddenPatterns": ["internal agent", "cognitive", "heuristic"],
       "rubrics": [
         "Every player entity should be a genuine actor with independent agency — name specific actors rather than generic blocs when possible.",
         "Each player should have objectives that reflect their distinct position and incentives.",

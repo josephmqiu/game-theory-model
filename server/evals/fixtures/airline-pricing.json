@@ -4,25 +4,14 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [
-        4,
-        10
-      ],
-      "requiredFactCategories": [
-        "economic",
-        "position",
-        "capability"
-      ],
+      "entityCountRange": [4, 10],
+      "requiredFactCategories": ["economic", "position", "capability"],
       "minDistinctFactCategories": 3,
-      "allowedRelationshipTypes": [
-        "supports",
-        "contradicts",
-        "precedes"
-      ],
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
       "requiredPatterns": [
-        "price|pricing",
-        "cost",
-        "demand"
+        "price|pricing|fare|tariff",
+        "cost|expense|margin|overhead",
+        "demand|passenger|load factor|elastic|booking"
       ],
       "rubrics": [
         "Facts should cover the duopoly pricing dynamic rather than a broad airline-industry survey.",
@@ -31,10 +20,7 @@
       ]
     },
     "player-identification": {
-      "entityCountRange": [
-        4,
-        10
-      ],
+      "entityCountRange": [4, 10],
       "forbiddenPatterns": [
         "internal agent",
         "cognitive",

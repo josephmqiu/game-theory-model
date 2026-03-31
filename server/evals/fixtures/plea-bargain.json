@@ -4,26 +4,14 @@
   "complexityTier": "standard",
   "phases": {
     "situational-grounding": {
-      "entityCountRange": [
-        4,
-        10
-      ],
-      "requiredFactCategories": [
-        "position",
-        "rule",
-        "action",
-        "economic"
-      ],
+      "entityCountRange": [4, 10],
+      "requiredFactCategories": ["position", "rule"],
       "minDistinctFactCategories": 3,
-      "allowedRelationshipTypes": [
-        "supports",
-        "contradicts",
-        "precedes"
-      ],
+      "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
       "requiredPatterns": [
-        "prosecutor|defense",
-        "plea",
-        "fallback|sentence"
+        "prosecutor|defense|attorney|counsel",
+        "plea|guilty|bargain|deal",
+        "fallback|sentence|trial|conviction|acquittal"
       ],
       "rubrics": [
         "Facts should cover the negotiation structure and the information asymmetry between prosecutor and defense.",
@@ -32,10 +20,7 @@
       ]
     },
     "player-identification": {
-      "entityCountRange": [
-        4,
-        10
-      ],
+      "entityCountRange": [4, 10],
       "forbiddenPatterns": [
         "internal agent",
         "cognitive",

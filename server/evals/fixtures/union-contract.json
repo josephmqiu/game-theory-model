@@ -5,10 +5,14 @@
   "phases": {
     "situational-grounding": {
       "entityCountRange": [4, 10],
-      "requiredFactCategories": ["position", "economic", "rule", "action"],
+      "requiredFactCategories": ["position", "economic", "rule"],
       "minDistinctFactCategories": 3,
       "allowedRelationshipTypes": ["supports", "contradicts", "precedes"],
-      "requiredPatterns": ["union|management", "contract", "fallback|strike"],
+      "requiredPatterns": [
+        "union|labor|worker|management",
+        "contract|agreement|bargain|negotiat",
+        "fallback|strike|lockout|walkout|impasse"
+      ],
       "rubrics": [
         "Facts should cover the bargaining structure and the information asymmetry between the parties.",
         "Facts should include fallback positions or strike leverage without assuming a specific industry.",
