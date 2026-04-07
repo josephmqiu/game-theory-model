@@ -448,6 +448,8 @@ async function runStartupRecovery(): Promise<void> {
 export async function waitForRuntimeRecovery(): Promise<void> {
   if (!startupRecoveryPromise) {
     startupRecoveryPromise = runStartupRecovery().catch((error) => {
+      // Clear so the next call retries instead of replaying this failure
+      startupRecoveryPromise = null;
       const message = error instanceof Error ? error.message : String(error);
       recordRecoveryLog({
         code: "run-recovery-failed",

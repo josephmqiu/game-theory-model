@@ -463,6 +463,13 @@ export function updateEntity(
   const updated: AnalysisEntity = {
     ...existing,
     ...updates,
+    // Deep-merge data: partial data updates preserve existing fields
+    data: (updates.data
+      ? {
+          ...(existing.data as Record<string, unknown>),
+          ...(updates.data as Record<string, unknown>),
+        }
+      : existing.data) as AnalysisEntity["data"],
     id, // preserve original ID
     source: entitySourceForProvenance(provenance.source),
     provenance: newProvenance,

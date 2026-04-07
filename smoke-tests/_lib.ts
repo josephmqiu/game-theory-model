@@ -60,7 +60,9 @@ export async function makeTempDir(prefix: string): Promise<string> {
   return await mkdtemp(join(tmpdir(), `${prefix}-`));
 }
 
-export async function cleanupDir(dirPath: string | null | undefined): Promise<void> {
+export async function cleanupDir(
+  dirPath: string | null | undefined,
+): Promise<void> {
   if (!dirPath) return;
   await rm(dirPath, { recursive: true, force: true });
 }
@@ -146,7 +148,10 @@ export async function fetchJson<T>(
   return JSON.parse(text) as T;
 }
 
-export async function waitForHttpOk(url: string, timeoutMs = 15_000): Promise<void> {
+export async function waitForHttpOk(
+  url: string,
+  timeoutMs = 15_000,
+): Promise<void> {
   await waitFor(
     async () => {
       try {
@@ -239,10 +244,11 @@ export async function startBuiltServer(options?: {
 
   const port = await getFreePort();
   const mcpPort = options?.mcpPort ?? (await getFreePort());
-  const userDataDir = options?.userDataDir ?? (await makeTempDir("gta-smoke-runtime"));
+  const userDataDir =
+    options?.userDataDir ?? (await makeTempDir("gta-smoke-runtime"));
   const processHandle = await startProcess({
-    command: process.execPath,
-    args: ["run", SERVER_ENTRY],
+    command: "node",
+    args: [SERVER_ENTRY],
     env: {
       GAME_THEORY_ANALYSIS_TEST_MODE: "1",
       GAME_THEORY_ANALYZER_USER_DATA_DIR: userDataDir,

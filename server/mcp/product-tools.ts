@@ -12,11 +12,48 @@ import {
 } from "../services/analysis-tools";
 import type { MethodologyPhase } from "../../shared/types/methodology";
 import type { RelationshipType } from "../../shared/types/entity";
+import type { EntityType } from "../../src/types/entity";
 import * as analysisOrchestrator from "../agents/analysis-agent";
 import * as revalidationService from "../services/revalidation-service";
 import * as questionService from "../services/workspace/question-service";
+import { relationshipTypeSchema } from "../services/analysis-entity-schemas";
 import { ALL_PHASES, V1_PHASES } from "../../src/types/methodology";
 import { submitCommand } from "../services/command-handlers";
+
+/** Runtime entity type allowlist for chat-mode validation. */
+const VALID_ENTITY_TYPES: readonly string[] = [
+  "fact",
+  "player",
+  "objective",
+  "game",
+  "strategy",
+  "payoff",
+  "institutional-rule",
+  "escalation-rung",
+  "interaction-history",
+  "repeated-game-pattern",
+  "trust-assessment",
+  "dynamic-inconsistency",
+  "signaling-effect",
+  "payoff-matrix",
+  "game-tree",
+  "equilibrium-result",
+  "cross-game-constraint-table",
+  "cross-game-effect",
+  "signal-classification",
+  "bargaining-dynamics",
+  "option-value-assessment",
+  "behavioral-overlay",
+  "assumption",
+  "eliminated-outcome",
+  "scenario",
+  "central-thesis",
+  "meta-check",
+  "analysis-report",
+] as const satisfies readonly EntityType[];
+
+/** Fields chat-mode updates are allowed to modify (editorial, not structural). */
+const CHAT_UPDATE_ALLOWLIST = new Set(["data", "confidence", "rationale"]);
 
 export interface ToolDefinition {
   name: string;
@@ -459,6 +496,17 @@ export async function handleCreateEntity(args: {
   rationale?: string;
   revision?: number;
 }): Promise<string> {
+  if (!VALID_ENTITY_TYPES.includes(args.type)) {
+    return JSON.stringify({
+      error: `Invalid entity type "${args.type}". Allowed: ${VALID_ENTITY_TYPES.join(", ")}`,
+    });
+  }
+  if (!(ALL_PHASES as readonly string[]).includes(args.phase)) {
+    return JSON.stringify({
+      error: `Invalid phase "${args.phase}". Allowed: ${ALL_PHASES.join(", ")}`,
+    });
+  }
+
   const runId = resolveToolRunId();
   const receipt = await submitCommand({
     kind: "entity.create",
@@ -489,6 +537,15 @@ export async function handleUpdateEntity(args: {
   id: string;
   updates: Record<string, unknown>;
 }): Promise<string> {
+  const rejected = Object.keys(args.updates).filter(
+    (k) => !CHAT_UPDATE_ALLOWLIST.has(k),
+  );
+  if (rejected.length > 0) {
+    return JSON.stringify({
+      error: `Chat mode cannot modify structural fields: ${rejected.join(", ")}. Allowed: ${[...CHAT_UPDATE_ALLOWLIST].join(", ")}`,
+    });
+  }
+
   const runId = resolveToolRunId();
   const receipt = await submitCommand({
     kind: "entity.update",
@@ -532,11 +589,18 @@ export async function handleCreateRelationship(args: {
   toEntityId: string;
   metadata?: Record<string, unknown>;
 }): Promise<string> {
+  const typeResult = relationshipTypeSchema.safeParse(args.type);
+  if (!typeResult.success) {
+    return JSON.stringify({
+      error: `Invalid relationship type "${args.type}". Allowed: ${relationshipTypeSchema.options.join(", ")}`,
+    });
+  }
+
   const runId = resolveToolRunId();
   const receipt = await submitCommand({
     kind: "relationship.create",
     relationship: {
-      type: args.type as RelationshipType,
+      type: typeResult.data as RelationshipType,
       fromEntityId: args.fromEntityId,
       toEntityId: args.toEntityId,
       metadata: args.metadata,

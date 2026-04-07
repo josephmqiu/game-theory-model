@@ -462,10 +462,6 @@ export async function startChatTurn(
     );
   }
 
-  console.log("[chat-service] startChatTurn entry", {
-    provider: request.provider,
-    model: request.model,
-  });
   const correlationId =
     options.correlationId?.trim() ||
     request.correlationId?.trim() ||

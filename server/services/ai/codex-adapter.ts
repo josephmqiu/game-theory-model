@@ -408,7 +408,9 @@ function handleIncomingLine(conn: AppServerConnection, line: string): void {
       try {
         cb(parsed.method, params);
       } catch (err) {
-        console.warn("[codex-adapter] notification handler error:", err);
+        serverWarn(undefined, "codex-adapter", "notification-handler-error", {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
   }
@@ -680,12 +682,13 @@ export async function startAppServer(
     },
   });
 
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(
       () => reject(new Error("App-server initialize timed out")),
       INITIALIZE_TIMEOUT_MS,
-    ),
-  );
+    );
+  });
 
   try {
     await Promise.race([initPromise, timeoutPromise]);
@@ -697,6 +700,8 @@ export async function startAppServer(
       stderrTail: conn.diagnostics.stderr,
     });
     throw err;
+  } finally {
+    clearTimeout(timeoutId!);
   }
 
   // Send initialized notification
@@ -771,11 +776,8 @@ export async function* streamChat(
     purpose: "chat",
   }),
 ): AsyncGenerator<RuntimeAdapterChatEvent> {
-  console.log("[codex-adapter] streamChat entry", {
-    model,
-    runId: options?.runId,
-  });
   const runId = options?.runId;
+  serverLog(runId, "codex-adapter", "streamChat-entry", { model });
   const timeoutMs = options?.timeoutMs ?? CHAT_TIMEOUT_MS;
   const bindingService = getCodexBindingService();
   const resumeThreadId = getCodexResumeThreadId(session);
@@ -784,12 +786,12 @@ export async function* streamChat(
 
   let conn: AppServerConnection;
   try {
-    console.log("[codex-adapter] starting app-server...");
+    serverLog(runId, "codex-adapter", "starting-app-server");
     conn = await startAppServer(runId);
-    console.log("[codex-adapter] app-server started, reloading MCP config...");
+    serverLog(runId, "codex-adapter", "app-server-started-reloading-mcp");
     await reloadMcpServerConfig(conn, runId);
     await ensureConfiguredMcpServerAvailable(conn, CHAT_TOOL_NAMES, runId);
-    console.log("[codex-adapter] MCP config ready");
+    serverLog(runId, "codex-adapter", "mcp-config-ready");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     yield {

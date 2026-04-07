@@ -46,4 +46,51 @@ describe("product-tools", () => {
       isError: true,
     });
   });
+
+  describe("chat-mode input validation", () => {
+    it("rejects invalid entity type in handleCreateEntity", async () => {
+      const { handleCreateEntity } = await import("../product-tools");
+      const result = await handleCreateEntity({
+        type: "destroys",
+        phase: "situational-grounding",
+        data: { name: "test" },
+      });
+      const parsed = JSON.parse(result);
+      expect(parsed.error).toMatch(/Invalid entity type "destroys"/);
+    });
+
+    it("rejects invalid phase in handleCreateEntity", async () => {
+      const { handleCreateEntity } = await import("../product-tools");
+      const result = await handleCreateEntity({
+        type: "fact",
+        phase: "nonexistent-phase",
+        data: { name: "test" },
+      });
+      const parsed = JSON.parse(result);
+      expect(parsed.error).toMatch(/Invalid phase "nonexistent-phase"/);
+    });
+
+    it("rejects invalid relationship type in handleCreateRelationship", async () => {
+      const { handleCreateRelationship } = await import("../product-tools");
+      const result = await handleCreateRelationship({
+        type: "annihilates",
+        fromEntityId: "e1",
+        toEntityId: "e2",
+      });
+      const parsed = JSON.parse(result);
+      expect(parsed.error).toMatch(/Invalid relationship type "annihilates"/);
+    });
+
+    it("rejects structural field mutations in handleUpdateEntity", async () => {
+      const { handleUpdateEntity } = await import("../product-tools");
+      const result = await handleUpdateEntity({
+        id: "e1",
+        updates: { type: "player", phase: "scenarios" },
+      });
+      const parsed = JSON.parse(result);
+      expect(parsed.error).toMatch(/Chat mode cannot modify structural fields/);
+      expect(parsed.error).toMatch(/type/);
+      expect(parsed.error).toMatch(/phase/);
+    });
+  });
 });

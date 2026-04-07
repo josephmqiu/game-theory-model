@@ -186,6 +186,32 @@ describe("updateEntity", () => {
     expect(updated!.id).toBe(entity.id);
   });
 
+  it("deep-merges data: partial update preserves existing fields", () => {
+    newAnalysis("test");
+    const entity = createEntity(makeFactData(), defaultProvenance);
+    const originalData = entity.data;
+
+    const updated = updateEntity(
+      entity.id,
+      { data: { category: "political" } as never },
+      { source: "user-edited" },
+    );
+
+    expect(updated).not.toBeNull();
+    // New field applied
+    expect((updated!.data as Record<string, unknown>).category).toBe(
+      "political",
+    );
+    // Existing fields preserved (not dropped by shallow replace)
+    for (const key of Object.keys(originalData as Record<string, unknown>)) {
+      if (key !== "category") {
+        expect((updated!.data as Record<string, unknown>)[key]).toEqual(
+          (originalData as Record<string, unknown>)[key],
+        );
+      }
+    }
+  });
+
   it("marks downstream dependents as stale after update", () => {
     newAnalysis("test");
     const e1 = createEntity(makeFactData(), defaultProvenance);

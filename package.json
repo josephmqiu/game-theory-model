@@ -22,7 +22,7 @@
     "test": "vitest run --passWithNoTests --dir .",
     "test:integration": "vitest run server/__tests__/integration/ --passWithNoTests",
     "test:unit": "vitest run --passWithNoTests --dir . --exclude 'server/__tests__/integration/**'",
-    "test:smoke:prepare": "BUILD_TARGET=electron bun --bun run build && bun run electron:compile && bun run mcp:compile",
+    "test:smoke:prepare": "BUILD_TARGET=electron bun run build && bun run electron:compile && bun run mcp:compile",
     "test:smoke": "bun run test:smoke:prepare && bun run smoke-tests/desktop.ts && bun run smoke-tests/mcp.ts",
     "test:smoke:desktop": "bun run test:smoke:prepare && bun run smoke-tests/desktop.ts",
     "test:smoke:mcp": "bun run test:smoke:prepare && bun run smoke-tests/mcp.ts",

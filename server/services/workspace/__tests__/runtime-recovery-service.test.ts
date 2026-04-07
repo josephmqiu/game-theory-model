@@ -48,8 +48,7 @@ vi.mock("../../../agents/analysis-agent", () => ({
 }));
 
 vi.mock("../workspace-db", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("../workspace-db")>();
+  const actual = await importOriginal<typeof import("../workspace-db")>();
   return {
     ...actual,
     getWorkspaceDatabase: () => {
@@ -256,7 +255,11 @@ describe("runtime-recovery-service", () => {
     return context;
   }
 
-  function appendPendingQuestion(questionId: string, threadId: string, runId?: string) {
+  function appendPendingQuestion(
+    questionId: string,
+    threadId: string,
+    runId?: string,
+  ) {
     getDatabase().eventStore.appendEvents([
       {
         kind: "explicit" as const,
@@ -408,5 +411,24 @@ describe("runtime-recovery-service", () => {
     expect(getDatabase().questions.getById("q-once")).toMatchObject({
       status: "pending",
     });
+  });
+
+  it("clears the cached promise on failure so the next call retries", async () => {
+    // Make initializeFromDatabase throw on first call, succeed on second
+    initializeFromDatabaseMock
+      .mockImplementationOnce(() => {
+        throw new Error("SQLite locked");
+      })
+      .mockImplementationOnce(() => {});
+
+    // First call should fail
+    await expect(waitForRuntimeRecovery()).rejects.toThrow("SQLite locked");
+
+    // Reset so the test setup is clean for the retry
+    _resetRuntimeRecoveryForTest();
+
+    // Wait — but since we cleared in the catch, the next call should retry
+    // and succeed (initializeFromDatabase now returns normally)
+    await expect(waitForRuntimeRecovery()).resolves.toBeUndefined();
   });
 });

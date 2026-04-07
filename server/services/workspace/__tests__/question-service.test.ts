@@ -153,6 +153,33 @@ describe("question-service", () => {
       expect(result).toBe(existing);
       expect(mockAppendEvents).not.toHaveBeenCalled();
     });
+
+    it("does NOT reuse a resolved question — creates a new pending one instead", () => {
+      const resolved = {
+        kind: "question" as const,
+        status: "resolved" as const,
+        question: {
+          id: "uiq-resolved",
+          threadId: "ws-1:primary-thread",
+          runId: "run-1",
+          phase: "player-identification",
+          header: "Choose actors",
+          question: "Which actors should we model?",
+          options: [{ label: "USA" }, { label: "China" }, { label: "EU" }],
+          multiSelect: true,
+          createdAt: 100,
+        },
+        answer: { selectedOptions: [0] },
+      };
+      mockListByRunId.mockReturnValue([resolved]);
+
+      const result = getOrCreatePendingQuestion(makeInput());
+
+      // Should NOT reuse the resolved question
+      expect(result).not.toBe(resolved);
+      // Should have created a new one via appendEvents
+      expect(mockAppendEvents).toHaveBeenCalled();
+    });
   });
 
   // ── waitForAnswer ──

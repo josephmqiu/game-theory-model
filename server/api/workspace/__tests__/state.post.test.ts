@@ -24,11 +24,17 @@ const getAnalysisMock = vi.fn(() => ({
 }));
 const loadAnalysisMock = vi.fn();
 
-vi.mock("../../../services/entity-graph-service", () => ({
-  getWorkspaceId: () => getWorkspaceIdMock(),
-  getAnalysis: () => getAnalysisMock(),
-  loadAnalysis: (...args: unknown[]) => loadAnalysisMock(...args),
-}));
+vi.mock("../../../services/entity-graph-service", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../../services/entity-graph-service")
+  >("../../../services/entity-graph-service");
+  return {
+    ...actual,
+    getWorkspaceId: () => getWorkspaceIdMock(),
+    getAnalysis: () => getAnalysisMock(),
+    loadAnalysis: (...args: unknown[]) => loadAnalysisMock(...args),
+  };
+});
 
 describe("/api/workspace/state", () => {
   beforeEach(() => {

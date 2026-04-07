@@ -482,14 +482,7 @@ async function handleChatTurnStart(
     },
   });
 
-  console.log("[ws-transport] chat.turn.start received", {
-    provider: parsed.data.payload.provider,
-    model: parsed.data.payload.model,
-    correlationId: parsed.data.payload.correlationId,
-  });
-
   try {
-    console.log("[ws-transport] calling startChatTurn...");
     const started = await startChatTurn(parsed.data.payload, {
       correlationId: parsed.data.payload.correlationId,
       producer: "workspace-runtime-transport",
@@ -502,7 +495,6 @@ async function handleChatTurnStart(
       },
     });
 
-    console.log("[ws-transport] startChatTurn resolved, sending response");
     peerState.activeChatCorrelations.add(started.correlationId);
 
     started.completion.finally(() => {
@@ -855,7 +847,26 @@ export async function handleWorkspaceRuntimeMessage(
   }
 
   if (envelope.type === "client_hello") {
-    await handleHello(peerState, clientHelloSchema.parse(envelope));
+    const parsed = clientHelloSchema.safeParse(envelope);
+    if (!parsed.success) {
+      recordDiagnostic({
+        code: "malformed-frame",
+        level: "warn",
+        message: "Malformed client_hello payload",
+        connectionId: peerState.connectionId,
+        data: {
+          error: parsed.error.issues.map((i) => i.message).join("; "),
+        },
+      });
+      sendEnvelope(peerState.peer, {
+        type: "response",
+        requestId: "unknown",
+        ok: false,
+        error: "Malformed client_hello",
+      });
+      return;
+    }
+    await handleHello(peerState, parsed.data);
     return;
   }
 

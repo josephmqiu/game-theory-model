@@ -47,7 +47,10 @@ function questionsMatch(
   if ((existing.phase ?? null) !== (input.phase ?? null)) {
     return false;
   }
-  if (existing.header !== input.header || existing.question !== input.question) {
+  if (
+    existing.header !== input.header ||
+    existing.question !== input.question
+  ) {
     return false;
   }
   if ((existing.multiSelect ?? false) !== (input.multiSelect ?? false)) {
@@ -77,7 +80,7 @@ function findReusableQuestion(
 
   return candidates.find(
     (candidate) =>
-      candidate.status !== "dismissed" &&
+      candidate.status === "pending" &&
       questionsMatch(candidate.question, input),
   );
 }
