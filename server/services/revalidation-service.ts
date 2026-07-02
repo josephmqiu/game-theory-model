@@ -119,6 +119,105 @@ function phasesFrom(startPhase: MethodologyPhase): MethodologyPhase[] {
   return RUNNABLE_PHASES.slice(startIdx);
 }
 
+// ── Challenge handling (9A / 2.2A) ──
+
+function entityDisplayName(entity: {
+  id: string;
+  data: Record<string, unknown>;
+}): string {
+  if (typeof entity.data.name === "string") return entity.data.name;
+  if (typeof entity.data.content === "string") {
+    return entity.data.content.slice(0, 80);
+  }
+  return entity.id;
+}
+
+/**
+ * Pending challenges whose entity currently belongs to the given phase.
+ * Challenges against already-deleted entities have no phase to run in; they
+ * resolve as REMOVED when any phase commit runs (handled in resolution).
+ */
+function pendingChallengesForPhase(
+  phase: MethodologyPhase,
+): ReturnType<typeof entityGraphService.getPendingChallenges> {
+  return entityGraphService.getPendingChallenges().filter((challenge) => {
+    const entity = entityGraphService.getEntityById(challenge.entityId);
+    return entity?.phase === phase;
+  });
+}
+
+/**
+ * Build the objection block injected into the phase prompt (9A). The model is
+ * explicitly instructed to address each objection in the challenged entity's
+ * rationale — whether it revises, keeps, or removes the entity.
+ */
+function buildChallengeContext(
+  challenges: ReturnType<typeof entityGraphService.getPendingChallenges>,
+): string | undefined {
+  if (challenges.length === 0) return undefined;
+
+  const lines = challenges.map((challenge, index) => {
+    const entity = entityGraphService.getEntityById(challenge.entityId);
+    const name = entity
+      ? entityDisplayName(
+          entity as { id: string; data: Record<string, unknown> },
+        )
+      : challenge.entityId;
+    return `${index + 1}. Entity ${challenge.entityId} ("${name}"): ${challenge.objection}`;
+  });
+
+  return [
+    "HUMAN CHALLENGES — a human analyst has objected to specific entities from this phase.",
+    "For EACH challenged entity below, you MUST:",
+    "- Re-examine it against the objection using available evidence.",
+    "- If the objection is valid, revise the entity (or omit it if it cannot stand).",
+    "- Whether you revise it or keep it unchanged, the entity's `rationale` field MUST directly address the objection and explain your verdict.",
+    "",
+    ...lines,
+  ].join("\n");
+}
+
+/**
+ * Resolve challenges after the phase they target has been re-run (2.2A).
+ * Outcomes: REMOVED (entity deleted by re-run), REVISED (content changed in
+ * this run — response diff lives at {entityId, responseLogNo}), CONFIRMED
+ * (model kept it; rationale carries the answer to the objection).
+ */
+function resolveChallengesAfterRerun(
+  challenges: ReturnType<typeof entityGraphService.getPendingChallenges>,
+  runId: string,
+): void {
+  for (const challenge of challenges) {
+    const entity = entityGraphService.getEntityById(challenge.entityId);
+    if (!entity) {
+      entityGraphService.resolveChallenge(challenge.id, {
+        outcome: "REMOVED",
+        runId,
+      });
+      continue;
+    }
+
+    const responseEntry = [...(entity.revisionLog ?? [])]
+      .reverse()
+      .find((entry) => entry.runId === runId && entry.fieldDiffs.length > 0);
+
+    if (responseEntry) {
+      entityGraphService.resolveChallenge(challenge.id, {
+        outcome: "REVISED",
+        runId,
+        responseLogNo: responseEntry.logNo,
+        responseRationale: entity.rationale,
+      });
+    } else {
+      entityGraphService.resolveChallenge(challenge.id, {
+        outcome: "CONFIRMED",
+        runId,
+        responseRationale: entity.rationale,
+      });
+    }
+  }
+}
+
 // ── Core API ──
 
 /**
@@ -287,12 +386,18 @@ async function executeRevalidation(
     const priorContext =
       priorEntities.length > 0 ? JSON.stringify(priorEntities) : undefined;
 
+    // Objections against this phase's entities are injected into the prompt
+    // (9A) and resolved against the re-run outcome after the commit (2.2A).
+    const phaseChallenges = pendingChallengesForPhase(p);
+    const challengeContext = buildChallengeContext(phaseChallenges);
+
     const phaseStart = Date.now();
     let result = await runPhase(p, topic, {
       provider: lastRunProvider,
       model: lastRunModel,
       runtime: lastRunRuntime,
       priorEntities: priorContext,
+      challengeContext,
       logger,
       runId,
     });
@@ -319,6 +424,7 @@ async function executeRevalidation(
             model: lastRunModel,
             runtime: lastRunRuntime,
             priorEntities: priorContext,
+            challengeContext,
             revisionRetryInstruction: commitResult.retryMessage,
             logger,
             runId,
@@ -363,6 +469,8 @@ async function executeRevalidation(
             commitResult.summary.currentPhaseEntityIds,
           );
         }
+
+        resolveChallengesAfterRerun(phaseChallenges, runId);
 
         phasesCompleted++;
         revalRunStatuses.set(runId, {
@@ -425,6 +533,18 @@ async function executeRevalidation(
       return;
     }
   }
+
+  // Challenges whose entity no longer exists at all (deleted by an earlier
+  // phase's cascade rather than its own re-run) resolve as REMOVED.
+  resolveChallengesAfterRerun(
+    entityGraphService
+      .getPendingChallenges()
+      .filter(
+        (challenge) =>
+          entityGraphService.getEntityById(challenge.entityId) === null,
+      ),
+    runId,
+  );
 
   revalRunStatuses.set(runId, { runId, status: "completed", phasesCompleted });
   runtimeStatus.releaseRun(runId, "completed");

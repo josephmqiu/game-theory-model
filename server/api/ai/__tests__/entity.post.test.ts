@@ -16,12 +16,22 @@ vi.mock("h3", () => ({
   setResponseStatus: (...args: unknown[]) => setResponseStatusMock(...args),
 }));
 
+const createChallengeMock = vi.fn();
+const getChallengesMock = vi.fn();
+const markChallengeViewedMock = vi.fn();
+const getDownstreamEntityIdsMock = vi.fn();
+
 vi.mock("../../../services/entity-graph-service", () => ({
   updateEntity: (...args: unknown[]) => updateEntityMock(...args),
   getEntityById: (...args: unknown[]) => getEntityByIdMock(...args),
   getStaleEntityIds: (...args: unknown[]) => getStaleEntityIdsMock(...args),
   getAnalysis: (...args: unknown[]) => getAnalysisMock(...args),
   newAnalysis: (...args: unknown[]) => newAnalysisMock(...args),
+  createChallenge: (...args: unknown[]) => createChallengeMock(...args),
+  getChallenges: (...args: unknown[]) => getChallengesMock(...args),
+  markChallengeViewed: (...args: unknown[]) => markChallengeViewedMock(...args),
+  getDownstreamEntityIds: (...args: unknown[]) =>
+    getDownstreamEntityIdsMock(...args),
 }));
 
 vi.mock("../../../agents/analysis-agent", () => ({
@@ -226,6 +236,113 @@ describe("/api/ai/entity", () => {
       { rationale: "Edited against logNo 3" },
       { source: "user-edited", logSource: "human", baseLogNo: 3 },
     );
+  });
+
+  it("creates a challenge and returns the downstream preview count", async () => {
+    const challenge = {
+      id: "ch-1",
+      entityId: "entity-1",
+      objection: "The cited figure is outdated by two quarters.",
+      status: "pending",
+    };
+    createChallengeMock.mockReturnValue({
+      challenge,
+      staleMarked: ["entity-1", "entity-2", "entity-3"],
+    });
+    readBodyMock.mockResolvedValue({
+      action: "challenge",
+      id: "entity-1",
+      objection: "The cited figure is outdated by two quarters.",
+    });
+
+    const route = (await import("../entity.post")).default;
+    const result = await route({} as never);
+
+    expect(createChallengeMock).toHaveBeenCalledWith(
+      "entity-1",
+      "The cited figure is outdated by two quarters.",
+    );
+    expect(result).toEqual({
+      challenge,
+      staleMarked: ["entity-1", "entity-2", "entity-3"],
+      downstreamCount: 2,
+    });
+  });
+
+  it("rejects objections shorter than 10 characters with 400", async () => {
+    readBodyMock.mockResolvedValue({
+      action: "challenge",
+      id: "entity-1",
+      objection: "too short",
+    });
+
+    const route = (await import("../entity.post")).default;
+    const result = (await route({} as never)) as { error: string };
+
+    expect(result.error).toContain("10–2000 characters");
+    expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 400);
+    expect(createChallengeMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when challenging a missing entity", async () => {
+    getEntityByIdMock.mockReturnValue(null);
+    readBodyMock.mockResolvedValue({
+      action: "challenge",
+      id: "missing",
+      objection: "A perfectly valid objection.",
+    });
+
+    const route = (await import("../entity.post")).default;
+    const result = await route({} as never);
+
+    expect(result).toEqual({ error: "Entity not found" });
+    expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 404);
+  });
+
+  it("queues challenges while an analysis run is active", async () => {
+    isRunningMock.mockReturnValue(true);
+    createChallengeMock.mockReturnValue({
+      challenge: { id: "ch-q" },
+      staleMarked: ["entity-1"],
+    });
+    readBodyMock.mockResolvedValue({
+      action: "challenge",
+      id: "entity-1",
+      objection: "Queue this objection until the phase settles.",
+    });
+
+    const route = (await import("../entity.post")).default;
+    const result = await route({} as never);
+
+    expect(result).toEqual({ queued: true });
+    expect(createChallengeMock).not.toHaveBeenCalled();
+
+    (queueEditMock.mock.calls[0][0] as () => void)();
+    expect(createChallengeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks a challenge viewed", async () => {
+    getChallengesMock.mockReturnValue([{ id: "ch-1" }]);
+    markChallengeViewedMock.mockReturnValue({ id: "ch-1", viewed: true });
+    readBodyMock.mockResolvedValue({
+      action: "challengeViewed",
+      id: "ch-1",
+    });
+
+    const route = (await import("../entity.post")).default;
+    const result = await route({} as never);
+
+    expect(result).toEqual({ challenge: { id: "ch-1", viewed: true } });
+  });
+
+  it("returns downstream ids for the challenge form preview", async () => {
+    getDownstreamEntityIdsMock.mockReturnValue(["entity-2", "entity-3"]);
+    readBodyMock.mockResolvedValue({ action: "downstream", id: "entity-1" });
+
+    const route = (await import("../entity.post")).default;
+    const result = await route({} as never);
+
+    expect(result).toEqual({ downstreamIds: ["entity-2", "entity-3"] });
   });
 
   it("merges partial data edits over current data before applying", async () => {

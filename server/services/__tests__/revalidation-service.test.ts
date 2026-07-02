@@ -81,7 +81,29 @@ const mockEntityGraph = {
   removePhaseEntities: vi.fn(),
   markStale: vi.fn(),
   onMutation: vi.fn((_cb: (event: unknown) => void) => vi.fn()),
+  getEntityById: vi.fn((id: string): AnalysisEntity | null => {
+    return (
+      mockEntityGraph.getAnalysis().entities.find((e) => e.id === id) ?? null
+    );
+  }),
+  getPendingChallenges: vi.fn(() => [] as ReturnType<typeof buildChallenge>[]),
+  resolveChallenge: vi.fn(),
 };
+
+function buildChallenge(overrides: {
+  id?: string;
+  entityId: string;
+  objection?: string;
+}) {
+  return {
+    id: overrides.id ?? `challenge-${overrides.entityId}`,
+    entityId: overrides.entityId,
+    objection: overrides.objection ?? "This entity misreads the evidence.",
+    createdAt: Date.now(),
+    status: "pending" as const,
+    viewed: false,
+  };
+}
 
 vi.mock("../entity-graph-service", () => mockEntityGraph);
 
@@ -742,5 +764,153 @@ describe("revalidation-service", () => {
     expect(RUNNABLE_PHASES).toHaveLength(9);
     expect(RUNNABLE_PHASES.at(-1)).toBe("meta-check");
     expect(RUNNABLE_PHASES).not.toContain("revalidation");
+  });
+
+  // ── 21. Challenges: objection injection (9A) + resolution (2.2A) ──
+
+  it("injects the objection into the challenged phase's prompt context", async () => {
+    const challengedEntity = makeEntity("e1", "situational-grounding", true);
+    mockEntityGraph.getAnalysis.mockReturnValue({
+      id: "test",
+      name: "test",
+      topic: "test topic",
+      entities: [challengedEntity],
+      relationships: [],
+      phases: [],
+    });
+    mockEntityGraph.getPendingChallenges.mockReturnValue([
+      buildChallenge({
+        entityId: "e1",
+        objection: "The tariff figure is stale.",
+      }),
+    ]);
+    mockRunPhase.mockImplementation(async (phase) => makePhaseResult(phase));
+
+    revalidation.revalidate(["e1"]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Challenged entity lives in phase 1 → objection goes to phase 1 only
+    const firstCallContext = mockRunPhase.mock.calls[0][2] as {
+      challengeContext?: string;
+    };
+    expect(firstCallContext.challengeContext).toContain("HUMAN CHALLENGES");
+    expect(firstCallContext.challengeContext).toContain(
+      "The tariff figure is stale.",
+    );
+    expect(firstCallContext.challengeContext).toContain(
+      "rationale` field MUST directly address the objection",
+    );
+
+    const secondCallContext = mockRunPhase.mock.calls[1][2] as {
+      challengeContext?: string;
+    };
+    expect(secondCallContext.challengeContext).toBeUndefined();
+  });
+
+  it("resolves a challenge as REVISED when the re-run changed the entity", async () => {
+    let capturedRunId: string | undefined;
+    const challengedEntity = makeEntity("e1", "situational-grounding", true);
+    mockEntityGraph.getAnalysis.mockReturnValue({
+      id: "test",
+      name: "test",
+      topic: "test topic",
+      entities: [challengedEntity],
+      relationships: [],
+      phases: [],
+    });
+    mockEntityGraph.getPendingChallenges.mockReturnValue([
+      buildChallenge({ id: "ch-1", entityId: "e1" }),
+    ]);
+    mockRunPhase.mockImplementation(async (phase, _topic, context) => {
+      capturedRunId = context?.runId;
+      return makePhaseResult(phase);
+    });
+    mockEntityGraph.getEntityById.mockImplementation((id: string) => {
+      if (id !== "e1") return null;
+      return {
+        ...challengedEntity,
+        rationale: "Revised: the objection was correct about the rate.",
+        revisionLog: [
+          {
+            logNo: 7,
+            ts: 1,
+            logSource: "revalidation" as const,
+            runId: capturedRunId,
+            fieldDiffs: [{ field: "data.content", old: '"old"', new: '"new"' }],
+          },
+        ],
+      };
+    });
+
+    revalidation.revalidate(["e1"]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(mockEntityGraph.resolveChallenge).toHaveBeenCalledWith("ch-1", {
+      outcome: "REVISED",
+      runId: capturedRunId,
+      responseLogNo: 7,
+      responseRationale: "Revised: the objection was correct about the rate.",
+    });
+  });
+
+  it("resolves a challenge as CONFIRMED when the re-run kept the entity unchanged", async () => {
+    const challengedEntity = makeEntity("e1", "situational-grounding", true);
+    mockEntityGraph.getAnalysis.mockReturnValue({
+      id: "test",
+      name: "test",
+      topic: "test topic",
+      entities: [challengedEntity],
+      relationships: [],
+      phases: [],
+    });
+    mockEntityGraph.getPendingChallenges.mockReturnValue([
+      buildChallenge({ id: "ch-2", entityId: "e1" }),
+    ]);
+    mockRunPhase.mockImplementation(async (phase) => makePhaseResult(phase));
+    mockEntityGraph.getEntityById.mockImplementation((id: string) =>
+      id === "e1"
+        ? {
+            ...challengedEntity,
+            rationale: "Confirmed: evidence still supports this.",
+            revisionLog: [],
+          }
+        : null,
+    );
+
+    revalidation.revalidate(["e1"]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(mockEntityGraph.resolveChallenge).toHaveBeenCalledWith(
+      "ch-2",
+      expect.objectContaining({
+        outcome: "CONFIRMED",
+        responseRationale: "Confirmed: evidence still supports this.",
+      }),
+    );
+  });
+
+  it("resolves a challenge as REMOVED when the entity no longer exists", async () => {
+    mockEntityGraph.getAnalysis.mockReturnValue({
+      id: "test",
+      name: "test",
+      topic: "test topic",
+      entities: [makeEntity("other", "situational-grounding", true)],
+      relationships: [],
+      phases: [],
+    });
+    // Challenge targets an entity that is already gone — no phase to attach
+    // to, so it resolves in the end-of-run sweep.
+    mockEntityGraph.getPendingChallenges.mockReturnValue([
+      buildChallenge({ id: "ch-3", entityId: "deleted-entity" }),
+    ]);
+    mockRunPhase.mockImplementation(async (phase) => makePhaseResult(phase));
+
+    revalidation.revalidate(["other"]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(mockEntityGraph.resolveChallenge).toHaveBeenCalledWith(
+      "ch-3",
+      expect.objectContaining({ outcome: "REMOVED" }),
+    );
   });
 });

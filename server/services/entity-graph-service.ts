@@ -7,6 +7,8 @@ import type {
   AnalysisEntity,
   AnalysisRelationship,
   Analysis,
+  ChallengeOutcome,
+  ChallengeRecord,
   EntityProvenance,
   RelationshipType,
   RevisionLogSource,
@@ -419,6 +421,136 @@ export function getStaleEntityIds(): string[] {
 
 export function getDownstreamEntityIds(entityId: string): string[] {
   return bfsDownstream(entityId, analysis.relationships);
+}
+
+// ── Challenges (9A / 2.2A) ──
+//
+// Records live at the analysis level keyed by entityId (E4A): the challenged
+// entity may be deleted by the re-run (outcome REMOVED), so the record must
+// outlive it. The objection does NOT flip entity provenance — the challenged
+// entity stays AI-owned so the revalidation re-run may revise or remove it.
+
+export function createChallenge(
+  entityId: string,
+  objection: string,
+): { challenge: ChallengeRecord; staleMarked: string[] } | null {
+  const entity = analysis.entities.find((e) => e.id === entityId);
+  if (!entity) return null;
+
+  const challenge: ChallengeRecord = {
+    id: nanoid(),
+    entityId,
+    objection,
+    createdAt: Date.now(),
+    status: "pending",
+    viewed: false,
+  };
+
+  // Challenge revision entry on the entity (its own logSource namespace)
+  const challenged: AnalysisEntity = {
+    ...entity,
+    revisionLog: appendRevisionLog(entity.revisionLog, {
+      logSource: "challenge",
+      fieldDiffs: [],
+    }),
+  };
+
+  analysis = {
+    ...analysis,
+    entities: analysis.entities.map((e) =>
+      e.id === entityId ? challenged : e,
+    ),
+    challenges: [...(analysis.challenges ?? []), challenge],
+  };
+  mutate();
+  emit({ type: "challenge_created", challenge });
+  emit({
+    type: "entity_updated",
+    entity: challenged,
+    previousProvenance: entity.provenance ?? {
+      source: "phase-derived",
+      timestamp: 0,
+    },
+  });
+  serverLog(undefined, "entity-graph", "challenge-created", {
+    challengeId: challenge.id,
+    entityId,
+    objectionLength: objection.length,
+  });
+
+  // The challenged entity itself must re-run, plus everything downstream
+  const staleTargets = [
+    entityId,
+    ...bfsDownstream(entityId, analysis.relationships),
+  ];
+  markStale(staleTargets);
+
+  return { challenge, staleMarked: staleTargets };
+}
+
+export function getChallenges(): ChallengeRecord[] {
+  return [...(analysis.challenges ?? [])];
+}
+
+export function getPendingChallenges(): ChallengeRecord[] {
+  return (analysis.challenges ?? []).filter((c) => c.status === "pending");
+}
+
+export function resolveChallenge(
+  id: string,
+  resolution: {
+    outcome: ChallengeOutcome;
+    runId?: string;
+    responseLogNo?: number;
+    responseRationale?: string;
+  },
+): ChallengeRecord | null {
+  const existing = (analysis.challenges ?? []).find((c) => c.id === id);
+  if (!existing || existing.status === "resolved") return existing ?? null;
+
+  const resolved: ChallengeRecord = {
+    ...existing,
+    status: "resolved",
+    outcome: resolution.outcome,
+    resolvedAt: Date.now(),
+    runId: resolution.runId,
+    responseLogNo: resolution.responseLogNo,
+    responseRationale: resolution.responseRationale,
+    viewed: false,
+  };
+
+  analysis = {
+    ...analysis,
+    challenges: (analysis.challenges ?? []).map((c) =>
+      c.id === id ? resolved : c,
+    ),
+  };
+  mutate();
+  emit({ type: "challenge_updated", challenge: resolved });
+  serverLog(resolution.runId, "entity-graph", "challenge-resolved", {
+    challengeId: id,
+    entityId: resolved.entityId,
+    outcome: resolution.outcome,
+  });
+
+  return resolved;
+}
+
+export function markChallengeViewed(id: string): ChallengeRecord | null {
+  const existing = (analysis.challenges ?? []).find((c) => c.id === id);
+  if (!existing) return null;
+  if (existing.viewed) return existing;
+
+  const viewed: ChallengeRecord = { ...existing, viewed: true };
+  analysis = {
+    ...analysis,
+    challenges: (analysis.challenges ?? []).map((c) =>
+      c.id === id ? viewed : c,
+    ),
+  };
+  mutate();
+  emit({ type: "challenge_updated", challenge: viewed });
+  return viewed;
 }
 
 export function removeEntity(id: string): boolean {

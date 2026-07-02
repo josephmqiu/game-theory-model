@@ -805,6 +805,33 @@ export interface RevisionLogEntry {
 /** Keep only the most recent entries per entity. */
 export const REVISION_LOG_LIMIT = 10;
 
+// ── Challenges (9A / 2.2A) ──
+//
+// Challenge records live at the ANALYSIS level keyed by entityId (E4A):
+// the challenged entity may be deleted by the re-run (outcome REMOVED), so
+// the record must outlive it. Optional field — .gta stays version 3.
+
+export type ChallengeOutcome = "REVISED" | "CONFIRMED" | "REMOVED";
+
+export interface ChallengeRecord {
+  id: string;
+  entityId: string;
+  /** The human analyst's objection, injected into re-run phase prompts. */
+  objection: string;
+  createdAt: number;
+  status: "pending" | "resolved";
+  outcome?: ChallengeOutcome;
+  resolvedAt?: number;
+  /** Revalidation run that resolved this challenge. */
+  runId?: string;
+  /** Log entry on the challenged entity holding the response diff (REVISED). */
+  responseLogNo?: number;
+  /** The entity's post-re-run rationale — the model's answer to the objection. */
+  responseRationale?: string;
+  /** Until-viewed badge state (2.2A). */
+  viewed?: boolean;
+}
+
 // ── Core Entity ──
 
 export interface AnalysisEntity {
@@ -897,6 +924,8 @@ export interface Analysis {
   relationships: AnalysisRelationship[];
   phases: PhaseState[];
   centralThesis?: string;
+  /** Challenge records, analysis-level keyed by entityId (E4A). Optional — .gta stays v3. */
+  challenges?: ChallengeRecord[];
 }
 
 // ── File Format ──

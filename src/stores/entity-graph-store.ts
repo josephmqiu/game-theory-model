@@ -10,6 +10,7 @@ import type {
   AnalysisFileReference,
   AnalysisRelationship,
   Analysis,
+  ChallengeRecord,
   LayoutState,
 } from "../../shared/types/entity";
 import { RELATIONSHIP_CATEGORY } from "@/types/entity";
@@ -73,6 +74,7 @@ interface EntityGraphStoreState extends AnalysisFileReference {
   removeEntityFromServer: (id: string) => void;
   upsertRelationshipFromServer: (relationship: AnalysisRelationship) => void;
   removeRelationshipFromServer: (id: string) => void;
+  upsertChallengeFromServer: (challenge: ChallengeRecord) => void;
   markStaleFromServer: (entityIds: string[]) => void;
   syncAnalysisFromServer: (analysis: Analysis) => void;
   reconcileLayout: () => void;
@@ -487,6 +489,25 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
         },
         revision: state.revision + 1,
       })),
+
+    upsertChallengeFromServer: (challenge) =>
+      set((state) => {
+        const existing = state.analysis.challenges ?? [];
+        const exists = existing.some((record) => record.id === challenge.id);
+        const challenges = exists
+          ? existing.map((record) =>
+              record.id === challenge.id ? challenge : record,
+            )
+          : [...existing, challenge];
+
+        return {
+          analysis: {
+            ...state.analysis,
+            challenges,
+          },
+          revision: state.revision + 1,
+        };
+      }),
 
     markStaleFromServer: (entityIds) => {
       const idSet = new Set(entityIds);

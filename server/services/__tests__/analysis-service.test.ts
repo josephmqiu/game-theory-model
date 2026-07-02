@@ -792,9 +792,13 @@ describe("analysis-service", () => {
       );
 
       const { runPhase } = await importService();
-      const result = await runPhase("situational-grounding", "US-China trade war", {
-        onActivity,
-      });
+      const result = await runPhase(
+        "situational-grounding",
+        "US-China trade war",
+        {
+          onActivity,
+        },
+      );
 
       expect(result.success).toBe(true);
       const [, , , , options] = mockClaudeRunAnalysisPhase.mock.calls[0];
@@ -1152,6 +1156,35 @@ describe("analysis-service", () => {
       expect(user).toContain('{"entities":[]}');
     });
 
+    it("injects challenge objections with the address-in-rationale instruction (9A)", async () => {
+      const { _buildPrompt } = await importService();
+      const challengeContext = [
+        "HUMAN CHALLENGES — a human analyst has objected to specific entities from this phase.",
+        '1. Entity abc123 ("Tariff fact"): The cited tariff rate is outdated.',
+      ].join("\n");
+      const { user } = _buildPrompt(
+        "situational-grounding",
+        "US-China trade war",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        challengeContext,
+      );
+
+      expect(user).toContain("HUMAN CHALLENGES");
+      expect(user).toContain("The cited tariff rate is outdated.");
+    });
+
+    it("omits the challenge block when no challenges exist", async () => {
+      const { _buildPrompt } = await importService();
+      const { user } = _buildPrompt(
+        "situational-grounding",
+        "US-China trade war",
+      );
+      expect(user).not.toContain("HUMAN CHALLENGES");
+    });
+
     it("builds prompt with quick effort guidance", async () => {
       const { _buildPrompt } = await importService();
       const { user } = _buildPrompt(
@@ -1170,7 +1203,9 @@ describe("analysis-service", () => {
       expect(user).toContain(
         "Avoid unnecessary branching or long-tail possibilities.",
       );
-      expect(user).toContain("Prefer concise outputs when uncertainty is high.");
+      expect(user).toContain(
+        "Prefer concise outputs when uncertainty is high.",
+      );
     });
 
     it("builds prompt with thorough effort guidance", async () => {

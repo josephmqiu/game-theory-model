@@ -58,6 +58,7 @@ export async function runEval(
             priorEntities: chain
               ? chainedPriorContext
               : fixture.priorContext?.[phase],
+            challengeContext: fixture.challengeContext?.[phase],
             runtime: { webSearch: false, effortLevel: effort },
           });
           const latencyMs = Date.now() - start;

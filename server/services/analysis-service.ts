@@ -92,6 +92,9 @@ export interface PhaseContext {
   priorEntities?: string;
   revisionRetryInstruction?: string;
   revisionSystemPrompt?: string;
+  /** Human objections against this phase's entities (9A) — the prompt
+   * instructs the model to address each one in the entity's rationale. */
+  challengeContext?: string;
   provider?: string;
   model?: string;
   runtime?: PhaseRuntimeContext;
@@ -535,6 +538,7 @@ function buildPrompt(
   revisionRetryInstruction?: string,
   revisionSystemPrompt?: string,
   runtime?: PhaseRuntimeContext,
+  challengeContext?: string,
 ): { system: string; user: string } {
   const systemPrompt = revisionSystemPrompt ?? PHASE_PROMPTS[phase];
   const effortGuidance = buildAnalysisEffortGuidance(
@@ -558,6 +562,9 @@ function buildPrompt(
   }
   if (revisionRetryInstruction) {
     parts.push(`\nRevision retry instruction:\n\n${revisionRetryInstruction}`);
+  }
+  if (challengeContext) {
+    parts.push(`\n${challengeContext}`);
   }
   return { system: systemPrompt, user: parts.join("\n") };
 }
@@ -1891,6 +1898,7 @@ export async function runPhase(
     context?.revisionRetryInstruction,
     context?.revisionSystemPrompt,
     context?.runtime,
+    context?.challengeContext,
   );
   const model = context?.model ?? "claude-sonnet-4-20250514";
   const provider = context?.provider ?? "anthropic";

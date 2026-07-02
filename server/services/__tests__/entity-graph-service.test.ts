@@ -20,6 +20,11 @@ import {
   removeRelationship,
   removePhaseEntities,
   setPhaseStatus,
+  createChallenge,
+  getChallenges,
+  getPendingChallenges,
+  resolveChallenge,
+  markChallengeViewed,
   getIsDirty,
   getRevision,
   getFileName,
@@ -918,5 +923,118 @@ describe("onMutation", () => {
 
     createEntity(makeFactData(), defaultProvenance);
     expect(events).toHaveLength(1); // no new events after unsub
+  });
+});
+
+// ── Challenges (9A / 2.2A / E4A) ──
+
+describe("challenges", () => {
+  it("createChallenge records at analysis level, logs a challenge entry, and stale-marks self + downstream", () => {
+    newAnalysis("test");
+    const challenged = createEntity(makeFactData(), defaultProvenance);
+    const dependent = createEntity(makeFactData(), defaultProvenance);
+    createRelationship({
+      type: "depends-on",
+      fromEntityId: challenged.id,
+      toEntityId: dependent.id,
+    });
+
+    const result = createChallenge(challenged.id, "The rate cited is stale.");
+
+    expect(result).not.toBeNull();
+    expect(result!.challenge).toMatchObject({
+      entityId: challenged.id,
+      objection: "The rate cited is stale.",
+      status: "pending",
+      viewed: false,
+    });
+
+    // Record lives on the analysis, keyed by entityId (E4A)
+    expect(getChallenges()).toHaveLength(1);
+    expect(getAnalysis().challenges).toHaveLength(1);
+
+    // Challenge revision entry on the entity — provenance untouched so the
+    // re-run may still revise or remove it
+    const entity = getAnalysis().entities.find((e) => e.id === challenged.id)!;
+    expect(entity.revisionLog?.at(-1)).toMatchObject({
+      logSource: "challenge",
+      fieldDiffs: [],
+    });
+    expect(entity.provenance?.source).toBe("phase-derived");
+
+    // Self + downstream are stale so revalidation re-runs from this phase
+    expect(result!.staleMarked).toEqual([challenged.id, dependent.id]);
+    expect(getStaleEntityIds()).toEqual(
+      expect.arrayContaining([challenged.id, dependent.id]),
+    );
+  });
+
+  it("createChallenge returns null for unknown entities", () => {
+    newAnalysis("test");
+    expect(createChallenge("missing", "objection text here")).toBeNull();
+  });
+
+  it("resolveChallenge transitions pending → resolved exactly once", () => {
+    newAnalysis("test");
+    const entity = createEntity(makeFactData(), defaultProvenance);
+    const { challenge } = createChallenge(entity.id, "Needs re-examination.")!;
+
+    const resolved = resolveChallenge(challenge.id, {
+      outcome: "CONFIRMED",
+      runId: "reval-1",
+      responseRationale: "Evidence still supports this.",
+    });
+
+    expect(resolved).toMatchObject({
+      status: "resolved",
+      outcome: "CONFIRMED",
+      runId: "reval-1",
+      responseRationale: "Evidence still supports this.",
+      viewed: false,
+    });
+    expect(getPendingChallenges()).toHaveLength(0);
+
+    // Second resolution is a no-op that returns the already-resolved record
+    const again = resolveChallenge(challenge.id, {
+      outcome: "REVISED",
+      runId: "reval-2",
+    });
+    expect(again?.outcome).toBe("CONFIRMED");
+  });
+
+  it("markChallengeViewed flips the until-viewed badge state", () => {
+    newAnalysis("test");
+    const entity = createEntity(makeFactData(), defaultProvenance);
+    const { challenge } = createChallenge(entity.id, "Check the sourcing.")!;
+
+    const viewed = markChallengeViewed(challenge.id);
+    expect(viewed?.viewed).toBe(true);
+    expect(markChallengeViewed("missing")).toBeNull();
+  });
+
+  it("emits challenge_created and challenge_updated mutation events", () => {
+    newAnalysis("test");
+    const entity = createEntity(makeFactData(), defaultProvenance);
+    const events: AnalysisMutationEvent[] = [];
+    const unsub = onMutation((event) => events.push(event));
+
+    const { challenge } = createChallenge(entity.id, "Objection for events.")!;
+    resolveChallenge(challenge.id, { outcome: "CONFIRMED" });
+    unsub();
+
+    const types = events.map((e) => e.type);
+    expect(types).toContain("challenge_created");
+    expect(types).toContain("challenge_updated");
+  });
+
+  it("challenge records survive entity deletion (REMOVED path precondition)", () => {
+    newAnalysis("test");
+    const entity = createEntity(makeFactData(), defaultProvenance);
+    const { challenge } = createChallenge(entity.id, "About to be deleted.")!;
+
+    removeEntity(entity.id);
+
+    expect(getPendingChallenges()).toHaveLength(1);
+    expect(getPendingChallenges()[0].id).toBe(challenge.id);
   });
 });

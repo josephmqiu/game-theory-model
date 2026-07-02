@@ -4,6 +4,8 @@ export type {
   AnalysisFileReference,
   AnalysisFileV3,
   AnalysisRelationship,
+  ChallengeOutcome,
+  ChallengeRecord,
   AssumptionData,
   BargainingDynamicsData,
   BehavioralOverlayData,
