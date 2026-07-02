@@ -44,6 +44,7 @@ import type {
   AnalysisReportData,
 } from "@/types/entity";
 import { displaySourceForProvenance } from "@/types/entity";
+import { entityTypeColor } from "@/constants/design-tokens";
 
 // ── Props ──
 
@@ -55,38 +56,7 @@ export interface EntityOverlayCardProps {
   onClose: () => void;
 }
 
-// ── Entity type palette (from DESIGN.md) ──
-
-const ENTITY_TYPE_COLORS: Record<EntityType, string> = {
-  fact: "#94A3B8",
-  player: "#60A5FA",
-  objective: "#60A5FA",
-  game: "#FBBF24",
-  strategy: "#34D399",
-  payoff: "#FCD34D",
-  "institutional-rule": "#A1A1AA",
-  "escalation-rung": "#4ADE80",
-  "interaction-history": "#818CF8",
-  "repeated-game-pattern": "#C084FC",
-  "trust-assessment": "#2DD4BF",
-  "dynamic-inconsistency": "#FB923C",
-  "signaling-effect": "#F472B6",
-  "payoff-matrix": "#FBBF24",
-  "game-tree": "#FBBF24",
-  "equilibrium-result": "#F59E0B",
-  "cross-game-constraint-table": "#FB923C",
-  "cross-game-effect": "#FB923C",
-  "signal-classification": "#F472B6",
-  "bargaining-dynamics": "#818CF8",
-  "option-value-assessment": "#2DD4BF",
-  "behavioral-overlay": "#C084FC",
-  assumption: "#E879F9",
-  "eliminated-outcome": "#EF4444",
-  scenario: "#22D3EE",
-  "central-thesis": "#A78BFA",
-  "meta-check": "#F97316",
-  "analysis-report": "#A1A1AA",
-};
+// ── Entity type palette (single source: design-tokens, decision 5.1A) ──
 
 const ENTITY_TYPE_I18N_KEYS: Record<EntityType, string> = {
   fact: "analysis.entities.fact",
@@ -1123,7 +1093,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 function TypeBadge({ type }: { type: EntityType }) {
   const { t } = useTranslation();
-  const color = ENTITY_TYPE_COLORS[type];
+  const color = entityTypeColor(type);
   return (
     <span
       className="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.06em]"
@@ -1305,12 +1275,7 @@ export default function EntityOverlayCard({
         </div>
 
         {/* Entity name */}
-        <h2
-          className="text-lg font-bold leading-snug text-zinc-100"
-          style={{ fontFamily: "Satoshi, sans-serif" }}
-        >
-          {name}
-        </h2>
+        <h2 className="text-lg font-bold leading-snug text-zinc-100">{name}</h2>
 
         {/* Phase badge */}
         <PhaseBadge phase={entity.phase} />

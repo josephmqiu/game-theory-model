@@ -88,11 +88,11 @@ function VerdictSection({
       </p>
 
       <div className="flex items-baseline gap-3">
-        <span className="font-[Geist,sans-serif] text-[13px] tabular-nums text-zinc-200">
+        <span className="font-sans text-[13px] tabular-nums text-zinc-200">
           {verdict.predicted_probability}% predicted
         </span>
         {verdict.market_probability != null && (
-          <span className="font-[Geist,sans-serif] text-[13px] tabular-nums text-zinc-400">
+          <span className="font-sans text-[13px] tabular-nums text-zinc-400">
             vs ~{verdict.market_probability}% market
           </span>
         )}
@@ -104,7 +104,7 @@ function VerdictSection({
             Edge
           </span>
           <span
-            className="font-[Geist,sans-serif] text-[13px] font-medium tabular-nums"
+            className="font-sans text-[13px] font-medium tabular-nums"
             style={{ color: verdictColor }}
           >
             {verdict.edge > 0 ? "+" : ""}

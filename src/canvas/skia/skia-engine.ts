@@ -21,6 +21,7 @@ import {
   getDefaultTheme,
 } from "@/variables/resolve-variables";
 import { getCanvasBackground, MIN_ZOOM, MAX_ZOOM } from "../canvas-constants";
+import { entityTypeColor } from "@/constants/design-tokens";
 import {
   resolvePadding,
   isNodeVisible,
@@ -1130,42 +1131,11 @@ export class SkiaEngine {
     }
   }
 
-  // ── Entity type colors (from DESIGN.md Entity Type Palette) ──
-
-  private static ENTITY_TYPE_COLOR: Record<string, string> = {
-    player: "#60A5FA",
-    objective: "#818CF8",
-    game: "#FBBF24",
-    strategy: "#F59E0B",
-    fact: "#94A3B8",
-    payoff: "#FCD34D",
-    "institutional-rule": "#A1A1AA",
-    "escalation-rung": "#4ADE80",
-    "interaction-history": "#60A5FA",
-    "repeated-game-pattern": "#94A3B8",
-    "trust-assessment": "#34D399",
-    "dynamic-inconsistency": "#F472B6",
-    "signaling-effect": "#F472B6",
-    "payoff-matrix": "#FCD34D",
-    "game-tree": "#FBBF24",
-    "equilibrium-result": "#A78BFA",
-    "cross-game-constraint-table": "#A1A1AA",
-    "cross-game-effect": "#A1A1AA",
-    "signal-classification": "#F472B6",
-    "bargaining-dynamics": "#F59E0B",
-    "option-value-assessment": "#FCD34D",
-    "behavioral-overlay": "#F97316",
-    assumption: "#CBD5E1",
-    "eliminated-outcome": "#EF4444",
-    scenario: "#22D3EE",
-    "central-thesis": "#A78BFA",
-    "meta-check": "#F97316",
-    "analysis-report": "#A1A1AA",
-  };
+  // ── Entity type colors (single source: design-tokens, decision 5.1A) ──
 
   /** Resolve entity type color, with player index hue pool support. */
   private entityColor(entityType: EntityType): string {
-    return SkiaEngine.ENTITY_TYPE_COLOR[entityType] ?? "#A1A1AA";
+    return entityTypeColor(entityType);
   }
 
   // ── Draw a single entity node ──

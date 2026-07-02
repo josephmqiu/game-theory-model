@@ -83,7 +83,7 @@ export function PhaseProgress({ className }: PhaseProgressProps) {
           />
         </div>
 
-        <p className="truncate font-[Geist,sans-serif] text-[13px] font-medium text-zinc-200">
+        <p className="truncate font-sans text-[13px] font-medium text-zinc-200">
           <span className="text-red-400">
             {t("analysis.progress.phaseFailed", {
               number: getRunnablePhaseNumber(failedPhase.phase),
@@ -111,7 +111,7 @@ export function PhaseProgress({ className }: PhaseProgressProps) {
           />
         </div>
 
-        <p className="truncate font-[Geist,sans-serif] text-[13px] font-medium text-zinc-300">
+        <p className="truncate font-sans text-[13px] font-medium text-zinc-300">
           {t("analysis.progress.cancelled", {
             defaultValue: "Analysis cancelled",
           })}
@@ -139,7 +139,7 @@ export function PhaseProgress({ className }: PhaseProgressProps) {
         </div>
 
         {/* Status text */}
-        <p className="truncate font-[Geist,sans-serif] text-[13px] font-medium text-zinc-300">
+        <p className="truncate font-sans text-[13px] font-medium text-zinc-300">
           {currentPhaseName && (
             <>
               <span className="text-amber-500">
@@ -173,7 +173,7 @@ export function PhaseProgress({ className }: PhaseProgressProps) {
 
       {/* Row 2: current activity (only while running) */}
       {phaseActivityText && (
-        <p className="truncate pl-[calc(6rem+0.75rem)] font-[Geist,sans-serif] text-[12px] text-zinc-500">
+        <p className="truncate pl-[calc(6rem+0.75rem)] font-sans text-[12px] text-zinc-500">
           {phaseActivityText}
         </p>
       )}

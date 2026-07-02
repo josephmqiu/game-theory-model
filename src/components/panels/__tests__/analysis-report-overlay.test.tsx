@@ -111,7 +111,12 @@ describe("analysis report overlay — design system compliance", () => {
 
 describe("entity-overlay-card integration with analysis-report type", () => {
   it("assigns analysis-report the neutral zinc color (#A1A1AA) since it is a meta-entity, not a domain entity", () => {
-    expect(entityOverlaySource).toContain('"analysis-report": "#A1A1AA"');
+    // The palette now lives in the single-source tokens module (5.1A)
+    const tokensSource = readFileSync(
+      join(process.cwd(), "src/constants/design-tokens.ts"),
+      "utf8",
+    );
+    expect(tokensSource).toContain('"analysis-report": "#A1A1AA"');
   });
 
   it("maps analysis-report to an i18n key for localized display name", () => {

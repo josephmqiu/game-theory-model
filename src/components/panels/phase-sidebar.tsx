@@ -132,7 +132,7 @@ export function PhaseSidebar({
                     {phaseNumber}
                   </span>
 
-                  <span className="flex-1 truncate font-[Geist,sans-serif] text-[13px] font-medium text-zinc-200">
+                  <span className="flex-1 truncate font-sans text-[13px] font-medium text-zinc-200">
                     {t(PHASE_I18N_KEYS[phase])}
                   </span>
 
@@ -156,7 +156,7 @@ export function PhaseSidebar({
                   )}
 
                   {entityCount > 0 && (
-                    <span className="shrink-0 font-[Geist,sans-serif] text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-400">
+                    <span className="shrink-0 font-sans text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-400">
                       {entityCount}
                     </span>
                   )}
@@ -198,7 +198,7 @@ export function PhaseSidebar({
             value={searchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
             placeholder={t("analysis.sidebar.searchEntities")}
-            className="h-8 w-full rounded-md border border-zinc-700 bg-zinc-800 pl-7 pr-2 font-[Geist,sans-serif] text-[13px] font-medium text-zinc-200 placeholder:text-zinc-500 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+            className="h-8 w-full rounded-md border border-zinc-700 bg-zinc-800 pl-7 pr-2 font-sans text-[13px] font-medium text-zinc-200 placeholder:text-zinc-500 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
           />
         </div>
       </div>
