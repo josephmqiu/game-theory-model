@@ -213,6 +213,80 @@ describe("updateEntity", () => {
     // e1 itself should NOT be marked stale
     expect(staleIds).not.toContain(e1.id);
   });
+
+  // ── E1B/E4A: revision log capture on updates ──
+
+  it("appends a human log entry with field diffs when logSource is set", () => {
+    newAnalysis("test");
+    const entity = createEntity(makeFactData(), defaultProvenance);
+
+    const updated = updateEntity(
+      entity.id,
+      { rationale: "human correction" },
+      { source: "user-edited", logSource: "human" },
+    );
+
+    const entry = updated!.revisionLog?.at(-1);
+    expect(entry).toMatchObject({ logNo: 1, logSource: "human" });
+    expect(entry!.fieldDiffs).toEqual([
+      {
+        field: "rationale",
+        old: '"test rationale"',
+        new: '"human correction"',
+      },
+    ]);
+    expect(entry!.conflict).toBeUndefined();
+  });
+
+  it("does not log when logSource is absent (internal writers)", () => {
+    newAnalysis("test");
+    const entity = createEntity(makeFactData(), defaultProvenance);
+    const updated = updateEntity(
+      entity.id,
+      { rationale: "silent update" },
+      { source: "ai-edited" },
+    );
+    expect(updated!.revisionLog).toBeUndefined();
+  });
+
+  it("conflict-marks queued edits that applied on top of newer revisions", () => {
+    newAnalysis("test");
+    const entity = createEntity(makeFactData(), defaultProvenance);
+
+    // A phase commit lands first (logNo 1)...
+    updateEntity(
+      entity.id,
+      { rationale: "phase rewrite" },
+      { source: "phase-derived", logSource: "phase" },
+    );
+
+    // ...then a queued human edit drains, based on logNo 0 (pre-commit view)
+    const updated = updateEntity(
+      entity.id,
+      { rationale: "stale-view edit" },
+      { source: "user-edited", logSource: "human", baseLogNo: 0 },
+    );
+
+    const entry = updated!.revisionLog?.at(-1);
+    expect(entry).toMatchObject({
+      logNo: 2,
+      logSource: "human",
+      conflict: true,
+    });
+  });
+
+  it("does not conflict-mark edits whose base is still the latest", () => {
+    newAnalysis("test");
+    const entity = createEntity(makeFactData(), defaultProvenance);
+
+    const updated = updateEntity(
+      entity.id,
+      { rationale: "clean edit" },
+      { source: "user-edited", logSource: "human", baseLogNo: 0 },
+    );
+
+    expect(updated!.revisionLog?.at(-1)?.conflict).toBeUndefined();
+  });
 });
 
 describe("createRelationship", () => {

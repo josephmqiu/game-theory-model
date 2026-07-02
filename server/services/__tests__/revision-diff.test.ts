@@ -110,7 +110,9 @@ describe("commitPhaseSnapshot", () => {
     const analysis = getAnalysis();
     expect(analysis.entities).toHaveLength(2);
     expect(analysis.relationships).toHaveLength(1);
-    expect(analysis.relationships[0].fromEntityId).toBe(analysis.entities[0].id);
+    expect(analysis.relationships[0].fromEntityId).toBe(
+      analysis.entities[0].id,
+    );
     expect(analysis.relationships[0].toEntityId).toBe(analysis.entities[1].id);
     expect(analysis.relationships[0].provenance?.source).toBe("phase-derived");
     expect(analysis.relationships[0].provenance?.phase).toBe(
@@ -215,11 +217,11 @@ describe("commitPhaseSnapshot", () => {
     expect(analysis.entities.some((entity) => entity.id === preserved.id)).toBe(
       true,
     );
-    expect(analysis.entities.find((entity) => entity.id === aiOwned.id)?.data).toMatchObject(
-      {
-        content: "AI fact revised",
-      },
-    );
+    expect(
+      analysis.entities.find((entity) => entity.id === aiOwned.id)?.data,
+    ).toMatchObject({
+      content: "AI fact revised",
+    });
   });
 
   it("preserves the user-edited version when AI returns conflicting data for that entity", () => {
@@ -292,7 +294,9 @@ describe("commitPhaseSnapshot", () => {
         ],
         relationships: [],
       }),
-    ).toThrow(/belongs to phase "player-identification"|belongs to phase player-identification/);
+    ).toThrow(
+      /belongs to phase "player-identification"|belongs to phase player-identification/,
+    );
   });
 
   it("accepts cross-phase relationship ids only when they point to real entities outside the current phase", () => {
@@ -339,8 +343,16 @@ describe("commitPhaseSnapshot", () => {
       phase: "situational-grounding",
       runId: "run-8",
       entities: [
-        makeFactOutput({ id: existing[0].id, ref: "f1", content: "f1 revised" }),
-        makeFactOutput({ id: existing[1].id, ref: "f2", content: "f2 revised" }),
+        makeFactOutput({
+          id: existing[0].id,
+          ref: "f1",
+          content: "f1 revised",
+        }),
+        makeFactOutput({
+          id: existing[1].id,
+          ref: "f2",
+          content: "f2 revised",
+        }),
       ],
       relationships: [],
     });
@@ -356,8 +368,16 @@ describe("commitPhaseSnapshot", () => {
       phase: "situational-grounding",
       runId: "run-8",
       entities: [
-        makeFactOutput({ id: existing[0].id, ref: "f1", content: "f1 revised" }),
-        makeFactOutput({ id: existing[1].id, ref: "f2", content: "f2 revised" }),
+        makeFactOutput({
+          id: existing[0].id,
+          ref: "f1",
+          content: "f1 revised",
+        }),
+        makeFactOutput({
+          id: existing[1].id,
+          ref: "f2",
+          content: "f2 revised",
+        }),
       ],
       relationships: [],
       allowLargeReductionCommit: true,
@@ -375,5 +395,136 @@ describe("commitPhaseSnapshot", () => {
       existing[0].id,
       existing[1].id,
     ]);
+  });
+
+  // ── E4A: content-equality gate — no-op commits stop bumping revisions ──
+
+  it("does not bump revision or log anything when returned content is identical", () => {
+    const existing = makePersistedFact("Unchanged");
+    const revisionBefore = existing.revision;
+    const logBefore = existing.revisionLog ?? [];
+
+    const result = commitPhaseSnapshot({
+      phase: "situational-grounding",
+      runId: "run-noop",
+      entities: [
+        {
+          ...makeFactOutput({
+            id: existing.id,
+            ref: "same",
+            content: "Unchanged",
+          }),
+          rationale: existing.rationale,
+        },
+      ],
+      relationships: [],
+    });
+
+    expect(result).toMatchObject({
+      status: "applied",
+      summary: { entitiesUpdated: 0, entitiesDeleted: 0, entitiesCreated: 0 },
+    });
+
+    const after = getAnalysis().entities.find((e) => e.id === existing.id)!;
+    expect(after.revision).toBe(revisionBefore);
+    expect(after.revisionLog ?? []).toEqual(logBefore);
+  });
+
+  it("no-op detection is key-order insensitive", () => {
+    const existing = makePersistedFact("Stable");
+    // Same content, object keys in a different order than stored
+    const reordered = {
+      id: existing.id,
+      ref: "reordered",
+      type: "fact" as const,
+      phase: "situational-grounding" as const,
+      data: {
+        category: "action" as const,
+        content: "Stable",
+        source: "test",
+        date: "2026-03-19",
+        type: "fact" as const,
+      },
+      confidence: "high" as const,
+      rationale: `persisted:Stable`,
+    };
+
+    const result = commitPhaseSnapshot({
+      phase: "situational-grounding",
+      runId: "run-reorder",
+      entities: [reordered],
+      relationships: [],
+    });
+
+    expect(result).toMatchObject({
+      status: "applied",
+      summary: { entitiesUpdated: 0 },
+    });
+  });
+
+  // ── E1B: revision log capture ──
+
+  it("records a phase-sourced log entry with field diffs on real changes", () => {
+    const existing = makePersistedFact("Before edit");
+
+    commitPhaseSnapshot({
+      phase: "situational-grounding",
+      runId: "run-change",
+      entities: [
+        makeFactOutput({
+          id: existing.id,
+          ref: "changed",
+          content: "After edit",
+        }),
+      ],
+      relationships: [],
+    });
+
+    const after = getAnalysis().entities.find((e) => e.id === existing.id)!;
+    expect(after.revision).toBe(existing.revision + 1);
+    const entry = after.revisionLog?.at(-1);
+    expect(entry).toBeDefined();
+    expect(entry!.logSource).toBe("phase");
+    expect(entry!.runId).toBe("run-change");
+    const diffFields = entry!.fieldDiffs.map((d) => d.field);
+    expect(diffFields).toContain("data.content");
+  });
+
+  it("threads the revalidation trigger into log entries (E4A)", () => {
+    const existing = makePersistedFact("Pre-revalidation");
+
+    commitPhaseSnapshot({
+      phase: "situational-grounding",
+      runId: "reval-run",
+      entities: [
+        makeFactOutput({
+          id: existing.id,
+          ref: "revalidated",
+          content: "Post-revalidation",
+        }),
+      ],
+      relationships: [],
+      trigger: "revalidation",
+    });
+
+    const after = getAnalysis().entities.find((e) => e.id === existing.id)!;
+    expect(after.revisionLog?.at(-1)?.logSource).toBe("revalidation");
+  });
+
+  it("marks newly created entities with a creation log entry", () => {
+    commitPhaseSnapshot({
+      phase: "situational-grounding",
+      runId: "run-create",
+      entities: [makeFactOutput({ ref: "brand-new", content: "New fact" })],
+      relationships: [],
+    });
+
+    const created = getAnalysis().entities[0];
+    expect(created.revisionLog).toHaveLength(1);
+    expect(created.revisionLog![0]).toMatchObject({
+      logNo: 1,
+      logSource: "phase",
+      fieldDiffs: [],
+    });
   });
 });

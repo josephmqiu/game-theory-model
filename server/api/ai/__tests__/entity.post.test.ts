@@ -88,7 +88,7 @@ describe("/api/ai/entity", () => {
     expect(updateEntityMock).toHaveBeenCalledWith(
       "entity-1",
       { confidence: "high" },
-      { source: "user-edited" },
+      { source: "user-edited", logSource: "human", baseLogNo: undefined },
     );
     expect(result).toEqual({
       updated,
@@ -200,7 +200,31 @@ describe("/api/ai/entity", () => {
           category: "action",
         },
       },
-      { source: "user-edited" },
+      { source: "user-edited", logSource: "human", baseLogNo: 0 },
+    );
+  });
+
+  it("captures the base logNo when queueing so conflicts can be marked (E4A)", async () => {
+    isRunningMock.mockReturnValue(true);
+    getEntityByIdMock.mockReturnValue({
+      ...factEntity,
+      revisionLog: [{ logNo: 3, ts: 1, logSource: "phase", fieldDiffs: [] }],
+    });
+    readBodyMock.mockResolvedValue({
+      action: "update",
+      id: "entity-1",
+      updates: { rationale: "Edited against logNo 3" },
+    });
+
+    const route = (await import("../entity.post")).default;
+    await route({} as never);
+
+    const queuedMutation = queueEditMock.mock.calls[0][0] as () => void;
+    queuedMutation();
+    expect(updateEntityMock).toHaveBeenCalledWith(
+      "entity-1",
+      { rationale: "Edited against logNo 3" },
+      { source: "user-edited", logSource: "human", baseLogNo: 3 },
     );
   });
 
@@ -226,7 +250,7 @@ describe("/api/ai/entity", () => {
           category: "action",
         },
       },
-      { source: "user-edited" },
+      { source: "user-edited", logSource: "human", baseLogNo: undefined },
     );
   });
 });

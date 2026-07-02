@@ -765,6 +765,46 @@ export const entityDataSchema = z.discriminatedUnion("type", [
   analysisReportDataSchema,
 ]);
 
+// ── Revision Log (E1B) ──
+//
+// Bounded per-entity history of content changes. Lives on the entity as
+// OPTIONAL fields so the .gta format stays at version 3: old files load
+// without it, old loaders tolerate it. logSource is its own namespace,
+// deliberately separate from provenance.source.
+
+export type RevisionLogSource =
+  | "phase"
+  | "human"
+  | "challenge"
+  | "revalidation";
+
+export interface FieldDiff {
+  /** Dot path within the entity, e.g. "data.content" or "confidence". */
+  field: string;
+  /** JSON-encoded previous value, truncated ~2KB with a marker. */
+  old: string;
+  /** JSON-encoded new value, truncated ~2KB with a marker. */
+  new: string;
+}
+
+export interface RevisionLogEntry {
+  /** Per-entity monotonic counter — {entityId, logNo} is the stable id. */
+  logNo: number;
+  ts: number;
+  logSource: RevisionLogSource;
+  runId?: string;
+  /** Empty array marks entity creation. */
+  fieldDiffs: FieldDiff[];
+  /**
+   * Set when a queued mid-run edit applied on top of a newer revision than
+   * the one the user saw when submitting (causality conflict marker).
+   */
+  conflict?: boolean;
+}
+
+/** Keep only the most recent entries per entity. */
+export const REVISION_LOG_LIMIT = 10;
+
 // ── Core Entity ──
 
 export interface AnalysisEntity {
@@ -778,6 +818,8 @@ export interface AnalysisEntity {
   revision: number;
   stale: boolean; // true when downstream of a human edit, pending revalidation
   group?: string; // analytical group label assigned by canvas-service grouping
+  /** Bounded change history (E1B). Optional — absent in pre-log .gta files. */
+  revisionLog?: RevisionLogEntry[];
 }
 
 /**

@@ -4,6 +4,7 @@ import { z } from "zod";
 import * as entityGraphService from "../../services/entity-graph-service";
 import * as analysisOrchestrator from "../../agents/analysis-agent";
 import { validateEntityUpdates } from "../../services/entity-update-validation";
+import { latestLogNo } from "../../services/revision-log";
 
 const baseActionSchema = z.object({
   action: z.string().min(1),
@@ -72,13 +73,20 @@ export default defineEventHandler(async (event) => {
     body.updates = validation.updates as Record<string, unknown>;
   }
 
-  // If analysis running and this is a mutation, queue it
+  // If analysis running and this is a mutation, queue it. For updates,
+  // capture the latest logNo the editor could have seen NOW — when the
+  // queued edit drains after the in-flight phase, a newer log entry means
+  // the edit was made against stale content and gets conflict-marked (E4A).
   if (analysisOrchestrator.isRunning() && body.action !== "get") {
-    analysisOrchestrator.queueEdit(() => executeAction(body));
+    const baseLogNo =
+      body.action === "update"
+        ? latestLogNo(entityGraphService.getEntityById(body.id)?.revisionLog)
+        : undefined;
+    analysisOrchestrator.queueEdit(() => executeAction(body, { baseLogNo }));
     return { queued: true };
   }
 
-  return executeAction(body, event);
+  return executeAction(body, undefined, event);
 });
 
 function parseEntityAction(
@@ -117,11 +125,17 @@ function parseEntityAction(
   }
 }
 
-function executeAction(body: EntityActionBody, event?: H3Event) {
+function executeAction(
+  body: EntityActionBody,
+  queueContext?: { baseLogNo?: number },
+  event?: H3Event,
+) {
   switch (body.action) {
     case "update": {
       const updated = entityGraphService.updateEntity(body.id, body.updates, {
         source: "user-edited",
+        logSource: "human",
+        baseLogNo: queueContext?.baseLogNo,
       });
       if (updated === null) {
         if (event) setResponseStatus(event, 404);

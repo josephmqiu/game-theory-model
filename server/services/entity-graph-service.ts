@@ -9,7 +9,13 @@ import type {
   Analysis,
   EntityProvenance,
   RelationshipType,
+  RevisionLogSource,
 } from "../../shared/types/entity";
+import {
+  appendRevisionLog,
+  computeFieldDiffs,
+  latestLogNo,
+} from "./revision-log";
 import type {
   MethodologyPhase,
   PhaseStatus,
@@ -137,6 +143,8 @@ export function createEntity(
     source: EntityProvenance["source"];
     runId?: string;
     phase?: string;
+    /** When set, records a creation entry in the entity's revision log (E1B). */
+    logSource?: RevisionLogSource;
   },
 ): AnalysisEntity {
   // Dedup: if an entity with this data already exists by matching id, skip
@@ -155,6 +163,15 @@ export function createEntity(
     ...data,
     id,
     provenance: fullProvenance,
+    ...(provenance.logSource
+      ? {
+          revisionLog: appendRevisionLog(undefined, {
+            logSource: provenance.logSource,
+            fieldDiffs: [], // empty diffs mark creation
+            runId: provenance.runId,
+          }),
+        }
+      : {}),
   };
 
   // Dedup by ID — if somehow a duplicate sneaks through
@@ -231,7 +248,17 @@ export function createRelationship(
 export function updateEntity(
   id: string,
   updates: Partial<Omit<AnalysisEntity, "id" | "provenance">>,
-  provenance: { source: EntityProvenance["source"]; runId?: string },
+  provenance: {
+    source: EntityProvenance["source"];
+    runId?: string;
+    /** When set, records a field-diff entry in the revision log (E1B). */
+    logSource?: RevisionLogSource;
+    /**
+     * Latest logNo the editor saw when submitting (queued mid-run edits).
+     * If newer entries landed in between, the entry is conflict-marked.
+     */
+    baseLogNo?: number;
+  },
 ): AnalysisEntity | null {
   const existing = analysis.entities.find((e) => e.id === id);
   if (!existing) return null;
@@ -254,6 +281,21 @@ export function updateEntity(
     id, // preserve original ID
     provenance: newProvenance,
   };
+
+  if (provenance.logSource) {
+    const fieldDiffs = computeFieldDiffs(existing, updated);
+    if (fieldDiffs.length > 0) {
+      const superseded =
+        provenance.baseLogNo !== undefined &&
+        latestLogNo(existing.revisionLog) > provenance.baseLogNo;
+      updated.revisionLog = appendRevisionLog(existing.revisionLog, {
+        logSource: provenance.logSource,
+        fieldDiffs,
+        runId: provenance.runId,
+        conflict: superseded,
+      });
+    }
+  }
 
   analysis = {
     ...analysis,

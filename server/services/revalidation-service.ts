@@ -304,6 +304,7 @@ async function executeRevalidation(
           runId,
           entities: result.entities,
           relationships: result.relationships,
+          trigger: "revalidation",
         });
 
         if (commitResult.status === "retry_required") {
@@ -349,6 +350,7 @@ async function executeRevalidation(
             entities: result.entities,
             relationships: result.relationships,
             allowLargeReductionCommit: true,
+            trigger: "revalidation",
           });
         }
 

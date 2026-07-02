@@ -286,6 +286,41 @@ describe("v3 entity analysis file format", () => {
     });
   });
 
+  it("tolerates and round-trips revisionLog fields while staying version 3 (E4A)", () => {
+    const analysis = createTestAnalysis();
+    analysis.entities[0].revisionLog = [
+      {
+        logNo: 1,
+        ts: 1719900000000,
+        logSource: "phase",
+        runId: "run-1",
+        fieldDiffs: [],
+      },
+      {
+        logNo: 2,
+        ts: 1719900001000,
+        logSource: "human",
+        fieldDiffs: [{ field: "data.content", old: '"a"', new: '"b"' }],
+      },
+    ];
+    const layout = createTestLayout();
+
+    const text = serializeAnalysisFile(analysis, layout);
+    expect((JSON.parse(text) as { version: number }).version).toBe(3);
+
+    const parsed = parseAnalysisFileText(text);
+    expect(parsed.analysis.entities[0].revisionLog).toEqual(
+      analysis.entities[0].revisionLog,
+    );
+
+    // And a file WITHOUT the log still loads — the field is optional
+    const bare = createTestAnalysis();
+    const bareParsed = parseAnalysisFileText(
+      serializeAnalysisFile(bare, layout),
+    );
+    expect(bareParsed.analysis.entities[0].revisionLog).toBeUndefined();
+  });
+
   it("serialization writes no legacy top-level source fields", () => {
     const analysis = createTestAnalysis();
     const text = serializeAnalysisFile(analysis, createTestLayout());
