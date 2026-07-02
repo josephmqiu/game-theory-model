@@ -9,6 +9,7 @@ import type { AIStreamChunk } from "@/services/ai/ai-types";
 import { CHAT_STREAM_THINKING_CONFIG } from "@/services/ai/ai-runtime-config";
 import type { AIProviderType } from "@/types/agent-settings";
 import type { ChatEvent } from "@/services/ai/chat-events";
+import { buildSessionExpiredMessage } from "./ai-chat-lifecycle";
 
 // ---------------------------------------------------------------------------
 // Normalized internal chunk — both legacy AIStreamChunk and new ChatEvent
@@ -21,6 +22,7 @@ type NormalizedChunk =
   | { kind: "tool_start"; toolName: string }
   | { kind: "tool_result"; toolName: string; output: unknown }
   | { kind: "tool_error"; toolName: string; error: string }
+  | { kind: "session_expired" }
   | { kind: "done" }
   | { kind: "error"; content: string };
 
@@ -47,6 +49,9 @@ function normalizeChunk(
   }
   if (t === "ping") {
     return null; // handled by streamChat internally
+  }
+  if (t === "session_expired") {
+    return { kind: "session_expired" };
   }
 
   // --- New ChatEvent types ---
@@ -258,6 +263,7 @@ export function useChatHandlers() {
       try {
         const context = buildEntityGraphContext();
         const systemPrompt = `${buildChatSystemPrompt()}\n\n${context}`;
+        const sessionKey = useEntityGraphStore.getState().analysis.id;
 
         const chatHistory = messages.map((message) => ({
           role: message.role,
@@ -278,7 +284,7 @@ export function useChatHandlers() {
           systemPrompt,
           trimmedHistory,
           model,
-          CHAT_STREAM_THINKING_CONFIG,
+          { ...CHAT_STREAM_THINKING_CONFIG, sessionKey },
           currentProvider,
           abortController.signal,
         )) {
@@ -353,6 +359,10 @@ export function useChatHandlers() {
                   ),
                 }));
               }
+              break;
+            }
+            case "session_expired": {
+              addMessage(buildSessionExpiredMessage());
               break;
             }
             case "error": {

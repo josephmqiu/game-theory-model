@@ -278,10 +278,11 @@ describe("ChatEvent", () => {
       { type: "tool_call_start", toolName: "get_entities", input: {} },
       { type: "tool_call_result", toolName: "get_entities", output: [] },
       { type: "tool_call_error", toolName: "get_entities", error: "failed" },
+      { type: "session_expired" },
       { type: "turn_complete" },
       { type: "error", message: "timeout", recoverable: false },
     ];
 
-    expect(events).toHaveLength(6);
+    expect(events).toHaveLength(7);
   });
 });

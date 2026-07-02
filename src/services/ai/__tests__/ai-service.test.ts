@@ -96,4 +96,44 @@ describe("ai-service streamChat", () => {
     await expect(consume).resolves.toEqual([]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("sends sessionKey and yields session_expired stream events", async () => {
+    const reader = {
+      read: vi
+        .fn()
+        .mockResolvedValueOnce({
+          done: false,
+          value: encodeSseEvent({ type: "session_expired" }),
+        })
+        .mockResolvedValueOnce({
+          done: false,
+          value: encodeSseEvent({ type: "done", content: "" }),
+        })
+        .mockResolvedValueOnce({
+          done: true,
+          value: undefined,
+        }),
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => reader,
+      },
+    } as unknown as Response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const chunks = await collectChunks(
+      streamChat(
+        "system",
+        [{ role: "user", content: "hello" }],
+        "claude-sonnet-4-5-20250929",
+        { sessionKey: "analysis-1" },
+        "anthropic",
+      ),
+    );
+
+    expect(chunks).toEqual([{ type: "session_expired", content: "" }]);
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(String(init.body)).sessionKey).toBe("analysis-1");
+  });
 });

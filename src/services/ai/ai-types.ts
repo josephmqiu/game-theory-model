@@ -24,6 +24,7 @@ export interface AIStreamChunk {
     | "done"
     | "error"
     | "ping"
+    | "session_expired"
     | "tool_call_start"
     | "tool_call_result";
   content: string;

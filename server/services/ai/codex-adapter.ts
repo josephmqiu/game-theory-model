@@ -19,6 +19,10 @@ export interface StreamChatOptions {
   timeoutMs?: number;
   /** Abort signal — when aborted, sends turn/interrupt and ends the stream */
   signal?: AbortSignal;
+  /** Existing Codex app-server thread id to reuse for this chat session. */
+  existingThreadId?: string;
+  /** Called with the Codex app-server thread id used for this turn. */
+  onThreadId?: (id: string) => void;
 }
 
 export interface AnalysisRunOptions {
@@ -47,6 +51,27 @@ interface JsonRpcResponse {
   id: number;
   result?: unknown;
   error?: { code: number; message: string; data?: unknown };
+}
+
+export class CodexThreadExpiredError extends Error {
+  readonly threadId: string;
+
+  constructor(threadId: string, causeMessage: string) {
+    super(`codex-thread-expired: ${causeMessage}`);
+    this.name = "CodexThreadExpiredError";
+    this.threadId = threadId;
+  }
+}
+
+export function isCodexThreadExpiredError(
+  error: unknown,
+): error is CodexThreadExpiredError {
+  return (
+    error instanceof CodexThreadExpiredError ||
+    (error instanceof Error &&
+      (error.name === "CodexThreadExpiredError" ||
+        error.message.startsWith("codex-thread-expired:")))
+  );
 }
 
 // ── JSON-RPC client ──
@@ -202,6 +227,12 @@ function normalizeAnalysisError(error: unknown): Error {
     return error instanceof Error ? error : new Error(message);
   }
   return new Error(buildCodexTurnFailureMessage(message));
+}
+
+function isUnknownThreadErrorMessage(message: string): boolean {
+  return /thread.*(not found|unknown|missing|invalid|expired|does not exist)|no such thread/i.test(
+    message,
+  );
 }
 
 function logSendRequestFailure(
@@ -611,25 +642,33 @@ export async function* streamChat(
     return;
   }
 
-  // Create a thread
+  // Create or reuse a thread
   let threadId: string;
   let turnId: string | null = null;
-  try {
-    const threadResult = await sendRequest(conn, "thread/start", {
-      developerInstructions: systemPrompt,
-      model,
-    });
-    threadId = extractThreadId(threadResult);
+  if (options?.existingThreadId) {
+    threadId = options.existingThreadId;
     currentThreadId = threadId;
-    serverLog(runId, "codex-adapter", "thread-started", { threadId });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    yield {
-      type: "error",
-      message: `Failed to create thread: ${msg}`,
-      recoverable: false,
-    };
-    return;
+    options.onThreadId?.(threadId);
+    serverLog(runId, "codex-adapter", "thread-reused", { threadId });
+  } else {
+    try {
+      const threadResult = await sendRequest(conn, "thread/start", {
+        developerInstructions: systemPrompt,
+        model,
+      });
+      threadId = extractThreadId(threadResult);
+      currentThreadId = threadId;
+      options?.onThreadId?.(threadId);
+      serverLog(runId, "codex-adapter", "thread-started", { threadId });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      yield {
+        type: "error",
+        message: `Failed to create thread: ${msg}`,
+        recoverable: false,
+      };
+      return;
+    }
   }
 
   // Abort signal — when the client disconnects, interrupt the turn
@@ -797,6 +836,9 @@ export async function* streamChat(
   } catch (err) {
     removeListener();
     const msg = err instanceof Error ? err.message : String(err);
+    if (options?.existingThreadId && isUnknownThreadErrorMessage(msg)) {
+      throw new CodexThreadExpiredError(options.existingThreadId, msg);
+    }
     yield {
       type: "error",
       message: `Failed to start turn: ${msg}`,
@@ -1282,4 +1324,5 @@ export function _getConnection(): AppServerConnection | null {
 export function _resetConnection(): void {
   connection = null;
   nextRequestId = 1;
+  currentThreadId = null;
 }

@@ -79,6 +79,12 @@ function emitResponse(id: number, result: unknown) {
   mockChild.stdout.emit("data", Buffer.from(line));
 }
 
+function emitErrorResponse(id: number, code: number, message: string) {
+  const line =
+    JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } }) + "\n";
+  mockChild.stdout.emit("data", Buffer.from(line));
+}
+
 function emitNotification(method: string, params: Record<string, unknown>) {
   const line = JSON.stringify({ jsonrpc: "2.0", method, params }) + "\n";
   mockChild.stdout.emit("data", Buffer.from(line));
@@ -319,6 +325,79 @@ describe("codex-adapter", () => {
       expect(turnStartReq.params.input).toEqual([
         { type: "text", text: "hello" },
       ]);
+    });
+
+    it("reuses an existing thread without starting a new one", async () => {
+      const { streamChat, _resetConnection } = await import("../codex-adapter");
+      _resetConnection();
+      const onThreadId = vi.fn();
+
+      setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id, "turn-reused-1");
+          queueMicrotask(() =>
+            emitTurnCompleted("thread-existing", "turn-reused-1"),
+          );
+        }
+      });
+
+      for await (const _event of streamChat("hello", "system", "gpt-4o", {
+        existingThreadId: "thread-existing",
+        onThreadId,
+      })) {
+        // drain
+      }
+
+      expect(onThreadId).toHaveBeenCalledWith("thread-existing");
+      const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
+      expect(calls.some((call) => call[0].includes('"thread/start"'))).toBe(
+        false,
+      );
+      const turnStartReq = JSON.parse(
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes('"turn/start"'))!
+          .trim(),
+      );
+      expect(turnStartReq.params.threadId).toBe("thread-existing");
+    });
+
+    it("classifies unknown existing-thread errors as expired thread errors", async () => {
+      const {
+        streamChat,
+        _resetConnection,
+        isCodexThreadExpiredError,
+      } = await import("../codex-adapter");
+      _resetConnection();
+
+      setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitErrorResponse(id, -32000, "Thread not found: thread-missing");
+        }
+      });
+
+      let caught: unknown;
+      try {
+        for await (const _event of streamChat("hello", "system", "gpt-4o", {
+          existingThreadId: "thread-missing",
+        })) {
+          // drain
+        }
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(isCodexThreadExpiredError(caught)).toBe(true);
+      expect(caught).toBeInstanceOf(Error);
+      expect((caught as Error).message).toContain("codex-thread-expired:");
     });
 
     it("auto-approves MCP tool calls", async () => {

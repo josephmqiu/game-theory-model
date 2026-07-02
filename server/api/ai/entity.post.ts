@@ -5,6 +5,7 @@ import * as entityGraphService from "../../services/entity-graph-service";
 import * as analysisOrchestrator from "../../agents/analysis-agent";
 import { validateEntityUpdates } from "../../services/entity-update-validation";
 import { latestLogNo } from "../../services/revision-log";
+import { endAllSessions } from "../../services/ai/chat-sessions";
 
 const baseActionSchema = z.object({
   action: z.string().min(1),
@@ -219,6 +220,7 @@ function executeAction(
     case "get":
       return { analysis: entityGraphService.getAnalysis() };
     case "newAnalysis":
+      endAllSessions();
       entityGraphService.newAnalysis(body.topic || "");
       return { analysis: entityGraphService.getAnalysis() };
     case "challenge": {

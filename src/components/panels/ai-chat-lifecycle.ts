@@ -16,3 +16,12 @@ export function buildAnalysisCompleteMessage(
     timestamp: Date.now(),
   };
 }
+
+export function buildSessionExpiredMessage(): ChatMessage {
+  return {
+    id: `session-expired-${Date.now()}`,
+    role: "assistant",
+    content: "Session expired — starting fresh",
+    timestamp: Date.now(),
+  };
+}

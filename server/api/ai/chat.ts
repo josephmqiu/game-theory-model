@@ -12,7 +12,16 @@ import { z } from "zod";
 import { serverLog } from "../../utils/ai-logger";
 import * as entityGraphService from "../../services/entity-graph-service";
 import { streamChat as claudeStreamChat } from "../../services/ai/claude-adapter";
-import { streamChat as codexStreamChat } from "../../services/ai/codex-adapter";
+import {
+  streamChat as codexStreamChat,
+  isCodexThreadExpiredError,
+} from "../../services/ai/codex-adapter";
+import {
+  endSession,
+  getOrCreateSession,
+  touch,
+  type ChatSession,
+} from "../../services/ai/chat-sessions";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 import { startSSEKeepAlive } from "../../utils/sse-keepalive";
 
@@ -41,13 +50,13 @@ export function resolveMediaExtension(mediaType: string): string {
   return ALLOWED_MEDIA_TYPES.has(mediaType) ? mediaType.split("/")[1] : "png";
 }
 
-interface ChatAttachmentWire {
+export interface ChatAttachmentWire {
   name: string;
   mediaType: string;
   data: string; // base64
 }
 
-interface ChatBody {
+export interface ChatBody {
   system: string;
   messages: Array<{
     role: "user" | "assistant";
@@ -59,6 +68,7 @@ interface ChatBody {
   thinkingMode?: "adaptive" | "disabled" | "enabled";
   thinkingBudgetTokens?: number;
   effort?: "low" | "medium" | "high" | "max";
+  sessionKey?: string;
 }
 
 const chatAttachmentSchema = z.object({
@@ -81,6 +91,7 @@ const chatBodySchema = z.object({
   thinkingMode: z.enum(["adaptive", "disabled", "enabled"]).optional(),
   thinkingBudgetTokens: z.number().positive().optional(),
   effort: z.enum(["low", "medium", "high", "max"]).optional(),
+  sessionKey: z.string().trim().min(1).optional(),
 });
 
 function writeSSE(controller: ReadableStreamDefaultController, payload: unknown) {
@@ -93,6 +104,17 @@ function badRequest(event: H3Event, error: string) {
   setResponseStatus(event, 400);
   setResponseHeaders(event, { "Content-Type": "application/json" });
   return { error };
+}
+
+function shouldForwardChatEvent(type: string): boolean {
+  return (
+    type === "text_delta" ||
+    type === "tool_call_start" ||
+    type === "tool_call_result" ||
+    type === "tool_call_error" ||
+    type === "session_expired" ||
+    type === "error"
+  );
 }
 
 /**
@@ -166,10 +188,19 @@ function streamViaCodexAdapter(
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
-      const pingTimer = startSSEKeepAlive(
-        () => writeSSE(controller, { type: "ping", content: "" }),
-        KEEPALIVE_INTERVAL_MS,
-      );
+      let pingTimer: ReturnType<typeof setInterval> | null = null;
+      const startPingTimer = () => {
+        if (pingTimer) return;
+        pingTimer = startSSEKeepAlive(
+          () => writeSSE(controller, { type: "ping", content: "" }),
+          KEEPALIVE_INTERVAL_MS,
+        );
+      };
+      const stopPingTimer = () => {
+        if (!pingTimer) return;
+        clearInterval(pingTimer);
+        pingTimer = null;
+      };
 
       // Detect client disconnect and cancel the adapter
       const req = event.node?.req;
@@ -180,35 +211,69 @@ function streamViaCodexAdapter(
       }
 
       try {
-        const lastUserMsg = [...body.messages]
-          .reverse()
-          .find((m) => m.role === "user");
-        const prompt = lastUserMsg?.content ?? "";
+        const sessionResult = body.sessionKey
+          ? getOrCreateSession(body.sessionKey, "openai")
+          : null;
+        let session: ChatSession | null = sessionResult?.session ?? null;
 
-        // Inject conversation history into system prompt so multi-turn
-        // context survives the single-prompt SDK limitation.
-        const effectiveSystemPrompt = buildEffectiveSystemPrompt(body);
+        if (sessionResult?.expired) {
+          writeSSE(controller, { type: "session_expired" });
+        }
+        if (!body.sessionKey || sessionResult?.expired) {
+          startPingTimer();
+        }
 
-        for await (const ev of codexStreamChat(
-          prompt,
-          effectiveSystemPrompt,
-          model ?? "o3-mini",
-          { runId, signal: abortController.signal },
-        )) {
-          clearInterval(pingTimer);
-          // Emit ChatEvent objects directly — client normalizeChunk() handles them
-          if (
-            ev.type === "text_delta" ||
-            ev.type === "tool_call_start" ||
-            ev.type === "tool_call_result" ||
-            ev.type === "tool_call_error" ||
-            ev.type === "error"
-          ) {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify(ev)}\n\n`),
-            );
+        const { prompt, systemPrompt } = body.sessionKey
+          ? buildRuntimeSessionPromptParts(body)
+          : buildLegacyChatPromptParts(body);
+
+        const streamFreshCodexTurn = async () => {
+          for await (const ev of codexStreamChat(
+            prompt,
+            systemPrompt,
+            model ?? "o3-mini",
+            {
+              runId,
+              signal: abortController.signal,
+              ...(session?.codexThreadId
+                ? { existingThreadId: session.codexThreadId }
+                : {}),
+              ...(session
+                ? {
+                    onThreadId: (threadId: string) => {
+                      if (!session) return;
+                      session.codexThreadId = threadId;
+                      touch(session.key);
+                    },
+                  }
+                : {}),
+            },
+          )) {
+            stopPingTimer();
+            // Emit ChatEvent objects directly — client normalizeChunk() handles them
+            if (shouldForwardChatEvent(ev.type)) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(ev)}\n\n`),
+              );
+            }
+            // turn_complete is handled after the loop
           }
-          // turn_complete is handled after the loop
+          if (session) {
+            touch(session.key);
+          }
+        };
+
+        try {
+          await streamFreshCodexTurn();
+        } catch (error) {
+          if (!body.sessionKey || !isCodexThreadExpiredError(error)) {
+            throw error;
+          }
+          endSession(body.sessionKey);
+          session = getOrCreateSession(body.sessionKey, "openai").session;
+          writeSSE(controller, { type: "session_expired" });
+          startPingTimer();
+          await streamFreshCodexTurn();
         }
 
         serverLog(runId, "chat", "stream-complete");
@@ -235,7 +300,7 @@ function streamViaCodexAdapter(
           ),
         );
       } finally {
-        clearInterval(pingTimer);
+        stopPingTimer();
         controller.close();
       }
     },
@@ -256,10 +321,19 @@ function streamViaClaude(
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
-      const pingTimer = startSSEKeepAlive(
-        () => writeSSE(controller, { type: "ping", content: "" }),
-        KEEPALIVE_INTERVAL_MS,
-      );
+      let pingTimer: ReturnType<typeof setInterval> | null = null;
+      const startPingTimer = () => {
+        if (pingTimer) return;
+        pingTimer = startSSEKeepAlive(
+          () => writeSSE(controller, { type: "ping", content: "" }),
+          KEEPALIVE_INTERVAL_MS,
+        );
+      };
+      const stopPingTimer = () => {
+        if (!pingTimer) return;
+        clearInterval(pingTimer);
+        pingTimer = null;
+      };
 
       let attachTempDir: string | undefined;
 
@@ -272,10 +346,22 @@ function streamViaClaude(
       }
 
       try {
-        const lastUserMsg = [...body.messages]
-          .reverse()
-          .find((m) => m.role === "user");
-        let prompt = lastUserMsg?.content ?? "";
+        const sessionResult = body.sessionKey
+          ? getOrCreateSession(body.sessionKey, "anthropic")
+          : null;
+        const session: ChatSession | null = sessionResult?.session ?? null;
+
+        if (sessionResult?.expired) {
+          writeSSE(controller, { type: "session_expired" });
+        }
+        if (!body.sessionKey || sessionResult?.expired) {
+          startPingTimer();
+        }
+
+        const promptParts = body.sessionKey
+          ? buildRuntimeSessionPromptParts(body)
+          : buildLegacyChatPromptParts(body);
+        let prompt = promptParts.prompt;
 
         // Save image attachments to temp files inside the project directory
         // so Claude Code Agent SDK (which restricts reads to the project
@@ -296,30 +382,38 @@ function streamViaClaude(
             (prompt || "Describe what you see in the image.");
         }
 
-        // Inject conversation history into system prompt so multi-turn
-        // context survives the single-prompt SDK limitation.
-        const effectiveSystemPrompt = buildEffectiveSystemPrompt(body);
-
         for await (const ev of claudeStreamChat(
           prompt,
-          effectiveSystemPrompt,
+          promptParts.systemPrompt,
           model ?? "claude-sonnet-4-6",
-          { runId, signal: abortController.signal },
+          {
+            runId,
+            signal: abortController.signal,
+            ...(session?.claudeSessionId
+              ? { resumeSessionId: session.claudeSessionId }
+              : {}),
+            ...(session
+              ? {
+                  onSessionId: (sessionId: string) => {
+                    if (!session) return;
+                    session.claudeSessionId = sessionId;
+                    touch(session.key);
+                  },
+                }
+              : {}),
+          },
         )) {
-          clearInterval(pingTimer);
+          stopPingTimer();
           // Emit ChatEvent objects directly — client normalizeChunk() handles them
-          if (
-            ev.type === "text_delta" ||
-            ev.type === "tool_call_start" ||
-            ev.type === "tool_call_result" ||
-            ev.type === "tool_call_error" ||
-            ev.type === "error"
-          ) {
+          if (shouldForwardChatEvent(ev.type)) {
             controller.enqueue(
               encoder.encode(`data: ${JSON.stringify(ev)}\n\n`),
             );
           }
           // turn_complete is handled after the loop
+        }
+        if (session) {
+          touch(session.key);
         }
 
         serverLog(runId, "chat", "stream-complete");
@@ -346,7 +440,7 @@ function streamViaClaude(
           ),
         );
       } finally {
-        clearInterval(pingTimer);
+        stopPingTimer();
         if (attachTempDir) {
           rm(attachTempDir, { recursive: true, force: true }).catch(() => {});
         }
@@ -362,12 +456,38 @@ function streamViaClaude(
 const KEEPALIVE_INTERVAL_MS =
   analysisRuntimeConfig.analyzeSse.keepaliveIntervalMs;
 
+function getLastUserPrompt(body: Pick<ChatBody, "messages">): string {
+  const lastUserMsg = [...body.messages]
+    .reverse()
+    .find((m) => m.role === "user");
+  return lastUserMsg?.content ?? "";
+}
+
+export function buildLegacyChatPromptParts(
+  body: Pick<ChatBody, "system" | "messages">,
+): { prompt: string; systemPrompt: string } {
+  return {
+    prompt: getLastUserPrompt(body),
+    systemPrompt: buildEffectiveSystemPrompt(body),
+  };
+}
+
+export function buildRuntimeSessionPromptParts(
+  body: Pick<ChatBody, "system" | "messages">,
+): { prompt: string; systemPrompt: string } {
+  return {
+    prompt: getLastUserPrompt(body),
+    systemPrompt: body.system,
+  };
+}
+
 /**
- * Inject conversation history into the system prompt so multi-turn context
- * survives the single-prompt limitation of both the Claude Agent SDK and
- * Codex app-server JSON-RPC interface.
+ * Inject conversation history into the system prompt for the legacy no-session
+ * path. Runtime sessions deliberately bypass this helper.
  */
-function buildEffectiveSystemPrompt(body: ChatBody): string {
+export function buildEffectiveSystemPrompt(
+  body: Pick<ChatBody, "system" | "messages">,
+): string {
   // All messages except the last user message form the conversation context
   const contextMessages = body.messages.slice(0, -1);
   if (contextMessages.length === 0) return body.system;

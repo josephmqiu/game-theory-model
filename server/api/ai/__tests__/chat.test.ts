@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ChatEvent } from "../../../../shared/types/events";
 
 const readBodyMock = vi.fn();
 const getRequestHeaderMock = vi.fn();
@@ -6,7 +7,15 @@ const setResponseHeadersMock = vi.fn();
 const setResponseStatusMock = vi.fn();
 const serverLogMock = vi.fn();
 const getAnalysisMock = vi.fn();
+const claudeStreamChatMock = vi.fn();
 const codexStreamChatMock = vi.fn();
+
+class MockCodexThreadExpiredError extends Error {
+  constructor(message = "codex-thread-expired: thread not found") {
+    super(message);
+    this.name = "CodexThreadExpiredError";
+  }
+}
 
 vi.mock("h3", () => ({
   defineEventHandler: (handler: unknown) => handler,
@@ -38,16 +47,43 @@ vi.mock("../../../services/entity-graph-service", () => ({
 }));
 
 vi.mock("../../../services/ai/claude-adapter", () => ({
-  streamChat: vi.fn(),
+  streamChat: (...args: unknown[]) => claudeStreamChatMock(...args),
 }));
 
 vi.mock("../../../services/ai/codex-adapter", () => ({
   streamChat: (...args: unknown[]) => codexStreamChatMock(...args),
+  CodexThreadExpiredError: MockCodexThreadExpiredError,
+  isCodexThreadExpiredError: (error: unknown) =>
+    error instanceof MockCodexThreadExpiredError ||
+    (error instanceof Error &&
+      error.message.startsWith("codex-thread-expired:")),
 }));
 
+async function* streamEvents(events: ChatEvent[] = []) {
+  for (const event of events) {
+    yield event;
+  }
+}
+
+async function readSseEvents(response: Response): Promise<unknown[]> {
+  const text = await response.text();
+  return text
+    .split("\n")
+    .filter((line) => line.startsWith("data: "))
+    .map((line) => JSON.parse(line.slice(6)));
+}
+
+function asSseResponse(value: unknown): Response {
+  if (!(value instanceof Response)) {
+    throw new Error("Expected an SSE response");
+  }
+  return value;
+}
+
 describe("/api/ai/chat", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    vi.useRealTimers();
     getRequestHeaderMock.mockReturnValue(undefined);
     getAnalysisMock.mockReturnValue({
       entities: [],
@@ -57,7 +93,16 @@ describe("/api/ai/chat", () => {
       name: "analysis-1",
       topic: "topic",
     });
-    codexStreamChatMock.mockImplementation(async function* () {});
+    claudeStreamChatMock.mockImplementation(() => streamEvents());
+    codexStreamChatMock.mockImplementation(() => streamEvents());
+    const sessions = await import("../../../services/ai/chat-sessions");
+    sessions._resetForTest();
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    const sessions = await import("../../../services/ai/chat-sessions");
+    sessions._resetForTest();
   });
 
   it("returns 400 when messages is not an array", async () => {
@@ -117,5 +162,281 @@ describe("/api/ai/chat", () => {
     });
     expect(await response.text()).toContain('"type":"done"');
     expect(codexStreamChatMock).toHaveBeenCalled();
+  });
+
+  it("creates a runtime session without folding history into the system prompt", async () => {
+    readBodyMock.mockResolvedValue({
+      system: "system",
+      sessionKey: "analysis-1",
+      messages: [
+        { role: "user", content: "first question" },
+        { role: "assistant", content: "first answer" },
+        { role: "user", content: "latest question" },
+      ],
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+    });
+    claudeStreamChatMock.mockImplementation(
+      async function* (
+        _prompt: string,
+        _systemPrompt: string,
+        _model: string,
+        options?: { onSessionId?: (id: string) => void },
+      ) {
+        options?.onSessionId?.("claude-session-1");
+        yield { type: "turn_complete" };
+      },
+    );
+
+    const route = (await import("../chat")).default;
+    const response = asSseResponse(await route({} as never));
+    await response.text();
+
+    expect(claudeStreamChatMock).toHaveBeenCalledOnce();
+    const [prompt, systemPrompt, _model, options] =
+      claudeStreamChatMock.mock.calls[0];
+    expect(prompt).toBe("latest question");
+    expect(systemPrompt).toBe("system");
+    expect(systemPrompt).not.toContain("## Conversation History");
+    expect(options.resumeSessionId).toBeUndefined();
+  });
+
+  it("resumes a Claude runtime session on the second turn", async () => {
+    const route = (await import("../chat")).default;
+    claudeStreamChatMock.mockImplementation(
+      async function* (
+        _prompt: string,
+        _systemPrompt: string,
+        _model: string,
+        options?: { onSessionId?: (id: string) => void },
+      ) {
+        options?.onSessionId?.("claude-session-1");
+        yield { type: "turn_complete" };
+      },
+    );
+
+    readBodyMock.mockResolvedValueOnce({
+      system: "system",
+      sessionKey: "analysis-1",
+      messages: [{ role: "user", content: "first" }],
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+    });
+    await asSseResponse(await route({} as never)).text();
+
+    readBodyMock.mockResolvedValueOnce({
+      system: "system",
+      sessionKey: "analysis-1",
+      messages: [
+        { role: "user", content: "first" },
+        { role: "assistant", content: "answer" },
+        { role: "user", content: "second" },
+      ],
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+    });
+    await asSseResponse(await route({} as never)).text();
+
+    expect(claudeStreamChatMock).toHaveBeenCalledTimes(2);
+    expect(claudeStreamChatMock.mock.calls[1][0]).toBe("second");
+    expect(claudeStreamChatMock.mock.calls[1][3].resumeSessionId).toBe(
+      "claude-session-1",
+    );
+  });
+
+  it("reuses a Codex thread on the second turn", async () => {
+    const route = (await import("../chat")).default;
+    codexStreamChatMock.mockImplementation(
+      async function* (
+        _prompt: string,
+        _systemPrompt: string,
+        _model: string,
+        options?: { onThreadId?: (id: string) => void },
+      ) {
+        options?.onThreadId?.("thread-1");
+        yield { type: "turn_complete" };
+      },
+    );
+
+    readBodyMock.mockResolvedValueOnce({
+      system: "system",
+      sessionKey: "analysis-1",
+      messages: [{ role: "user", content: "first" }],
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+    await asSseResponse(await route({} as never)).text();
+
+    readBodyMock.mockResolvedValueOnce({
+      system: "system",
+      sessionKey: "analysis-1",
+      messages: [
+        { role: "user", content: "first" },
+        { role: "assistant", content: "answer" },
+        { role: "user", content: "second" },
+      ],
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+    await asSseResponse(await route({} as never)).text();
+
+    expect(codexStreamChatMock).toHaveBeenCalledTimes(2);
+    expect(codexStreamChatMock.mock.calls[1][0]).toBe("second");
+    expect(codexStreamChatMock.mock.calls[1][3].existingThreadId).toBe(
+      "thread-1",
+    );
+  });
+
+  it("emits session_expired before streaming after idle expiry", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-02T00:00:00.000Z"));
+    const route = (await import("../chat")).default;
+    claudeStreamChatMock.mockImplementation(
+      async function* (
+        _prompt: string,
+        _systemPrompt: string,
+        _model: string,
+        options?: { onSessionId?: (id: string) => void },
+      ) {
+        options?.onSessionId?.("claude-session-new");
+        yield { type: "text_delta", content: "fresh" };
+        yield { type: "turn_complete" };
+      },
+    );
+
+    readBodyMock.mockResolvedValueOnce({
+      system: "system",
+      sessionKey: "analysis-1",
+      messages: [{ role: "user", content: "first" }],
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+    });
+    await asSseResponse(await route({} as never)).text();
+
+    vi.advanceTimersByTime(30 * 60 * 1000 + 1);
+
+    readBodyMock.mockResolvedValueOnce({
+      system: "system",
+      sessionKey: "analysis-1",
+      messages: [{ role: "user", content: "after idle" }],
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+    });
+    const events = await readSseEvents(
+      asSseResponse(await route({} as never)),
+    );
+
+    expect(events[0]).toEqual({ type: "session_expired" });
+    expect(events).toContainEqual({ type: "text_delta", content: "fresh" });
+  });
+
+  it("recreates and marks a Codex session expired when the stored thread is gone", async () => {
+    const route = (await import("../chat")).default;
+    codexStreamChatMock
+      .mockImplementationOnce(
+        async function* (
+          _prompt: string,
+          _systemPrompt: string,
+          _model: string,
+          options?: { onThreadId?: (id: string) => void },
+        ) {
+          options?.onThreadId?.("thread-1");
+          yield { type: "turn_complete" };
+        },
+      )
+      .mockImplementationOnce(async function* () {
+        throw new MockCodexThreadExpiredError();
+      })
+      .mockImplementationOnce(
+        async function* (
+          _prompt: string,
+          _systemPrompt: string,
+          _model: string,
+          options?: { onThreadId?: (id: string) => void },
+        ) {
+          options?.onThreadId?.("thread-2");
+          yield { type: "text_delta", content: "fresh codex" };
+          yield { type: "turn_complete" };
+        },
+      );
+
+    readBodyMock.mockResolvedValueOnce({
+      system: "system",
+      sessionKey: "analysis-1",
+      messages: [{ role: "user", content: "first" }],
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+    await asSseResponse(await route({} as never)).text();
+
+    readBodyMock.mockResolvedValueOnce({
+      system: "system",
+      sessionKey: "analysis-1",
+      messages: [{ role: "user", content: "second" }],
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+    const events = await readSseEvents(
+      asSseResponse(await route({} as never)),
+    );
+
+    expect(events[0]).toEqual({ type: "session_expired" });
+    expect(events).toContainEqual({
+      type: "text_delta",
+      content: "fresh codex",
+    });
+    expect(codexStreamChatMock.mock.calls[1][3].existingThreadId).toBe(
+      "thread-1",
+    );
+    expect(codexStreamChatMock.mock.calls[2][3].existingThreadId).toBeUndefined();
+  });
+
+  it("keeps legacy history folding when no sessionKey is present", async () => {
+    readBodyMock.mockResolvedValue({
+      system: "system",
+      messages: [
+        { role: "user", content: "first question" },
+        { role: "assistant", content: "first answer" },
+        { role: "user", content: "latest question" },
+      ],
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+
+    const route = (await import("../chat")).default;
+    const response = asSseResponse(await route({} as never));
+    await response.text();
+
+    expect(codexStreamChatMock).toHaveBeenCalledOnce();
+    const [prompt, systemPrompt] = codexStreamChatMock.mock.calls[0];
+    expect(prompt).toBe("latest question");
+    expect(systemPrompt).toContain("## Conversation History");
+    expect(systemPrompt).toContain("user: first question");
+    expect(systemPrompt).toContain("assistant: first answer");
+  });
+
+  it("sends less than 30% of legacy prompt bytes on turn 3 with sessions", async () => {
+    const { buildLegacyChatPromptParts, buildRuntimeSessionPromptParts } =
+      await import("../chat");
+    const messages = [
+      { role: "user" as const, content: "Turn 1 " + "A".repeat(500) },
+      { role: "assistant" as const, content: "Answer 1 " + "B".repeat(500) },
+      { role: "user" as const, content: "Turn 2 " + "C".repeat(500) },
+      { role: "assistant" as const, content: "Answer 2 " + "D".repeat(500) },
+      { role: "user" as const, content: "Turn 3 " + "E".repeat(120) },
+      { role: "assistant" as const, content: "" },
+    ];
+    const body = {
+      system: "system prompt",
+      messages: messages.slice(0, 5),
+    };
+
+    const legacy = buildLegacyChatPromptParts(body);
+    const runtime = buildRuntimeSessionPromptParts(body);
+    const bytes = (value: string) => new TextEncoder().encode(value).length;
+    const legacyBytes = bytes(legacy.prompt) + bytes(legacy.systemPrompt);
+    const runtimeBytes = bytes(runtime.prompt) + bytes(runtime.systemPrompt);
+
+    expect(runtimeBytes).toBeLessThan(legacyBytes * 0.3);
   });
 });

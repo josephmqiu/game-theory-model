@@ -33,6 +33,10 @@ export interface StreamChatOptions {
   timeoutMs?: number;
   /** Abort signal — when aborted, closes the SDK query and ends the stream */
   signal?: AbortSignal;
+  /** Claude Agent SDK session id to resume for this turn. */
+  resumeSessionId?: string;
+  /** Called once when the SDK reports the runtime session id. */
+  onSessionId?: (id: string) => void;
 }
 
 export interface AnalysisRunOptions {
@@ -365,6 +369,9 @@ export async function* streamChat(
   const debugFile = getClaudeAgentDebugFilePath();
   const claudePath = resolveClaudeCli();
   const timeoutMs = options?.timeoutMs ?? CHAT_TIMEOUT_MS;
+  const shouldPersistSession = Boolean(
+    options?.resumeSessionId || options?.onSessionId,
+  );
 
   const chatMcp = await createChatMcpServer();
   const allowedTools = [
@@ -386,10 +393,11 @@ export async function* streamChat(
       includePartialMessages: true,
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
-      persistSession: false,
+      persistSession: shouldPersistSession,
       settingSources: [],
       plugins: [],
       env,
+      ...(options?.resumeSessionId ? { resume: options.resumeSessionId } : {}),
       ...(debugFile ? { debugFile } : {}),
       ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
     },
@@ -426,9 +434,20 @@ export async function* streamChat(
 
   let lastAssistantText = "";
   let gotResult = false;
+  let reportedSessionId = false;
+
+  const reportSessionId = (message: unknown) => {
+    if (reportedSessionId) return;
+    const sessionId = (message as { session_id?: unknown }).session_id;
+    if (typeof sessionId === "string" && sessionId.length > 0) {
+      reportedSessionId = true;
+      options?.onSessionId?.(sessionId);
+    }
+  };
 
   try {
     for await (const message of q) {
+      reportSessionId(message);
       if (message.type === "stream_event") {
         const ev = message.event;
         if (ev.type === "content_block_delta") {

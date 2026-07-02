@@ -98,6 +98,10 @@ function isToolMessage(id: string): boolean {
   return id.startsWith("tool-");
 }
 
+function isSessionExpiredMessage(id: string): boolean {
+  return id.startsWith("session-expired-");
+}
+
 type ToolStatus = "running" | "done" | "error";
 
 export function resolveToolStatus(
@@ -400,6 +404,7 @@ export default function AIChatPanel({
     // Only stop streaming when the active analysis changes.
     // Chat history is preserved so a scoping conversation can carry forward
     // into the analysis the user chooses to run.
+    void analysisClient.endChatSession(previousAnalysisId);
     stopStreaming();
   }, [analysisId, isAnalysisMode, stopStreaming]);
 
@@ -658,6 +663,15 @@ export default function AIChatPanel({
                 content={msg.content}
                 status={resolveToolStatus(msg, isStreaming)}
               />
+            ) : isSessionExpiredMessage(msg.id) ? (
+              <div
+                key={msg.id}
+                className="flex items-center gap-2 px-2 py-1 text-[11px] text-muted-foreground"
+              >
+                <div className="h-px flex-1 bg-border/70" />
+                <span className="shrink-0">{msg.content}</span>
+                <div className="h-px flex-1 bg-border/70" />
+              </div>
             ) : (
               <ChatMessage
                 key={msg.id}

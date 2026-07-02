@@ -56,6 +56,8 @@ export interface StreamChatOptions {
   thinkingBudgetTokens?: number;
   /** Model effort level (low is usually faster). */
   effort?: "low" | "medium" | "high" | "max";
+  /** Runtime chat session key, scoped by analysis/workspace id. */
+  sessionKey?: string;
 }
 
 /**
@@ -159,6 +161,7 @@ export async function* streamChat(
         thinkingMode: options?.thinkingMode,
         thinkingBudgetTokens: options?.thinkingBudgetTokens,
         effort: options?.effort,
+        sessionKey: options?.sessionKey,
       }),
       signal: fetchSignal,
     });
@@ -235,6 +238,11 @@ export async function* streamChat(
               chunk.type = "text";
             }
 
+            if (chunk.type === "session_expired") {
+              yield { type: "session_expired", content: "" };
+              continue;
+            }
+
             if (chunk.type === "thinking" && !chunk.content) {
               continue;
             }
@@ -297,6 +305,13 @@ export async function* streamChat(
           // Normalize new ChatEvent "text_delta" to legacy "text" format
           if (chunk.type === "text_delta") {
             chunk.type = "text";
+          }
+          if (chunk.type === "session_expired") {
+            clearTimeout(hardTimeout);
+            clearNoTextTimeout();
+            clearFirstTextTimeout();
+            yield { type: "session_expired", content: "" };
+            return;
           }
           if (chunk.type === "thinking" && !chunk.content) {
             clearTimeout(hardTimeout);

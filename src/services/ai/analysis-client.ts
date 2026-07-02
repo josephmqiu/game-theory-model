@@ -630,6 +630,24 @@ export function abort(): void {
   activeController?.abort();
 }
 
+export async function endChatSession(key: string): Promise<void> {
+  const trimmedKey = key.trim();
+  if (!trimmedKey) return;
+
+  try {
+    await fetch("/api/ai/chat-session", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: trimmedKey }),
+    });
+  } catch (error) {
+    console.warn(
+      "[analysis-client] end-chat-session-failed",
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
 export async function hydrateAnalysisState(): Promise<AnalysisStateResponse | null> {
   const manager = getEventStreamManager();
   if (!manager) {

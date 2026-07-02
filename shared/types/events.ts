@@ -59,5 +59,6 @@ export type ChatEvent =
   | { type: "tool_call_start"; toolName: string; input: unknown }
   | { type: "tool_call_result"; toolName: string; output: unknown }
   | { type: "tool_call_error"; toolName: string; error: string }
+  | { type: "session_expired" }
   | { type: "turn_complete" }
   | { type: "error"; message: string; recoverable: boolean };

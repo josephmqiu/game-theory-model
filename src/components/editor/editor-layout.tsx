@@ -95,9 +95,15 @@ export default function EditorLayout() {
     setSelectedEntityId(null);
   }, []);
 
+  const endCurrentChatSession = useCallback(() => {
+    const currentAnalysisId = useEntityGraphStore.getState().analysis.id;
+    void analysisClient.endChatSession(currentAnalysisId);
+  }, []);
+
   const handleOpenAnalysis = useCallback(
     async (filePath?: string) => {
       analysisClient.abort();
+      endCurrentChatSession();
       const opened = filePath
         ? await openAnalysisFromPath(filePath)
         : await openAnalysis();
@@ -108,7 +114,7 @@ export default function EditorLayout() {
 
       clearEditorChrome();
     },
-    [clearEditorChrome],
+    [clearEditorChrome, endCurrentChatSession],
   );
 
   const handleNewAnalysis = useCallback(() => {
@@ -121,9 +127,10 @@ export default function EditorLayout() {
     }
 
     analysisClient.abort();
+    endCurrentChatSession();
     clearEditorChrome();
     useEntityGraphStore.getState().newAnalysis("");
-  }, [clearEditorChrome, t]);
+  }, [clearEditorChrome, endCurrentChatSession, t]);
 
   const startOrchestrator = useCallback(
     (topic: string, provider?: string, model?: string) => {
