@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Analysis, LayoutState } from "@/types/entity";
+import type { Analysis, ChallengeRecord, LayoutState } from "@/types/entity";
 import type { PhaseState } from "@/types/methodology";
 import {
   parseAnalysisFileText,
@@ -319,6 +319,46 @@ describe("v3 entity analysis file format", () => {
       serializeAnalysisFile(bare, layout),
     );
     expect(bareParsed.analysis.entities[0].revisionLog).toBeUndefined();
+  });
+
+  it("tolerates and round-trips analysis-level challenges while staying version 3", () => {
+    const analysis = createTestAnalysis();
+    const challenges: ChallengeRecord[] = [
+      {
+        id: "ch-pending",
+        entityId: "e1",
+        objection: "The source appears stale.",
+        createdAt: 1719900000000,
+        status: "pending",
+        viewed: false,
+      },
+      {
+        id: "ch-revised",
+        entityId: "e1",
+        objection: "The conclusion overstates the reported action.",
+        createdAt: 1719900001000,
+        status: "resolved",
+        outcome: "REVISED",
+        resolvedAt: 1719900002000,
+        runId: "reval-1",
+        responseLogNo: 2,
+        responseRationale: "Revised to narrow the claim.",
+        viewed: false,
+      },
+    ];
+    analysis.challenges = challenges;
+    const layout = createTestLayout();
+
+    const text = serializeAnalysisFile(analysis, layout);
+    expect((JSON.parse(text) as { version: number }).version).toBe(3);
+
+    const parsed = parseAnalysisFileText(text);
+    expect(parsed.analysis.challenges).toEqual(challenges);
+
+    const bareParsed = parseAnalysisFileText(
+      serializeAnalysisFile(createTestAnalysis(), layout),
+    );
+    expect(bareParsed.analysis.challenges).toBeUndefined();
   });
 
   it("serialization writes no legacy top-level source fields", () => {

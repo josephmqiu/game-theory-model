@@ -389,6 +389,9 @@ async function executeRevalidation(
     // Objections against this phase's entities are injected into the prompt
     // (9A) and resolved against the re-run outcome after the commit (2.2A).
     const phaseChallenges = pendingChallengesForPhase(p);
+    const challengedEntityIds = new Set(
+      phaseChallenges.map((challenge) => challenge.entityId),
+    );
     const challengeContext = buildChallengeContext(phaseChallenges);
 
     const phaseStart = Date.now();
@@ -410,6 +413,7 @@ async function executeRevalidation(
           entities: result.entities,
           relationships: result.relationships,
           trigger: "revalidation",
+          challengedEntityIds,
         });
 
         if (commitResult.status === "retry_required") {
@@ -457,6 +461,7 @@ async function executeRevalidation(
             relationships: result.relationships,
             allowLargeReductionCommit: true,
             trigger: "revalidation",
+            challengedEntityIds,
           });
         }
 

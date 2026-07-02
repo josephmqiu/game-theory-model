@@ -17,6 +17,7 @@ import AIChatPanel from "@/components/panels/ai-chat-panel";
 import { PhaseSidebar } from "@/components/panels/phase-sidebar";
 import { PhaseProgress } from "@/components/panels/phase-progress";
 import EntityOverlayCard from "@/components/panels/entity-overlay-card";
+import { ChallengeRemovedNotice } from "@/components/panels/challenge-removed-notice";
 import {
   buildAnalysisRuntimeOverrides,
   useAgentSettingsStore,
@@ -246,15 +247,14 @@ export default function EditorLayout() {
       : null;
 
   const handleRerunPhase = useCallback(
-    (_phase: MethodologyPhase) => {
-      const topic = useEntityGraphStore.getState().analysis.topic;
-      if (!topic) {
-        return;
-      }
-
-      startOrchestrator(topic);
+    (phase: MethodologyPhase) => {
+      void analysisClient.rerunPhase(phase).then((result) => {
+        if (result.error) {
+          console.error("[editor] phase-rerun-failed", result.error);
+        }
+      });
     },
-    [startOrchestrator],
+    [],
   );
 
   const showAnalysisLauncher =
@@ -344,6 +344,7 @@ export default function EditorLayout() {
             )}
 
             <PhaseProgress className="absolute bottom-4 left-1/2 -translate-x-1/2" />
+            <ChallengeRemovedNotice className="absolute bottom-4 right-4 z-40 max-w-sm" />
 
             {selectedEntity && selectedEntityScreenPosition && (
               <EntityOverlayCard

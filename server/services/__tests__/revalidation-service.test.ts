@@ -807,6 +807,32 @@ describe("revalidation-service", () => {
     expect(secondCallContext.challengeContext).toBeUndefined();
   });
 
+  it("passes pending challenge entity ids into revision diff commits", async () => {
+    const challengedEntity = makeEntity("e1", "situational-grounding", true);
+    mockEntityGraph.getAnalysis.mockReturnValue({
+      id: "test",
+      name: "test",
+      topic: "test topic",
+      entities: [challengedEntity],
+      relationships: [],
+      phases: [],
+    });
+    mockEntityGraph.getPendingChallenges.mockReturnValue([
+      buildChallenge({ id: "ch-ids", entityId: "e1" }),
+    ]);
+    mockRunPhase.mockImplementation(async (phase) => makePhaseResult(phase));
+
+    revalidation.revalidate(["e1"]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const firstCommitInput = mockCommitPhaseSnapshot.mock.calls[0][0] as {
+      challengedEntityIds?: ReadonlySet<string>;
+    };
+    expect(Array.from(firstCommitInput.challengedEntityIds ?? [])).toEqual([
+      "e1",
+    ]);
+  });
+
   it("resolves a challenge as REVISED when the re-run changed the entity", async () => {
     let capturedRunId: string | undefined;
     const challengedEntity = makeEntity("e1", "situational-grounding", true);

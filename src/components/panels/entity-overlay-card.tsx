@@ -27,11 +27,11 @@ import {
 import {
   formatDiffField,
   formatDiffValue,
+  latestLogNo,
   latestRevalidationEntry,
 } from "@/services/entity/revision-peek";
 import type {
   AnalysisEntity,
-  ChallengeOutcome,
   ChallengeRecord,
   EntityType,
   EntityData,
@@ -69,6 +69,7 @@ import type {
 } from "@/types/entity";
 import { displaySourceForProvenance } from "@/types/entity";
 import { entityTypeColor } from "@/constants/design-tokens";
+import { ChallengeOutcomeChip } from "@/components/panels/challenge-outcome-chip";
 
 // ── Props ──
 
@@ -1434,7 +1435,9 @@ function StaleBanner({ stale }: { stale: boolean }) {
     secondsLeft > 0
       ? `Needs revalidation — re-running in ${secondsLeft}s…`
       : runStatus.status === "running"
-        ? "Needs revalidation — re-running…"
+        ? runStatus.kind === "revalidation"
+          ? "Needs revalidation — re-running…"
+          : "Needs revalidation — queued behind current analysis"
         : "Needs revalidation — queued";
 
   return (
@@ -1491,24 +1494,6 @@ function RevisionPeek({ entity }: { entity: AnalysisEntity }) {
 }
 
 // ── Challenge sections (2.1A form + 2.2A resolution) ──
-
-function OutcomeChip({ outcome }: { outcome: ChallengeOutcome }) {
-  const styles: Record<ChallengeOutcome, string> = {
-    REVISED: "bg-amber-500/15 text-amber-400 border-amber-500/30",
-    CONFIRMED: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-    REMOVED: "bg-red-500/15 text-red-400 border-red-500/30",
-  };
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[11px] font-semibold",
-        styles[outcome],
-      )}
-    >
-      {outcome}
-    </span>
-  );
-}
 
 const EMPTY_CHALLENGE_LIST: ChallengeRecord[] = [];
 
@@ -1569,7 +1554,9 @@ function ChallengeResolutionSection({ entity }: { entity: AnalysisEntity }) {
               <h3 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-400">
                 Objection addressed
               </h3>
-              {record.outcome && <OutcomeChip outcome={record.outcome} />}
+              {record.outcome && (
+                <ChallengeOutcomeChip outcome={record.outcome} />
+              )}
             </div>
             <p className="mt-1 text-[12px] italic leading-snug text-zinc-400">
               “{record.objection}”
@@ -1742,7 +1729,8 @@ export default function EntityOverlayCard({
   const [queuedNotice, setQueuedNotice] = useState<"edit" | "challenge" | null>(
     null,
   );
-  const queuedAtRevision = useRef<number | null>(null);
+  const queuedAtLogNo = useRef<number | null>(null);
+  const queuedAtEntityRevision = useRef<number | null>(null);
   const [challengeHandle, setChallengeHandle] =
     useState<ChallengeFormHandle | null>(null);
 
@@ -1755,17 +1743,22 @@ export default function EntityOverlayCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entity.id]);
 
-  // Clear the queued chip once the queued mutation landed (revision moved)
+  const entityLatestLogNo = latestLogNo(entity.revisionLog);
+
+  // Clear the queued chip once the queued mutation landed.
   useEffect(() => {
     if (
       queuedNotice &&
-      queuedAtRevision.current !== null &&
-      entity.revision !== queuedAtRevision.current
+      queuedAtLogNo.current !== null &&
+      queuedAtEntityRevision.current !== null &&
+      (entityLatestLogNo > queuedAtLogNo.current ||
+        entity.revision > queuedAtEntityRevision.current)
     ) {
       setQueuedNotice(null);
-      queuedAtRevision.current = null;
+      queuedAtLogNo.current = null;
+      queuedAtEntityRevision.current = null;
     }
-  }, [entity.revision, queuedNotice]);
+  }, [entity.revision, entityLatestLogNo, queuedNotice]);
 
   // Dismiss on Escape (cancel form if open, otherwise close)
   useEffect(() => {
@@ -1861,7 +1854,8 @@ export default function EntityOverlayCard({
     }
     if (result.status === "queued") {
       dispatch({ type: "SERVER_QUEUED" });
-      queuedAtRevision.current = entity.revision;
+      queuedAtLogNo.current = entityLatestLogNo;
+      queuedAtEntityRevision.current = entity.revision;
       setQueuedNotice("edit");
       setMode("view");
       dispatch({ type: "RESET" });
@@ -1877,7 +1871,7 @@ export default function EntityOverlayCard({
       error: result.error ?? "Save failed",
       fieldErrors: result.fieldErrors,
     });
-  }, [entity, editData, editRationale, formState]);
+  }, [entity, editData, editRationale, entityLatestLogNo, formState]);
 
   const handleCancel = useCallback(() => {
     setEditData(entity.data);
@@ -1893,13 +1887,14 @@ export default function EntityOverlayCard({
   const handleChallengeDone = useCallback(
     (result: "created" | "queued") => {
       if (result === "queued") {
-        queuedAtRevision.current = entity.revision;
+        queuedAtLogNo.current = entityLatestLogNo;
+        queuedAtEntityRevision.current = entity.revision;
         setQueuedNotice("challenge");
       }
       setMode("view");
       setChallengeHandle(null);
     },
-    [entity.revision],
+    [entity.revision, entityLatestLogNo],
   );
 
   // Position: right of node by default, flip left if near right edge

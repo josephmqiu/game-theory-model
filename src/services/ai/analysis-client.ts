@@ -19,6 +19,7 @@ import type {
 } from "../../../shared/types/events";
 import type { Analysis } from "../../../shared/types/entity";
 import type { AnalysisRuntimeOverrides } from "../../../shared/types/analysis-runtime";
+import type { MethodologyPhase } from "@/types/methodology";
 import i18n from "@/i18n";
 import { getEntityCardMetrics } from "@/services/entity/entity-card-metrics";
 import { formatPhaseActivityNote } from "./phase-activity-format";
@@ -701,6 +702,39 @@ export async function startAnalysis(
     throw error;
   } finally {
     currentController = null;
+  }
+}
+
+export async function rerunPhase(
+  phase: MethodologyPhase,
+): Promise<{ runId?: string; error?: string }> {
+  getEventStreamManager();
+
+  try {
+    const response = await fetch("/api/ai/revalidate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phase }),
+    });
+    const result = (await response.json().catch(() => ({}))) as {
+      runId?: string;
+      error?: string;
+    };
+
+    if (!response.ok || result.error) {
+      console.warn("[analysis-client] phase-rerun-rejected", {
+        phase,
+        status: response.status,
+        error: result.error,
+      });
+      return { error: result.error ?? `HTTP ${response.status}` };
+    }
+
+    return { runId: result.runId };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Network error",
+    };
   }
 }
 

@@ -1023,14 +1023,14 @@ export async function runFull(
       if (runPromiseOwner === run.runId) {
         runPromise = null;
         runPromiseOwner = null;
+        // Flush deferred revalidations that were suppressed during this run.
+        revalidationService.onRunComplete(
+          run.provider,
+          run.model,
+          run.runtime,
+          run.autoRevalidationEnabled,
+        );
       }
-      // Flush deferred revalidations that were suppressed during this run
-      revalidationService.onRunComplete(
-        run.provider,
-        run.model,
-        run.runtime,
-        run.autoRevalidationEnabled,
-      );
     }
   };
 

@@ -17,6 +17,7 @@ interface CommitPhaseSnapshotInput {
   entities: PhaseOutputEntity[];
   relationships: PhaseOutputRelationship[];
   allowLargeReductionCommit?: boolean;
+  challengedEntityIds?: ReadonlySet<string>;
   /**
    * What kind of run produced this snapshot — threads through to the
    * revision log so revalidation-driven changes are distinguishable from
@@ -74,8 +75,18 @@ function isUserEditedEntity(entity: AnalysisEntity): boolean {
   return entity.provenance?.source === "user-edited";
 }
 
-function isAiOwnedEntity(entity: AnalysisEntity): boolean {
-  return !isUserEditedEntity(entity);
+function isProtectedUserEditedEntity(
+  entity: AnalysisEntity,
+  challengedEntityIds?: ReadonlySet<string>,
+): boolean {
+  return isUserEditedEntity(entity) && !challengedEntityIds?.has(entity.id);
+}
+
+function isAiOwnedEntity(
+  entity: AnalysisEntity,
+  challengedEntityIds?: ReadonlySet<string>,
+): boolean {
+  return !isProtectedUserEditedEntity(entity, challengedEntityIds);
 }
 
 function relationshipPhaseMatches(
@@ -280,6 +291,7 @@ export function commitPhaseSnapshot({
   entities,
   relationships,
   allowLargeReductionCommit = false,
+  challengedEntityIds,
   trigger = "analysis",
 }: CommitPhaseSnapshotInput): CommitPhaseSnapshotResult {
   const logSource: RevisionLogSource =
@@ -294,8 +306,9 @@ export function commitPhaseSnapshot({
   const currentPhaseIds = new Set(
     currentPhaseEntities.map((entity) => entity.id),
   );
-  const aiOwnedCurrentPhaseEntities =
-    currentPhaseEntities.filter(isAiOwnedEntity);
+  const aiOwnedCurrentPhaseEntities = currentPhaseEntities.filter((entity) =>
+    isAiOwnedEntity(entity, challengedEntityIds),
+  );
 
   assertUniqueBatchEntities(entities);
 
@@ -311,7 +324,9 @@ export function commitPhaseSnapshot({
   const returnedAiEntityCount = entities.filter((entity) => {
     if (entity.id === null) return true;
     const existing = entityById.get(entity.id);
-    return existing !== undefined && isAiOwnedEntity(existing);
+    return (
+      existing !== undefined && isAiOwnedEntity(existing, challengedEntityIds)
+    );
   }).length;
 
   const retryRequired = maybeRequireTruncationRetry(
@@ -355,7 +370,7 @@ export function commitPhaseSnapshot({
 
     refToServerId.set(entity.ref, existing.id);
 
-    if (isUserEditedEntity(existing)) {
+    if (isProtectedUserEditedEntity(existing, challengedEntityIds)) {
       continue;
     }
 

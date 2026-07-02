@@ -185,7 +185,7 @@ describe("edit form (7A single write path + 2.3A state table)", () => {
     isRunningMock.mockReturnValue(true);
     const entity = makeFactEntity();
     seedStore(entity);
-    renderCard(entity);
+    const rendered = renderCard(entity);
 
     fireEvent.click(screen.getByText("Edit"));
     fireEvent.change(screen.getByDisplayValue("Original content"), {
@@ -200,6 +200,25 @@ describe("edit form (7A single write path + 2.3A state table)", () => {
       .analysis.entities.find((e) => e.id === "entity-1")!;
     expect((stored.data as { content: string }).content).toBe(
       "Original content",
+    );
+
+    const withAdvancedLog = makeFactEntity({
+      revision: entity.revision,
+      revisionLog: [{ logNo: 1, ts: 1, logSource: "human", fieldDiffs: [] }],
+    });
+    seedStore(withAdvancedLog);
+    rendered.rerender(
+      <EntityOverlayCard
+        entity={withAdvancedLog}
+        screenPosition={{ x: 100, y: 100 }}
+        onClose={() => {}}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Queued — applies after current phase"),
+      ).toBeNull(),
     );
   });
 

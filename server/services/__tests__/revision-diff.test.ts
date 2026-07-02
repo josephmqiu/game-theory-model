@@ -261,6 +261,126 @@ describe("commitPhaseSnapshot", () => {
     expect(current?.provenance?.source).toBe("user-edited");
   });
 
+  it("updates a challenged user-edited entity and records a revalidation log entry", () => {
+    const challenged = makePersistedFact("Original");
+    updateEntity(
+      challenged.id,
+      {
+        data: {
+          type: "fact",
+          date: "2026-03-19",
+          source: "human",
+          content: "Human override",
+          category: "action",
+        },
+        rationale: "human rationale",
+      },
+      { source: "user-edited" },
+    );
+
+    const result = commitPhaseSnapshot({
+      phase: "situational-grounding",
+      runId: "reval-challenged",
+      entities: [
+        makeFactOutput({
+          id: challenged.id,
+          ref: "challenged-ref",
+          content: "Re-derived by revalidation",
+        }),
+      ],
+      relationships: [],
+      trigger: "revalidation",
+      challengedEntityIds: new Set([challenged.id]),
+    });
+
+    expect(result).toMatchObject({
+      status: "applied",
+      summary: { entitiesUpdated: 1 },
+    });
+    const current = getAnalysis().entities.find(
+      (entity) => entity.id === challenged.id,
+    )!;
+    expect(current.data).toMatchObject({
+      content: "Re-derived by revalidation",
+    });
+    expect(current.provenance?.source).toBe("phase-derived");
+    expect(current.revisionLog?.at(-1)).toMatchObject({
+      logSource: "revalidation",
+      runId: "reval-challenged",
+    });
+  });
+
+  it("still skips an unchallenged user-edited entity returned by the snapshot", () => {
+    const preserved = makePersistedFact("Original");
+    updateEntity(
+      preserved.id,
+      {
+        data: {
+          type: "fact",
+          date: "2026-03-19",
+          source: "human",
+          content: "Human override",
+          category: "action",
+        },
+        rationale: "human rationale",
+      },
+      { source: "user-edited" },
+    );
+
+    const result = commitPhaseSnapshot({
+      phase: "situational-grounding",
+      runId: "reval-unchallenged",
+      entities: [
+        makeFactOutput({
+          id: preserved.id,
+          ref: "preserved-ref",
+          content: "AI tries to overwrite",
+        }),
+      ],
+      relationships: [],
+      trigger: "revalidation",
+      challengedEntityIds: new Set(["other-entity"]),
+    });
+
+    expect(result).toMatchObject({
+      status: "applied",
+      summary: { entitiesUpdated: 0, entitiesDeleted: 0 },
+    });
+    const current = getAnalysis().entities.find(
+      (entity) => entity.id === preserved.id,
+    )!;
+    expect(current.data).toMatchObject({ content: "Human override" });
+    expect(current.provenance?.source).toBe("user-edited");
+  });
+
+  it("deletes a challenged user-edited entity omitted from the snapshot", () => {
+    const challenged = makePersistedFact("Original");
+    updateEntity(
+      challenged.id,
+      {
+        rationale: "human rationale",
+      },
+      { source: "user-edited" },
+    );
+
+    const result = commitPhaseSnapshot({
+      phase: "situational-grounding",
+      runId: "reval-removed",
+      entities: [],
+      relationships: [],
+      trigger: "revalidation",
+      challengedEntityIds: new Set([challenged.id]),
+    });
+
+    expect(result).toMatchObject({
+      status: "applied",
+      summary: { entitiesDeleted: 1 },
+    });
+    expect(
+      getAnalysis().entities.some((entity) => entity.id === challenged.id),
+    ).toBe(false);
+  });
+
   it("rejects unknown non-null entity ids", () => {
     expect(() =>
       commitPhaseSnapshot({

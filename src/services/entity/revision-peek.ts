@@ -4,6 +4,10 @@
 
 import type { AnalysisEntity, RevisionLogEntry } from "@/types/entity";
 
+export function latestLogNo(log: RevisionLogEntry[] | undefined): number {
+  return log?.at(-1)?.logNo ?? 0;
+}
+
 /** Latest revalidation-driven content change, or null. */
 export function latestRevalidationEntry(
   entity: Pick<AnalysisEntity, "revisionLog">,
