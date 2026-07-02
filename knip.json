@@ -1,0 +1,24 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/router.tsx",
+    "src/routes/**/*.{ts,tsx}",
+    "server/api/**/*.{ts,tsx}",
+    "server/plugins/**/*.{ts,tsx}",
+    "electron/main.ts",
+    "electron/preload.ts",
+    "scripts/**/*.{js,cjs,mjs,ts,tsx}",
+    "smoke-tests/**/*.{js,cjs,mjs,ts,tsx}",
+    "**/*.{test,spec}.{ts,tsx}"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx,css}",
+    "server/**/*.{ts,tsx}",
+    "shared/**/*.{ts,tsx}",
+    "electron/**/*.{ts,tsx}"
+  ],
+  "ignoreIssues": {
+    "src/canvas/**": ["exports", "types"],
+    "src/stores/**": ["exports", "types"]
+  }
+}

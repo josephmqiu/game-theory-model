@@ -30,6 +30,7 @@
     "test:live:codex": "bun run mcp:compile && bun run smoke-tests/live-codex.ts",
     "test:live:claude": "bun run smoke-tests/live-claude.ts",
     "typecheck": "tsc --noEmit",
+    "knip": "knip",
     "check:fast": "bun run typecheck && bun run test:unit",
     "check:pr": "bun run typecheck && bun run test && bun run build && bun run electron:compile",
     "check:release": "bun run check:pr && bun run mcp:compile && bun run electron:build",
@@ -104,6 +105,7 @@
     "esbuild": "^0.25.0",
     "graceful-fs": "^4.2.11",
     "jsdom": "^27.0.0",
+    "knip": "6.24.0",
     "typescript": "^5.7.2",
     "vite": "^7.1.7",
     "vitest": "^3.0.5"
