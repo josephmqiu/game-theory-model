@@ -16,13 +16,21 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.10
 
       - name: Ensure Xvfb is available
         run: sudo apt-get update && sudo apt-get install -y xvfb
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      # Electron's SUID sandbox helper must be root-owned with mode 4755 on
+      # Linux runners, otherwise the app aborts before first paint. Keeps the
+      # Chromium sandbox ON (decision 2A) instead of --no-sandbox.
+      - name: Fix Electron chrome-sandbox permissions
+        run: |
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
 
       - name: Prepare smoke artifacts
         run: bun run test:smoke:prepare
