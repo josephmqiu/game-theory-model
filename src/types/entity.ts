@@ -773,13 +773,22 @@ export interface AnalysisEntity {
   phase: MethodologyPhase;
   data: EntityData;
   confidence: EntityConfidence;
-  /** @deprecated Use provenance.source instead */
-  source: EntitySource;
   provenance?: EntityProvenance;
   rationale: string;
   revision: number;
   stale: boolean; // true when downstream of a human edit, pending revalidation
   group?: string; // analytical group label assigned by canvas-service grouping
+}
+
+/**
+ * Display tier for an entity's origin, derived from provenance.
+ * Replaces the removed top-level `source` field ("ai" | "human" | "computed");
+ * pre-migration `.gta` files are normalized on load (see analysis-file.ts).
+ */
+export function displaySourceForProvenance(
+  provenance: EntityProvenance | undefined,
+): EntitySource {
+  return provenance?.source === "user-edited" ? "human" : "ai";
 }
 
 // ── Relationships ──
@@ -833,7 +842,6 @@ export interface AnalysisRelationship {
   fromEntityId: string;
   toEntityId: string;
   metadata?: Record<string, unknown>;
-  source?: EntitySource;
   provenance?: EntityProvenance;
 }
 

@@ -1183,7 +1183,7 @@ export class SkiaEngine {
     const color = this.entityColor(entityType);
     const confidence = entity?.confidence ?? "medium";
     const isStale = entity?.stale ?? false;
-    const isHumanEdited = entity?.source === "human";
+    const isHumanEdited = entity?.provenance?.source === "user-edited";
 
     const nodeOpacity = (isStale ? 0.4 : 1.0) * opacityMultiplier;
 

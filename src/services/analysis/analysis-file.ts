@@ -82,6 +82,41 @@ function assertLayoutShape(
   }
 }
 
+// ── Legacy field normalization (14A read shim) ──
+//
+// Older v3 files carried a top-level `source: "ai" | "human" | "computed"`
+// on entities and relationships. Provenance is the sole origin record now;
+// on load we synthesize provenance from the legacy field when it is missing
+// and strip the legacy key. The file version stays 3 — new fields are
+// tolerated, never required, so old builds can still open new files.
+
+function normalizeLegacySource(record: Record<string, unknown>): void {
+  if (!("source" in record)) {
+    return;
+  }
+
+  const legacySource = record.source;
+  delete record.source;
+
+  if (isRecord(record.provenance)) {
+    return; // provenance already present — it wins
+  }
+
+  record.provenance = {
+    source: legacySource === "human" ? "user-edited" : "phase-derived",
+    timestamp: 0,
+  };
+}
+
+function normalizeLegacyAnalysisFields(rawAnalysis: Analysis): void {
+  for (const entity of rawAnalysis.entities) {
+    normalizeLegacySource(entity as unknown as Record<string, unknown>);
+  }
+  for (const relationship of rawAnalysis.relationships) {
+    normalizeLegacySource(relationship as unknown as Record<string, unknown>);
+  }
+}
+
 // ── Serialize / Parse ──
 
 export function serializeAnalysisFile(
@@ -97,9 +132,10 @@ export function serializeAnalysisFile(
   return JSON.stringify(file, null, 2);
 }
 
-export function parseAnalysisFileText(
-  text: string,
-): { analysis: Analysis; layout: LayoutState } {
+export function parseAnalysisFileText(text: string): {
+  analysis: Analysis;
+  layout: LayoutState;
+} {
   let raw: unknown;
 
   try {
@@ -132,6 +168,8 @@ export function parseAnalysisFileText(
 
   assertAnalysisShape(raw.analysis);
   assertLayoutShape(raw.layout);
+
+  normalizeLegacyAnalysisFields(raw.analysis);
 
   const validation = validateAnalysis(raw.analysis);
   if (!validation.isValid) {

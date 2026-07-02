@@ -587,7 +587,6 @@ describe("loadAnalysis", () => {
           id: "historical-entity",
           ...makeFactData(),
           phase: "historical-game" as const,
-          source: "ai" as const,
           provenance: {
             source: "phase-derived" as const,
             runId: "run-legacy",

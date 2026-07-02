@@ -33,7 +33,6 @@ const entity: AnalysisEntity = {
     category: "action",
   },
   confidence: "high",
-  source: "ai",
   provenance,
   rationale: "test rationale",
   revision: 1,

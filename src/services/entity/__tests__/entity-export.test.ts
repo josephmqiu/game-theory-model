@@ -16,7 +16,6 @@ const makeEntity = (
     category: "action",
   },
   confidence: "high",
-  source: "ai",
   rationale: "Test",
   revision: 1,
   stale: false,

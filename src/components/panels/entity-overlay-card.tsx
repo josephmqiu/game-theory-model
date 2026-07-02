@@ -43,6 +43,7 @@ import type {
   MetaCheckData,
   AnalysisReportData,
 } from "@/types/entity";
+import { displaySourceForProvenance } from "@/types/entity";
 
 // ── Props ──
 
@@ -1238,11 +1239,11 @@ export default function EntityOverlayCard({
   }, [onClose, editing]);
 
   const handleSave = useCallback(() => {
+    // Only {data, confidence, rationale} are editable — everything else
+    // (revision, provenance, stale) is server-owned (8A).
     const updates = {
       data: editData,
       rationale: editRationale,
-      source: "human" as const,
-      revision: entity.revision + 1,
     };
 
     if (analysisClient.isRunning()) {
@@ -1300,7 +1301,7 @@ export default function EntityOverlayCard({
         <div className="flex flex-wrap items-center gap-1.5">
           <TypeBadge type={entity.type} />
           <ConfidenceBadge confidence={entity.confidence} />
-          <SourceBadge source={entity.source} />
+          <SourceBadge source={displaySourceForProvenance(entity.provenance)} />
         </div>
 
         {/* Entity name */}

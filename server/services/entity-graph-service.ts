@@ -8,7 +8,6 @@ import type {
   AnalysisRelationship,
   Analysis,
   EntityProvenance,
-  EntitySource,
   RelationshipType,
 } from "../../shared/types/entity";
 import type {
@@ -101,19 +100,6 @@ function mutate(options?: { markDirty?: boolean }): void {
   runtimeStatus.incrementRevision();
 }
 
-function entitySourceForProvenance(
-  source: EntityProvenance["source"],
-): EntitySource {
-  switch (source) {
-    case "user-edited":
-      return "human";
-    case "ai-edited":
-    case "phase-derived":
-    default:
-      return "ai";
-  }
-}
-
 // ── Core API ──
 
 export function newAnalysis(topic: string): void {
@@ -146,7 +132,7 @@ export function getAnalysis(): Readonly<Analysis> {
 }
 
 export function createEntity(
-  data: Omit<AnalysisEntity, "id" | "provenance" | "source">,
+  data: Omit<AnalysisEntity, "id" | "provenance">,
   provenance: {
     source: EntityProvenance["source"];
     runId?: string;
@@ -168,7 +154,6 @@ export function createEntity(
   const entity: AnalysisEntity = {
     ...data,
     id,
-    source: entitySourceForProvenance(provenance.source),
     provenance: fullProvenance,
   };
 
@@ -217,7 +202,6 @@ export function createRelationship(
     id: nanoid(),
     ...(provenance
       ? {
-          source: entitySourceForProvenance(provenance.source),
           provenance: {
             source: provenance.source,
             runId: provenance.runId,
@@ -246,7 +230,7 @@ export function createRelationship(
 
 export function updateEntity(
   id: string,
-  updates: Partial<Omit<AnalysisEntity, "id" | "provenance" | "source">>,
+  updates: Partial<Omit<AnalysisEntity, "id" | "provenance">>,
   provenance: { source: EntityProvenance["source"]; runId?: string },
 ): AnalysisEntity | null {
   const existing = analysis.entities.find((e) => e.id === id);
@@ -268,7 +252,6 @@ export function updateEntity(
     ...existing,
     ...updates,
     id, // preserve original ID
-    source: entitySourceForProvenance(provenance.source),
     provenance: newProvenance,
   };
 

@@ -31,7 +31,7 @@ function createTestAnalysis(): Analysis {
           category: "action",
         },
         confidence: "high",
-        source: "human",
+        provenance: { source: "user-edited", timestamp: 0 },
         rationale: "Directly reported",
         revision: 1,
         stale: false,
@@ -71,7 +71,6 @@ describe("v3 entity analysis file format", () => {
         knowledge: [],
       },
       confidence: "high",
-      source: "ai",
       rationale: "Key actor in trade dispute",
       revision: 1,
       stale: false,
@@ -174,6 +173,134 @@ describe("v3 entity analysis file format", () => {
     expect(() => parseAnalysisFileText(missingTopic)).toThrow(
       "analysis.topic must be a string.",
     );
+  });
+
+  it("loads pre-migration files that still carry the legacy source field (14A shim)", () => {
+    // Written by builds before the provenance migration: entities carry a
+    // top-level source and NO provenance. Still version 3 — never bumped.
+    const preMigrationFile = JSON.stringify({
+      type: "game-theory-analysis",
+      version: 3,
+      analysis: {
+        id: "legacy-1",
+        name: "Legacy Analysis",
+        topic: "Legacy topic",
+        entities: [
+          {
+            id: "e1",
+            type: "fact",
+            phase: "situational-grounding",
+            data: {
+              type: "fact",
+              date: "2025-03-01",
+              source: "Reuters",
+              content: "Human-corrected fact",
+              category: "action",
+            },
+            confidence: "high",
+            source: "human",
+            rationale: "Edited by hand",
+            revision: 2,
+            stale: false,
+          },
+          {
+            id: "e2",
+            type: "player",
+            phase: "player-identification",
+            data: {
+              type: "player",
+              name: "United States",
+              playerType: "primary",
+              knowledge: [],
+            },
+            confidence: "high",
+            source: "ai",
+            rationale: "Key actor",
+            revision: 1,
+            stale: false,
+          },
+        ],
+        relationships: [
+          {
+            id: "r1",
+            type: "informed-by",
+            fromEntityId: "e2",
+            toEntityId: "e1",
+            source: "ai",
+          },
+        ],
+        phases: [],
+      },
+      layout: {},
+    });
+
+    const parsed = parseAnalysisFileText(preMigrationFile);
+
+    const [human, ai] = parsed.analysis.entities;
+    // Legacy source is stripped and re-expressed as provenance
+    expect("source" in human).toBe(false);
+    expect(human.provenance).toEqual({ source: "user-edited", timestamp: 0 });
+    expect("source" in ai).toBe(false);
+    expect(ai.provenance).toEqual({ source: "phase-derived", timestamp: 0 });
+    expect("source" in parsed.analysis.relationships[0]).toBe(false);
+  });
+
+  it("legacy source never overrides an existing provenance record", () => {
+    const mixedFile = JSON.stringify({
+      type: "game-theory-analysis",
+      version: 3,
+      analysis: {
+        id: "mixed-1",
+        name: "Mixed",
+        topic: "Mixed",
+        entities: [
+          {
+            id: "e1",
+            type: "fact",
+            phase: "situational-grounding",
+            data: {
+              type: "fact",
+              date: "2025-03-01",
+              source: "Reuters",
+              content: "A fact",
+              category: "action",
+            },
+            confidence: "high",
+            source: "ai",
+            provenance: { source: "user-edited", timestamp: 1234 },
+            rationale: "r",
+            revision: 1,
+            stale: false,
+          },
+        ],
+        relationships: [],
+        phases: [],
+      },
+      layout: {},
+    });
+
+    const parsed = parseAnalysisFileText(mixedFile);
+    expect(parsed.analysis.entities[0].provenance).toEqual({
+      source: "user-edited",
+      timestamp: 1234,
+    });
+  });
+
+  it("serialization writes no legacy top-level source fields", () => {
+    const analysis = createTestAnalysis();
+    const text = serializeAnalysisFile(analysis, createTestLayout());
+    const raw = JSON.parse(text) as {
+      analysis: {
+        entities: Array<Record<string, unknown>>;
+        relationships: Array<Record<string, unknown>>;
+      };
+    };
+    for (const entity of raw.analysis.entities) {
+      expect("source" in entity).toBe(false);
+    }
+    for (const relationship of raw.analysis.relationships) {
+      expect("source" in relationship).toBe(false);
+    }
   });
 
   it("generates a file name from the analysis name", () => {

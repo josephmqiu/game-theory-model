@@ -104,7 +104,6 @@ function makeEntity(
       category: "action" as const,
     },
     confidence: "high",
-    source: "ai",
     rationale: "test",
     revision: 1,
     stale,

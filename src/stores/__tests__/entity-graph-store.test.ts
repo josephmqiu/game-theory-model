@@ -17,7 +17,6 @@ function makeEntity(
 ): AnalysisEntity {
   return {
     confidence: "medium",
-    source: "ai",
     rationale: "",
     revision: 0,
     stale: false,
