@@ -3,6 +3,7 @@ import type { H3Event } from "h3";
 import { z } from "zod";
 import * as entityGraphService from "../../services/entity-graph-service";
 import * as analysisOrchestrator from "../../agents/analysis-agent";
+import { validateEntityUpdates } from "../../services/entity-update-validation";
 
 const baseActionSchema = z.object({
   action: z.string().min(1),
@@ -49,6 +50,27 @@ export default defineEventHandler(async (event) => {
     return { error: parsedBody.error };
   }
   const body = parsedBody.data;
+
+  // Updates are validated against the target's per-type schema BEFORE they
+  // are applied or queued (8A) — an invalid edit must never enter the queue.
+  if (body.action === "update") {
+    const existing = entityGraphService.getEntityById(body.id);
+    if (!existing) {
+      setResponseStatus(event, 404);
+      return { error: "Entity not found" };
+    }
+
+    const validation = validateEntityUpdates(existing, body.updates);
+    if (!validation.ok) {
+      setResponseStatus(event, 400);
+      return {
+        error: "Validation failed",
+        fieldErrors: validation.fieldErrors,
+      };
+    }
+
+    body.updates = validation.updates as Record<string, unknown>;
+  }
 
   // If analysis running and this is a mutation, queue it
   if (analysisOrchestrator.isRunning() && body.action !== "get") {

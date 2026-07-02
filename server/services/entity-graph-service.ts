@@ -332,6 +332,10 @@ export function removeRelationship(id: string): boolean {
   return true;
 }
 
+export function getEntityById(id: string): AnalysisEntity | null {
+  return analysis.entities.find((e) => e.id === id) ?? null;
+}
+
 export function getEntitiesByPhase(phase: MethodologyPhase): AnalysisEntity[] {
   return analysis.entities.filter((e) => e.phase === phase);
 }
