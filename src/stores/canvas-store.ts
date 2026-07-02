@@ -6,10 +6,10 @@ import type {
   CanvasInteraction,
 } from "@/types/canvas";
 import type { PenNode } from "@/types/pen";
-import { DEFAULT_PAGE_ID } from "@/stores/document-tree-utils";
 import { appStorage } from "@/utils/app-storage";
 
 const PREFS_KEY = "game-theory-canvas-preferences";
+const DEFAULT_PAGE_ID = "page-1";
 
 export type RightPanelTab = "design" | "code";
 
