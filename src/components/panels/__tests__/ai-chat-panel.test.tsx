@@ -28,6 +28,8 @@ describe("AIChatPanel analysis mode", () => {
     const source = readFileSync(aiChatPanelPath, "utf8");
 
     expect(source).toContain("handleSend()");
+    expect(source).toContain("useScrollEngine");
+    expect(source).not.toContain("scrollIntoView");
     expect(source).toContain('t("analysis.chatEmptyState")');
     expect(source).toContain('t("analysis.chatInputPlaceholder")');
     expect(source).not.toContain("onStartAnalysis");

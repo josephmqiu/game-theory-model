@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { forwardRef, useState, type ReactNode } from 'react'
 import { Copy, Check, Wand2, ChevronDown } from 'lucide-react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -7,11 +7,18 @@ import { Button } from '@/components/ui/button'
 import type { ChatAttachment } from '@/services/ai/ai-types'
 
 interface ChatMessageProps {
+  id?: string
   role: 'user' | 'assistant'
   content: string
+  timestamp?: number
   isStreaming?: boolean
   onApplyDesign?: (json: string) => void
   attachments?: ChatAttachment[]
+  status?: 'stopped' | 'error'
+  error?: string
+  onContinue?: () => void
+  onRetry?: () => void
+  reduceMotion?: boolean
 }
 
 /** Strip raw tool-call / function-call XML that should never be shown to users */
@@ -202,7 +209,15 @@ export function buildPipelineProgress(
 /** Component for rendering a list of action steps as accordions.
  *  Only shows steps with non-empty content (e.g. thinking, analysis).
  *  Empty plan steps are shown in PipelineChecklist instead. */
-function ActionSteps({ steps, isStreaming }: { steps: ParsedStep[]; isStreaming?: boolean }) {
+function ActionSteps({
+  steps,
+  isStreaming,
+  reduceMotion,
+}: {
+  steps: ParsedStep[]
+  isStreaming?: boolean
+  reduceMotion?: boolean
+}) {
   // Filter to only show steps with actual content (not empty plan steps)
   const stepsWithContent = steps.filter((s) => s.content.trim())
   if (stepsWithContent.length === 0) return null
@@ -220,6 +235,7 @@ function ActionSteps({ steps, isStreaming }: { steps: ParsedStep[]; isStreaming?
             defaultOpen={isActive}
             isDone={isDone}
             isActive={isActive}
+            reduceMotion={reduceMotion}
           />
         )
       })}
@@ -233,12 +249,14 @@ function ActionStepItem({
   defaultOpen = false,
   isDone,
   isActive,
+  reduceMotion,
 }: {
   title: string
   content: string
   defaultOpen?: boolean
   isDone: boolean
   isActive: boolean
+  reduceMotion?: boolean
 }) {
   const [isOpen, setIsOpen] = useState(defaultOpen)
 
@@ -263,7 +281,13 @@ function ActionStepItem({
             {isDone ? (
               <Check size={12} strokeWidth={2.5} />
             ) : (
-              <div className={cn('w-2 h-2 rounded-full', isActive ? 'bg-primary animate-pulse' : 'bg-muted-foreground/60')} />
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  isActive ? 'bg-primary' : 'bg-muted-foreground/60',
+                  isActive && !reduceMotion && 'animate-pulse',
+                )}
+              />
             )}
           </div>
 
@@ -439,9 +463,11 @@ const markdownComponents: Components = {
 function MarkdownBody({
   content,
   isStreaming,
+  reduceMotion,
 }: {
   content: string
   isStreaming?: boolean
+  reduceMotion?: boolean
 }) {
   return (
     <div className="min-w-0">
@@ -451,7 +477,10 @@ function MarkdownBody({
       {isStreaming ? (
         <span
           aria-label="streaming cursor"
-          className="inline-block h-3.5 w-1.5 rounded-sm bg-muted-foreground/70 align-text-bottom animate-pulse"
+          className={cn(
+            "inline-block h-3.5 w-1.5 rounded-sm bg-muted-foreground/70 align-text-bottom",
+            !reduceMotion && "animate-pulse",
+          )}
         />
       ) : null}
     </div>
@@ -463,6 +492,7 @@ function renderMarkdown(
   onApplyDesign?: (json: string) => void,
   isApplied?: boolean,
   isStreaming?: boolean,
+  reduceMotion?: boolean,
 ): ReactNode[] {
   const segments = splitMarkdownSegments(text, isStreaming)
 
@@ -476,6 +506,7 @@ function renderMarkdown(
             onApply={onApplyDesign}
             isApplied={isApplied}
             isStreaming={segment.isStreaming}
+            reduceMotion={reduceMotion}
           />
         )
       }
@@ -494,6 +525,7 @@ function renderMarkdown(
         key={`markdown-${index}`}
         content={segment.content}
         isStreaming={!!isStreaming && index === segments.length - 1}
+        reduceMotion={reduceMotion}
       />
     )
   })
@@ -533,11 +565,13 @@ function DesignJsonBlock({
   onApply,
   isApplied,
   isStreaming,
+  reduceMotion,
 }: {
   code: string
   onApply?: (json: string) => void
   isApplied?: boolean
   isStreaming?: boolean
+  reduceMotion?: boolean
 }) {
   const elementCount = (() => {
     try {
@@ -567,7 +601,9 @@ function DesignJsonBlock({
           <span
             className={cn(
               "text-[11px] font-medium tracking-tight",
-              isStreaming ? "text-muted-foreground animate-pulse" : "text-foreground/90 group-hover:text-foreground",
+              isStreaming
+                ? cn("text-muted-foreground", !reduceMotion && "animate-pulse")
+                : "text-foreground/90 group-hover:text-foreground",
             )}
           >
             {isStreaming
@@ -618,13 +654,31 @@ function DesignJsonBlock({
   )
 }
 
-export default function ChatMessage({
+function formatMessageTime(timestamp?: number): string {
+  if (!timestamp) return ''
+  return new Date(timestamp).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+const ChatMessage = forwardRef<HTMLElement, ChatMessageProps>(function ChatMessage(
+{
+  id,
   role,
   content,
+  timestamp,
   isStreaming,
   onApplyDesign,
   attachments,
-}: ChatMessageProps) {
+  status,
+  error,
+  onContinue,
+  onRetry,
+  reduceMotion,
+}: ChatMessageProps,
+ref,
+) {
   const isUser = role === 'user'
   const isApplied = role === 'assistant' && (content.includes('\u2705') || content.includes('<!-- APPLIED -->'))
   // Strip raw tool-call XML that the model may emit (should never be visible)
@@ -633,6 +687,12 @@ export default function ChatMessage({
   const hasFlow = !isUser && steps.length > 0
   const contentWithoutSteps = isUser ? displayContent : stripStepBlocks(displayContent)
   const isEmpty = !contentWithoutSteps.trim() && !hasFlow
+  const messageTime = formatMessageTime(timestamp)
+  const ariaLabel = `${isUser ? 'User' : 'Assistant'} message${messageTime ? ` sent at ${messageTime}` : ''}`
+
+  const copyMessage = () => {
+    void navigator.clipboard?.writeText(content)
+  }
 
   // Don't render an empty non-streaming assistant message
   // UNLESS we stripped something out (meaning the AI did something, but we hid it).
@@ -640,21 +700,54 @@ export default function ChatMessage({
   // Or better, if it's empty, it means we probably just suppressed a tool call.
   // Let's show a "Processing..." or "Action completed" placeholder if it's empty but had content.
   const hadContent = content.trim().length > 0
-  if (!isUser && isEmpty && !isStreaming) {
+  if (!isUser && isEmpty && !isStreaming && !status) {
      if (hadContent) {
        return (
-         <div className="text-xs text-muted-foreground italic px-2 py-1">
+         <article
+           ref={ref}
+           id={id}
+           data-message-id={id}
+           tabIndex={0}
+           aria-label={ariaLabel}
+           className="group/message relative text-xs text-muted-foreground italic px-2 py-1 outline-none focus-visible:ring-1 focus-visible:ring-amber-500/60"
+         >
            (Automated action completed)
-         </div>
+         </article>
        )
      }
      return null
   }
 
   return (
-    <div className={cn('flex', isUser ? 'justify-end' : 'justify-start mt-2')}>
+    <article
+      ref={ref}
+      id={id}
+      data-message-id={id}
+      tabIndex={0}
+      aria-label={ariaLabel}
+      className={cn(
+        'group/message relative flex pr-10 outline-none focus-visible:ring-1 focus-visible:ring-amber-500/60',
+        isUser ? 'justify-end' : 'justify-start mt-2',
+      )}
+    >
+      <div className="pointer-events-none absolute right-0 top-0 hidden items-center gap-1 group-hover/message:flex group-focus-within/message:flex">
+        {messageTime ? (
+          <span className="rounded-sm border border-border/70 bg-card/95 px-1.5 py-0.5 text-[10px] text-muted-foreground shadow-sm">
+            {messageTime}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          onClick={copyMessage}
+          className="pointer-events-auto rounded-sm border border-border/70 bg-card/95 p-1 text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+          title="Copy message"
+          aria-label="Copy message"
+        >
+          <Copy size={11} />
+        </button>
+      </div>
       {isUser ? (
-        <div className="max-w-[85%] rounded-lg px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap bg-primary text-primary-foreground rounded-br-sm">
+        <div className="max-w-[min(85%,65ch)] rounded-lg px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap bg-primary text-primary-foreground rounded-br-sm">
           {attachments && attachments.length > 0 && (
             <div className="flex flex-wrap gap-1 mb-1.5">
               {attachments.map((att) => (
@@ -670,22 +763,26 @@ export default function ChatMessage({
           {content}
         </div>
       ) : (
-        <div className="text-sm leading-relaxed text-foreground min-w-0 w-full overflow-hidden">
+        <div className="max-w-[65ch] text-sm leading-relaxed text-foreground min-w-0 w-full overflow-hidden">
           {/* Streaming with no content yet → thinking indicator */}
           {isEmpty && isStreaming ? (
-            <div className="flex items-center gap-1.5 bg-secondary/50 rounded-full w-fit py-1 px-2.5 mt-2">
-              <span className="text-xs text-muted-foreground">Thinking</span>
-              <span className="flex gap-0.5">
-                <span className="w-1 h-1 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1 h-1 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-1 h-1 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: '300ms' }} />
-              </span>
+            <div
+              className={cn(
+                "mt-2 w-fit rounded-full bg-secondary/50 py-1 px-2.5 text-xs text-muted-foreground",
+                !reduceMotion && "animate-pulse",
+              )}
+            >
+              {reduceMotion ? "Thinking..." : "Thinking..."}
             </div>
           ) : (
             <>
               {hasFlow && (
                 <div className="mb-2">
-                  <ActionSteps steps={steps} isStreaming={isStreaming} />
+                  <ActionSteps
+                    steps={steps}
+                    isStreaming={isStreaming}
+                    reduceMotion={reduceMotion}
+                  />
                 </div>
               )}
               {contentWithoutSteps.trim() ? (
@@ -695,13 +792,46 @@ export default function ChatMessage({
                     onApplyDesign,
                     isApplied,
                     isStreaming && !!contentWithoutSteps.trim(),
+                    reduceMotion,
                   )}
+                </div>
+              ) : null}
+              {status === 'stopped' ? (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="rounded-sm border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-400">
+                    Stopped
+                  </span>
+                  {onContinue ? (
+                    <button
+                      type="button"
+                      onClick={onContinue}
+                      className="rounded-sm border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                    >
+                      Continue
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+              {status === 'error' ? (
+                <div className="mt-2 rounded-sm border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+                  <div>{error || 'Response failed.'}</div>
+                  {onRetry ? (
+                    <button
+                      type="button"
+                      onClick={onRetry}
+                      className="mt-1 rounded-sm border border-destructive/40 px-2 py-0.5 text-[11px] font-medium hover:bg-destructive/10"
+                    >
+                      Retry
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </>
           )}
         </div>
       )}
-    </div>
+    </article>
   )
-}
+})
+
+export default ChatMessage

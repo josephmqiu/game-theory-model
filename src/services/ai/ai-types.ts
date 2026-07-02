@@ -12,6 +12,8 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   isStreaming?: boolean;
+  status?: "stopped" | "error";
+  error?: string;
   attachments?: ChatAttachment[];
   toolName?: string;
   toolStatus?: "running" | "done" | "error";

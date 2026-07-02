@@ -203,6 +203,7 @@ export function useChatHandlers() {
   const isLoadingModels = useAIStore((s) => s.isLoadingModels);
   const addMessage = useAIStore((s) => s.addMessage);
   const updateLastMessage = useAIStore((s) => s.updateLastMessage);
+  const updateMessageById = useAIStore((s) => s.updateMessageById);
   const setStreaming = useAIStore((s) => s.setStreaming);
 
   const handleSend = useCallback(
@@ -253,6 +254,7 @@ export function useChatHandlers() {
         ?.provider as AIProviderType | undefined;
 
       let accumulated = "";
+      let streamError: string | null = null;
       const abortController = new AbortController();
       useAIStore.getState().setAbortController(abortController);
 
@@ -366,8 +368,13 @@ export function useChatHandlers() {
               break;
             }
             case "error": {
+              streamError = chunk.content;
               accumulated += `\n\n**Error:** ${chunk.content}`;
-              updateLastMessage(accumulated);
+              updateMessageById(assistantMsg.id, {
+                content: accumulated,
+                status: "error",
+                error: chunk.content,
+              });
               break;
             }
             case "done":
@@ -380,8 +387,13 @@ export function useChatHandlers() {
           const errMsg =
             error instanceof Error ? error.message : "Unknown error";
           console.error("[chat] stream-error:", errMsg);
+          streamError = errMsg;
           accumulated = `**Error:** ${errMsg}`;
-          updateLastMessage(accumulated);
+          updateMessageById(assistantMsg.id, {
+            content: accumulated,
+            status: "error",
+            error: errMsg,
+          });
         }
       } finally {
         useAIStore.getState().setAbortController(null);
@@ -420,6 +432,16 @@ export function useChatHandlers() {
         if (lastMessage) {
           lastMessage.content = accumulated;
           lastMessage.isStreaming = false;
+          if (streamError) {
+            lastMessage.status = "error";
+            lastMessage.error = streamError;
+          } else if (abortController.signal.aborted) {
+            lastMessage.status = "stopped";
+            lastMessage.error = undefined;
+          } else {
+            lastMessage.status = undefined;
+            lastMessage.error = undefined;
+          }
         }
         return { messages: nextMessages };
       });
@@ -433,6 +455,7 @@ export function useChatHandlers() {
       model,
       addMessage,
       updateLastMessage,
+      updateMessageById,
       setStreaming,
     ],
   );

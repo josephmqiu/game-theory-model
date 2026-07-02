@@ -86,7 +86,7 @@ export default function EditorLayout() {
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(200);
-  const [chatWidth, setChatWidth] = useState(320);
+  const [chatWidth, setChatWidth] = useState(420);
   const canvasSurfaceRef = useRef<HTMLElement>(null);
 
   const clearEditorChrome = useCallback(() => {
@@ -380,7 +380,7 @@ export default function EditorLayout() {
             <>
               <ResizeHandle
                 onDrag={(delta) =>
-                  setChatWidth((w) => Math.min(500, Math.max(240, w - delta)))
+                  setChatWidth((w) => Math.min(640, Math.max(380, w - delta)))
                 }
               />
               <div
