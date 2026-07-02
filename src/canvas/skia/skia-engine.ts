@@ -74,6 +74,7 @@ export class SkiaEngine {
   /** Per-entity attention badges: 3.1A updated-dot + 2.2A unviewed challenge. */
   entityBadges = new Map<string, { updated?: boolean; challenge?: boolean }>();
   private entityArrivalTimestamps = new Map<string, number>();
+  private knownEntityIds = new Set<string>();
   private prefersReducedMotion = false;
 
   // Agent animation: track start time so glow only pulses ~2 times
@@ -181,26 +182,29 @@ export class SkiaEngine {
     this.markDirty();
   }
 
-  setEntities(entities: AnalysisEntity[]) {
+  setEntities(
+    entities: AnalysisEntity[],
+    knownEntityIds: Iterable<string> = entities.map((entity) => entity.id),
+  ) {
     const nextEntityMap = new Map<string, AnalysisEntity>();
-    const nextIds = new Set<string>();
+    const nextKnownIds = new Set(knownEntityIds);
     const now = Date.now();
 
     for (const entity of entities) {
       nextEntityMap.set(entity.id, entity);
-      nextIds.add(entity.id);
-      if (!this.prefersReducedMotion && !this.entityMap.has(entity.id)) {
+      if (!this.prefersReducedMotion && !this.knownEntityIds.has(entity.id)) {
         this.entityArrivalTimestamps.set(entity.id, now);
       }
     }
 
     for (const id of [...this.entityArrivalTimestamps.keys()]) {
-      if (!nextIds.has(id)) {
+      if (!nextKnownIds.has(id)) {
         this.entityArrivalTimestamps.delete(id);
       }
     }
 
     this.entityMap = nextEntityMap;
+    this.knownEntityIds = nextKnownIds;
   }
 
   private startRenderLoop() {

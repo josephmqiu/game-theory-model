@@ -772,7 +772,7 @@ ref,
                 !reduceMotion && "animate-pulse",
               )}
             >
-              {reduceMotion ? "Thinking..." : "Thinking..."}
+              Thinking...
             </div>
           ) : (
             <>

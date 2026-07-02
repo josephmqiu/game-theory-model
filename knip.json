@@ -22,7 +22,7 @@
     "src/stores/**": ["exports", "types"]
   },
   "ignoreDependencies": ["h3", "@vitest/coverage-v8"],
-  "ignoreBinaries": ["gsettings", "brew", "codex"],
+  "ignoreBinaries": ["gsettings", "codex"],
   // Keep files/dependencies as hard errors. Exports/types are warn-only because
   // this app intentionally keeps shared/type barrels and pen/style public
   // surfaces that Knip cannot distinguish from dead internal implementation.

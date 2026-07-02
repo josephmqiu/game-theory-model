@@ -65,6 +65,16 @@ async function* streamEvents(events: ChatEvent[] = []) {
   }
 }
 
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 async function readSseEvents(response: Response): Promise<unknown[]> {
   const text = await response.text();
   return text
@@ -389,6 +399,195 @@ describe("/api/ai/chat", () => {
       "thread-1",
     );
     expect(codexStreamChatMock.mock.calls[2][3].existingThreadId).toBeUndefined();
+  });
+
+  it("returns 409 for a concurrent turn on the same runtime session", async () => {
+    const hold = deferred();
+    codexStreamChatMock.mockImplementation(async function* () {
+      await hold.promise;
+      yield { type: "turn_complete" };
+    });
+
+    const route = (await import("../chat")).default;
+
+    readBodyMock.mockResolvedValueOnce({
+      system: "system",
+      sessionKey: "analysis-1",
+      messages: [{ role: "user", content: "first" }],
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+    const firstResponse = asSseResponse(await route({} as never));
+
+    readBodyMock.mockResolvedValueOnce({
+      system: "system",
+      sessionKey: "analysis-1",
+      messages: [{ role: "user", content: "second" }],
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+    const secondResult = await route({} as never);
+
+    expect(secondResult).toEqual({
+      error: "A turn is already streaming for this session",
+    });
+    expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 409);
+    expect(codexStreamChatMock).toHaveBeenCalledTimes(1);
+
+    hold.resolve();
+    await firstResponse.text();
+  });
+
+  it("releases the session turn flag after stream completion", async () => {
+    const route = (await import("../chat")).default;
+    codexStreamChatMock.mockImplementation(
+      async function* (
+        _prompt: string,
+        _systemPrompt: string,
+        _model: string,
+        options?: { onThreadId?: (id: string) => void },
+      ) {
+        options?.onThreadId?.("thread-1");
+        yield { type: "turn_complete" };
+      },
+    );
+
+    readBodyMock.mockResolvedValueOnce({
+      system: "system",
+      sessionKey: "analysis-1",
+      messages: [{ role: "user", content: "first" }],
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+    await asSseResponse(await route({} as never)).text();
+
+    readBodyMock.mockResolvedValueOnce({
+      system: "system",
+      sessionKey: "analysis-1",
+      messages: [{ role: "user", content: "second" }],
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+    const secondResponse = asSseResponse(await route({} as never));
+    await secondResponse.text();
+
+    expect(codexStreamChatMock).toHaveBeenCalledTimes(2);
+    expect(setResponseStatusMock).not.toHaveBeenCalledWith(expect.anything(), 409);
+  });
+
+  it("releases the session turn flag after a stream error", async () => {
+    const route = (await import("../chat")).default;
+    codexStreamChatMock
+      .mockImplementationOnce(async function* () {
+        throw new Error("stream failed");
+      })
+      .mockImplementationOnce(async function* () {
+        yield { type: "turn_complete" };
+      });
+
+    readBodyMock.mockResolvedValueOnce({
+      system: "system",
+      sessionKey: "analysis-1",
+      messages: [{ role: "user", content: "first" }],
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+    const firstEvents = await readSseEvents(
+      asSseResponse(await route({} as never)),
+    );
+    expect(firstEvents).toContainEqual(
+      expect.objectContaining({ type: "error", message: "stream failed" }),
+    );
+
+    readBodyMock.mockResolvedValueOnce({
+      system: "system",
+      sessionKey: "analysis-1",
+      messages: [{ role: "user", content: "second" }],
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+    await asSseResponse(await route({} as never)).text();
+
+    expect(codexStreamChatMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("expires and folds history for the first turn after a provider switch only", async () => {
+    const route = (await import("../chat")).default;
+    claudeStreamChatMock.mockImplementation(
+      async function* (
+        _prompt: string,
+        _systemPrompt: string,
+        _model: string,
+        options?: { onSessionId?: (id: string) => void },
+      ) {
+        options?.onSessionId?.("claude-session-1");
+        yield { type: "turn_complete" };
+      },
+    );
+    codexStreamChatMock.mockImplementation(
+      async function* (
+        _prompt: string,
+        _systemPrompt: string,
+        _model: string,
+        options?: { onThreadId?: (id: string) => void },
+      ) {
+        options?.onThreadId?.("thread-1");
+        yield { type: "text_delta", content: "codex answer" };
+        yield { type: "turn_complete" };
+      },
+    );
+
+    readBodyMock.mockResolvedValueOnce({
+      system: "system",
+      sessionKey: "analysis-1",
+      messages: [{ role: "user", content: "first question" }],
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+    });
+    await asSseResponse(await route({} as never)).text();
+
+    readBodyMock.mockResolvedValueOnce({
+      system: "system",
+      sessionKey: "analysis-1",
+      messages: [
+        { role: "user", content: "first question" },
+        { role: "assistant", content: "first answer" },
+        { role: "user", content: "switch providers" },
+      ],
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+    const switchEvents = await readSseEvents(
+      asSseResponse(await route({} as never)),
+    );
+
+    expect(switchEvents[0]).toEqual({ type: "session_expired" });
+    expect(codexStreamChatMock.mock.calls[0][0]).toBe("switch providers");
+    expect(codexStreamChatMock.mock.calls[0][1]).toContain(
+      "## Conversation History",
+    );
+    expect(codexStreamChatMock.mock.calls[0][1]).toContain(
+      "user: first question",
+    );
+    expect(codexStreamChatMock.mock.calls[0][1]).toContain(
+      "assistant: first answer",
+    );
+
+    readBodyMock.mockResolvedValueOnce({
+      system: "system",
+      sessionKey: "analysis-1",
+      messages: [
+        { role: "user", content: "switch providers" },
+        { role: "assistant", content: "codex answer" },
+        { role: "user", content: "follow up" },
+      ],
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+    await asSseResponse(await route({} as never)).text();
+
+    expect(codexStreamChatMock.mock.calls[1][0]).toBe("follow up");
+    expect(codexStreamChatMock.mock.calls[1][1]).toBe("system");
   });
 
   it("keeps legacy history folding when no sessionKey is present", async () => {

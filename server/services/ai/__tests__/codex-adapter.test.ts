@@ -698,6 +698,52 @@ describe("codex-adapter", () => {
         content: "wrong thread",
       });
     });
+
+    it("ignores notifications with the same threadId but a different turnId", async () => {
+      const { streamChat, _resetConnection } = await import("../codex-adapter");
+      _resetConnection();
+
+      setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitThreadStartResponse(id);
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id, "turn-new");
+          queueMicrotask(() => {
+            emitNotification("item/agentMessage/delta", {
+              delta: "old turn",
+              threadId: "thread-1",
+              turnId: "turn-old",
+            });
+            emitNotification("item/agentMessage/delta", {
+              delta: "new turn",
+              threadId: "thread-1",
+              turnId: "turn-new",
+            });
+            emitTurnCompleted("thread-1", "turn-new");
+          });
+        }
+      });
+
+      const events: ChatEvent[] = [];
+      for await (const event of streamChat("hello", "system", "gpt-4o")) {
+        events.push(event);
+      }
+
+      const textEvents = events.filter((event) => event.type === "text_delta");
+      expect(textEvents).toContainEqual({
+        type: "text_delta",
+        content: "new turn",
+      });
+      expect(textEvents).not.toContainEqual({
+        type: "text_delta",
+        content: "old turn",
+      });
+    });
   });
 
   describe("runAnalysisPhase", () => {

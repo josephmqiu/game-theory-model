@@ -136,6 +136,13 @@ function getTurnIdFromParams(params: Record<string, unknown>): string | null {
   return typeof turn?.id === "string" ? turn.id : null;
 }
 
+function getNotificationTurnId(params: Record<string, unknown>): string | null {
+  if (typeof params.turnId === "string" && params.turnId.length > 0) {
+    return params.turnId;
+  }
+  return getTurnIdFromParams(params);
+}
+
 function getTurnErrorMessage(params: Record<string, unknown>): string | null {
   const turn = asRecord(params.turn);
   const error = asRecord(turn?.error);
@@ -694,8 +701,11 @@ export async function* streamChat(
     const notifThreadId = params.threadId as string | undefined;
     if (notifThreadId && notifThreadId !== threadId) return;
 
+    const notifTurnId = getNotificationTurnId(params);
+    if (turnId && notifTurnId && notifTurnId !== turnId) return;
+
     if (method === "turn/started") {
-      turnId = getTurnIdFromParams(params) ?? turnId;
+      turnId = notifTurnId ?? turnId;
       return;
     }
 
@@ -741,7 +751,7 @@ export async function* streamChat(
 
     // Turn completed
     if (method === "turn/completed") {
-      turnId = getTurnIdFromParams(params) ?? turnId;
+      turnId = notifTurnId ?? turnId;
       const errorMessage = getTurnErrorMessage(params);
       if (errorMessage) {
         turnError = errorMessage;

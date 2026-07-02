@@ -42,13 +42,14 @@ import ChatMessage from "./chat-message";
 import { useChatHandlers } from "./ai-chat-handlers";
 import { FixedChecklist } from "./ai-chat-checklist";
 import { buildAnalysisCompleteMessage } from "./ai-chat-lifecycle";
-import { resolveLifecycle } from "./scroll-state";
+import type { ScrollEvent } from "./scroll-state";
 import { useScrollEngine } from "./use-scroll-engine";
 
 export type AIChatMode = "analysis";
 export type AIChatPresentation = "floating" | "docked";
 
 const MESSAGE_CHUNK_SIZE = 200;
+let fallbackScrollRunCounter = 0;
 
 const PROVIDER_ICON: Record<AIProviderType, typeof ClaudeLogo> = {
   anthropic: ClaudeLogo,
@@ -72,6 +73,14 @@ function resolveNextModel(
   if (models.some((m) => m.value === currentModel)) return currentModel;
   if (models.some((m) => m.value === preferredModel)) return preferredModel;
   return models[0].value;
+}
+
+function createScrollRunId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  fallbackScrollRunCounter += 1;
+  return `chat-scroll-run-${fallbackScrollRunCounter}`;
 }
 
 type AnalysisTerminalStatus = "completed" | "failed" | "cancelled";
@@ -241,14 +250,16 @@ export default function AIChatPanel({
 
   const [analysisRunning, setAnalysisRunning] = useState(false);
   const [visibleCount, setVisibleCount] = useState(MESSAGE_CHUNK_SIZE);
-  const [isOffline, setIsOffline] = useState(
-    () => typeof navigator !== "undefined" && navigator.onLine === false,
-  );
   const [liveAnnouncement, setLiveAnnouncement] = useState("");
   const pendingSendAnchorRef = useRef<{ previousLength: number } | null>(null);
   const mountedWithStreamRef = useRef(isStreaming);
   const didApplyReopenAnchorRef = useRef(false);
   const previousStreamingRef = useRef(isStreaming);
+  const stopRequestedRef = useRef(false);
+  const previousLatestMessageIdRef = useRef<string | undefined>(undefined);
+  const activeScrollRunRef = useRef<{ runId: string; seq: number } | null>(
+    null,
+  );
 
   const noAvailableModels = !isLoadingModels && availableModels.length === 0;
   const canUseModel = !isLoadingModels && availableModels.length > 0;
@@ -276,19 +287,16 @@ export default function AIChatPanel({
   );
   const latestAssistantMessageId = latestAssistantMessage?.id;
   const latestMessage = messages[messages.length - 1];
-  const lifecycle = resolveLifecycle({
-    errored: latestAssistantMessage?.status === "error",
-    aborted: latestAssistantMessage?.status === "stopped",
-    reconnecting: isOffline,
-    "session-expired": latestMessage
-      ? isSessionExpiredMessage(latestMessage.id)
-      : false,
-    streaming: isStreaming,
-    idle: true,
-  });
+  const sequenceStreamEvent = useCallback(() => {
+    const run = activeScrollRunRef.current;
+    if (!run) return undefined;
+    run.seq += 1;
+    return { runId: run.runId, seq: run.seq };
+  }, []);
   const scrollEngine = useScrollEngine({
     messages,
     latestAssistantMessageId,
+    sequenceStreamEvent,
   });
   const {
     state: scrollState,
@@ -300,10 +308,38 @@ export default function AIChatPanel({
     preserveAnchorForNextLayout,
     requestMessageAnchor,
     scrollMessageToViewportRatio,
+    focusMessage,
     jumpToLatest,
     isAtLiveEdgeNow,
     prefersReducedMotion,
   } = scrollEngine;
+  const lifecycle = scrollState.lifecycle;
+
+  const beginScrollRun = useCallback(() => {
+    const runId = createScrollRunId();
+    activeScrollRunRef.current = { runId, seq: 0 };
+    dispatchScroll({ type: "RUN_STARTED", runId });
+    return runId;
+  }, [dispatchScroll]);
+
+  const dispatchRunScroll = useCallback(
+    (event: ScrollEvent) => {
+      dispatchScroll({ ...event, ...sequenceStreamEvent() } as ScrollEvent);
+    },
+    [dispatchScroll, sequenceStreamEvent],
+  );
+
+  const endScrollRun = useCallback(() => {
+    activeScrollRunRef.current = null;
+  }, []);
+
+  const refocusMessageAfterLayout = useCallback(
+    (messageId: string | undefined) => {
+      if (!messageId) return;
+      requestAnimationFrame(() => focusMessage(messageId));
+    },
+    [focusMessage],
+  );
 
   // Poll analysis orchestrator running state
   useEffect(() => {
@@ -317,14 +353,23 @@ export default function AIChatPanel({
   // Enhanced stop handler: aborts analysis orchestrator if running,
   // otherwise falls through to regular chat stream abort
   const handleStop = useCallback(() => {
+    const messageIdToRefocus = latestAssistantMessageId;
     preserveAnchorForNextLayout();
     if (analysisClient.isRunning()) {
       analysisClient.abort();
     }
+    stopRequestedRef.current = true;
     stopStreaming();
-    dispatchScroll({ type: "ABORTED", cause: "user-stop" });
+    dispatchRunScroll({ type: "ABORTED", cause: "user-stop" });
     setLiveAnnouncement("Stopped");
-  }, [dispatchScroll, preserveAnchorForNextLayout, stopStreaming]);
+    refocusMessageAfterLayout(messageIdToRefocus);
+  }, [
+    dispatchRunScroll,
+    latestAssistantMessageId,
+    preserveAnchorForNextLayout,
+    refocusMessageAfterLayout,
+    stopStreaming,
+  ]);
 
   // Completion notices now follow canonical run status instead of terminal progress events.
   useEffect(() => {
@@ -460,44 +505,59 @@ export default function AIChatPanel({
 
   useEffect(() => {
     const handleOffline = () => {
-      setIsOffline(true);
-      dispatchScroll({ type: "RECONNECTING" });
+      dispatchRunScroll({ type: "RECONNECTING" });
     };
     const handleOnline = () => {
-      setIsOffline(false);
-      dispatchScroll({ type: "RECONNECTED" });
+      dispatchRunScroll({ type: "RECONNECTED" });
     };
 
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      dispatchRunScroll({ type: "RECONNECTING" });
+    }
     window.addEventListener("offline", handleOffline);
     window.addEventListener("online", handleOnline);
     return () => {
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener("online", handleOnline);
     };
-  }, [dispatchScroll]);
+  }, [dispatchRunScroll]);
 
   useEffect(() => {
     if (isStreaming && !previousStreamingRef.current) {
-      dispatchScroll({ type: "STREAM_STARTED" });
+      if (!activeScrollRunRef.current) {
+        beginScrollRun();
+      }
+      dispatchRunScroll({ type: "STREAM_STARTED" });
       setLiveAnnouncement("Response started");
     }
 
     if (!isStreaming && previousStreamingRef.current) {
       if (latestAssistantMessage?.status === "error") {
-        dispatchScroll({ type: "ERRORED" });
+        dispatchRunScroll({ type: "ERRORED" });
         setLiveAnnouncement("Error");
-      } else if (latestAssistantMessage?.status === "stopped") {
-        dispatchScroll({ type: "ABORTED", cause: "user-stop" });
+      } else if (
+        stopRequestedRef.current ||
+        latestAssistantMessage?.status === "stopped"
+      ) {
+        dispatchRunScroll({ type: "ABORTED", cause: "user-stop" });
         setLiveAnnouncement("Stopped");
       } else {
-        dispatchScroll({ type: "STREAM_COMPLETED" });
+        dispatchRunScroll({ type: "STREAM_COMPLETED" });
         setLiveAnnouncement("Response complete");
       }
+      stopRequestedRef.current = false;
       mountedWithStreamRef.current = false;
+      endScrollRun();
     }
 
     previousStreamingRef.current = isStreaming;
-  }, [dispatchScroll, isStreaming, latestAssistantMessage?.status]);
+  }, [
+    beginScrollRun,
+    dispatchRunScroll,
+    endScrollRun,
+    isStreaming,
+    latestAssistantMessage?.status,
+  ]);
 
   useEffect(() => {
     if (messages.length === 0) {
@@ -505,6 +565,16 @@ export default function AIChatPanel({
       dispatchScroll({ type: "REACHED_LIVE_EDGE" });
     }
   }, [dispatchScroll, messages.length]);
+
+  useEffect(() => {
+    if (!latestMessage) return;
+    if (previousLatestMessageIdRef.current === latestMessage.id) return;
+    previousLatestMessageIdRef.current = latestMessage.id;
+
+    if (isSessionExpiredMessage(latestMessage.id)) {
+      dispatchRunScroll({ type: "SESSION_EXPIRED" });
+    }
+  }, [dispatchRunScroll, latestMessage]);
 
   useEffect(() => {
     if (!isAnalysisMode) return;
@@ -677,12 +747,12 @@ export default function AIChatPanel({
       preserveAnchorForNextLayout();
     }
 
-    dispatchScroll({ type: "STREAM_STARTED" });
+    beginScrollRun();
     setLiveAnnouncement("Response started");
     void handleSend();
   }, [
+    beginScrollRun,
     canSendMessage,
-    dispatchScroll,
     handleSend,
     messages.length,
     preserveAnchorForNextLayout,
@@ -707,8 +777,10 @@ export default function AIChatPanel({
     didApplyReopenAnchorRef.current = true;
 
     if (isStreaming) {
-      dispatchScroll({ type: "STREAM_STARTED" });
-      return;
+      if (!activeScrollRunRef.current) {
+        beginScrollRun();
+      }
+      dispatchRunScroll({ type: "STREAM_STARTED" });
     }
 
     const lastUserMessage = [...messages]
@@ -725,6 +797,8 @@ export default function AIChatPanel({
       );
     });
   }, [
+    beginScrollRun,
+    dispatchRunScroll,
     dispatchScroll,
     isAtLiveEdgeNow,
     isStreaming,
@@ -741,6 +815,7 @@ export default function AIChatPanel({
 
   const resendLastUserBefore = useCallback(
     (assistantMessageId: string) => {
+      if (!canUseModel || isStreaming) return;
       const assistantIndex = messages.findIndex(
         (message) => message.id === assistantMessageId,
       );
@@ -752,9 +827,19 @@ export default function AIChatPanel({
       if (!lastUserMessage) return;
 
       preserveAnchorForNextLayout();
+      beginScrollRun();
       void handleSend(lastUserMessage.content);
+      refocusMessageAfterLayout(assistantMessageId);
     },
-    [handleSend, messages, preserveAnchorForNextLayout],
+    [
+      beginScrollRun,
+      canUseModel,
+      handleSend,
+      isStreaming,
+      messages,
+      preserveAnchorForNextLayout,
+      refocusMessageAfterLayout,
+    ],
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -773,6 +858,24 @@ export default function AIChatPanel({
     ? t("ai.generating")
     : t("analysis.chatInputPlaceholder");
   const displayTitle = messages.length === 0 ? t("analysis.title") : chatTitle;
+  const showLifecycleStrip =
+    lifecycle === "streaming" ||
+    lifecycle === "reconnecting" ||
+    lifecycle === "aborted" ||
+    lifecycle === "errored" ||
+    analysisRunning;
+  const lifecycleStripText =
+    lifecycle === "reconnecting"
+      ? "Reconnecting..."
+      : lifecycle === "aborted"
+        ? scrollState.abortCause === "user-stop"
+          ? "Response stopped"
+          : "Response interrupted"
+        : lifecycle === "errored"
+          ? "Response failed"
+          : mountedWithStreamRef.current
+            ? "Still responding..."
+            : "Assistant responding...";
 
   return (
     <div
@@ -997,15 +1100,9 @@ export default function AIChatPanel({
           isDocked ? "rounded-xl" : "rounded-b-xl",
         )}
       >
-        {(lifecycle === "reconnecting" || isStreaming || analysisRunning) && (
+        {showLifecycleStrip && (
           <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3.5 py-1.5 text-[11px] text-muted-foreground">
-            <span>
-              {lifecycle === "reconnecting"
-                ? "Reconnecting..."
-                : mountedWithStreamRef.current
-                  ? "Still responding..."
-                  : "Assistant responding..."}
-            </span>
+            <span>{lifecycleStripText}</span>
             {(isStreaming || analysisRunning) && (
               <Button
                 variant="ghost"

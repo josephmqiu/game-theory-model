@@ -91,15 +91,27 @@ export default function AnalysisCanvas({
     if (!canvas) return;
 
     let disposed = false;
+    let reducedMotionMedia: MediaQueryList | null = null;
+    let reducedMotionListener:
+      | ((event: MediaQueryListEvent) => void)
+      | null = null;
 
     loadCanvasKit().then((ck) => {
       if (disposed) return;
       const engine = new SkiaEngine(ck);
       engine.init(canvas);
-      engine.setReducedMotion(
-        typeof window.matchMedia === "function" &&
-          window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-      );
+      if (typeof window.matchMedia === "function") {
+        reducedMotionMedia = window.matchMedia(
+          "(prefers-reduced-motion: reduce)",
+        );
+        engine.setReducedMotion(reducedMotionMedia.matches);
+        reducedMotionListener = (event: MediaQueryListEvent) => {
+          engine.setReducedMotion(event.matches);
+        };
+        reducedMotionMedia.addEventListener?.("change", reducedMotionListener);
+      } else {
+        engine.setReducedMotion(false);
+      }
       engineRef.current = engine;
       setSkiaEngineRef(engine);
       setEngineReady(true);
@@ -109,6 +121,12 @@ export default function AnalysisCanvas({
 
     return () => {
       disposed = true;
+      if (reducedMotionMedia && reducedMotionListener) {
+        reducedMotionMedia.removeEventListener?.(
+          "change",
+          reducedMotionListener,
+        );
+      }
       setSkiaEngineRef(null);
       engineRef.current?.dispose();
       engineRef.current = null;
@@ -154,6 +172,7 @@ export default function AnalysisCanvas({
 
     // Filter relationships to visible entities
     const visibleIds = new Set(visibleEntities.map((e) => e.id));
+    const analysisEntityIds = new Set(entities.map((e) => e.id));
     const visibleRelationships = relationships.filter(
       (r) => visibleIds.has(r.fromEntityId) && visibleIds.has(r.toEntityId),
     );
@@ -199,7 +218,7 @@ export default function AnalysisCanvas({
     // Store render data on the engine — the render loop handles drawing
     engine.renderNodes = renderNodes;
     engine.spatialIndex.rebuild(renderNodes);
-    engine.setEntities(visibleEntities);
+    engine.setEntities(visibleEntities, analysisEntityIds);
     engine.entityRelationships = visibleRelationships;
     engine.routedEdges = bundled;
     engine.searchHighlightIds = new Set(searchHighlight);

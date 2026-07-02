@@ -9,6 +9,10 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AIChatPanel from "@/components/panels/ai-chat-panel";
+import {
+  initialScrollState,
+  scrollReducer,
+} from "@/components/panels/scroll-state";
 import { useAIStore } from "@/stores/ai-store";
 import type { ChatMessage } from "@/services/ai/ai-types";
 
@@ -37,7 +41,10 @@ function message(
   };
 }
 
-function renderPanel(messages: ChatMessage[] = []) {
+function renderPanel(
+  messages: ChatMessage[] = [],
+  overrides: Partial<ReturnType<typeof useAIStore.getState>> = {},
+) {
   useAIStore.setState({
     ...useAIStore.getInitialState(),
     messages,
@@ -49,6 +56,7 @@ function renderPanel(messages: ChatMessage[] = []) {
       },
     ],
     isLoadingModels: false,
+    ...overrides,
   });
 
   return render(<AIChatPanel mode="analysis" presentation="docked" />);
@@ -175,5 +183,100 @@ describe("AIChatPanel scroll behavior", () => {
     );
 
     expect(screen.getByText("Load earlier messages")).toBeTruthy();
+  });
+
+  it("refocuses the stopped assistant message after Stop unmounts its control", async () => {
+    renderPanel(
+      [
+        message("u1", "user", "Question"),
+        {
+          ...message("a1", "assistant", "Partial answer"),
+          isStreaming: true,
+        },
+      ],
+      {
+        isStreaming: true,
+        abortController: new AbortController(),
+      },
+    );
+
+    const stopButton = await screen.findByText("Stop");
+    stopButton.focus();
+    fireEvent.click(stopButton);
+
+    expect(await screen.findByText("Response stopped")).toBeTruthy();
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-message-id="a1"]'),
+    );
+  });
+
+  it("anchors the last user message near 20 percent when reopened during a stream", async () => {
+    const scrollTo = vi.fn();
+    Element.prototype.scrollTo = scrollTo;
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
+      function getRect(this: Element) {
+        const element = this as HTMLElement;
+        if (element.dataset.testid === "chat-transcript") {
+          return { top: 0, bottom: 500 } as DOMRect;
+        }
+        if (element.dataset.messageId === "u2") {
+          return { top: 300, bottom: 340 } as DOMRect;
+        }
+        return { top: 0, bottom: 40 } as DOMRect;
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(
+      function getClientHeight(this: HTMLElement) {
+        return (this as HTMLElement).dataset.testid === "chat-transcript"
+          ? 500
+          : 0;
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(
+      function getScrollHeight(this: HTMLElement) {
+        return (this as HTMLElement).dataset.testid === "chat-transcript"
+          ? 1_000
+          : 0;
+      },
+    );
+
+    renderPanel(
+      [
+        message("u1", "user", "Earlier"),
+        message("a1", "assistant", "Earlier answer"),
+        message("u2", "user", "Latest question"),
+        {
+          ...message("a2", "assistant", "Still streaming"),
+          isStreaming: true,
+        },
+      ],
+      { isStreaming: true },
+    );
+
+    expect(await screen.findByText("Still responding...")).toBeTruthy();
+    expect(scrollTo).toHaveBeenCalledWith({ top: 200, behavior: "auto" });
+  });
+
+  it("drops a late sequenced event from a previous panel turn after a new run starts", () => {
+    const firstRun = scrollReducer(initialScrollState, {
+      type: "RUN_STARTED",
+      runId: "run-1",
+    });
+    const reading = scrollReducer(firstRun, { type: "USER_SCROLL_UP" });
+    const secondRun = scrollReducer(reading, {
+      type: "RUN_STARTED",
+      runId: "run-2",
+    });
+
+    const stale = scrollReducer(secondRun, {
+      type: "MESSAGE_APPENDED",
+      messageId: "late-from-run-1",
+      runId: "run-1",
+      seq: 1,
+    });
+
+    expect(stale).toBe(secondRun);
+    expect(stale.unreadCount).toBe(0);
+    expect(stale.firstUnreadMessageId).toBeUndefined();
   });
 });

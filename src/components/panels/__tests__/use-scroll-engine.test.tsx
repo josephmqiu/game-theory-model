@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { StrictMode, useRef } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   useScrollEngine,
@@ -85,6 +85,9 @@ function Harness({ messages }: { messages: ScrollEngineMessage[] }) {
   return (
     <>
       <div data-testid="mode">{engine.state.mode}</div>
+      <button type="button" onClick={engine.jumpToLatest}>
+        Jump
+      </button>
       <div ref={engine.scrollContainerRef} data-testid="container">
         <div ref={engine.messageListRef}>
           {messages.map((message) => (
@@ -182,7 +185,7 @@ describe("useScrollEngine", () => {
     expect(screen.getByTestId("mode").textContent).toBe("FOLLOWING");
   });
 
-  it("restores the captured topmost fully-visible message anchor", () => {
+  it("restores the captured topmost intersecting message anchor with a signed offset", () => {
     render(<AnchorHarness />);
 
     const container = screen.getByTestId("container");
@@ -193,15 +196,59 @@ describe("useScrollEngine", () => {
 
     container.getBoundingClientRect = () =>
       ({ top: 0, bottom: 300 } as DOMRect);
-    m1.getBoundingClientRect = () => ({ top: -10, bottom: 10 } as DOMRect);
+    let m1Top = -10;
+    m1.getBoundingClientRect = () =>
+      ({ top: m1Top, bottom: m1Top + 20 } as DOMRect);
     let m2Top = 40;
     m2.getBoundingClientRect = () =>
       ({ top: m2Top, bottom: m2Top + 60 } as DOMRect);
 
     fireEvent.click(screen.getByText("Capture"));
+    m1Top = 5;
     m2Top = 55;
     fireEvent.click(screen.getByText("Restore"));
 
     expect(container.scrollTop).toBe(115);
+  });
+
+  it("captures a message taller than the viewport when it intersects the top", () => {
+    render(<AnchorHarness />);
+
+    const container = screen.getByTestId("container");
+    const m1 = screen.getByTestId("m1");
+    const m2 = screen.getByTestId("m2");
+    defineScrollMetrics(container);
+    container.scrollTop = 100;
+
+    container.getBoundingClientRect = () =>
+      ({ top: 0, bottom: 300 } as DOMRect);
+    let m1Top = -120;
+    m1.getBoundingClientRect = () =>
+      ({ top: m1Top, bottom: m1Top + 520 } as DOMRect);
+    m2.getBoundingClientRect = () => ({ top: 430, bottom: 490 } as DOMRect);
+
+    fireEvent.click(screen.getByText("Capture"));
+    m1Top = -80;
+    fireEvent.click(screen.getByText("Restore"));
+
+    expect(container.scrollTop).toBe(140);
+  });
+
+  it("does not hard-assign scrollTop when returning with smooth scroll", async () => {
+    const scrollTo = vi.fn();
+    Element.prototype.scrollTo = scrollTo;
+    render(<Harness messages={[{ id: "m1", role: "assistant" }]} />);
+
+    const container = screen.getByTestId("container");
+    defineScrollMetrics(container);
+    container.scrollTop = 0;
+
+    fireEvent.wheel(container, { deltaY: -40 });
+    await act(async () => {
+      fireEvent.click(screen.getByText("Jump"));
+    });
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 600, behavior: "smooth" });
+    expect(container.scrollTop).toBe(0);
   });
 });

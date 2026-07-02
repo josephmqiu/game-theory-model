@@ -17,8 +17,11 @@ import {
   isCodexThreadExpiredError,
 } from "../../services/ai/codex-adapter";
 import {
+  beginTurn,
   endSession,
+  endTurn,
   getOrCreateSession,
+  markTurnActive,
   touch,
   type ChatSession,
 } from "../../services/ai/chat-sessions";
@@ -26,6 +29,7 @@ import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 import { startSSEKeepAlive } from "../../utils/sse-keepalive";
 
 const ALLOWED_PROVIDERS = ["anthropic", "openai"] as const;
+type StartedSessionTurn = Extract<ReturnType<typeof beginTurn>, { started: true }>;
 
 function isAllowedProvider(
   provider: string,
@@ -106,6 +110,12 @@ function badRequest(event: H3Event, error: string) {
   return { error };
 }
 
+function conflict(event: H3Event, error: string) {
+  setResponseStatus(event, 409);
+  setResponseHeaders(event, { "Content-Type": "application/json" });
+  return { error };
+}
+
 function shouldForwardChatEvent(type: string): boolean {
   return (
     type === "text_delta" ||
@@ -150,7 +160,7 @@ export default defineEventHandler(async (event) => {
     provider: parsed.provider,
   };
 
-  const provider = body.provider;
+  const provider = parsed.provider;
   const model = body.model;
   const systemLen = body.system.length;
   const messageLen = body.messages.reduce(
@@ -164,6 +174,14 @@ export default defineEventHandler(async (event) => {
     messageLen,
   });
 
+  const sessionTurn = body.sessionKey
+    ? beginTurn(body.sessionKey, provider)
+    : null;
+  if (sessionTurn && !sessionTurn.started) {
+    return conflict(event, "A turn is already streaming for this session");
+  }
+  const startedSessionTurn = sessionTurn?.started ? sessionTurn : null;
+
   setResponseHeaders(event, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
@@ -172,8 +190,14 @@ export default defineEventHandler(async (event) => {
 
   // Route to allowed providers only; no fallback routing.
   if (body.provider === "anthropic")
-    return streamViaClaude(event, body, body.model, runId);
-  return streamViaCodexAdapter(event, body, body.model, runId);
+    return streamViaClaude(event, body, body.model, runId, startedSessionTurn);
+  return streamViaCodexAdapter(
+    event,
+    body,
+    body.model,
+    runId,
+    startedSessionTurn,
+  );
 });
 
 /** Stream via Codex adapter — wraps codex-adapter.streamChat() into SSE */
@@ -182,6 +206,7 @@ function streamViaCodexAdapter(
   body: ChatBody,
   model?: string,
   runId?: string,
+  sessionResult?: StartedSessionTurn | null,
 ) {
   const abortController = new AbortController();
 
@@ -211,20 +236,23 @@ function streamViaCodexAdapter(
       }
 
       try {
-        const sessionResult = body.sessionKey
-          ? getOrCreateSession(body.sessionKey, "openai")
-          : null;
         let session: ChatSession | null = sessionResult?.session ?? null;
 
-        if (sessionResult?.expired) {
+        if (sessionResult?.expired || sessionResult?.providerChanged) {
           writeSSE(controller, { type: "session_expired" });
         }
-        if (!body.sessionKey || sessionResult?.expired) {
+        if (
+          !body.sessionKey ||
+          sessionResult?.expired ||
+          sessionResult?.providerChanged
+        ) {
           startPingTimer();
         }
 
         const { prompt, systemPrompt } = body.sessionKey
-          ? buildRuntimeSessionPromptParts(body)
+          ? sessionResult?.providerChanged
+            ? buildLegacyChatPromptParts(body)
+            : buildRuntimeSessionPromptParts(body)
           : buildLegacyChatPromptParts(body);
 
         const streamFreshCodexTurn = async () => {
@@ -271,6 +299,7 @@ function streamViaCodexAdapter(
           }
           endSession(body.sessionKey);
           session = getOrCreateSession(body.sessionKey, "openai").session;
+          markTurnActive(body.sessionKey);
           writeSSE(controller, { type: "session_expired" });
           startPingTimer();
           await streamFreshCodexTurn();
@@ -301,6 +330,9 @@ function streamViaCodexAdapter(
         );
       } finally {
         stopPingTimer();
+        if (body.sessionKey) {
+          endTurn(body.sessionKey);
+        }
         controller.close();
       }
     },
@@ -315,6 +347,7 @@ function streamViaClaude(
   body: ChatBody,
   model?: string,
   runId?: string,
+  sessionResult?: StartedSessionTurn | null,
 ) {
   const abortController = new AbortController();
 
@@ -346,20 +379,23 @@ function streamViaClaude(
       }
 
       try {
-        const sessionResult = body.sessionKey
-          ? getOrCreateSession(body.sessionKey, "anthropic")
-          : null;
         const session: ChatSession | null = sessionResult?.session ?? null;
 
-        if (sessionResult?.expired) {
+        if (sessionResult?.expired || sessionResult?.providerChanged) {
           writeSSE(controller, { type: "session_expired" });
         }
-        if (!body.sessionKey || sessionResult?.expired) {
+        if (
+          !body.sessionKey ||
+          sessionResult?.expired ||
+          sessionResult?.providerChanged
+        ) {
           startPingTimer();
         }
 
         const promptParts = body.sessionKey
-          ? buildRuntimeSessionPromptParts(body)
+          ? sessionResult?.providerChanged
+            ? buildLegacyChatPromptParts(body)
+            : buildRuntimeSessionPromptParts(body)
           : buildLegacyChatPromptParts(body);
         let prompt = promptParts.prompt;
 
@@ -441,6 +477,9 @@ function streamViaClaude(
         );
       } finally {
         stopPingTimer();
+        if (body.sessionKey) {
+          endTurn(body.sessionKey);
+        }
         if (attachTempDir) {
           rm(attachTempDir, { recursive: true, force: true }).catch(() => {});
         }

@@ -30,6 +30,11 @@ interface PendingMessageAnchor {
   viewportRatio: number;
 }
 
+interface SequencedEventFields {
+  runId: string;
+  seq: number;
+}
+
 export interface UseScrollEngineResult {
   state: ScrollState;
   dispatch: (event: ScrollEvent) => void;
@@ -45,6 +50,7 @@ export interface UseScrollEngineResult {
     messageId: string,
     viewportRatio: number,
   ) => void;
+  focusMessage: (messageId: string) => void;
   jumpToLatest: () => void;
   isAtLiveEdgeNow: () => boolean;
   prefersReducedMotion: boolean;
@@ -61,6 +67,10 @@ function setScrollTop(
 ): void {
   if (typeof container.scrollTo === "function") {
     container.scrollTo({ top, behavior });
+    if (behavior !== "smooth") {
+      container.scrollTop = top;
+    }
+    return;
   }
   container.scrollTop = top;
 }
@@ -72,9 +82,11 @@ function isWithin(container: HTMLElement, node: Node | null): boolean {
 export function useScrollEngine({
   messages,
   latestAssistantMessageId,
+  sequenceStreamEvent,
 }: {
   messages: ScrollEngineMessage[];
   latestAssistantMessageId?: string;
+  sequenceStreamEvent?: () => SequencedEventFields | undefined;
 }): UseScrollEngineResult {
   const [state, reducerDispatch] = useReducer(
     scrollReducer,
@@ -145,7 +157,7 @@ export function useScrollEngine({
       }))
       .filter(({ node, rect }) => {
         if (!container.contains(node)) return false;
-        return rect.top >= containerRect.top && rect.bottom <= containerRect.bottom;
+        return rect.bottom > containerRect.top && rect.top < containerRect.bottom;
       })
       .sort((a, b) => a.rect.top - b.rect.top);
 
@@ -220,11 +232,17 @@ export function useScrollEngine({
     [scrollMessageToViewportRatio],
   );
 
+  const focusMessage = useCallback((messageId: string) => {
+    messageNodeRefs.current
+      .get(messageId)
+      ?.focus({ preventScroll: true });
+  }, []);
+
   const focusLatestAssistant = useCallback(() => {
     const latestId = latestAssistantMessageIdRef.current;
     if (!latestId) return;
-    messageNodeRefs.current.get(latestId)?.focus({ preventScroll: true });
-  }, []);
+    focusMessage(latestId);
+  }, [focusMessage]);
 
   const jumpToLatest = useCallback(() => {
     dispatch({ type: "JUMP_TO_LATEST" });
@@ -428,7 +446,11 @@ export function useScrollEngine({
     if (previousIds) {
       for (const message of messages) {
         if (!previousIds.has(message.id)) {
-          dispatch({ type: "MESSAGE_APPENDED", messageId: message.id });
+          dispatch({
+            type: "MESSAGE_APPENDED",
+            messageId: message.id,
+            ...sequenceStreamEvent?.(),
+          });
         }
       }
     }
@@ -459,7 +481,14 @@ export function useScrollEngine({
     if (stateRef.current.mode === "FOLLOWING" && previousIds) {
       scrollToBottom("auto");
     }
-  }, [dispatch, messages, restoreAnchor, scrollMessageToViewportRatio, scrollToBottom]);
+  }, [
+    dispatch,
+    messages,
+    restoreAnchor,
+    scrollMessageToViewportRatio,
+    scrollToBottom,
+    sequenceStreamEvent,
+  ]);
 
   useEffect(() => {
     if (state.mode !== "RETURNING") return;
@@ -503,6 +532,7 @@ export function useScrollEngine({
     preserveAnchorForNextLayout,
     requestMessageAnchor,
     scrollMessageToViewportRatio,
+    focusMessage,
     jumpToLatest,
     isAtLiveEdgeNow,
     prefersReducedMotion,

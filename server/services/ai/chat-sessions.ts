@@ -5,6 +5,7 @@ export interface ChatSession {
   provider: ChatSessionProvider;
   claudeSessionId?: string;
   codexThreadId?: string;
+  activeTurn?: boolean;
   createdAt: number;
   lastActivityAt: number;
 }
@@ -22,6 +23,18 @@ interface GetOrCreateSessionResult {
   expired: boolean;
   providerChanged: boolean;
 }
+
+type BeginTurnResult =
+  | ({
+      started: true;
+    } & GetOrCreateSessionResult)
+  | {
+      started: false;
+      session: ChatSession;
+      created: false;
+      expired: false;
+      providerChanged: false;
+    };
 
 const sessions = new Map<string, ChatSession>();
 
@@ -86,6 +99,42 @@ export function getOrCreateSession(
     expired: false,
     providerChanged: false,
   };
+}
+
+export function beginTurn(
+  key: string,
+  provider: ChatSessionProvider,
+): BeginTurnResult {
+  const existing = sessions.get(key);
+  if (existing?.activeTurn) {
+    return {
+      started: false,
+      session: existing,
+      created: false,
+      expired: false,
+      providerChanged: false,
+    };
+  }
+
+  const result = getOrCreateSession(key, provider);
+  result.session.activeTurn = true;
+  return { started: true, ...result };
+}
+
+export function markTurnActive(key: string): SessionAccessResult {
+  const result = getSession(key);
+  if (result.session) {
+    result.session.activeTurn = true;
+  }
+  return result;
+}
+
+export function endTurn(key: string): SessionAccessResult {
+  const result = getSession(key);
+  if (result.session) {
+    result.session.activeTurn = false;
+  }
+  return result;
 }
 
 export function getSession(key: string): SessionAccessResult {

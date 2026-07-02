@@ -13,6 +13,7 @@ import {
   waitFor,
   waitForJsonFile,
 } from "../smoke-tests/_lib";
+import { RUNNABLE_PHASES } from "../src/types/methodology";
 
 interface SmokeReadyPayload {
   port: number;
@@ -22,7 +23,18 @@ interface SmokeReadyPayload {
 }
 
 interface AnalysisStatePayload {
-  analysis: { entities: unknown[] };
+  analysis: {
+    entities: Array<{ id: string; phase?: string; type?: string }>;
+    relationships: Array<{
+      fromEntityId: string;
+      toEntityId: string;
+    }>;
+    phases: Array<{
+      phase: string;
+      status: string;
+      entityIds?: string[];
+    }>;
+  };
   runStatus: { status: string };
   revision: number;
 }
@@ -125,7 +137,7 @@ async function runFixtureAnalysis(baseUrl: string): Promise<AnalysisStatePayload
     body: JSON.stringify({
       provider: "anthropic",
       runtime: {
-        activePhases: ["situational-grounding", "player-identification"],
+        activePhases: RUNNABLE_PHASES,
         webSearch: false,
       },
       topic: "Smoke test topic",
@@ -147,7 +159,7 @@ async function runFixtureAnalysis(baseUrl: string): Promise<AnalysisStatePayload
     },
     {
       message: "Timed out waiting for completed packaged analysis state",
-      timeoutMs: 30_000,
+      timeoutMs: 120_000,
     },
   );
 
@@ -201,14 +213,56 @@ async function main(): Promise<void> {
     }
 
     const finalState = await runFixtureAnalysis(`http://127.0.0.1:${ready.port}`);
-    if (finalState.analysis.entities.length === 0) {
-      throw new Error("Packaged fixture analysis completed without entities");
+    if (finalState.runStatus.status !== "idle") {
+      throw new Error(`Expected final idle run status, got ${finalState.runStatus.status}`);
+    }
+
+    const phaseStatus = new Map(
+      finalState.analysis.phases.map((phase) => [phase.phase, phase.status]),
+    );
+    const incompletePhase = RUNNABLE_PHASES.find(
+      (phase) => phaseStatus.get(phase) !== "complete",
+    );
+    if (incompletePhase) {
+      throw new Error(`Packaged fixture phase did not complete: ${incompletePhase}`);
+    }
+
+    const emptyPhase = RUNNABLE_PHASES.find(
+      (phase) =>
+        !finalState.analysis.entities.some((entity) => entity.phase === phase),
+    );
+    if (emptyPhase) {
+      throw new Error(`Packaged fixture phase produced no entities: ${emptyPhase}`);
+    }
+
+    if (
+      !finalState.analysis.entities.some(
+        (entity) => entity.type === "analysis-report",
+      )
+    ) {
+      throw new Error("Packaged fixture analysis completed without synthesis report");
+    }
+
+    const entityIds = new Set(
+      finalState.analysis.entities.map((entity) => entity.id),
+    );
+    const danglingRelationship = finalState.analysis.relationships.find(
+      (relationship) =>
+        !entityIds.has(relationship.fromEntityId) ||
+        !entityIds.has(relationship.toEntityId),
+    );
+    if (danglingRelationship) {
+      throw new Error(
+        `Packaged fixture relationship has missing endpoint: ${JSON.stringify(danglingRelationship)}`,
+      );
     }
 
     const summary = {
       ok: true,
       appBundle: appBundlePath,
       entities: finalState.analysis.entities.length,
+      phases: RUNNABLE_PHASES.length,
+      relationships: finalState.analysis.relationships.length,
       mcpPort,
       pathBootstrap:
         "packaged app launched with PATH=/usr/bin:/bin:/usr/sbin:/sbin and served the test-mode analysis fixture",

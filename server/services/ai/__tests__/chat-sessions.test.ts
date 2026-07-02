@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   EXPIRY_MS,
   _resetForTest,
+  beginTurn,
   endAllSessions,
   endSession,
+  endTurn,
   getOrCreateSession,
   getSession,
   touch,
@@ -67,6 +69,22 @@ describe("chat-sessions", () => {
     expect(touched.session?.lastActivityAt).toBeGreaterThan(
       originalLastActivityAt,
     );
+  });
+
+  it("serializes active turns per session key", () => {
+    const first = beginTurn("analysis-1", "anthropic");
+    expect(first.started).toBe(true);
+    expect(first.session.activeTurn).toBe(true);
+
+    const concurrent = beginTurn("analysis-1", "anthropic");
+    expect(concurrent.started).toBe(false);
+    expect(concurrent.session).toBe(first.session);
+
+    endTurn("analysis-1");
+
+    const next = beginTurn("analysis-1", "anthropic");
+    expect(next.started).toBe(true);
+    expect(next.session).toBe(first.session);
   });
 
   it("reports and drops an expired session from getSession", () => {
