@@ -511,6 +511,8 @@ export class SkiaEngine {
   entityRelationships: AnalysisRelationship[] = [];
   routedEdges: RoutedEdge[] = [];
   searchHighlightIds = new Set<string>();
+  /** Per-entity attention badges: 3.1A updated-dot + 2.2A unviewed challenge. */
+  entityBadges = new Map<string, { updated?: boolean; challenge?: boolean }>();
 
   // Component/instance IDs for colored frame labels
   private reusableIds = new Set<string>();
@@ -1269,6 +1271,33 @@ export class SkiaEngine {
         excPaint,
       );
       excPaint.delete();
+    }
+
+    // ── Attention badges: updated-dot (3.1A) + unviewed challenge (2.2A) ──
+    const badges = entity ? this.entityBadges.get(entity.id) : undefined;
+    if (badges?.updated || badges?.challenge) {
+      // Slot next to (or in place of) the stale badge at the top-right
+      let badgeX = absX + absW - (isStale ? 28 : 12);
+      const badgeY = absY + 12;
+      const drawDot = (colorHex: string) => {
+        const ringPaint = new ck.Paint();
+        ringPaint.setStyle(ck.PaintStyle.Fill);
+        ringPaint.setAntiAlias(true);
+        ringPaint.setColor(parseColor(ck, "#09090B"));
+        canvas.drawCircle(badgeX, badgeY, 6.5, ringPaint);
+        ringPaint.delete();
+        const dotPaint = new ck.Paint();
+        dotPaint.setStyle(ck.PaintStyle.Fill);
+        dotPaint.setAntiAlias(true);
+        dotPaint.setColor(parseColor(ck, colorHex));
+        canvas.drawCircle(badgeX, badgeY, 5, dotPaint);
+        dotPaint.delete();
+        badgeX -= 15;
+      };
+      // Amber: updated by revalidation, unseen. Violet: objection addressed,
+      // unviewed. Both clear when the overlay card is opened.
+      if (badges.updated) drawDot("#F59E0B");
+      if (badges.challenge) drawDot("#A78BFA");
     }
 
     // ── Draw child text nodes (badge + name + meta) via renderer ──

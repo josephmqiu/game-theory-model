@@ -9,8 +9,11 @@ import { routeEdges } from "@/services/entity/edge-routing";
 import { bundleEdges } from "@/services/entity/edge-bundling";
 import type { EntityRect } from "@/services/entity/edge-routing";
 import { getEntityCardMetrics } from "@/services/entity/entity-card-metrics";
-import type { AnalysisEntity } from "@/types/entity";
+import { hasUnseenRevalidationUpdate } from "@/services/entity/revision-peek";
+import type { AnalysisEntity, ChallengeRecord } from "@/types/entity";
 import type { MethodologyPhase } from "@/types/methodology";
+
+const EMPTY_CHALLENGES: ChallengeRecord[] = [];
 
 // ── Props ──
 
@@ -70,6 +73,10 @@ export default function AnalysisCanvas({
   const entities = useEntityGraphStore((s) => s.analysis.entities);
   const relationships = useEntityGraphStore((s) => s.analysis.relationships);
   const layout = useEntityGraphStore((s) => s.layout);
+  const challenges = useEntityGraphStore(
+    (s) => s.analysis.challenges ?? EMPTY_CHALLENGES,
+  );
+  const viewedRevisionLogNos = useCanvasStore((s) => s.viewedRevisionLogNos);
 
   // ── Initialize Skia engine ──
 
@@ -159,6 +166,24 @@ export default function AnalysisCanvas({
     const routed = routeEdges(entityRects, visibleRelationships);
     const bundled = bundleEdges(routed);
 
+    // Attention badges (3.1A updated-dot + 2.2A unviewed challenge)
+    const unviewedChallengeEntityIds = new Set(
+      challenges
+        .filter((record) => record.status === "resolved" && !record.viewed)
+        .map((record) => record.entityId),
+    );
+    const badges = new Map<
+      string,
+      { updated?: boolean; challenge?: boolean }
+    >();
+    for (const entity of visibleEntities) {
+      const updated = hasUnseenRevalidationUpdate(entity, viewedRevisionLogNos);
+      const challenge = unviewedChallengeEntityIds.has(entity.id);
+      if (updated || challenge) {
+        badges.set(entity.id, { updated, challenge });
+      }
+    }
+
     // Store render data on the engine — the render loop handles drawing
     engine.renderNodes = renderNodes;
     engine.spatialIndex.rebuild(renderNodes);
@@ -167,9 +192,19 @@ export default function AnalysisCanvas({
     engine.entityRelationships = visibleRelationships;
     engine.routedEdges = bundled;
     engine.searchHighlightIds = new Set(searchHighlight);
+    engine.entityBadges = badges;
 
     engine.markDirty();
-  }, [revision, entities, relationships, layout, phaseFilter, searchHighlight]);
+  }, [
+    revision,
+    entities,
+    relationships,
+    layout,
+    phaseFilter,
+    searchHighlight,
+    challenges,
+    viewedRevisionLogNos,
+  ]);
 
   // ── Pan (mouse drag) ──
 

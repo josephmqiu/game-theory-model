@@ -704,39 +704,131 @@ export async function startAnalysis(
   }
 }
 
-// Entity editing via server endpoint
+// ── Entity editing + challenges via the server endpoint (7A) ──
+// The server is the ONLY write path for human edits: it validates against
+// the per-type schema (8A), owns revisions/provenance, queues mid-run edits,
+// and propagates staleness. The renderer never mutates the graph directly.
+
+export interface EntityUpdateResult {
+  status: "applied" | "queued" | "error";
+  error?: string;
+  fieldErrors?: Record<string, string>;
+}
+
 export async function updateEntity(
   id: string,
   updates: Record<string, unknown>,
-): Promise<void> {
-  const res = await fetch("/api/ai/entity", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "update", id, updates }),
-  });
-  if (!res.ok) {
-    console.warn("[analysis-client] entity-update-http-error", {
+): Promise<EntityUpdateResult> {
+  let res: Response;
+  let result: {
+    queued?: boolean;
+    error?: string;
+    fieldErrors?: Record<string, string>;
+  };
+  try {
+    res = await fetch("/api/ai/entity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "update", id, updates }),
+    });
+    result = (await res.json().catch(() => ({}))) as typeof result;
+  } catch (error) {
+    return {
+      status: "error",
+      error: error instanceof Error ? error.message : "Network error",
+    };
+  }
+
+  if (result.queued) {
+    // The edit applies after the in-flight phase settles; SSE will sync it.
+    return { status: "queued" };
+  }
+  if (!res.ok || result.error) {
+    console.warn("[analysis-client] entity-update-rejected", {
       id,
       status: res.status,
-    });
-    return;
-  }
-  const result = await res.json();
-  if (result.queued) {
-    const store = useEntityGraphStore.getState();
-    store.updateEntity(id, updates);
-    return;
-  }
-  if (result.error) {
-    console.warn("[analysis-client] entity-update-server-error", {
-      id,
       error: result.error,
     });
-    return;
+    return {
+      status: "error",
+      error: result.error ?? `HTTP ${res.status}`,
+      fieldErrors: result.fieldErrors,
+    };
   }
+
   const state = await hydrateAnalysisState();
   if (state?.analysis) {
     applyAnalysisSnapshot(state.analysis);
+  }
+  return { status: "applied" };
+}
+
+export interface ChallengeSubmitResult {
+  status: "created" | "queued" | "error";
+  error?: string;
+  downstreamCount?: number;
+}
+
+export async function challengeEntity(
+  id: string,
+  objection: string,
+): Promise<ChallengeSubmitResult> {
+  try {
+    const res = await fetch("/api/ai/entity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "challenge", id, objection }),
+    });
+    const result = (await res.json().catch(() => ({}))) as {
+      queued?: boolean;
+      error?: string;
+      downstreamCount?: number;
+    };
+    if (result.queued) {
+      return { status: "queued" };
+    }
+    if (!res.ok || result.error) {
+      return { status: "error", error: result.error ?? `HTTP ${res.status}` };
+    }
+    const state = await hydrateAnalysisState();
+    if (state?.analysis) {
+      applyAnalysisSnapshot(state.analysis);
+    }
+    return { status: "created", downstreamCount: result.downstreamCount };
+  } catch (error) {
+    return {
+      status: "error",
+      error: error instanceof Error ? error.message : "Network error",
+    };
+  }
+}
+
+/** Downstream dependents for the challenge form preview (2.1A). */
+export async function getDownstreamEntityIds(id: string): Promise<string[]> {
+  try {
+    const res = await fetch("/api/ai/entity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "downstream", id }),
+    });
+    if (!res.ok) return [];
+    const result = (await res.json()) as { downstreamIds?: string[] };
+    return result.downstreamIds ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** Clears the until-viewed badge (2.2A). Fire-and-forget semantics. */
+export async function markChallengeViewed(challengeId: string): Promise<void> {
+  try {
+    await fetch("/api/ai/entity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "challengeViewed", id: challengeId }),
+    });
+  } catch {
+    // Badge clearing is best-effort — the SSE update will reconcile later
   }
 }
 

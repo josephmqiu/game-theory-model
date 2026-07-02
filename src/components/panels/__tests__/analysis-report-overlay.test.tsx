@@ -129,11 +129,15 @@ describe("entity-overlay-card integration with analysis-report type", () => {
     expect(entityOverlaySource).toContain("d.executive_summary");
   });
 
-  it("makes analysis-report non-editable since reports are AI-generated read-only artifacts", () => {
-    const editMatch = entityOverlaySource.match(
-      /case\s+"analysis-report":\s*\n\s*return\s+null/,
+  it("makes analysis-report editable with an AI-owned carve-out (plan Phase 1, item 3)", () => {
+    // The report's text fields are human-editable via AnalysisReportEdit;
+    // entity references and the prediction verdict stay AI-owned.
+    expect(entityOverlaySource).toMatch(
+      /case\s+"analysis-report":\s*\n?\s*return\s+<AnalysisReportEdit/,
     );
-    expect(editMatch).not.toBeNull();
+    expect(entityOverlaySource).toContain(
+      "Entity references and the prediction verdict are AI-owned",
+    );
   });
 
   it("renders the AnalysisReportOverlay component inside the entity data section", () => {

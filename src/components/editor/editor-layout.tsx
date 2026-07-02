@@ -349,8 +349,6 @@ export default function EditorLayout() {
               <EntityOverlayCard
                 entity={selectedEntity}
                 screenPosition={selectedEntityScreenPosition}
-                onEdit={() => {}}
-                onChallenge={() => {}}
                 onClose={() => setSelectedEntityId(null)}
               />
             )}
