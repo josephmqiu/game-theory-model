@@ -585,13 +585,17 @@ describe("analysis-orchestrator", () => {
       ),
     ).toBe("terminal");
     expect(
-      orchestrator.classifyFailure("invalid_json_schema: outputSchema rejected"),
+      orchestrator.classifyFailure(
+        "invalid_json_schema: outputSchema rejected",
+      ),
     ).toBe("terminal");
   });
 
   it("classifies remote Codex aborts as retryable", () => {
     expect(
-      orchestrator.classifyFailure("Codex turn failed: Aborted (status=failed)"),
+      orchestrator.classifyFailure(
+        "Codex turn failed: Aborted (status=failed)",
+      ),
     ).toBe("retryable");
     expect(
       orchestrator.classifyFailure(
@@ -683,7 +687,11 @@ describe("analysis-orchestrator", () => {
       .mockResolvedValueOnce(makePhaseResult("scenarios"))
       .mockResolvedValueOnce(makePhaseResult("meta-check"));
 
-    const { runId } = await orchestrator.runFull("Test topic", "openai", "gpt-5.4");
+    const { runId } = await orchestrator.runFull(
+      "Test topic",
+      "openai",
+      "gpt-5.4",
+    );
     await flushAsync();
 
     const status = orchestrator.getStatus(runId);
@@ -746,7 +754,11 @@ describe("analysis-orchestrator", () => {
     const events: AnalysisProgressEvent[] = [];
     const unsubscribe = orchestrator.onProgress((event) => events.push(event));
 
-    const { runId } = await orchestrator.runFull("Test topic", "openai", "gpt-5.4");
+    const { runId } = await orchestrator.runFull(
+      "Test topic",
+      "openai",
+      "gpt-5.4",
+    );
     await flushAsync();
     unsubscribe();
 
@@ -1305,13 +1317,9 @@ describe("analysis-orchestrator", () => {
         .mockResolvedValueOnce(makePhaseResult("scenarios"))
         .mockResolvedValueOnce(makePhaseResult("meta-check"));
 
-      await orchestrator.runFull(
-        "Test topic",
-        "openai",
-        "gpt-4o",
-        undefined,
-        { webSearch: false },
-      );
+      await orchestrator.runFull("Test topic", "openai", "gpt-4o", undefined, {
+        webSearch: false,
+      });
       await flushAsync();
 
       // All 9 phases must have been called
@@ -1523,9 +1531,15 @@ describe("analysis-orchestrator", () => {
         .mockResolvedValueOnce(makePhaseResult("situational-grounding"))
         .mockResolvedValueOnce(makePhaseResult("baseline-model"));
 
-      await orchestrator.runFull("Test topic", undefined, undefined, undefined, {
-        activePhases: ["situational-grounding", "baseline-model"],
-      });
+      await orchestrator.runFull(
+        "Test topic",
+        undefined,
+        undefined,
+        undefined,
+        {
+          activePhases: ["situational-grounding", "baseline-model"],
+        },
+      );
       await flushAsync();
 
       expect(mockRevalidation.onRunComplete).toHaveBeenCalledWith(
@@ -1773,13 +1787,19 @@ describe("analysis-orchestrator", () => {
         return Promise.resolve(makePhaseResult(phase));
       });
 
-      await orchestrator.runFull("Test topic", undefined, undefined, undefined, {
-        activePhases: [
-          "situational-grounding",
-          "baseline-model",
-          "scenarios",
-        ],
-      });
+      await orchestrator.runFull(
+        "Test topic",
+        undefined,
+        undefined,
+        undefined,
+        {
+          activePhases: [
+            "situational-grounding",
+            "baseline-model",
+            "scenarios",
+          ],
+        },
+      );
       await flushAsync();
 
       const secondBaselineContext = mockRunPhase.mock.calls[3][2] as

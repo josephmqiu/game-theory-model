@@ -231,6 +231,8 @@ const SYNTHESIS_OUTPUT_SCHEMA: Record<string, unknown> = {
 
 let activeRun: ActiveRun | null = null;
 let runPromise: Promise<void> | null = null;
+/** runId that owns the current runPromise — guards against a stale run's late unwind clearing a newer run's state. */
+let runPromiseOwner: string | null = null;
 const progressListeners = new Set<(event: AnalysisProgressEvent) => void>();
 
 /** Capped snapshot store: completed run results keyed by runId */
@@ -296,11 +298,10 @@ export function classifyFailure(error: string): FailureClass {
 
 // ── Edit queue ──
 
-function drainEditQueue(): void {
-  if (!activeRun) return;
-  const queue = activeRun.editQueue.splice(0);
+function drainEditQueue(run: ActiveRun): void {
+  const queue = run.editQueue.splice(0);
   if (queue.length > 0) {
-    activeRun.logger.log("orchestrator", "edit-queue-drain", {
+    run.logger.log("orchestrator", "edit-queue-drain", {
       count: queue.length,
     });
   }
@@ -686,7 +687,7 @@ async function executeSinglePhase(
       runtimeStatus.completePhase(run.runId);
 
       // Drain edit queue after each successful phase
-      drainEditQueue();
+      drainEditQueue(run);
 
       return { success: true };
     }
@@ -1007,8 +1008,8 @@ export async function runFull(
       }
     } finally {
       clearTimeout(runTimeoutHandle);
-      // Drain any remaining queued edits
-      drainEditQueue();
+      // Drain any remaining queued edits for THIS run only
+      drainEditQueue(run);
       run.activePhase = null;
       // Flush logger before clearing run state
       try {
@@ -1016,8 +1017,13 @@ export async function runFull(
       } catch {
         // Logger flush must not prevent cleanup
       }
-      // Clear runPromise so new runs can start
-      runPromise = null;
+      // Clear runPromise so new runs can start — but only if this run still
+      // owns it. A stale run unwinding late (e.g. after an abort while a
+      // newer run has started) must never clobber the newer run's state.
+      if (runPromiseOwner === run.runId) {
+        runPromise = null;
+        runPromiseOwner = null;
+      }
       // Flush deferred revalidations that were suppressed during this run
       revalidationService.onRunComplete(
         run.provider,
@@ -1030,6 +1036,7 @@ export async function runFull(
 
   // Track the async execution so concurrent run guard works
   runPromise = executeAsync();
+  runPromiseOwner = runId;
 
   return { runId };
 }
@@ -1158,6 +1165,7 @@ export function markOrphanedRunsFailed(): void {
     });
     activeRun = null;
     runPromise = null;
+    runPromiseOwner = null;
   }
 }
 
@@ -1167,6 +1175,7 @@ export function markOrphanedRunsFailed(): void {
 export function _resetForTest(): void {
   activeRun = null;
   runPromise = null;
+  runPromiseOwner = null;
   progressListeners.clear();
   resultSnapshots.clear();
   runtimeStatus._resetForTest();
