@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Server-validated entity edits with a per-entity revision log
+- Challenge, re-run, and resolution loop for disputed entities
+- Official Codex MCP registration with dynamic MCP port discovery
+- Design tokens, bundled Geist UI fonts, and regenerated design documentation
+- Edit and challenge UI flows with optimistic saves
+- Local packaged-app smoke command for macOS pre-release checks
+
+### Fixed
+
+- Phase ladder revalidation now reaches all 9 phases instead of stopping at 6
+- Desktop smoke CI sandbox behavior for Electron launch validation
+
+### Changed
+
+- Removed about 27k lines of dead Pencil-fork code, with `knip` guarding CI against regressions
+- Synced the OpenPencil v0.7.5 shortlist as the pinned canvas and AI-backend reference
+- Added the motion language with reduced-motion support
+
 ## [0.4.1] - 2026-03-23
 
 ### Added

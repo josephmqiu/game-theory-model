@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { loadCanvasKit } from "@/canvas/skia/skia-init";
 import { SkiaEngine, screenToScene } from "@/canvas/skia/skia-engine";
 import { setSkiaEngineRef } from "@/canvas/skia-engine-ref";
@@ -80,6 +80,12 @@ export default function AnalysisCanvas({
 
   // ── Initialize Skia engine ──
 
+  // CanvasKit loads asynchronously; the graph-sync effect below bails while
+  // the engine is absent, so it MUST re-run once the engine comes up —
+  // otherwise a store that hydrated first (reopening a saved analysis)
+  // leaves the canvas permanently blank.
+  const [engineReady, setEngineReady] = useState(false);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -96,6 +102,7 @@ export default function AnalysisCanvas({
       );
       engineRef.current = engine;
       setSkiaEngineRef(engine);
+      setEngineReady(true);
       // Trigger initial render
       engine.markDirty();
     });
@@ -105,6 +112,7 @@ export default function AnalysisCanvas({
       setSkiaEngineRef(null);
       engineRef.current?.dispose();
       engineRef.current = null;
+      setEngineReady(false);
     };
   }, []);
 
@@ -199,6 +207,7 @@ export default function AnalysisCanvas({
 
     engine.markDirty();
   }, [
+    engineReady,
     revision,
     entities,
     relationships,

@@ -31,3 +31,6 @@ docs/
 .claude/
 .codex/
 .worktrees/
+
+# Playwright MCP session artifacts
+.playwright-mcp/

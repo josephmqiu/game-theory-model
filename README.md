@@ -2,8 +2,7 @@
 
 A desktop application for AI-assisted game-theoretic analysis of real-world events. Discuss situations with AI through chat, and watch structured analysis materialize as an interactive entity graph on a canvas.
 
-<!-- TODO: Add screenshot here -->
-<!-- ![Game Theory Analyzer screenshot](docs/screenshot.png) -->
+![Game Theory Analyzer](.github/screenshot.png)
 
 ## What It Does
 
@@ -60,6 +59,7 @@ bun run dev
 ## Docker Support
 
 Docker is supported as a secondary Nitro/runtime surface. It is useful for headless runs and runtime validation, but it is not the canonical desktop delivery path.
+Docker is a documented dev-only surface, not a released artifact: no images are published, and the GHCR publishing workflow was removed.
 
 Available image targets:
 
@@ -110,8 +110,11 @@ bun run dev                        # Dev server on port 3000
 bun run build                      # Build the Nitro-backed app into .output
 bun run test                       # Run tests
 bun run typecheck                  # TypeScript check
+bun run knip                       # Dead-code guard
+bun run gen:design                 # Regenerate DESIGN.md
 bun run electron:dev               # Electron dev mode
 bun run electron:build:mac-arm64   # Full production build (client + server + MCP + DMG)
+bun run test:smoke:packaged        # Local packaged macOS pre-release smoke
 ```
 
 > **Note:** `bun run build` emits the Nitro-backed runtime under `.output`. Electron packaging still uses the `electron:build:*` commands for desktop artifacts.
@@ -122,8 +125,8 @@ Game Theory Analyzer stores its workspace data locally, but some features make o
 
 - AI runtime calls send prompts and relevant context to the configured Claude/Codex-compatible runtime or provider path.
 - Evidence-backed analysis may use web search providers during research steps.
-- The UI fetches icon metadata from `https://api.iconify.design`.
-- The canvas font loader may fetch font CSS and font files from `https://fonts.googleapis.com`, `https://fonts.gstatic.com`, and `https://fonts.font.im`.
+- Icon metadata is resolved from bundled `@iconify-json/*` packages; the UI does not need `https://api.iconify.design`.
+- UI fonts are bundled with `@fontsource` Geist packages. The CanvasKit font loader uses bundled `/fonts/` files first, and may fall back to font CSS and font files from `https://fonts.googleapis.com`, `https://fonts.gstatic.com`, and `https://fonts.font.im` for non-bundled canvas fonts.
 
 If you need a stricter offline posture, review these integrations before running the app in a network-restricted environment.
 
@@ -149,6 +152,7 @@ public/                # Static assets
 - **Runtime boundary**: Code in `src/` runs in the browser. Code in `server/` runs in Node.js. Never import Node.js APIs from `src/`.
 - **Canvas is the product**: The entity graph canvas is the primary analysis surface. Chat is the control panel, not the workspace.
 - **AI integration**: Uses tool-based local runtimes (Claude Agent SDK, Codex JSON-RPC), not direct provider API calls.
+- **Architecture decision**: The app is an OpenPencil fork. OpenPencil v0.7.5 remains the pinned reference for canvas and AI backend behavior; the T3 Code migration (PR #10) was permanently shelved on 2026-07-02.
 
 ## Documentation
 

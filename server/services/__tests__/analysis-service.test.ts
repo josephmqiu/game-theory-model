@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PHASE_FIXTURES } from "../../__test-utils__/fixtures";
+import { RUNNABLE_PHASES } from "../../../shared/types/methodology";
 
 // ── Fixtures ──
 
@@ -1272,6 +1274,25 @@ describe("analysis-service", () => {
   });
 
   describe("_validatePhaseOutput", () => {
+    it("accepts every test-mode fixture for the full runnable phase ladder", async () => {
+      const { _validatePhaseOutput } = await importService();
+
+      for (const phase of RUNNABLE_PHASES) {
+        const fixture = PHASE_FIXTURES[phase];
+        expect(fixture, `missing fixture for ${phase}`).toBeDefined();
+
+        const result = _validatePhaseOutput(
+          fixture,
+          phase as Parameters<typeof _validatePhaseOutput>[1],
+        );
+        const message = result.success ? phase : `${phase}: ${result.error}`;
+        expect(result.success, message).toBe(true);
+        expect(result.entities.length, `entities for ${phase}`).toBeGreaterThan(
+          0,
+        );
+      }
+    });
+
     it("rejects non-object input", async () => {
       const { _validatePhaseOutput } = await importService();
       const result = _validatePhaseOutput([1, 2, 3], "situational-grounding");

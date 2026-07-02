@@ -16,23 +16,26 @@ type PhaseResponses = Partial<
  * then falls back to the user prompt.
  */
 function detectPhaseFromPrompt(prompt: string, systemPrompt?: string): MethodologyPhase | null {
-  // Phase number patterns — unambiguous, checked against systemPrompt first
-  const phaseNumberPatterns: [RegExp, MethodologyPhase][] = [
-    [/phase\s*1\b[:\s]/i, "situational-grounding"],
-    [/phase\s*2\b[:\s]/i, "player-identification"],
-    [/phase\s*3\b[:\s]/i, "baseline-model"],
-    [/phase\s*4\b[:\s]/i, "historical-game"],
-    [/phase\s*6\b[:\s]/i, "formal-modeling"],
-    [/phase\s*7\b[:\s]/i, "assumptions"],
-    [/phase\s*8\b[:\s]/i, "elimination"],
-    [/phase\s*9\b[:\s]/i, "scenarios"],
-    [/phase\s*10\b[:\s]/i, "meta-check"],
-  ];
+  const phaseByNumber: Record<string, MethodologyPhase> = {
+    "1": "situational-grounding",
+    "2": "player-identification",
+    "3": "baseline-model",
+    "4": "historical-game",
+    "6": "formal-modeling",
+    "7": "assumptions",
+    "8": "elimination",
+    "9": "scenarios",
+    "10": "meta-check",
+  };
 
   // Check system prompt first — it has the canonical "Phase N:" header
   if (systemPrompt) {
-    for (const [pattern, phase] of phaseNumberPatterns) {
-      if (pattern.test(systemPrompt)) return phase;
+    const phaseNumberMatch = systemPrompt.match(
+      /\bphase\s*(10|[1-9])\b[:\s]/i,
+    );
+    if (phaseNumberMatch) {
+      const phase = phaseByNumber[phaseNumberMatch[1]];
+      if (phase) return phase;
     }
   }
 
