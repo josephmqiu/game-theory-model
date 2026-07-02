@@ -32,6 +32,18 @@
   }
 }
 
+.overlay-card-motion {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@starting-style {
+  .overlay-card-motion {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

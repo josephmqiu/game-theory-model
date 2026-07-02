@@ -126,8 +126,6 @@ const zhTW: TranslationKeys = {
   "agents.openaiModels": "OpenAI 模型",
   "agents.opencode": "OpenCode",
   "agents.opencodeDesc": "75+ LLM 供應商",
-  "agents.copilot": "GitHub Copilot",
-  "agents.copilotDesc": "GitHub Copilot 模型",
   "agents.mcpServer": "MCP 伺服器",
   "agents.mcpServerStop": "停止",
   "agents.mcpServerRunning": "執行中",

@@ -129,8 +129,6 @@ const vi: TranslationKeys = {
   "agents.openaiModels": "Các mô hình OpenAI",
   "agents.opencode": "OpenCode",
   "agents.opencodeDesc": "75+ nhà cung cấp LLM",
-  "agents.copilot": "GitHub Copilot",
-  "agents.copilotDesc": "Các mô hình GitHub Copilot",
   "agents.mcpServer": "Máy chủ MCP",
   "agents.mcpServerStop": "Dừng",
   "agents.mcpServerRunning": "Đang chạy",

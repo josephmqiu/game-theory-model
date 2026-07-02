@@ -13,7 +13,6 @@ import { useTranslation } from "react-i18next";
 import ClaudeLogo from "@/components/icons/claude-logo";
 import OpenAILogo from "@/components/icons/openai-logo";
 import OpenCodeLogo from "@/components/icons/opencode-logo";
-import CopilotLogo from "@/components/icons/copilot-logo";
 import LanguageSelector from "@/components/shared/language-selector";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -36,14 +35,12 @@ const PROVIDER_ICONS: Record<
   anthropic: ClaudeLogo,
   openai: OpenAILogo,
   opencode: OpenCodeLogo,
-  copilot: CopilotLogo,
 };
 
 const PROVIDER_ORDER: AIProviderType[] = [
   "anthropic",
   "openai",
   "opencode",
-  "copilot",
 ];
 
 function AgentStatusButton() {

@@ -1,10 +1,10 @@
-export type AIProviderType = 'anthropic' | 'openai' | 'opencode' | 'copilot'
+export type AIProviderType = 'anthropic' | 'openai' | 'opencode'
 
 export interface AIProviderConfig {
   type: AIProviderType
   displayName: string
   isConnected: boolean
-  connectionMethod: 'claude-code' | 'codex-cli' | 'opencode' | 'copilot' | null
+  connectionMethod: 'claude-code' | 'codex-cli' | 'opencode' | null
   /** Models fetched when the user connects this provider */
   models: GroupedModel[]
 }
@@ -15,7 +15,6 @@ export type MCPCliTool =
   | 'gemini-cli'
   | 'opencode-cli'
   | 'kiro-cli'
-  | 'copilot-cli'
 
 export type MCPTransportMode = 'stdio' | 'http' | 'both'
 

@@ -130,8 +130,6 @@ const hi: TranslationKeys = {
   "agents.openaiModels": "OpenAI मॉडल",
   "agents.opencode": "OpenCode",
   "agents.opencodeDesc": "75+ LLM प्रदाता",
-  "agents.copilot": "GitHub Copilot",
-  "agents.copilotDesc": "GitHub Copilot मॉडल",
   "agents.mcpServer": "MCP सर्वर",
   "agents.mcpServerStop": "रोकें",
   "agents.mcpServerRunning": "चल रहा है",

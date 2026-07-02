@@ -126,8 +126,6 @@ const zh: TranslationKeys = {
   "agents.openaiModels": "OpenAI 模型",
   "agents.opencode": "OpenCode",
   "agents.opencodeDesc": "75+ LLM 提供商",
-  "agents.copilot": "GitHub Copilot",
-  "agents.copilotDesc": "GitHub Copilot 模型",
   "agents.mcpServer": "MCP 服务器",
   "agents.mcpServerStop": "停止",
   "agents.mcpServerRunning": "运行中",

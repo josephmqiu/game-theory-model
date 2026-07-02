@@ -2,7 +2,7 @@ import { defineEventHandler, readBody, setResponseHeaders } from 'h3'
 import { execSync } from 'node:child_process'
 
 interface InstallBody {
-  agent: 'claude-code' | 'codex-cli' | 'opencode' | 'copilot'
+  agent: 'claude-code' | 'codex-cli' | 'opencode'
 }
 
 interface InstallResult {
@@ -16,7 +16,6 @@ const BINARY_MAP: Record<string, string> = {
   'claude-code': 'claude',
   'codex-cli': 'codex',
   'opencode': 'opencode',
-  'copilot': 'copilot',
 }
 
 function checkBinary(binary: string): boolean {
@@ -36,7 +35,6 @@ function hasCommand(cmd: string): boolean {
 
 function getInstallInfo(agent: string): { command: string; docsUrl: string } {
   const isWin = process.platform === 'win32'
-  const isMac = process.platform === 'darwin'
 
   switch (agent) {
     case 'claude-code':
@@ -55,15 +53,6 @@ function getInstallInfo(agent: string): { command: string; docsUrl: string } {
           ? 'npm install -g opencode-ai'
           : 'curl -fsSL https://opencode.ai/install | bash',
         docsUrl: 'https://opencode.ai',
-      }
-    case 'copilot':
-      return {
-        command: isMac
-          ? 'brew install github/copilot/copilot'
-          : isWin
-            ? 'winget install GitHub.CopilotCLI'
-            : 'See documentation',
-        docsUrl: 'https://docs.github.com/copilot/how-tos/copilot-cli',
       }
     default:
       return { command: '', docsUrl: '' }
@@ -115,8 +104,6 @@ async function tryAutoInstall(agent: string, binary: string): Promise<InstallRes
       return tryNpmInstall('@openai/codex', binary)
     case 'opencode':
       return tryOpenCodeInstall(binary)
-    case 'copilot':
-      return tryCopilotInstall(binary)
     default:
       return { success: false, error: 'Unknown agent' }
   }
@@ -166,22 +153,4 @@ async function tryOpenCodeInstall(binary: string): Promise<InstallResult> {
   return checkBinary(binary)
     ? { success: true }
     : { success: false, error: 'Install completed but binary not found in PATH' }
-}
-
-async function tryCopilotInstall(binary: string): Promise<InstallResult> {
-  // Try brew on macOS
-  if (process.platform === 'darwin' && hasCommand('brew')) {
-    try {
-      execSync('brew install github/copilot/copilot', {
-        encoding: 'utf-8',
-        timeout: 180_000,
-        stdio: 'pipe',
-      })
-      if (checkBinary(binary)) return { success: true }
-    } catch {
-      // Fall through to failure
-    }
-  }
-
-  return { success: false, error: 'Auto-install not available for this platform' }
 }

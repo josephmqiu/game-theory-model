@@ -13,6 +13,8 @@ import { serverLog } from "../../utils/ai-logger";
 import * as entityGraphService from "../../services/entity-graph-service";
 import { streamChat as claudeStreamChat } from "../../services/ai/claude-adapter";
 import { streamChat as codexStreamChat } from "../../services/ai/codex-adapter";
+import { analysisRuntimeConfig } from "../../config/analysis-runtime";
+import { startSSEKeepAlive } from "../../utils/sse-keepalive";
 
 const ALLOWED_PROVIDERS = ["anthropic", "openai"] as const;
 
@@ -80,6 +82,12 @@ const chatBodySchema = z.object({
   thinkingBudgetTokens: z.number().positive().optional(),
   effort: z.enum(["low", "medium", "high", "max"]).optional(),
 });
+
+function writeSSE(controller: ReadableStreamDefaultController, payload: unknown) {
+  controller.enqueue(
+    new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`),
+  );
+}
 
 function badRequest(event: H3Event, error: string) {
   setResponseStatus(event, 400);
@@ -158,17 +166,10 @@ function streamViaCodexAdapter(
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
-      const pingTimer = setInterval(() => {
-        try {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "ping", content: "" })}\n\n`,
-            ),
-          );
-        } catch {
-          /* stream already closed */
-        }
-      }, KEEPALIVE_INTERVAL_MS);
+      const pingTimer = startSSEKeepAlive(
+        () => writeSSE(controller, { type: "ping", content: "" }),
+        KEEPALIVE_INTERVAL_MS,
+      );
 
       // Detect client disconnect and cancel the adapter
       const req = event.node?.req;
@@ -255,17 +256,10 @@ function streamViaClaude(
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
-      const pingTimer = setInterval(() => {
-        try {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "ping", content: "" })}\n\n`,
-            ),
-          );
-        } catch {
-          /* stream already closed */
-        }
-      }, KEEPALIVE_INTERVAL_MS);
+      const pingTimer = startSSEKeepAlive(
+        () => writeSSE(controller, { type: "ping", content: "" }),
+        KEEPALIVE_INTERVAL_MS,
+      );
 
       let attachTempDir: string | undefined;
 
@@ -365,7 +359,8 @@ function streamViaClaude(
 }
 
 // Keep-alive ping interval (ms) — prevents client timeout while waiting for API TTFT
-const KEEPALIVE_INTERVAL_MS = 15_000;
+const KEEPALIVE_INTERVAL_MS =
+  analysisRuntimeConfig.analyzeSse.keepaliveIntervalMs;
 
 /**
  * Inject conversation history into the system prompt so multi-turn context

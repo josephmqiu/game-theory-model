@@ -1732,12 +1732,43 @@ export default function EntityOverlayCard({
   const queuedAtEntityRevision = useRef<number | null>(null);
   const [challengeHandle, setChallengeHandle] =
     useState<ChallengeFormHandle | null>(null);
+  const [isClosing, setIsClosing] = useState(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prefersReducedMotionRef = useRef(false);
+
+  useEffect(() => {
+    prefersReducedMotionRef.current =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    return () => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+      }
+    };
+  }, []);
+
+  const requestClose = useCallback(() => {
+    if (isClosing) return;
+    if (prefersReducedMotionRef.current) {
+      onClose();
+      return;
+    }
+
+    setIsClosing(true);
+    closeTimerRef.current = setTimeout(onClose, 140);
+  }, [isClosing, onClose]);
 
   // Reset edit state when the entity prop changes identity
   useEffect(() => {
     setEditData(entity.data);
     setEditRationale(entity.rationale);
     setMode("view");
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    setIsClosing(false);
     dispatch({ type: "RESET" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entity.id]);
@@ -1769,12 +1800,12 @@ export default function EntityOverlayCard({
         setEditRationale(entity.rationale);
         dispatch({ type: "RESET" });
       } else {
-        onClose();
+        requestClose();
       }
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, mode, entity.data, entity.rationale]);
+  }, [requestClose, mode, entity.data, entity.rationale]);
 
   // Click-away dismissal (disabled while a form is open)
   useEffect(() => {
@@ -1782,7 +1813,7 @@ export default function EntityOverlayCard({
 
     const handlePointerDown = (e: PointerEvent) => {
       if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
-        onClose();
+        requestClose();
       }
     };
     // Delay listener to avoid the opening click triggering immediate close
@@ -1793,7 +1824,7 @@ export default function EntityOverlayCard({
       clearTimeout(timer);
       document.removeEventListener("pointerdown", handlePointerDown);
     };
-  }, [onClose, mode]);
+  }, [requestClose, mode]);
 
   const markEdited = useCallback(() => dispatch({ type: "EDIT" }), []);
 
@@ -1924,7 +1955,10 @@ export default function EntityOverlayCard({
   return (
     <div
       ref={cardRef}
-      className="flex flex-col overflow-hidden rounded-md border border-zinc-700 bg-zinc-900 shadow-lg"
+      className={cn(
+        "overlay-card-motion flex flex-col overflow-hidden rounded-md border border-zinc-700 bg-zinc-900 shadow-lg opacity-100 transition-[opacity,transform] duration-[140ms] ease-out translate-y-0 motion-reduce:translate-y-0 motion-reduce:opacity-100 motion-reduce:transition-none",
+        isClosing && "translate-y-1 opacity-0",
+      )}
       style={style}
     >
       {/* ── PINNED header: badges + name + close (1.2A) ── */}
@@ -1951,7 +1985,7 @@ export default function EntityOverlayCard({
             variant="ghost"
             size="icon-sm"
             aria-label="Close"
-            onClick={onClose}
+            onClick={requestClose}
             className="-mr-1 -mt-1 shrink-0 text-zinc-500 hover:text-zinc-100"
           >
             <X size={14} />

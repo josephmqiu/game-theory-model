@@ -90,6 +90,10 @@ export default function AnalysisCanvas({
       if (disposed) return;
       const engine = new SkiaEngine(ck);
       engine.init(canvas);
+      engine.setReducedMotion(
+        typeof window.matchMedia === "function" &&
+          window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+      );
       engineRef.current = engine;
       setSkiaEngineRef(engine);
       // Trigger initial render
@@ -187,8 +191,7 @@ export default function AnalysisCanvas({
     // Store render data on the engine — the render loop handles drawing
     engine.renderNodes = renderNodes;
     engine.spatialIndex.rebuild(renderNodes);
-    engine.entityMap.clear();
-    for (const e of visibleEntities) engine.entityMap.set(e.id, e);
+    engine.setEntities(visibleEntities);
     engine.entityRelationships = visibleRelationships;
     engine.routedEdges = bundled;
     engine.searchHighlightIds = new Set(searchHighlight);

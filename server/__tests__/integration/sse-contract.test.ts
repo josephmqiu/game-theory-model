@@ -85,6 +85,10 @@ function parseEvents(chunks: string[]): Array<Record<string, unknown>> {
     .map((entry) => JSON.parse(entry.slice(6)) as Record<string, unknown>);
 }
 
+function parseNonPingEvents(chunks: string[]): Array<Record<string, unknown>> {
+  return parseEvents(chunks).filter((event) => event.channel !== "ping");
+}
+
 function emitMutation(revision: number, event: Record<string, unknown>): void {
   currentRevision = revision;
   for (const listener of mutationListeners) listener(event);
@@ -146,7 +150,11 @@ describe("SSE contract: events.get.ts handler", () => {
     res.close();
     await pending;
 
-    const parsed = parseEvents(res.chunks);
+    expect(parseEvents(res.chunks)).toContainEqual({
+      channel: "ping",
+      revision: 0,
+    });
+    const parsed = parseNonPingEvents(res.chunks);
     expect(parsed.length).toBe(1);
     expect(parsed[0]).toEqual({
       channel: "mutation",
@@ -177,7 +185,7 @@ describe("SSE contract: events.get.ts handler", () => {
     res.close();
     await pending;
 
-    const parsed = parseEvents(res.chunks);
+    const parsed = parseNonPingEvents(res.chunks);
     expect(parsed.length).toBe(8);
 
     for (let i = 0; i < mutationEvents.length; i++) {
@@ -218,7 +226,7 @@ describe("SSE contract: events.get.ts handler", () => {
     res.close();
     await pending;
 
-    const parsed = parseEvents(res.chunks);
+    const parsed = parseNonPingEvents(res.chunks);
     // Only non-terminal events should appear
     expect(parsed.length).toBe(2);
     expect(parsed[0].type).toBe("phase_started");
@@ -247,7 +255,7 @@ describe("SSE contract: events.get.ts handler", () => {
     res.close();
     await pending;
 
-    const parsed = parseEvents(res.chunks);
+    const parsed = parseNonPingEvents(res.chunks);
     expect(parsed.length).toBe(1);
     expect(parsed[0].channel).toBe("status");
     expect(parsed[0].revision).toBe(7);

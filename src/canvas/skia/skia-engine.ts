@@ -19,6 +19,7 @@ import { parseColor } from "./skia-paint-utils";
 import { viewportMatrix, zoomToPoint as vpZoomToPoint } from "./skia-viewport";
 import { shouldDrawFrameLabel } from "./frame-label-utils";
 import { measureText, drawText2D } from "./skia-overlays";
+import { getEntityArrivalSettleStyle } from "./entity-arrival-motion";
 import {
   getActiveAgentIndicators,
   getActiveAgentFrames,
@@ -72,9 +73,12 @@ export class SkiaEngine {
   searchHighlightIds = new Set<string>();
   /** Per-entity attention badges: 3.1A updated-dot + 2.2A unviewed challenge. */
   entityBadges = new Map<string, { updated?: boolean; challenge?: boolean }>();
+  private entityArrivalTimestamps = new Map<string, number>();
+  private prefersReducedMotion = false;
 
   // Agent animation: track start time so glow only pulses ~2 times
   private agentAnimStart = 0;
+  private renderTimestampMs = 0;
 
   private canvasEl: HTMLCanvasElement | null = null;
   private animFrameId = 0;
@@ -172,6 +176,33 @@ export class SkiaEngine {
     this.dirty = true;
   }
 
+  setReducedMotion(enabled: boolean) {
+    this.prefersReducedMotion = enabled;
+    this.markDirty();
+  }
+
+  setEntities(entities: AnalysisEntity[]) {
+    const nextEntityMap = new Map<string, AnalysisEntity>();
+    const nextIds = new Set<string>();
+    const now = Date.now();
+
+    for (const entity of entities) {
+      nextEntityMap.set(entity.id, entity);
+      nextIds.add(entity.id);
+      if (!this.prefersReducedMotion && !this.entityMap.has(entity.id)) {
+        this.entityArrivalTimestamps.set(entity.id, now);
+      }
+    }
+
+    for (const id of [...this.entityArrivalTimestamps.keys()]) {
+      if (!nextIds.has(id)) {
+        this.entityArrivalTimestamps.delete(id);
+      }
+    }
+
+    this.entityMap = nextEntityMap;
+  }
+
   private startRenderLoop() {
     const loop = () => {
       this.animFrameId = requestAnimationFrame(loop);
@@ -186,6 +217,7 @@ export class SkiaEngine {
     if (!this.surface || !this.canvasEl) return;
     const canvas = this.surface.getCanvas();
     const ck = this.ck;
+    this.renderTimestampMs = Date.now();
 
     const dpr = window.devicePixelRatio || 1;
     const selectedIds = new Set(
@@ -370,7 +402,7 @@ export class SkiaEngine {
     }
 
     if (hasAgentOverlays) {
-      const now = Date.now();
+      const now = this.renderTimestampMs;
       if (this.agentAnimStart === 0) this.agentAnimStart = now;
       const elapsed = now - this.agentAnimStart;
       // Frame glow: smooth fade-in → fade-out (single bell, ~1.2s)
@@ -536,6 +568,7 @@ export class SkiaEngine {
     relationships: AnalysisRelationship[],
     entities: AnalysisEntity[],
   ) {
+    this.renderTimestampMs = Date.now();
     const entityMap = new Map<string, AnalysisEntity>();
     for (const e of entities) entityMap.set(e.id, e);
 
@@ -649,13 +682,30 @@ export class SkiaEngine {
   ) {
     const ck = this.ck;
     const { absX, absY, absW, absH } = rn;
+    const arrival = getEntityArrivalSettleStyle(
+      this.entityArrivalTimestamps.get(rn.node.id),
+      this.renderTimestampMs || Date.now(),
+      this.prefersReducedMotion,
+    );
+    const transformed = arrival.scale !== 1;
+    if (transformed) {
+      canvas.save();
+      canvas.translate(absX + absW / 2, absY + absH / 2);
+      canvas.scale(arrival.scale, arrival.scale);
+      canvas.translate(-(absX + absW / 2), -(absY + absH / 2));
+    }
+    if (arrival.active) {
+      this.markDirty();
+    }
+
     const entityType = entity?.type ?? "fact";
     const color = this.entityColor(entityType);
     const confidence = entity?.confidence ?? "medium";
     const isStale = entity?.stale ?? false;
     const isHumanEdited = entity?.provenance?.source === "user-edited";
+    const effectiveOpacityMultiplier = opacityMultiplier * arrival.opacity;
 
-    const nodeOpacity = (isStale ? 0.4 : 1.0) * opacityMultiplier;
+    const nodeOpacity = (isStale ? 0.4 : 1.0) * effectiveOpacityMultiplier;
 
     // ── Human-edited glow (subtle shadow in entity color, behind everything) ──
     if (isHumanEdited && !isStale) {
@@ -663,7 +713,7 @@ export class SkiaEngine {
       glowPaint.setStyle(ck.PaintStyle.Fill);
       glowPaint.setAntiAlias(true);
       const gc = parseColor(ck, color);
-      gc[3] = 0.25;
+      gc[3] = 0.25 * arrival.opacity;
       glowPaint.setColor(gc);
       const sigma = 6;
       const filter = ck.MaskFilter.MakeBlur(ck.BlurStyle.Normal, sigma, true);
@@ -828,10 +878,10 @@ export class SkiaEngine {
           } as PenNode;
         }
         // Adjust text opacity for stale/dimmed nodes
-        if (isStale || opacityMultiplier < 1.0) {
+        if (isStale || effectiveOpacityMultiplier < 1.0) {
           childRN.node = {
             ...childRN.node,
-            opacity: Math.min(isStale ? 0.4 : 1.0, opacityMultiplier),
+            opacity: Math.min(isStale ? 0.4 : 1.0, effectiveOpacityMultiplier),
           } as PenNode;
         }
         this.renderer.drawNode(canvas, childRN, emptySet);
@@ -845,7 +895,9 @@ export class SkiaEngine {
       focusPaint.setStyle(ck.PaintStyle.Stroke);
       focusPaint.setAntiAlias(true);
       focusPaint.setStrokeWidth(2);
-      focusPaint.setColor(parseColor(ck, color));
+      const focusColor = parseColor(ck, color);
+      focusColor[3] *= arrival.opacity;
+      focusPaint.setColor(focusColor);
       const focusRRect = ck.RRectXY(
         ck.LTRBRect(absX - 1, absY - 1, absX + absW + 1, absY + absH + 1),
         7,
@@ -853,6 +905,10 @@ export class SkiaEngine {
       );
       canvas.drawRRect(focusRRect, focusPaint);
       focusPaint.delete();
+    }
+
+    if (transformed) {
+      canvas.restore();
     }
   }
 

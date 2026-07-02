@@ -135,8 +135,6 @@ const ru: TranslationKeys = {
   "agents.openaiModels": "Модели OpenAI",
   "agents.opencode": "OpenCode",
   "agents.opencodeDesc": "75+ провайдеров LLM",
-  "agents.copilot": "GitHub Copilot",
-  "agents.copilotDesc": "Модели GitHub Copilot",
   "agents.mcpServer": "MCP Сервер",
   "agents.mcpServerStop": "Остановить",
   "agents.mcpServerRunning": "Работает",

@@ -128,8 +128,6 @@ const en = {
   "agents.openaiModels": "OpenAI models",
   "agents.opencode": "OpenCode",
   "agents.opencodeDesc": "75+ LLM providers",
-  "agents.copilot": "GitHub Copilot",
-  "agents.copilotDesc": "GitHub Copilot models",
   "agents.mcpServer": "MCP Server",
   "agents.mcpServerStop": "Stop",
   "agents.mcpServerRunning": "Running",

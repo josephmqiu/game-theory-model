@@ -1,6 +1,7 @@
 import type { AnalysisEntity, EntityType, LayoutState } from "@/types/entity";
 import type { FrameNode, TextNode } from "@/types/pen";
 import type { RenderNode } from "@/canvas/skia/skia-renderer";
+import { PHASE_NUMBERS } from "@/types/methodology";
 import {
   ENTITY_CARD_LAYOUT,
   getEntityCardMetrics,
@@ -124,6 +125,11 @@ function entityCanvasMetaLine(entity: AnalysisEntity): string {
   return truncateEntityCardText(fullMetaLine, metaMaxChars);
 }
 
+function entitySemanticExplain(entity: AnalysisEntity): string {
+  const typeLabel = entity.type.replace(/-/g, " ");
+  return `${typeLabel} entity card: ${entityDisplayName(entity)} (phase ${PHASE_NUMBERS[entity.phase]})`;
+}
+
 // ── Mapping ──
 
 /**
@@ -198,6 +204,7 @@ export function entityToRenderNode(
     id: entity.id,
     type: "frame",
     role: `entity-${entity.type}`,
+    explain: entitySemanticExplain(entity),
     name: entityDisplayName(entity),
     x,
     y,

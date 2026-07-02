@@ -120,6 +120,17 @@ export class SkiaFontManager {
     return this.provider
   }
 
+  /** Number of in-flight font load promises. */
+  pendingCount(): number {
+    return this.pendingFetches.size
+  }
+
+  /** Wait for every currently pending font fetch to settle. */
+  async flushPending(): Promise<void> {
+    const snapshot = Array.from(this.pendingFetches.values())
+    await Promise.all(snapshot.map((p) => p.catch(() => false)))
+  }
+
   /** Check if a font family is ready for use */
   isFontReady(family: string): boolean {
     return this.loadedFamilies.has(family.toLowerCase())

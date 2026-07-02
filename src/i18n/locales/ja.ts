@@ -132,8 +132,6 @@ const ja: TranslationKeys = {
   "agents.openaiModels": "OpenAI モデル",
   "agents.opencode": "OpenCode",
   "agents.opencodeDesc": "75 以上の LLM プロバイダー",
-  "agents.copilot": "GitHub Copilot",
-  "agents.copilotDesc": "GitHub Copilot モデル",
   "agents.mcpServer": "MCP サーバー",
   "agents.mcpServerStop": "停止",
   "agents.mcpServerRunning": "実行中",

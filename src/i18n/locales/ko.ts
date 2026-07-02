@@ -129,8 +129,6 @@ const ko: TranslationKeys = {
   "agents.openaiModels": "OpenAI 모델",
   "agents.opencode": "OpenCode",
   "agents.opencodeDesc": "75개 이상의 LLM 제공자",
-  "agents.copilot": "GitHub Copilot",
-  "agents.copilotDesc": "GitHub Copilot 모델",
   "agents.mcpServer": "MCP 서버",
   "agents.mcpServerStop": "정지",
   "agents.mcpServerRunning": "실행 중",

@@ -130,8 +130,6 @@ const id: TranslationKeys = {
   "agents.openaiModels": "Model OpenAI",
   "agents.opencode": "OpenCode",
   "agents.opencodeDesc": "75+ penyedia LLM",
-  "agents.copilot": "GitHub Copilot",
-  "agents.copilotDesc": "Model GitHub Copilot",
   "agents.mcpServer": "Server MCP",
   "agents.mcpServerStop": "Hentikan",
   "agents.mcpServerRunning": "Berjalan",

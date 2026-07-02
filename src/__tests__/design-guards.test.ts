@@ -103,6 +103,19 @@ describe("design guards (6A)", () => {
     expect(css).toMatch(/button:not\(:disabled\)[\s\S]*?cursor:\s*pointer/);
   });
 
+  it("overlay motion carries reduced-motion guards", () => {
+    const overlay = read("src/components/panels/entity-overlay-card.tsx");
+    const notice = read("src/components/panels/challenge-removed-notice.tsx");
+    const css = read("src/styles.css");
+
+    expect(css).toContain("overlay-card-motion");
+    for (const source of [overlay, notice]) {
+      expect(source).toContain("motion-reduce:transition-none");
+      expect(source).toContain("motion-reduce:translate-y-0");
+      expect(source).toContain("motion-reduce:opacity-100");
+    }
+  });
+
   // ── 5.2A: fonts ──
 
   it("Geist is bundled and Satoshi is gone", () => {

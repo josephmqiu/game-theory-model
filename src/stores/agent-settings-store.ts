@@ -114,7 +114,7 @@ export function buildAnalysisRuntimeOverrides(
   return Object.keys(runtime).length > 0 ? runtime : undefined;
 }
 
-// opencode and copilot are dormant — unreachable via ALLOWED_PROVIDERS
+// opencode is dormant — unreachable via ALLOWED_PROVIDERS
 const DEFAULT_PROVIDERS: Record<AIProviderType, AIProviderConfig> = {
   anthropic: {
     type: "anthropic",
@@ -133,13 +133,6 @@ const DEFAULT_PROVIDERS: Record<AIProviderType, AIProviderConfig> = {
   opencode: {
     type: "opencode",
     displayName: "OpenCode",
-    isConnected: false,
-    connectionMethod: null,
-    models: [],
-  },
-  copilot: {
-    type: "copilot",
-    displayName: "GitHub Copilot",
     isConnected: false,
     connectionMethod: null,
     models: [],
@@ -174,12 +167,6 @@ const DEFAULT_MCP_INTEGRATIONS: MCPCliIntegration[] = [
   {
     tool: "kiro-cli",
     displayName: "Kiro CLI",
-    enabled: false,
-    installed: false,
-  },
-  {
-    tool: "copilot-cli",
-    displayName: "GitHub Copilot CLI",
     enabled: false,
     installed: false,
   },

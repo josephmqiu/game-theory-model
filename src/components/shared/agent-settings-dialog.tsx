@@ -33,7 +33,6 @@ import type { AnalysisEffortLevel } from "../../../shared/types/analysis-runtime
 import ClaudeLogo from "@/components/icons/claude-logo";
 import OpenAILogo from "@/components/icons/openai-logo";
 import OpenCodeLogo from "@/components/icons/opencode-logo";
-import CopilotLogo from "@/components/icons/copilot-logo";
 
 /** MCP tools that correspond to allowed providers (claude-code → anthropic, codex-cli → openai) */
 const ALLOWED_MCP_TOOLS = new Set(["claude-code", "codex-cli"]);
@@ -46,7 +45,7 @@ const PROVIDER_META: Record<
     /** Direct display label (not an i18n key) — sourced from PROVIDER_LABELS */
     label: string;
     descriptionKey: string;
-    agent: "claude-code" | "codex-cli" | "opencode" | "copilot";
+    agent: "claude-code" | "codex-cli" | "opencode";
     Icon: ComponentType<SVGProps<SVGSVGElement>>;
   }
 > = {
@@ -68,12 +67,6 @@ const PROVIDER_META: Record<
     agent: "opencode",
     Icon: OpenCodeLogo,
   },
-  copilot: {
-    label: "GitHub Copilot",
-    descriptionKey: "agents.copilotDesc",
-    agent: "copilot",
-    Icon: CopilotLogo,
-  },
 };
 
 const ANALYSIS_EFFORT_OPTIONS: AnalysisEffortLevel[] = [
@@ -89,7 +82,7 @@ const ANALYSIS_EFFORT_LABEL_KEYS: Record<AnalysisEffortLevel, string> = {
 };
 
 async function connectAgent(
-  agent: "claude-code" | "codex-cli" | "opencode" | "copilot",
+  agent: "claude-code" | "codex-cli" | "opencode",
 ): Promise<{
   connected: boolean;
   models: GroupedModel[];
@@ -115,7 +108,7 @@ async function connectAgent(
 }
 
 async function installAgent(
-  agent: "claude-code" | "codex-cli" | "opencode" | "copilot",
+  agent: "claude-code" | "codex-cli" | "opencode",
 ): Promise<{
   success: boolean;
   error?: string;
