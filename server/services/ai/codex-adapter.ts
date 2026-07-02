@@ -5,10 +5,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { filterCodexEnv } from "../../utils/codex-client";
 import { serverLog, serverWarn } from "../../utils/ai-logger";
-import { resolveMcpProxyScript } from "../../utils/mcp-server-manager";
 import type { ChatEvent } from "../../../shared/types/events";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
-import { CODEX_MCP_SERVER_NAME, installMcpServer } from "./codex-config";
+import { CODEX_MCP_SERVER_NAME } from "./codex-config";
 import { ANALYSIS_TOOL_NAMES, CHAT_TOOL_NAMES } from "./tool-surfaces";
 import type { AnalysisActivityCallback } from "./analysis-activity";
 
@@ -199,10 +198,7 @@ function normalizeAnalysisError(error: unknown): Error {
   if (message === "Aborted") {
     return new Error("Aborted");
   }
-  if (
-    message.startsWith("Codex turn failed:") ||
-    message.startsWith("Failed to restore chat MCP config:")
-  ) {
+  if (message.startsWith("Codex turn failed:")) {
     return error instanceof Error ? error : new Error(message);
   }
   return new Error(buildCodexTurnFailureMessage(message));
@@ -322,42 +318,9 @@ function handleIncomingLine(conn: AppServerConnection, line: string): void {
 
 const ANALYSIS_TIMEOUT_MS = analysisRuntimeConfig.codex.analysisTimeoutMs;
 
-function resolveMcpServerCommand(): string {
-  // In Electron, process.execPath is the Electron binary (GUI app), not a
-  // Node.js runtime. Codex needs a real Node/Bun binary to spawn the MCP
-  // server subprocess. Fall back to "node" (on PATH) in Electron production.
-  if (process.env.ELECTRON_RESOURCES_PATH) return "node";
-  return process.release?.name === "node" ? process.execPath : "node";
-}
-
-function installToolSurface(
-  toolNames: readonly string[],
-  runId?: string,
-): void {
-  const env: Record<string, string> = {};
-  if (runId) {
-    env.ANALYSIS_RUN_ID = runId;
-  }
-  if (process.env.MCP_PORT?.trim()) {
-    env.MCP_PORT = process.env.MCP_PORT.trim();
-  }
-
-  installMcpServer(resolveMcpServerCommand(), [resolveMcpProxyScript()], {
-    enabledTools: [...toolNames],
-    env: Object.keys(env).length > 0 ? env : undefined,
-  });
-  serverLog(runId, "codex-adapter", "mcp-config-written", {
-    toolNames,
-  });
-}
-
-function installAnalysisToolSurface(runId?: string): void {
-  installToolSurface(ANALYSIS_TOOL_NAMES, runId);
-}
-
-function installChatToolSurface(): void {
-  installToolSurface(CHAT_TOOL_NAMES);
-}
+// The MCP server registration is owned by explicit setup (decision 10):
+// `codex mcp add <name> --url` at install time via codex-mcp-registration.ts.
+// Runs perform ZERO config writes — they only verify the registration below.
 
 async function reloadMcpServerConfig(
   conn: AppServerConnection,
@@ -372,12 +335,13 @@ async function ensureConfiguredMcpServerAvailable(
   toolNames: readonly string[],
   runId?: string,
 ): Promise<void> {
-  // Retry with backoff: config/mcpServer/reload may return before Codex
-  // finishes initializing the MCP subprocess (initialize + tools/list).
+  // Retry with backoff: the app-server may still be initializing the MCP
+  // connection (initialize + tools/list) when the first run starts.
   const MAX_ATTEMPTS = 5;
   const RETRY_DELAYS = [0, 300, 600, 1200, 2400];
 
   let lastError: Error | null = null;
+  let reloadAttempted = false;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     if (attempt > 0) {
@@ -422,6 +386,19 @@ async function ensureConfiguredMcpServerAvailable(
       .find((entry) => entry?.name === CODEX_MCP_SERVER_NAME);
 
     if (!target) {
+      // Registration may have happened after this app-server booted (e.g.
+      // the user just clicked install in Agent Settings). One reload —
+      // a config READ on Codex's side — before continuing to retry.
+      if (!reloadAttempted) {
+        reloadAttempted = true;
+        try {
+          await reloadMcpServerConfig(conn, runId);
+        } catch (err) {
+          serverWarn(runId, "codex-adapter", "mcp-config-reload-failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
       if (attempt < MAX_ATTEMPTS - 1) {
         serverLog(runId, "codex-adapter", "mcp-status-retry", {
           attempt: attempt + 1,
@@ -430,7 +407,10 @@ async function ensureConfiguredMcpServerAvailable(
         });
         continue;
       }
-      throw new Error(`MCP server "${CODEX_MCP_SERVER_NAME}" is not loaded`);
+      throw new Error(
+        `MCP server "${CODEX_MCP_SERVER_NAME}" is not registered with Codex. ` +
+          "Open Agent Settings and install the Codex CLI integration.",
+      );
     }
 
     const availableTools = Object.keys(asRecord(target.tools) ?? {});
@@ -617,12 +597,9 @@ export async function* streamChat(
   const runId = options?.runId;
   const timeoutMs = options?.timeoutMs ?? CHAT_TIMEOUT_MS;
 
-  installChatToolSurface();
-
   let conn: AppServerConnection;
   try {
     conn = await startAppServer(runId);
-    await reloadMcpServerConfig(conn, runId);
     await ensureConfiguredMcpServerAvailable(conn, CHAT_TOOL_NAMES, runId);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -760,7 +737,16 @@ export async function* streamChat(
     }
 
     // File/command/permissions approval — auto-reject with warning.
-    // TODO: Forward to UI for user review instead of auto-rejecting
+    //
+    // Investigated (decision 10): the app-server raises these requests when
+    // a turn tries to escape its sandbox (apply file changes, run shell
+    // commands, or widen permissions). Our analysis/chat turns are MCP-tool
+    // only — the product tool surface has no file or shell capability — so
+    // any such request is the model going off-script, and rejecting is the
+    // correct non-interactive posture (matches Codex's own "untrusted"
+    // approval tier). Forwarding to the UI for human review would only make
+    // sense if we ever grant Codex workspace access, which we deliberately
+    // do not.
     if (
       method === FILE_CHANGE_APPROVAL ||
       method === COMMAND_APPROVAL ||
@@ -923,8 +909,8 @@ export async function* streamChat(
  * Run a single analysis phase using Codex with structured JSON output.
  * Returns the parsed JSON result.
  *
- * Registers the read-only analysis MCP surface, reloads app-server config,
- * runs a structured-output turn, then restores the chat MCP surface.
+ * Verifies the statically registered MCP server is available (no config
+ * writes — decision 10), then runs a structured-output turn.
  */
 export async function runAnalysisPhase<T = unknown>(
   prompt: string,
@@ -934,17 +920,14 @@ export async function runAnalysisPhase<T = unknown>(
   options?: AnalysisRunOptions,
 ): Promise<T> {
   const runId = options?.runId;
-  installAnalysisToolSurface(runId);
 
   const conn = await startAppServer(runId);
-  let restoreError: Error | null = null;
   let primaryError: Error | null = null;
   let threadId = "";
   let turnId: string | null = null;
   let parsedResult: T | null = null;
 
   try {
-    await reloadMcpServerConfig(conn, runId);
     await ensureConfiguredMcpServerAvailable(conn, ANALYSIS_TOOL_NAMES, runId);
 
     const webSearchMode = options?.webSearch === false ? "disabled" : "live";
@@ -1273,23 +1256,6 @@ export async function runAnalysisPhase<T = unknown>(
     }
   } catch (error) {
     primaryError = normalizeAnalysisError(error);
-  } finally {
-    try {
-      installChatToolSurface();
-      await reloadMcpServerConfig(conn, runId);
-      serverLog(runId, "codex-adapter", "analysis-mcp-restored");
-    } catch (err) {
-      restoreError =
-        err instanceof Error
-          ? err
-          : new Error(`Failed to restore chat MCP config: ${String(err)}`);
-      serverWarn(runId, "codex-adapter", "mcp-restore-failed", {
-        message: restoreError.message,
-      });
-      if (!primaryError) {
-        primaryError = restoreError;
-      }
-    }
   }
 
   if (primaryError) {

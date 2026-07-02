@@ -1,4 +1,8 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import { once } from "node:events";
 import { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -76,7 +80,9 @@ function writeJson(
 
 function isAllowedHost(req: IncomingMessage, port: number): boolean {
   const hostHeader = req.headers.host;
-  return typeof hostHeader === "string" && getAllowedHosts(port).includes(hostHeader);
+  return (
+    typeof hostHeader === "string" && getAllowedHosts(port).includes(hostHeader)
+  );
 }
 
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
@@ -138,7 +144,9 @@ async function handleMcpRequest(
   }
 }
 
-async function closeServer(server: ReturnType<typeof createServer>): Promise<void> {
+async function closeServer(
+  server: ReturnType<typeof createServer>,
+): Promise<void> {
   server.close();
   await once(server, "close");
 }
@@ -150,6 +158,25 @@ export function getMcpServerStatus(): McpServerState {
   }
 
   return { available: true, port: activeServer.port };
+}
+
+function listenOn(
+  server: ReturnType<typeof createServer>,
+  port: number,
+): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    const onError = (error: Error) => reject(error);
+    server.once("error", onError);
+    server.listen(port, MCP_HTTP_HOST, () => {
+      server.off("error", onError);
+      const address = server.address();
+      if (address && typeof address === "object") {
+        resolve(address.port);
+      } else {
+        reject(new Error("Failed to determine bound MCP port"));
+      }
+    });
+  });
 }
 
 export async function startMcpServer(
@@ -164,8 +191,12 @@ export async function startMcpServer(
     };
   }
 
+  // boundPort is captured by the request handler so allowed-host checks use
+  // the port we actually bound — which may be dynamic (see below).
+  let boundPort = port;
+
   const server = createServer((req, res) => {
-    void handleMcpRequest(req, res, port).catch((error) => {
+    void handleMcpRequest(req, res, boundPort).catch((error) => {
       console.error("Game Theory Analyzer MCP request failed:", error);
       if (!res.headersSent) {
         writeJson(res, 500, {
@@ -180,20 +211,29 @@ export async function startMcpServer(
   });
 
   try {
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(port, MCP_HTTP_HOST, () => {
-        server.off("error", reject);
-        resolve();
-      });
-    });
-  } catch (error) {
-    console.error("Game Theory Analyzer MCP server failed to bind:", error);
-    return {
-      available: false,
-      port,
-      close: async () => {},
-    };
+    boundPort = await listenOn(server, port);
+  } catch (preferredPortError) {
+    // Preferred port taken (another instance, another app) — fall back to an
+    // OS-assigned free port. Consumers read the actual port from
+    // getMcpServerStatus()/the /api/mcp/server endpoint; the Codex/Claude
+    // registrations are written with this port at setup time.
+    try {
+      boundPort = await listenOn(server, 0);
+      console.error(
+        `Game Theory Analyzer MCP port ${port} unavailable; using dynamic port ${boundPort}`,
+      );
+    } catch (dynamicPortError) {
+      console.error(
+        "Game Theory Analyzer MCP server failed to bind:",
+        preferredPortError,
+        dynamicPortError,
+      );
+      return {
+        available: false,
+        port,
+        close: async () => {},
+      };
+    }
   }
 
   const close = async () => {
@@ -204,11 +244,11 @@ export async function startMcpServer(
     await closeServer(server);
   };
 
-  setGlobalServerState({ close, port, server });
+  setGlobalServerState({ close, port: boundPort, server });
 
   console.error(
-    `Game Theory Analyzer MCP server listening on http://${MCP_HTTP_HOST}:${port}/mcp`,
+    `Game Theory Analyzer MCP server listening on http://${MCP_HTTP_HOST}:${boundPort}/mcp`,
   );
 
-  return { available: true, port, close };
+  return { available: true, port: boundPort, close };
 }
