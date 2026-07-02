@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
 
 import { StrictMode, useRef } from "react";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   useScrollEngine,
@@ -85,6 +92,9 @@ function Harness({ messages }: { messages: ScrollEngineMessage[] }) {
   return (
     <>
       <div data-testid="mode">{engine.state.mode}</div>
+      <div data-testid="motion">
+        {engine.prefersReducedMotion ? "reduce" : "no-preference"}
+      </div>
       <button type="button" onClick={engine.jumpToLatest}>
         Jump
       </button>
@@ -250,5 +260,53 @@ describe("useScrollEngine", () => {
 
     expect(scrollTo).toHaveBeenCalledWith({ top: 600, behavior: "smooth" });
     expect(container.scrollTop).toBe(0);
+  });
+
+  it("uses instant positioning for jump-to-latest when reduced motion is preferred", async () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockReturnValue({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    });
+    const scrollTo = vi.fn(function mockScrollTo(
+      this: Element,
+      optionsOrLeft?: ScrollToOptions | number,
+      top?: number,
+    ) {
+      const nextTop =
+        typeof optionsOrLeft === "object" ? optionsOrLeft.top : top;
+      if (typeof nextTop === "number") {
+        (this as HTMLElement).scrollTop = nextTop;
+      }
+    });
+    Element.prototype.scrollTo = scrollTo;
+    render(<Harness messages={[{ id: "m1", role: "assistant" }]} />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("motion").textContent).toBe("reduce"),
+    );
+
+    const container = screen.getByTestId("container");
+    defineScrollMetrics(container);
+    container.scrollTop = 0;
+    const setTimeoutSpy = vi.spyOn(window, "setTimeout");
+
+    fireEvent.wheel(container, { deltaY: -40 });
+    await act(async () => {
+      fireEvent.click(screen.getByText("Jump"));
+    });
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 600, behavior: "auto" });
+    expect(
+      scrollTo.mock.calls.some(
+        ([options]) =>
+          typeof options === "object" && options?.behavior === "smooth",
+      ),
+    ).toBe(false);
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
+    expect(container.scrollTop).toBe(600);
   });
 });

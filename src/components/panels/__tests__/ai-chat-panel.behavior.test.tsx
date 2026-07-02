@@ -6,14 +6,25 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const { streamChatMock } = vi.hoisted(() => ({
+  streamChatMock: vi.fn(),
+}));
+
+vi.mock("@/services/ai/ai-service", () => ({
+  streamChat: streamChatMock,
+}));
+
 import AIChatPanel from "@/components/panels/ai-chat-panel";
 import {
   initialScrollState,
   scrollReducer,
 } from "@/components/panels/scroll-state";
 import { useAIStore } from "@/stores/ai-store";
+import { useAgentSettingsStore } from "@/stores/agent-settings-store";
 import type { ChatMessage } from "@/services/ai/ai-types";
 
 class MockIntersectionObserver {
@@ -41,10 +52,80 @@ function message(
   };
 }
 
+function rect(top: number, bottom: number): DOMRect {
+  return { top, bottom } as DOMRect;
+}
+
+function installScrollToMock() {
+  const scrollTo = vi.fn(function mockScrollTo(
+    this: Element,
+    optionsOrLeft?: ScrollToOptions | number,
+    top?: number,
+  ) {
+    const nextTop =
+      typeof optionsOrLeft === "object" ? optionsOrLeft.top : top;
+    if (typeof nextTop === "number") {
+      (this as HTMLElement).scrollTop = nextTop;
+    }
+  });
+  Element.prototype.scrollTo = scrollTo;
+  return scrollTo;
+}
+
+function installTranscriptGeometry(newUserText?: string) {
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
+    function getRect(this: Element) {
+      const element = this as HTMLElement;
+      if (element.dataset.testid === "chat-transcript") {
+        return rect(0, 500);
+      }
+      if (newUserText && element.textContent?.includes(newUserText)) {
+        return rect(240, 280);
+      }
+      if (element.dataset.messageId === "u1") {
+        return rect(40, 80);
+      }
+      if (element.dataset.messageId === "a1") {
+        return rect(120, 180);
+      }
+      return rect(0, 40);
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(
+    function getClientHeight(this: HTMLElement) {
+      return this.dataset.testid === "chat-transcript" ? 500 : 0;
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(
+    function getScrollHeight(this: HTMLElement) {
+      return this.dataset.testid === "chat-transcript" ? 500 : 0;
+    },
+  );
+}
+
 function renderPanel(
   messages: ChatMessage[] = [],
   overrides: Partial<ReturnType<typeof useAIStore.getState>> = {},
 ) {
+  useAgentSettingsStore.setState((state) => ({
+    isHydrated: true,
+    providers: {
+      ...state.providers,
+      anthropic: {
+        ...state.providers.anthropic,
+        isConnected: true,
+        connectionMethod: "claude-code",
+        models: [
+          {
+            value: "claude-sonnet-4-5-20250929",
+            displayName: "Claude Sonnet",
+            description: "test",
+            provider: "anthropic",
+          },
+        ],
+      },
+    },
+  }));
   useAIStore.setState({
     ...useAIStore.getInitialState(),
     messages,
@@ -64,6 +145,8 @@ function renderPanel(
 
 describe("AIChatPanel scroll behavior", () => {
   beforeEach(() => {
+    streamChatMock.mockReset();
+    streamChatMock.mockImplementation(async function* emptyChatStream() {});
     vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
     vi.stubGlobal("ResizeObserver", MockResizeObserver);
     vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
@@ -90,6 +173,7 @@ describe("AIChatPanel scroll behavior", () => {
   afterEach(() => {
     cleanup();
     useAIStore.setState(useAIStore.getInitialState(), true);
+    useAgentSettingsStore.setState(useAgentSettingsStore.getInitialState(), true);
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -122,6 +206,63 @@ describe("AIChatPanel scroll behavior", () => {
     });
 
     expect(await screen.findByText("1 new")).toBeTruthy();
+    expect(screen.getByText("New since you scrolled")).toBeTruthy();
+  });
+
+  it("anchors a submitted user turn near 24 percent while FOLLOWING", async () => {
+    const newUserText = "Fresh follow-up";
+    const scrollTo = installScrollToMock();
+    installTranscriptGeometry(newUserText);
+
+    renderPanel([
+      message("u1", "user", "Question"),
+      message("a1", "assistant", "Answer"),
+    ]);
+    scrollTo.mockClear();
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: newUserText },
+    });
+    fireEvent.click(screen.getByTitle("Send message"));
+
+    expect(await screen.findByText(newUserText)).toBeTruthy();
+    await waitFor(() => {
+      expect(scrollTo).toHaveBeenCalledWith({
+        top: 120,
+        behavior: "auto",
+      });
+    });
+  });
+
+  it("keeps the transcript fixed and shows unread count when submitting while READING", async () => {
+    const newUserText = "Reading follow-up";
+    const scrollTo = installScrollToMock();
+    installTranscriptGeometry(newUserText);
+
+    renderPanel([
+      message("u1", "user", "Question"),
+      message("a1", "assistant", "Answer"),
+    ]);
+
+    const transcript = screen.getByTestId("chat-transcript");
+    scrollTo.mockClear();
+    transcript.scrollTop = 120;
+    fireEvent.wheel(transcript, { deltaY: -40 });
+    expect(screen.getByText("Jump to latest")).toBeTruthy();
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: newUserText },
+    });
+    fireEvent.click(screen.getByTitle("Send message"));
+
+    expect(await screen.findByText(newUserText)).toBeTruthy();
+    expect(transcript.scrollTop).toBe(120);
+    expect(scrollTo).not.toHaveBeenCalled();
+    await waitFor(() => {
+      const pill = screen.getByText(/\d+ new/);
+      const count = Number(pill.textContent?.match(/\d+/)?.[0] ?? 0);
+      expect(count).toBeGreaterThan(0);
+    });
     expect(screen.getByText("New since you scrolled")).toBeTruthy();
   });
 
@@ -208,6 +349,60 @@ describe("AIChatPanel scroll behavior", () => {
     expect(document.activeElement).toBe(
       document.querySelector('[data-message-id="a1"]'),
     );
+  });
+
+  it("renders the reconnecting strip after the offline signal without clearing the transcript", async () => {
+    renderPanel([
+      message("u1", "user", "Question"),
+      message("a1", "assistant", "Answer"),
+    ]);
+
+    await act(async () => {
+      window.dispatchEvent(new Event("offline"));
+    });
+
+    expect(await screen.findByText("Reconnecting...")).toBeTruthy();
+    expect(screen.getByText("Question")).toBeTruthy();
+    expect(screen.getByText("Answer")).toBeTruthy();
+  });
+
+  it("renders an inline error retry and resends the last user message", async () => {
+    renderPanel([
+      message("u1", "user", "Original question"),
+      {
+        ...message("a1", "assistant", "Partial answer"),
+        status: "error",
+        error: "Network failed",
+      },
+    ]);
+
+    expect(screen.getByText("Network failed")).toBeTruthy();
+    fireEvent.click(screen.getByText("Retry"));
+
+    await waitFor(() => expect(streamChatMock).toHaveBeenCalledTimes(1));
+    const retryHistory = streamChatMock.mock.calls[0][1] as Array<{
+      role: string;
+      content: string;
+    }>;
+    expect(retryHistory.at(-1)).toMatchObject({
+      role: "user",
+      content: "Original question",
+    });
+  });
+
+  it("renders a quiet session-expired divider from the chat event stream", async () => {
+    streamChatMock.mockImplementationOnce(async function* sessionExpiredStream() {
+      yield { type: "session_expired", content: "" };
+    });
+
+    renderPanel([message("u1", "user", "Question")]);
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Continue" },
+    });
+    fireEvent.click(screen.getByTitle("Send message"));
+
+    expect(await screen.findByText(/Session expired/)).toBeTruthy();
   });
 
   it("anchors the last user message near 20 percent when reopened during a stream", async () => {
