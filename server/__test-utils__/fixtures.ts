@@ -21,60 +21,6 @@ export async function resetAllServices(): Promise<void> {
   orchestrator._resetForTest();
 }
 
-// ── Provenance helpers ──
-
-export const defaultProvenance = {
-  source: "phase-derived" as const,
-  runId: "test-run-1",
-  phase: "situational-grounding" as const,
-};
-
-export function makeProvenance(
-  phase: string,
-  runId = "test-run-1",
-  source: "phase-derived" | "user-edited" = "phase-derived",
-) {
-  return { source, runId, phase };
-}
-
-// ── Entity factories (for entity-graph-service) ──
-
-export function makeFactData(overrides?: Partial<Record<string, unknown>>) {
-  return {
-    type: "fact" as const,
-    phase: "situational-grounding" as const,
-    data: {
-      type: "fact" as const,
-      date: "2026-03-19",
-      source: "test",
-      content: "A fact",
-      category: "action" as const,
-      ...((overrides as Record<string, unknown>) ?? {}),
-    },
-    confidence: "high" as const,
-    rationale: "test rationale",
-    revision: 1,
-    stale: false,
-  };
-}
-
-export function makePlayerData(overrides?: { name?: string }) {
-  return {
-    type: "player" as const,
-    phase: "player-identification" as const,
-    data: {
-      type: "player" as const,
-      name: overrides?.name ?? "USA",
-      playerType: "primary" as const,
-      knowledge: [],
-    },
-    confidence: "high" as const,
-    rationale: "primary actor",
-    revision: 1,
-    stale: false,
-  };
-}
-
 // ── Phase output factories (for adapter mock responses & commitPhaseSnapshot) ──
 
 export function makeFactOutput(overrides?: {
@@ -96,68 +42,6 @@ export function makeFactOutput(overrides?: {
     },
     confidence: "high" as const,
     rationale: `rationale:${overrides?.content ?? "A fact"}`,
-  };
-}
-
-export function makePlayerOutput(overrides?: {
-  id?: string | null;
-  ref?: string;
-  name?: string;
-}) {
-  return {
-    id: overrides?.id ?? null,
-    ref: overrides?.ref ?? "player-ref",
-    type: "player" as const,
-    phase: "player-identification" as const,
-    data: {
-      type: "player" as const,
-      name: overrides?.name ?? "Country A",
-      playerType: "primary" as const,
-      knowledge: ["Own tariff schedule"],
-    },
-    confidence: "high" as const,
-    rationale: "Initiator of the tariff action",
-  };
-}
-
-export function makeObjectiveOutput(overrides?: {
-  id?: string | null;
-  ref?: string;
-}) {
-  return {
-    id: overrides?.id ?? null,
-    ref: overrides?.ref ?? "obj-ref",
-    type: "objective" as const,
-    phase: "player-identification" as const,
-    data: {
-      type: "objective" as const,
-      description: "Protect domestic steel industry",
-      priority: "high" as const,
-      stability: "stable" as const,
-    },
-    confidence: "high" as const,
-    rationale: "Stated policy goal",
-  };
-}
-
-export function makeGameOutput(overrides?: {
-  id?: string | null;
-  ref?: string;
-}) {
-  return {
-    id: overrides?.id ?? null,
-    ref: overrides?.ref ?? "game-ref",
-    type: "game" as const,
-    phase: "baseline-model" as const,
-    data: {
-      type: "game" as const,
-      name: "Steel Trade War",
-      gameType: "chicken" as const,
-      timing: "sequential" as const,
-      description: "Escalation game between two trading nations",
-    },
-    confidence: "medium" as const,
-    rationale: "Fits chicken structure",
   };
 }
 

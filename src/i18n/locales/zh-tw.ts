@@ -2,57 +2,22 @@ import type { TranslationKeys } from "./en";
 
 const zhTW: TranslationKeys = {
   // ── Common ──
-  "common.rename": "重新命名",
-  "common.duplicate": "複製",
-  "common.delete": "刪除",
-  "common.cancel": "取消",
-  "common.save": "儲存",
-  "common.close": "關閉",
   "common.connect": "連線",
   "common.disconnect": "中斷連線",
-  "common.import": "匯入",
-  "common.export": "匯出",
-  "common.name": "名稱",
-  "common.untitled": "未命名",
   "common.best": "最佳",
-  "common.selected": "已選取 {{count}} 個",
 
   // ── Toolbar ──
-  "toolbar.select": "選取",
-  "toolbar.text": "文字",
-  "toolbar.frame": "畫框",
-  "toolbar.hand": "抓手",
-  "toolbar.undo": "復原",
-  "toolbar.redo": "重做",
-  "toolbar.variables": "變數",
-  "toolbar.uikitBrowser": "UIKit 瀏覽器",
 
   // ── Shapes ──
-  "shapes.rectangle": "矩形",
-  "shapes.ellipse": "橢圓",
-  "shapes.polygon": "多邊形",
-  "shapes.line": "線條",
-  "shapes.icon": "圖示",
-  "shapes.importImageSvg": "匯入圖片或 SVG\u2026",
-  "shapes.pen": "鋼筆",
-  "shapes.shapeTools": "形狀工具",
-  "shapes.moreShapeTools": "更多形狀工具",
 
   // ── Top Bar ──
-  "topbar.hideLayers": "隱藏大綱",
-  "topbar.showLayers": "顯示大綱",
   "topbar.new": "新增",
   "topbar.open": "開啟",
   "topbar.save": "儲存",
-  "topbar.importFigma": "匯入 Figma",
-  "topbar.codePanel": "程式碼",
   "topbar.fullscreen": "全螢幕",
   "topbar.exitFullscreen": "退出全螢幕",
   "topbar.newAnalysis": "新增分析",
   "topbar.unsavedFile": "未儲存的 .gta 檔案",
-  "topbar.complete": "已完成",
-  "topbar.incomplete": "還剩 {{count}} 個儲存格",
-  "topbar.issues": "{{count}} 個問題",
   "topbar.tooltipNew": "開始一個新的分析",
   "topbar.tooltipOpen": "開啟已儲存的 .gta 分析",
   "topbar.tooltipSave": "儲存目前的分析",
@@ -60,23 +25,12 @@ const zhTW: TranslationKeys = {
   "topbar.agentsAndMcp": "Agents 與 MCP",
   "topbar.setupAgentsMcp": "設定 Agents 與 MCP",
   "topbar.connected": "已連線",
-  "topbar.agentStatus": "{{agents}} 個 Agent{{agentSuffix}} · {{mcp}} 個 MCP",
 
   // ── Right Panel ──
-  "rightPanel.design": "詳情",
-  "rightPanel.code": "程式碼",
-  "rightPanel.noSelection": "選取一個項目",
 
   // ── Pages ──
-  "pages.title": "頁面",
-  "pages.addPage": "新增頁面",
-  "pages.moveUp": "上移",
-  "pages.moveDown": "下移",
 
   // ── Status Bar ──
-  "statusbar.zoomOut": "縮小",
-  "statusbar.zoomIn": "放大",
-  "statusbar.resetZoom": "重設縮放",
 
   // ── Updater ──
   "updater.softwareUpdate": "軟體更新",
@@ -107,226 +61,60 @@ const zhTW: TranslationKeys = {
   "updater.subtitle.error": "無法檢查或下載更新。",
 
   // ── Layers ──
-  "layers.title": "大綱",
-  "layers.empty": "尚無項目。使用工具列開始建構。",
 
   // ── Layer Context Menu ──
-  "layerMenu.groupSelection": "群組選取項目",
-  "layerMenu.createComponent": "建立元件",
-  "layerMenu.detachComponent": "分離元件",
-  "layerMenu.detachInstance": "分離實例",
-  "layerMenu.booleanUnion": "聯合",
-  "layerMenu.booleanSubtract": "減去",
-  "layerMenu.booleanIntersect": "交集",
-  "layerMenu.toggleLock": "切換鎖定",
-  "layerMenu.toggleVisibility": "切換可見性",
 
   // ── Property Panel ──
-  "property.createComponent": "建立元件",
-  "property.detachComponent": "分離元件",
-  "property.goToComponent": "前往元件",
-  "property.detachInstance": "分離實例",
 
   // ── Fill ──
-  "fill.title": "填色",
-  "fill.solid": "純色",
-  "fill.linear": "線性漸層",
-  "fill.radial": "放射漸層",
-  "fill.image": "圖片",
-  "fill.stops": "色標",
-  "fill.angle": "角度",
 
   // ── Image ──
-  "image.title": "圖片",
-  "image.fit": "適應模式",
-  "image.fill": "填滿",
-  "image.fitMode": "適應",
-  "image.crop": "裁切",
-  "image.tile": "平鋪",
-  "image.clickToUpload": "點擊上傳",
-  "image.changeImage": "更換圖片",
-  "image.adjustments": "調整",
-  "image.exposure": "曝光",
-  "image.contrast": "對比度",
-  "image.saturation": "飽和度",
-  "image.temperature": "色溫",
-  "image.tint": "色調",
-  "image.highlights": "高光",
-  "image.shadows": "陰影",
-  "image.reset": "重設",
 
   // ── Stroke ──
-  "stroke.title": "描邊",
 
   // ── Appearance ──
-  "appearance.layer": "圖層",
-  "appearance.opacity": "不透明度",
 
   // ── Layout ──
-  "layout.flexLayout": "彈性佈局",
-  "layout.freedom": "自由（無佈局）",
-  "layout.vertical": "垂直佈局",
-  "layout.horizontal": "水平佈局",
-  "layout.alignment": "對齊",
-  "layout.gap": "間距",
-  "layout.spaceBetween": "兩端對齊",
-  "layout.spaceAround": "均勻分佈",
-  "layout.dimensions": "尺寸",
-  "layout.fillWidth": "填滿寬度",
-  "layout.fillHeight": "填滿高度",
-  "layout.hugWidth": "適應寬度",
-  "layout.hugHeight": "適應高度",
-  "layout.clipContent": "裁切內容",
 
   // ── Padding ──
-  "padding.title": "內距",
-  "padding.paddingMode": "內距模式",
-  "padding.paddingValues": "內距值",
-  "padding.oneValue": "四邊統一值",
-  "padding.horizontalVertical": "水平/垂直",
-  "padding.topRightBottomLeft": "上/右/下/左",
 
   // ── Typography ──
-  "text.typography": "排版",
-  "text.lineHeight": "行高",
-  "text.letterSpacing": "字距",
-  "text.horizontal": "水平",
-  "text.vertical": "垂直",
-  "text.alignLeft": "靠左對齊",
-  "text.alignCenter": "置中對齊",
-  "text.alignRight": "靠右對齊",
-  "text.justify": "左右對齊",
-  "text.top": "頂部",
-  "text.middle": "居中",
-  "text.bottom": "底部",
-  "text.weight.thin": "極細",
-  "text.weight.light": "細體",
-  "text.weight.regular": "標準",
-  "text.weight.medium": "中等",
-  "text.weight.semibold": "半粗",
-  "text.weight.bold": "粗體",
-  "text.weight.black": "極粗",
-  "text.font.search": "搜尋字型\u2026",
-  "text.font.bundled": "內建",
-  "text.font.system": "系統",
-  "text.font.loading": "正在載入字型\u2026",
-  "text.font.noResults": "找不到字型",
 
   // ── Text Layout ──
-  "textLayout.title": "佈局",
-  "textLayout.dimensions": "尺寸",
-  "textLayout.resizing": "調整方式",
-  "textLayout.autoWidth": "自動 W",
-  "textLayout.autoWidthDesc": "自動寬度 \u2014 文字水平擴展",
-  "textLayout.autoHeight": "自動 H",
-  "textLayout.autoHeightDesc": "自動高度 \u2014 固定寬度，高度自適應",
-  "textLayout.fixed": "固定",
-  "textLayout.fixedDesc": "固定尺寸 \u2014 寬度與高度皆固定",
-  "textLayout.fillWidth": "填滿寬度",
-  "textLayout.fillHeight": "填滿高度",
 
   // ── Effects ──
-  "effects.title": "效果",
-  "effects.dropShadow": "陰影",
-  "effects.blur": "模糊",
-  "effects.spread": "擴展",
-  "effects.color": "顏色",
 
   // ── Export ──
-  "export.title": "匯出",
-  "export.format": "格式",
-  "export.scale": "縮放",
-  "export.selectedOnly": "僅匯出選取項目",
-  "export.exportFormat": "匯出 {{format}}",
-  "export.exportLayer": "匯出圖層",
 
   // ── Polygon ──
-  "polygon.sides": "邊數",
 
   // ── Ellipse ──
-  "ellipse.start": "起始",
-  "ellipse.sweep": "掃過",
-  "ellipse.innerRadius": "內徑",
 
   // ── Corner Radius ──
-  "cornerRadius.title": "圓角",
 
   // ── Size / Position ──
-  "size.position": "位置",
 
   // ── Icon ──
-  "icon.title": "圖示",
-  "icon.searchIcons": "搜尋圖示...",
-  "icon.noIconsFound": "未找到圖示",
-  "icon.typeToSearch": "輸入以搜尋 Iconify 圖示",
-  "icon.iconsCount": "{{count}} 個圖示",
 
   // ── Variables Panel ──
-  "variables.addTheme": "新增主題",
-  "variables.addVariant": "新增變體",
-  "variables.addVariable": "新增變數",
-  "variables.searchVariables": "搜尋變數...",
-  "variables.noMatch": "沒有符合的變數",
-  "variables.noDefined": "尚未定義變數",
-  "variables.closeShortcut": "關閉 (\u2318\u21e7V)",
-  "variables.presets": "預設",
-  "variables.savePreset": "儲存為預設…",
-  "variables.loadPreset": "載入預設",
-  "variables.importPreset": "從檔案匯入…",
-  "variables.exportPreset": "匯出到檔案…",
-  "variables.presetName": "預設名稱",
-  "variables.noPresets": "沒有儲存的預設",
 
   // ── AI Chat ──
   "ai.newChat": "新對話",
   "ai.collapse": "收合",
-  "ai.tryExample": "試試工作區提示...",
-  "ai.tipSelectElements": "提示：在對話前選取工作區中的項目以提供上下文。",
   "ai.generating": "產生中...",
-  "ai.designWithAgent": "向 Agent 詢問此工作區...",
-  "ai.attachImage": "附加圖片",
   "ai.stopGenerating": "停止產生",
   "ai.sendMessage": "傳送訊息",
   "ai.loadingModels": "正在載入模型...",
   "ai.noModelsConnected": "尚未連線模型",
-  "ai.quickAction.loginScreen": "摘要此工作區",
-  "ai.quickAction.loginScreenPrompt":
-    "摘要目前工作區以及文件上下文中可見的主要項目。",
-  "ai.quickAction.foodApp": "描述所選內容",
-  "ai.quickAction.foodAppPrompt": "描述目前選取的項目以及你注意到的重要結構。",
-  "ai.quickAction.bottomNav": "建議後續步驟",
-  "ai.quickAction.bottomNavPrompt":
-    "根據目前的工作區，建議三個具體的後續步驟。",
-  "ai.quickAction.colorPalette": "說明可用的 Agent",
-  "ai.quickAction.colorPalettePrompt":
-    "說明目前已連線的 Agent 和 MCP 工具，以及它們如何在此工作區中提供協助。",
 
   // ── Code Panel ──
-  "code.reactTailwind": "React + Tailwind",
-  "code.htmlCss": "HTML + CSS",
-  "code.cssVariables": "CSS Variables",
-  "code.copyClipboard": "複製到剪貼簿",
-  "code.copied": "已複製！",
-  "code.download": "下載程式碼檔案",
-  "code.closeCodePanel": "關閉程式碼面板",
-  "code.genCssVars": "正在為整份文件產生 CSS 變數",
-  "code.genSelected": "正在為 {{count}} 個選取元素產生程式碼",
-  "code.genDocument": "正在為整份文件產生程式碼",
-  "code.aiEnhance": "AI 優化",
-  "code.cancelEnhance": "取消優化",
-  "code.resetEnhance": "恢復原始程式碼",
-  "code.enhancing": "AI 正在優化程式碼...",
-  "code.enhanced": "已由 AI 優化",
 
   // ── Save Dialog ──
-  "save.saveAs": "另存新檔",
-  "save.fileName": "檔案名稱",
 
   // ── Agent Settings ──
   "agents.title": "設定 Agents 與 MCP",
   "agents.agentsOnCanvas": "畫布上的 Agents",
   "agents.mcpIntegrations": "終端機中的 MCP 整合",
-  "agents.transport": "傳輸方式",
   "agents.port": "連接埠",
   "agents.mcpRestart": "MCP 整合將在重新啟動終端機後生效。",
   "agents.modelCount": "{{count}} 個模型",
@@ -334,26 +122,17 @@ const zhTW: TranslationKeys = {
   "agents.serverError": "伺服器錯誤 {{status}}",
   "agents.failedTo": "{{action}}失敗",
   "agents.failedToMcp": "{{action}} MCP 伺服器失敗",
-  "agents.failedTransport": "更新傳輸方式失敗",
-  "agents.failedMcpTransport": "更新 MCP 傳輸方式失敗",
-  "agents.claudeCode": "Claude Code",
   "agents.claudeModels": "Claude 模型",
-  "agents.codexCli": "Codex CLI",
   "agents.openaiModels": "OpenAI 模型",
   "agents.opencode": "OpenCode",
   "agents.opencodeDesc": "75+ LLM 供應商",
   "agents.copilot": "GitHub Copilot",
   "agents.copilotDesc": "GitHub Copilot 模型",
   "agents.mcpServer": "MCP 伺服器",
-  "agents.mcpServerStart": "啟動",
   "agents.mcpServerStop": "停止",
   "agents.mcpServerRunning": "執行中",
   "agents.mcpServerStopped": "已停止",
-  "agents.mcpLanAccess": "區域網路存取",
   "agents.mcpClientConfig": "客戶端配置",
-  "agents.stdio": "stdio",
-  "agents.http": "http",
-  "agents.stdioHttp": "stdio + http",
   "agents.autoUpdate": "自動檢查更新",
   "agents.notInstalled": "未安裝",
   "agents.install": "安裝",
@@ -375,26 +154,6 @@ const zhTW: TranslationKeys = {
   "agents.analysisPhasesCustom": "自訂",
 
   // ── Figma Import ──
-  "figma.title": "從 Figma 匯入",
-  "figma.dropFile": "將 .fig 檔案拖放至此處",
-  "figma.orBrowse": "或點擊瀏覽",
-  "figma.exportTip": "從 Figma 匯出：檔案 \u2192 儲存本機副本 (.fig)",
-  "figma.selectFigFile": "請選擇一個 .fig 檔案",
-  "figma.noPages": ".fig 檔案中未找到頁面",
-  "figma.parseFailed": "解析 .fig 檔案失敗",
-  "figma.convertFailed": "轉換 Figma 檔案失敗",
-  "figma.parsing": "正在解析 .fig 檔案...",
-  "figma.converting": "正在轉換節點...",
-  "figma.selectPage": "此檔案包含 {{count}} 個頁面。選擇要匯入的頁面：",
-  "figma.layers": "{{count}} 個圖層",
-  "figma.importAll": "匯入所有頁面",
-  "figma.importComplete": "匯入完成！",
-  "figma.moreWarnings": "...以及另外 {{count}} 條警告",
-  "figma.tryAgain": "重試",
-  "figma.layoutMode": "佈局模式：",
-  "figma.preserveLayout": "保留 Figma 佈局",
-  "figma.autoLayout": "自動佈局",
-  "figma.comingSoon": "即將推出",
 
   // ── Landing Page ──
   "landing.title": "Game Theory ",
@@ -407,37 +166,16 @@ const zhTW: TranslationKeys = {
   "notFound.message": "找不到頁面",
 
   // ── Component Browser ──
-  "componentBrowser.title": "UIKit 瀏覽器",
-  "componentBrowser.exportKit": "匯出套件",
-  "componentBrowser.importKit": "匯入套件",
-  "componentBrowser.kit": "套件：",
-  "componentBrowser.all": "全部",
-  "componentBrowser.imported": "（已匯入）",
-  "componentBrowser.components": "元件",
-  "componentBrowser.searchComponents": "搜尋元件...",
-  "componentBrowser.deleteKit": "刪除 {{name}}",
-  "componentBrowser.category.all": "全部",
-  "componentBrowser.category.buttons": "按鈕",
-  "componentBrowser.category.inputs": "輸入框",
-  "componentBrowser.category.cards": "卡片",
-  "componentBrowser.category.nav": "導覽",
-  "componentBrowser.category.layout": "佈局",
-  "componentBrowser.category.feedback": "回饋",
-  "componentBrowser.category.data": "資料",
-  "componentBrowser.category.other": "其他",
 
   // ── Variable Picker ──
-  "variablePicker.boundTo": "已綁定到 --{{name}}",
-  "variablePicker.bindToVariable": "綁定到變數",
-  "variablePicker.unbind": "解除綁定",
-  "variablePicker.noVariables": "未定義 {{type}} 類型的變數",
 
   // ── Analysis ──
   "analysis.title": "賽局理論分析師",
-  "analysis.emptyState": "我是您的賽局理論分析師。您想分析哪個事件？",
-  "analysis.emptyHint": "我會自動識別參與者、策略和賽局結構。",
-  "analysis.inputPlaceholder": "描述一個待分析的事件...",
-  "analysis.startingAnalysis": "正在對「{{topic}}」進行賽局理論分析...",
+  "analysis.launcherHint": "Describe a negotiation, conflict, policy fight, market contest, or strategic situation to map on the canvas.",
+  "analysis.launcherInputPlaceholder": "What do you want to analyze?",
+  "analysis.chatEmptyState": "Ask about game theory, explore a situation, or work out what you want to analyze.",
+  "analysis.chatEmptyHint": "If the canvas is blank, I can help you scope the topic before we run the analysis.",
+  "analysis.chatInputPlaceholder": "Ask a question or describe the situation...",
   "analysis.cannotChangeModel": "分析執行期間無法切換模型。請先停止分析。",
   "analysis.unsavedChanges": "您有未儲存的分析變更。放棄並開始新的分析？",
 
@@ -458,10 +196,14 @@ const zhTW: TranslationKeys = {
   "analysis.progress.phasesComplete": "{{completed}}/{{total}} 個階段已完成",
   "analysis.progress.entityCount": "{{count}} 個實體",
   "analysis.progress.entityCountPlural": "{{count}} 個實體",
-
-  // ── Analysis Failures ──
+  "analysis.progress.cancelled": "Analysis cancelled",
+  "analysis.failure.rateLimit": "rate limited",
+  "analysis.failure.providerApiError": "provider API error",
+  "analysis.failure.connectorError": "connector error",
+  "analysis.failure.mcpTransportError": "MCP transport error",
+  "analysis.failure.validation": "validation error",
   "analysis.failure.timeout": "逾時",
-  "analysis.failure.parseError": "解析錯誤",
+  "analysis.failure.unknown": "unknown error",
   "analysis.failure.providerError": "提供商錯誤",
 
   // ── Analysis Phases ──
@@ -508,14 +250,11 @@ const zhTW: TranslationKeys = {
   "analysis.entities.scenario": "情境",
   "analysis.entities.thesis": "論點",
   "analysis.entities.metaCheck": "元檢查",
-  "analysis.entities.noMatching": "沒有符合的實體",
-  "analysis.entities.searchHint": "嘗試不同的搜尋詞或移除類型篩選器。",
   "analysis.entities.confidence.high": "高",
   "analysis.entities.confidence.medium": "中",
   "analysis.entities.confidence.low": "低",
   "analysis.entities.source.ai": "AI",
   "analysis.entities.source.human": "人工",
-  "analysis.entities.source.computed": "計算",
 } as const;
 
 export default zhTW;

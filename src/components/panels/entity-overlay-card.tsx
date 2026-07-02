@@ -36,7 +36,7 @@ import type {
   EntityType,
   EntityData,
   EntityConfidence,
-  EntitySource,
+  DisplayEntitySource,
   FieldDiff,
   FactData,
   PlayerData,
@@ -128,10 +128,9 @@ const CONFIDENCE_I18N_KEYS: Record<EntityConfidence, string> = {
 
 // ── Source labels ──
 
-const SOURCE_I18N_KEYS: Record<EntitySource, string> = {
+const SOURCE_I18N_KEYS: Record<DisplayEntitySource, string> = {
   ai: "analysis.entities.source.ai",
   human: "analysis.entities.source.human",
-  computed: "analysis.entities.source.computed",
 };
 
 // ── Entity name extraction ──
@@ -1377,7 +1376,7 @@ function ConfidenceBadge({ confidence }: { confidence: EntityConfidence }) {
   );
 }
 
-function SourceBadge({ source }: { source: EntitySource }) {
+function SourceBadge({ source }: { source: DisplayEntitySource }) {
   const { t } = useTranslation();
   return (
     <span className="inline-flex items-center rounded-sm bg-zinc-800 px-1.5 py-0.5 text-[11px] font-medium text-zinc-400">

@@ -2,57 +2,22 @@ import type { TranslationKeys } from "./en";
 
 const id: TranslationKeys = {
   // ── Common ──
-  "common.rename": "Ubah Nama",
-  "common.duplicate": "Duplikat",
-  "common.delete": "Hapus",
-  "common.cancel": "Batal",
-  "common.save": "Simpan",
-  "common.close": "Tutup",
   "common.connect": "Hubungkan",
   "common.disconnect": "Putuskan",
-  "common.import": "Impor",
-  "common.export": "Ekspor",
-  "common.name": "Nama",
-  "common.untitled": "Tanpa Judul",
   "common.best": "Terbaik",
-  "common.selected": "{{count}} dipilih",
 
   // ── Toolbar ──
-  "toolbar.select": "Pilih",
-  "toolbar.text": "Teks",
-  "toolbar.frame": "Frame",
-  "toolbar.hand": "Tangan",
-  "toolbar.undo": "Urungkan",
-  "toolbar.redo": "Ulangi",
-  "toolbar.variables": "Variabel",
-  "toolbar.uikitBrowser": "Penjelajah UIKit",
 
   // ── Shapes ──
-  "shapes.rectangle": "Persegi Panjang",
-  "shapes.ellipse": "Elips",
-  "shapes.polygon": "Poligon",
-  "shapes.line": "Garis",
-  "shapes.icon": "Ikon",
-  "shapes.importImageSvg": "Impor Gambar atau SVG\u2026",
-  "shapes.pen": "Pena",
-  "shapes.shapeTools": "Alat bentuk",
-  "shapes.moreShapeTools": "Alat bentuk lainnya",
 
   // ── Top Bar ──
-  "topbar.hideLayers": "Sembunyikan kerangka",
-  "topbar.showLayers": "Tampilkan kerangka",
   "topbar.new": "Baru",
   "topbar.open": "Buka",
   "topbar.save": "Simpan",
-  "topbar.importFigma": "Impor Figma",
-  "topbar.codePanel": "Kode",
   "topbar.fullscreen": "Layar penuh",
   "topbar.exitFullscreen": "Keluar layar penuh",
   "topbar.newAnalysis": "Analisis Baru",
   "topbar.unsavedFile": "File .gta belum disimpan",
-  "topbar.complete": "Selesai",
-  "topbar.incomplete": "{{count}} sel tersisa",
-  "topbar.issues": "{{count}} masalah",
   "topbar.tooltipNew": "Mulai analisis baru",
   "topbar.tooltipOpen": "Buka analisis .gta tersimpan",
   "topbar.tooltipSave": "Simpan analisis saat ini",
@@ -60,23 +25,12 @@ const id: TranslationKeys = {
   "topbar.agentsAndMcp": "Agent & MCP",
   "topbar.setupAgentsMcp": "Pengaturan Agent & MCP",
   "topbar.connected": "terhubung",
-  "topbar.agentStatus": "{{agents}} agent{{agentSuffix}} · {{mcp}} MCP",
 
   // ── Right Panel ──
-  "rightPanel.design": "Detail",
-  "rightPanel.code": "Kode",
-  "rightPanel.noSelection": "Pilih sebuah item",
 
   // ── Pages ──
-  "pages.title": "Halaman",
-  "pages.addPage": "Tambah halaman",
-  "pages.moveUp": "Pindah ke Atas",
-  "pages.moveDown": "Pindah ke Bawah",
 
   // ── Status Bar ──
-  "statusbar.zoomOut": "Perkecil",
-  "statusbar.zoomIn": "Perbesar",
-  "statusbar.resetZoom": "Atur ulang zoom",
 
   // ── Updater ──
   "updater.softwareUpdate": "Pembaruan Perangkat Lunak",
@@ -110,230 +64,60 @@ const id: TranslationKeys = {
   "updater.subtitle.error": "Tidak dapat memeriksa atau mengunduh pembaruan.",
 
   // ── Layers ──
-  "layers.title": "Kerangka",
-  "layers.empty": "Belum ada item. Gunakan bilah alat untuk mulai membangun.",
 
   // ── Layer Context Menu ──
-  "layerMenu.groupSelection": "Kelompokkan Pilihan",
-  "layerMenu.createComponent": "Buat Komponen",
-  "layerMenu.detachComponent": "Lepaskan Komponen",
-  "layerMenu.detachInstance": "Lepaskan Instance",
-  "layerMenu.booleanUnion": "Gabungan",
-  "layerMenu.booleanSubtract": "Kurangi",
-  "layerMenu.booleanIntersect": "Irisan",
-  "layerMenu.toggleLock": "Alihkan Kunci",
-  "layerMenu.toggleVisibility": "Alihkan Visibilitas",
 
   // ── Property Panel ──
-  "property.createComponent": "Buat Komponen",
-  "property.detachComponent": "Lepaskan Komponen",
-  "property.goToComponent": "Buka komponen",
-  "property.detachInstance": "Lepaskan instance",
 
   // ── Fill ──
-  "fill.title": "Isi",
-  "fill.solid": "Solid",
-  "fill.linear": "Linear",
-  "fill.radial": "Radial",
-  "fill.image": "Gambar",
-  "fill.stops": "Titik warna",
-  "fill.angle": "Sudut",
 
   // ── Image ──
-  "image.title": "Gambar",
-  "image.fit": "Mode Penyesuaian",
-  "image.fill": "Isi",
-  "image.fitMode": "Sesuaikan",
-  "image.crop": "Potong",
-  "image.tile": "Ubin",
-  "image.clickToUpload": "Klik untuk mengunggah",
-  "image.changeImage": "Ganti gambar",
-  "image.adjustments": "Penyesuaian",
-  "image.exposure": "Eksposur",
-  "image.contrast": "Kontras",
-  "image.saturation": "Saturasi",
-  "image.temperature": "Suhu",
-  "image.tint": "Rona",
-  "image.highlights": "Sorotan",
-  "image.shadows": "Bayangan",
-  "image.reset": "Atur ulang",
 
   // ── Stroke ──
-  "stroke.title": "Garis Tepi",
 
   // ── Appearance ──
-  "appearance.layer": "Layer",
-  "appearance.opacity": "Opasitas",
 
   // ── Layout ──
-  "layout.flexLayout": "Tata Letak Flex",
-  "layout.freedom": "Bebas (tanpa tata letak)",
-  "layout.vertical": "Tata letak vertikal",
-  "layout.horizontal": "Tata letak horizontal",
-  "layout.alignment": "Perataan",
-  "layout.gap": "Jarak",
-  "layout.spaceBetween": "Space Between",
-  "layout.spaceAround": "Space Around",
-  "layout.dimensions": "Dimensi",
-  "layout.fillWidth": "Isi Lebar",
-  "layout.fillHeight": "Isi Tinggi",
-  "layout.hugWidth": "Rangkul Lebar",
-  "layout.hugHeight": "Rangkul Tinggi",
-  "layout.clipContent": "Potong Konten",
 
   // ── Padding ──
-  "padding.title": "Padding",
-  "padding.paddingMode": "Mode padding",
-  "padding.paddingValues": "Nilai Padding",
-  "padding.oneValue": "Satu nilai untuk semua sisi",
-  "padding.horizontalVertical": "Horizontal/Vertikal",
-  "padding.topRightBottomLeft": "Atas/Kanan/Bawah/Kiri",
 
   // ── Typography ──
-  "text.typography": "Tipografi",
-  "text.lineHeight": "Tinggi baris",
-  "text.letterSpacing": "Jarak huruf",
-  "text.horizontal": "Horizontal",
-  "text.vertical": "Vertikal",
-  "text.alignLeft": "Rata kiri",
-  "text.alignCenter": "Rata tengah",
-  "text.alignRight": "Rata kanan",
-  "text.justify": "Rata kiri-kanan",
-  "text.top": "Atas",
-  "text.middle": "Tengah",
-  "text.bottom": "Bawah",
-  "text.weight.thin": "Tipis",
-  "text.weight.light": "Ringan",
-  "text.weight.regular": "Reguler",
-  "text.weight.medium": "Sedang",
-  "text.weight.semibold": "Semi Tebal",
-  "text.weight.bold": "Tebal",
-  "text.weight.black": "Sangat Tebal",
-  "text.font.search": "Cari font\u2026",
-  "text.font.bundled": "Bawaan",
-  "text.font.system": "Sistem",
-  "text.font.loading": "Memuat font\u2026",
-  "text.font.noResults": "Font tidak ditemukan",
 
   // ── Text Layout ──
-  "textLayout.title": "Tata Letak",
-  "textLayout.dimensions": "Dimensi",
-  "textLayout.resizing": "Pengubahan ukuran",
-  "textLayout.autoWidth": "Auto L",
-  "textLayout.autoWidthDesc":
-    "Lebar Otomatis \u2014 teks meluas secara horizontal",
-  "textLayout.autoHeight": "Auto T",
-  "textLayout.autoHeightDesc":
-    "Tinggi Otomatis \u2014 lebar tetap, tinggi menyesuaikan otomatis",
-  "textLayout.fixed": "Tetap",
-  "textLayout.fixedDesc": "Ukuran Tetap \u2014 lebar dan tinggi tetap",
-  "textLayout.fillWidth": "Isi Lebar",
-  "textLayout.fillHeight": "Isi Tinggi",
 
   // ── Effects ──
-  "effects.title": "Efek",
-  "effects.dropShadow": "Bayangan jatuh",
-  "effects.blur": "Blur",
-  "effects.spread": "Sebaran",
-  "effects.color": "Warna",
 
   // ── Export ──
-  "export.title": "Ekspor",
-  "export.format": "Format",
-  "export.scale": "Skala",
-  "export.selectedOnly": "Ekspor pilihan saja",
-  "export.exportFormat": "Ekspor {{format}}",
-  "export.exportLayer": "Ekspor layer",
 
   // ── Polygon ──
-  "polygon.sides": "Sisi",
 
   // ── Ellipse ──
-  "ellipse.start": "Mulai",
-  "ellipse.sweep": "Sapuan",
-  "ellipse.innerRadius": "Dalam",
 
   // ── Corner Radius ──
-  "cornerRadius.title": "Radius Sudut",
 
   // ── Size / Position ──
-  "size.position": "Posisi",
 
   // ── Icon ──
-  "icon.title": "Ikon",
-  "icon.searchIcons": "Cari ikon...",
-  "icon.noIconsFound": "Ikon tidak ditemukan",
-  "icon.typeToSearch": "Ketik untuk mencari ikon Iconify",
-  "icon.iconsCount": "{{count}} ikon",
 
   // ── Variables Panel ──
-  "variables.addTheme": "Tambah tema",
-  "variables.addVariant": "Tambah varian",
-  "variables.addVariable": "Tambah variabel",
-  "variables.searchVariables": "Cari variabel...",
-  "variables.noMatch": "Tidak ada variabel yang cocok dengan pencarian",
-  "variables.noDefined": "Belum ada variabel yang didefinisikan",
-  "variables.closeShortcut": "Tutup (\u2318\u21e7V)",
-  "variables.presets": "Preset",
-  "variables.savePreset": "Simpan saat ini sebagai preset…",
-  "variables.loadPreset": "Muat preset",
-  "variables.importPreset": "Impor dari file…",
-  "variables.exportPreset": "Ekspor ke file…",
-  "variables.presetName": "Nama preset",
-  "variables.noPresets": "Tidak ada preset tersimpan",
 
   // ── AI Chat ──
   "ai.newChat": "Chat baru",
   "ai.collapse": "Ciutkan",
-  "ai.tryExample": "Coba prompt ruang kerja...",
-  "ai.tipSelectElements":
-    "Tips: Pilih item di ruang kerja sebelum mengobrol untuk konteks.",
   "ai.generating": "Membuat...",
-  "ai.designWithAgent": "Tanyakan agent tentang ruang kerja ini...",
-  "ai.attachImage": "Lampirkan gambar",
   "ai.stopGenerating": "Hentikan pembuatan",
   "ai.sendMessage": "Kirim pesan",
   "ai.loadingModels": "Memuat model...",
   "ai.noModelsConnected": "Tidak ada model terhubung",
-  "ai.quickAction.loginScreen": "Rangkum ruang kerja ini",
-  "ai.quickAction.loginScreenPrompt":
-    "Rangkum ruang kerja saat ini dan item utama yang terlihat dalam konteks dokumen.",
-  "ai.quickAction.foodApp": "Jelaskan pilihan",
-  "ai.quickAction.foodAppPrompt":
-    "Jelaskan item yang sedang dipilih dan struktur penting yang Anda perhatikan.",
-  "ai.quickAction.bottomNav": "Sarankan langkah selanjutnya",
-  "ai.quickAction.bottomNavPrompt":
-    "Berdasarkan ruang kerja saat ini, sarankan tiga langkah konkret selanjutnya.",
-  "ai.quickAction.colorPalette": "Jelaskan agent yang tersedia",
-  "ai.quickAction.colorPalettePrompt":
-    "Jelaskan agent dan alat MCP yang terhubung saat ini dan bagaimana mereka dapat membantu di ruang kerja ini.",
 
   // ── Code Panel ──
-  "code.reactTailwind": "React + Tailwind",
-  "code.htmlCss": "HTML + CSS",
-  "code.cssVariables": "CSS Variables",
-  "code.copyClipboard": "Salin ke papan klip",
-  "code.copied": "Tersalin!",
-  "code.download": "Unduh file kode",
-  "code.closeCodePanel": "Tutup panel kode",
-  "code.genCssVars": "Membuat CSS variables untuk seluruh dokumen",
-  "code.genSelected": "Membuat kode untuk {{count}} elemen yang dipilih",
-  "code.genDocument": "Membuat kode untuk seluruh dokumen",
-  "code.aiEnhance": "Tingkatkan dengan AI",
-  "code.cancelEnhance": "Batalkan peningkatan",
-  "code.resetEnhance": "Kembalikan ke asli",
-  "code.enhancing": "AI sedang meningkatkan kode...",
-  "code.enhanced": "Ditingkatkan oleh AI",
 
   // ── Save Dialog ──
-  "save.saveAs": "Simpan Sebagai",
-  "save.fileName": "Nama file",
 
   // ── Agent Settings ──
   "agents.title": "Pengaturan Agent & MCP",
   "agents.agentsOnCanvas": "Agent di Canvas",
   "agents.mcpIntegrations": "Integrasi MCP di Terminal",
-  "agents.transport": "Transport",
   "agents.port": "Port",
   "agents.mcpRestart":
     "Integrasi MCP akan berlaku setelah terminal dimulai ulang.",
@@ -342,26 +126,17 @@ const id: TranslationKeys = {
   "agents.serverError": "Kesalahan server {{status}}",
   "agents.failedTo": "Gagal {{action}}",
   "agents.failedToMcp": "Gagal {{action}} server MCP",
-  "agents.failedTransport": "Gagal memperbarui transport",
-  "agents.failedMcpTransport": "Gagal memperbarui transport MCP",
-  "agents.claudeCode": "Claude Code",
   "agents.claudeModels": "Model Claude",
-  "agents.codexCli": "Codex CLI",
   "agents.openaiModels": "Model OpenAI",
   "agents.opencode": "OpenCode",
   "agents.opencodeDesc": "75+ penyedia LLM",
   "agents.copilot": "GitHub Copilot",
   "agents.copilotDesc": "Model GitHub Copilot",
   "agents.mcpServer": "Server MCP",
-  "agents.mcpServerStart": "Mulai",
   "agents.mcpServerStop": "Hentikan",
   "agents.mcpServerRunning": "Berjalan",
   "agents.mcpServerStopped": "Berhenti",
-  "agents.mcpLanAccess": "Akses LAN",
   "agents.mcpClientConfig": "Konfigurasi klien",
-  "agents.stdio": "stdio",
-  "agents.http": "http",
-  "agents.stdioHttp": "stdio + http",
   "agents.autoUpdate": "Periksa pembaruan otomatis",
   "agents.notInstalled": "Belum terpasang",
   "agents.install": "Pasang",
@@ -385,27 +160,6 @@ const id: TranslationKeys = {
   "agents.analysisPhasesCustom": "Kustom",
 
   // ── Figma Import ──
-  "figma.title": "Impor dari Figma",
-  "figma.dropFile": "Letakkan file .fig di sini",
-  "figma.orBrowse": "atau klik untuk menjelajah",
-  "figma.exportTip": "Ekspor dari Figma: File \u2192 Save local copy (.fig)",
-  "figma.selectFigFile": "Silakan pilih file .fig",
-  "figma.noPages": "Tidak ada halaman ditemukan di file .fig",
-  "figma.parseFailed": "Gagal mengurai file .fig",
-  "figma.convertFailed": "Gagal mengonversi file Figma",
-  "figma.parsing": "Mengurai file .fig...",
-  "figma.converting": "Mengonversi node...",
-  "figma.selectPage":
-    "File ini memiliki {{count}} halaman. Pilih yang akan diimpor:",
-  "figma.layers": "{{count}} layer",
-  "figma.importAll": "Impor Semua Halaman",
-  "figma.importComplete": "Impor selesai!",
-  "figma.moreWarnings": "...dan {{count}} peringatan lainnya",
-  "figma.tryAgain": "Coba Lagi",
-  "figma.layoutMode": "Mode tata letak:",
-  "figma.preserveLayout": "Pertahankan tata letak Figma",
-  "figma.autoLayout": "Tata letak otomatis OpenPencil",
-  "figma.comingSoon": "Segera hadir",
 
   // ── Landing Page ──
   "landing.title": "Game Theory ",
@@ -418,41 +172,16 @@ const id: TranslationKeys = {
   "notFound.message": "Halaman tidak ditemukan",
 
   // ── Component Browser ──
-  "componentBrowser.title": "Penjelajah UIKit",
-  "componentBrowser.exportKit": "Ekspor kit",
-  "componentBrowser.importKit": "Impor kit",
-  "componentBrowser.kit": "Kit:",
-  "componentBrowser.all": "Semua",
-  "componentBrowser.imported": "(diimpor)",
-  "componentBrowser.components": "komponen",
-  "componentBrowser.searchComponents": "Cari komponen...",
-  "componentBrowser.deleteKit": "Hapus {{name}}",
-  "componentBrowser.category.all": "Semua",
-  "componentBrowser.category.buttons": "Tombol",
-  "componentBrowser.category.inputs": "Input",
-  "componentBrowser.category.cards": "Kartu",
-  "componentBrowser.category.nav": "Navigasi",
-  "componentBrowser.category.layout": "Tata Letak",
-  "componentBrowser.category.feedback": "Umpan Balik",
-  "componentBrowser.category.data": "Data",
-  "componentBrowser.category.other": "Lainnya",
 
   // ── Variable Picker ──
-  "variablePicker.boundTo": "Terikat ke --{{name}}",
-  "variablePicker.bindToVariable": "Ikat ke variabel",
-  "variablePicker.unbind": "Lepaskan variabel",
-  "variablePicker.noVariables":
-    "Belum ada variabel {{type}} yang didefinisikan",
 
   // ── Analysis ──
   "analysis.title": "Analis Teori Permainan",
-  "analysis.emptyState":
-    "Saya analis teori permainan Anda. Peristiwa apa yang ingin Anda analisis?",
-  "analysis.emptyHint":
-    "Saya akan mengidentifikasi pemain, strategi, dan struktur permainan secara otomatis.",
-  "analysis.inputPlaceholder": "Deskripsikan peristiwa untuk dianalisis...",
-  "analysis.startingAnalysis":
-    'Memulai analisis teori permainan untuk "{{topic}}"...',
+  "analysis.launcherHint": "Describe a negotiation, conflict, policy fight, market contest, or strategic situation to map on the canvas.",
+  "analysis.launcherInputPlaceholder": "What do you want to analyze?",
+  "analysis.chatEmptyState": "Ask about game theory, explore a situation, or work out what you want to analyze.",
+  "analysis.chatEmptyHint": "If the canvas is blank, I can help you scope the topic before we run the analysis.",
+  "analysis.chatInputPlaceholder": "Ask a question or describe the situation...",
   "analysis.cannotChangeModel":
     "Tidak dapat mengubah model saat analisis berjalan. Hentikan analisis terlebih dahulu.",
   "analysis.unsavedChanges":
@@ -477,10 +206,14 @@ const id: TranslationKeys = {
   "analysis.progress.phasesComplete": "{{completed}}/{{total}} fase selesai",
   "analysis.progress.entityCount": "{{count}} entitas",
   "analysis.progress.entityCountPlural": "{{count}} entitas",
-
-  // ── Analysis Failures ──
+  "analysis.progress.cancelled": "Analysis cancelled",
+  "analysis.failure.rateLimit": "rate limited",
+  "analysis.failure.providerApiError": "provider API error",
+  "analysis.failure.connectorError": "connector error",
+  "analysis.failure.mcpTransportError": "MCP transport error",
+  "analysis.failure.validation": "validation error",
   "analysis.failure.timeout": "waktu habis",
-  "analysis.failure.parseError": "kesalahan parsing",
+  "analysis.failure.unknown": "unknown error",
   "analysis.failure.providerError": "kesalahan penyedia",
 
   // ── Analysis Phases ──
@@ -527,15 +260,11 @@ const id: TranslationKeys = {
   "analysis.entities.scenario": "Skenario",
   "analysis.entities.thesis": "Tesis",
   "analysis.entities.metaCheck": "Pemeriksaan Meta",
-  "analysis.entities.noMatching": "Tidak ada entitas yang cocok",
-  "analysis.entities.searchHint":
-    "Coba kata kunci lain atau hapus filter tipe.",
   "analysis.entities.confidence.high": "Tinggi",
   "analysis.entities.confidence.medium": "Sedang",
   "analysis.entities.confidence.low": "Rendah",
   "analysis.entities.source.ai": "AI",
   "analysis.entities.source.human": "Manusia",
-  "analysis.entities.source.computed": "Komputasi",
 } as const;
 
 export default id;

@@ -2,57 +2,22 @@ import type { TranslationKeys } from "./en";
 
 const ja: TranslationKeys = {
   // ── Common ──
-  "common.rename": "名前を変更",
-  "common.duplicate": "複製",
-  "common.delete": "削除",
-  "common.cancel": "キャンセル",
-  "common.save": "保存",
-  "common.close": "閉じる",
   "common.connect": "接続",
   "common.disconnect": "切断",
-  "common.import": "インポート",
-  "common.export": "エクスポート",
-  "common.name": "名前",
-  "common.untitled": "無題",
   "common.best": "最適",
-  "common.selected": "{{count}} 件選択中",
 
   // ── Toolbar ──
-  "toolbar.select": "選択",
-  "toolbar.text": "テキスト",
-  "toolbar.frame": "フレーム",
-  "toolbar.hand": "ハンド",
-  "toolbar.undo": "元に戻す",
-  "toolbar.redo": "やり直す",
-  "toolbar.variables": "変数",
-  "toolbar.uikitBrowser": "UIKit ブラウザ",
 
   // ── Shapes ──
-  "shapes.rectangle": "長方形",
-  "shapes.ellipse": "楕円",
-  "shapes.polygon": "ポリゴン",
-  "shapes.line": "線",
-  "shapes.icon": "アイコン",
-  "shapes.importImageSvg": "画像または SVG をインポート\u2026",
-  "shapes.pen": "ペン",
-  "shapes.shapeTools": "シェイプツール",
-  "shapes.moreShapeTools": "その他のシェイプツール",
 
   // ── Top Bar ──
-  "topbar.hideLayers": "アウトラインを非表示",
-  "topbar.showLayers": "アウトラインを表示",
   "topbar.new": "新規",
   "topbar.open": "開く",
   "topbar.save": "保存",
-  "topbar.importFigma": "Figma をインポート",
-  "topbar.codePanel": "コード",
   "topbar.fullscreen": "フルスクリーン",
   "topbar.exitFullscreen": "フルスクリーンを終了",
   "topbar.newAnalysis": "新規分析",
   "topbar.unsavedFile": "未保存の .gta ファイル",
-  "topbar.complete": "完了",
-  "topbar.incomplete": "残り {{count}} セル",
-  "topbar.issues": "{{count}} 件の問題",
   "topbar.tooltipNew": "新しい分析を開始",
   "topbar.tooltipOpen": "保存済みの .gta 分析を開く",
   "topbar.tooltipSave": "現在の分析を保存",
@@ -60,23 +25,12 @@ const ja: TranslationKeys = {
   "topbar.agentsAndMcp": "Agents & MCP",
   "topbar.setupAgentsMcp": "Agents & MCP を設定",
   "topbar.connected": "接続済み",
-  "topbar.agentStatus": "{{agents}} Agent{{agentSuffix}} · {{mcp}} MCP",
 
   // ── Right Panel ──
-  "rightPanel.design": "詳細",
-  "rightPanel.code": "コード",
-  "rightPanel.noSelection": "アイテムを選択",
 
   // ── Pages ──
-  "pages.title": "ページ",
-  "pages.addPage": "ページを追加",
-  "pages.moveUp": "上に移動",
-  "pages.moveDown": "下に移動",
 
   // ── Status Bar ──
-  "statusbar.zoomOut": "縮小",
-  "statusbar.zoomIn": "拡大",
-  "statusbar.resetZoom": "ズームをリセット",
 
   // ── Updater ──
   "updater.softwareUpdate": "ソフトウェアアップデート",
@@ -113,229 +67,60 @@ const ja: TranslationKeys = {
     "アップデートの確認またはダウンロードができませんでした。",
 
   // ── Layers ──
-  "layers.title": "アウトライン",
-  "layers.empty":
-    "アイテムがありません。ツールバーから作成を開始してください。",
 
   // ── Layer Context Menu ──
-  "layerMenu.groupSelection": "選択をグループ化",
-  "layerMenu.createComponent": "コンポーネントを作成",
-  "layerMenu.detachComponent": "コンポーネントを解除",
-  "layerMenu.detachInstance": "インスタンスを解除",
-  "layerMenu.booleanUnion": "合体",
-  "layerMenu.booleanSubtract": "前面で型抜き",
-  "layerMenu.booleanIntersect": "交差",
-  "layerMenu.toggleLock": "ロックの切り替え",
-  "layerMenu.toggleVisibility": "表示の切り替え",
 
   // ── Property Panel ──
-  "property.createComponent": "コンポーネントを作成",
-  "property.detachComponent": "コンポーネントを解除",
-  "property.goToComponent": "コンポーネントに移動",
-  "property.detachInstance": "インスタンスを解除",
 
   // ── Fill ──
-  "fill.title": "塗り",
-  "fill.solid": "単色",
-  "fill.linear": "線形グラデーション",
-  "fill.radial": "放射グラデーション",
-  "fill.image": "画像",
-  "fill.stops": "カラーストップ",
-  "fill.angle": "角度",
 
   // ── Image ──
-  "image.title": "画像",
-  "image.fit": "フィットモード",
-  "image.fill": "塗りつぶし",
-  "image.fitMode": "フィット",
-  "image.crop": "クロップ",
-  "image.tile": "タイル",
-  "image.clickToUpload": "クリックしてアップロード",
-  "image.changeImage": "画像を変更",
-  "image.adjustments": "調整",
-  "image.exposure": "露出",
-  "image.contrast": "コントラスト",
-  "image.saturation": "彩度",
-  "image.temperature": "色温度",
-  "image.tint": "色合い",
-  "image.highlights": "ハイライト",
-  "image.shadows": "シャドウ",
-  "image.reset": "リセット",
 
   // ── Stroke ──
-  "stroke.title": "線",
 
   // ── Appearance ──
-  "appearance.layer": "レイヤー",
-  "appearance.opacity": "不透明度",
 
   // ── Layout ──
-  "layout.flexLayout": "フレックスレイアウト",
-  "layout.freedom": "フリー（レイアウトなし）",
-  "layout.vertical": "垂直レイアウト",
-  "layout.horizontal": "水平レイアウト",
-  "layout.alignment": "配置",
-  "layout.gap": "間隔",
-  "layout.spaceBetween": "均等配置（両端）",
-  "layout.spaceAround": "均等配置（周囲）",
-  "layout.dimensions": "サイズ",
-  "layout.fillWidth": "幅を埋める",
-  "layout.fillHeight": "高さを埋める",
-  "layout.hugWidth": "幅に合わせる",
-  "layout.hugHeight": "高さに合わせる",
-  "layout.clipContent": "コンテンツをクリップ",
 
   // ── Padding ──
-  "padding.title": "パディング",
-  "padding.paddingMode": "パディングモード",
-  "padding.paddingValues": "パディング値",
-  "padding.oneValue": "全辺統一値",
-  "padding.horizontalVertical": "水平/垂直",
-  "padding.topRightBottomLeft": "上/右/下/左",
 
   // ── Typography ──
-  "text.typography": "タイポグラフィ",
-  "text.lineHeight": "行の高さ",
-  "text.letterSpacing": "文字間隔",
-  "text.horizontal": "水平",
-  "text.vertical": "垂直",
-  "text.alignLeft": "左揃え",
-  "text.alignCenter": "中央揃え",
-  "text.alignRight": "右揃え",
-  "text.justify": "均等割り付け",
-  "text.top": "上",
-  "text.middle": "中央",
-  "text.bottom": "下",
-  "text.weight.thin": "Thin",
-  "text.weight.light": "Light",
-  "text.weight.regular": "Regular",
-  "text.weight.medium": "Medium",
-  "text.weight.semibold": "Semibold",
-  "text.weight.bold": "Bold",
-  "text.weight.black": "Black",
-  "text.font.search": "フォントを検索\u2026",
-  "text.font.bundled": "バンドル",
-  "text.font.system": "システム",
-  "text.font.loading": "フォントを読み込み中\u2026",
-  "text.font.noResults": "フォントが見つかりません",
 
   // ── Text Layout ──
-  "textLayout.title": "レイアウト",
-  "textLayout.dimensions": "サイズ",
-  "textLayout.resizing": "リサイズ",
-  "textLayout.autoWidth": "自動 W",
-  "textLayout.autoWidthDesc": "自動幅 \u2014 テキストが水平に拡張",
-  "textLayout.autoHeight": "自動 H",
-  "textLayout.autoHeightDesc": "自動高さ \u2014 幅固定、高さが自動調整",
-  "textLayout.fixed": "固定",
-  "textLayout.fixedDesc": "固定サイズ \u2014 幅と高さの両方が固定",
-  "textLayout.fillWidth": "幅を埋める",
-  "textLayout.fillHeight": "高さを埋める",
 
   // ── Effects ──
-  "effects.title": "エフェクト",
-  "effects.dropShadow": "ドロップシャドウ",
-  "effects.blur": "ぼかし",
-  "effects.spread": "広がり",
-  "effects.color": "色",
 
   // ── Export ──
-  "export.title": "エクスポート",
-  "export.format": "形式",
-  "export.scale": "倍率",
-  "export.selectedOnly": "選択項目のみエクスポート",
-  "export.exportFormat": "{{format}} をエクスポート",
-  "export.exportLayer": "レイヤーをエクスポート",
 
   // ── Polygon ──
-  "polygon.sides": "辺の数",
 
   // ── Ellipse ──
-  "ellipse.start": "開始",
-  "ellipse.sweep": "スイープ",
-  "ellipse.innerRadius": "内径",
 
   // ── Corner Radius ──
-  "cornerRadius.title": "角丸",
 
   // ── Size / Position ──
-  "size.position": "位置",
 
   // ── Icon ──
-  "icon.title": "アイコン",
-  "icon.searchIcons": "アイコンを検索...",
-  "icon.noIconsFound": "アイコンが見つかりません",
-  "icon.typeToSearch": "入力して Iconify アイコンを検索",
-  "icon.iconsCount": "{{count}} 個のアイコン",
 
   // ── Variables Panel ──
-  "variables.addTheme": "テーマを追加",
-  "variables.addVariant": "バリアントを追加",
-  "variables.addVariable": "変数を追加",
-  "variables.searchVariables": "変数を検索...",
-  "variables.noMatch": "一致する変数がありません",
-  "variables.noDefined": "変数が定義されていません",
-  "variables.closeShortcut": "閉じる (\u2318\u21e7V)",
-  "variables.presets": "プリセット",
-  "variables.savePreset": "現在の設定をプリセットとして保存…",
-  "variables.loadPreset": "プリセットを読み込み",
-  "variables.importPreset": "ファイルからインポート…",
-  "variables.exportPreset": "ファイルにエクスポート…",
-  "variables.presetName": "プリセット名",
-  "variables.noPresets": "保存されたプリセットはありません",
 
   // ── AI Chat ──
   "ai.newChat": "新しいチャット",
   "ai.collapse": "折りたたむ",
-  "ai.tryExample": "ワークスペースのプロンプトを試す...",
-  "ai.tipSelectElements":
-    "ヒント：チャットの前にワークスペースのアイテムを選択するとコンテキストが提供されます。",
   "ai.generating": "生成中...",
-  "ai.designWithAgent": "エージェントにこのワークスペースについて質問...",
-  "ai.attachImage": "画像を添付",
   "ai.stopGenerating": "生成を停止",
   "ai.sendMessage": "メッセージを送信",
   "ai.loadingModels": "モデルを読み込み中...",
   "ai.noModelsConnected": "モデルが接続されていません",
-  "ai.quickAction.loginScreen": "ワークスペースを要約",
-  "ai.quickAction.loginScreenPrompt":
-    "現在のワークスペースとドキュメントコンテキストに表示されている主要なアイテムを要約してください。",
-  "ai.quickAction.foodApp": "選択内容を説明",
-  "ai.quickAction.foodAppPrompt":
-    "現在選択されているアイテムと、気づいた重要な構造を説明してください。",
-  "ai.quickAction.bottomNav": "次のステップを提案",
-  "ai.quickAction.bottomNavPrompt":
-    "現在のワークスペースに基づいて、具体的な次のステップを3つ提案してください。",
-  "ai.quickAction.colorPalette": "利用可能なエージェントを説明",
-  "ai.quickAction.colorPalettePrompt":
-    "現在接続されているエージェントと MCP ツールを説明し、このワークスペースでどのように役立つかを説明してください。",
 
   // ── Code Panel ──
-  "code.reactTailwind": "React + Tailwind",
-  "code.htmlCss": "HTML + CSS",
-  "code.cssVariables": "CSS Variables",
-  "code.copyClipboard": "クリップボードにコピー",
-  "code.copied": "コピーしました！",
-  "code.download": "コードファイルをダウンロード",
-  "code.closeCodePanel": "コードパネルを閉じる",
-  "code.genCssVars": "ドキュメント全体の CSS 変数を生成中",
-  "code.genSelected": "{{count}} 個の選択要素のコードを生成中",
-  "code.genDocument": "ドキュメント全体のコードを生成中",
-  "code.aiEnhance": "AI で改善",
-  "code.cancelEnhance": "改善をキャンセル",
-  "code.resetEnhance": "元に戻す",
-  "code.enhancing": "AI がコードを改善中...",
-  "code.enhanced": "AI により改善済み",
 
   // ── Save Dialog ──
-  "save.saveAs": "名前を付けて保存",
-  "save.fileName": "ファイル名",
 
   // ── Agent Settings ──
   "agents.title": "Agents & MCP を設定",
   "agents.agentsOnCanvas": "キャンバス上の Agents",
   "agents.mcpIntegrations": "ターミナルでの MCP 連携",
-  "agents.transport": "トランスポート",
   "agents.port": "ポート",
   "agents.mcpRestart": "MCP 連携はターミナルの再起動後に有効になります。",
   "agents.modelCount": "{{count}} 個のモデル",
@@ -343,26 +128,17 @@ const ja: TranslationKeys = {
   "agents.serverError": "サーバーエラー {{status}}",
   "agents.failedTo": "{{action}}に失敗しました",
   "agents.failedToMcp": "MCP サーバーの{{action}}に失敗しました",
-  "agents.failedTransport": "トランスポートの更新に失敗しました",
-  "agents.failedMcpTransport": "MCP トランスポートの更新に失敗しました",
-  "agents.claudeCode": "Claude Code",
   "agents.claudeModels": "Claude モデル",
-  "agents.codexCli": "Codex CLI",
   "agents.openaiModels": "OpenAI モデル",
   "agents.opencode": "OpenCode",
   "agents.opencodeDesc": "75 以上の LLM プロバイダー",
   "agents.copilot": "GitHub Copilot",
   "agents.copilotDesc": "GitHub Copilot モデル",
   "agents.mcpServer": "MCP サーバー",
-  "agents.mcpServerStart": "開始",
   "agents.mcpServerStop": "停止",
   "agents.mcpServerRunning": "実行中",
   "agents.mcpServerStopped": "停止中",
-  "agents.mcpLanAccess": "LAN アクセス",
   "agents.mcpClientConfig": "クライアント設定",
-  "agents.stdio": "stdio",
-  "agents.http": "http",
-  "agents.stdioHttp": "stdio + http",
   "agents.autoUpdate": "自動アップデート確認",
   "agents.notInstalled": "未インストール",
   "agents.install": "インストール",
@@ -386,28 +162,6 @@ const ja: TranslationKeys = {
   "agents.analysisPhasesCustom": "カスタム",
 
   // ── Figma Import ──
-  "figma.title": "Figma からインポート",
-  "figma.dropFile": ".fig ファイルをここにドロップ",
-  "figma.orBrowse": "またはクリックして参照",
-  "figma.exportTip":
-    "Figma からエクスポート：ファイル \u2192 ローカルコピーを保存 (.fig)",
-  "figma.selectFigFile": ".fig ファイルを選択してください",
-  "figma.noPages": ".fig ファイルにページが見つかりません",
-  "figma.parseFailed": ".fig ファイルの解析に失敗しました",
-  "figma.convertFailed": "Figma ファイルの変換に失敗しました",
-  "figma.parsing": ".fig ファイルを解析中...",
-  "figma.converting": "ノードを変換中...",
-  "figma.selectPage":
-    "このファイルには {{count}} ページあります。インポートするページを選択してください：",
-  "figma.layers": "{{count}} レイヤー",
-  "figma.importAll": "すべてのページをインポート",
-  "figma.importComplete": "インポート完了！",
-  "figma.moreWarnings": "...他 {{count}} 件の警告",
-  "figma.tryAgain": "再試行",
-  "figma.layoutMode": "レイアウトモード：",
-  "figma.preserveLayout": "Figma のレイアウトを維持",
-  "figma.autoLayout": "自動レイアウト",
-  "figma.comingSoon": "近日公開",
 
   // ── Landing Page ──
   "landing.title": "Game Theory ",
@@ -420,39 +174,16 @@ const ja: TranslationKeys = {
   "notFound.message": "ページが見つかりません",
 
   // ── Component Browser ──
-  "componentBrowser.title": "UIKit ブラウザ",
-  "componentBrowser.exportKit": "キットをエクスポート",
-  "componentBrowser.importKit": "キットをインポート",
-  "componentBrowser.kit": "キット：",
-  "componentBrowser.all": "すべて",
-  "componentBrowser.imported": "（インポート済み）",
-  "componentBrowser.components": "コンポーネント",
-  "componentBrowser.searchComponents": "コンポーネントを検索...",
-  "componentBrowser.deleteKit": "{{name}} を削除",
-  "componentBrowser.category.all": "すべて",
-  "componentBrowser.category.buttons": "ボタン",
-  "componentBrowser.category.inputs": "入力",
-  "componentBrowser.category.cards": "カード",
-  "componentBrowser.category.nav": "ナビゲーション",
-  "componentBrowser.category.layout": "レイアウト",
-  "componentBrowser.category.feedback": "フィードバック",
-  "componentBrowser.category.data": "データ",
-  "componentBrowser.category.other": "その他",
 
   // ── Variable Picker ──
-  "variablePicker.boundTo": "--{{name}} にバインド済み",
-  "variablePicker.bindToVariable": "変数にバインド",
-  "variablePicker.unbind": "バインドを解除",
-  "variablePicker.noVariables": "{{type}} 型の変数が定義されていません",
 
   // ── Analysis ──
   "analysis.title": "ゲーム理論アナリスト",
-  "analysis.emptyState":
-    "ゲーム理論アナリストです。どのイベントを分析しますか？",
-  "analysis.emptyHint": "プレイヤー、戦略、ゲーム構造を自動的に特定します。",
-  "analysis.inputPlaceholder": "分析するイベントを記述...",
-  "analysis.startingAnalysis":
-    "「{{topic}}」のゲーム理論分析を開始しています...",
+  "analysis.launcherHint": "Describe a negotiation, conflict, policy fight, market contest, or strategic situation to map on the canvas.",
+  "analysis.launcherInputPlaceholder": "What do you want to analyze?",
+  "analysis.chatEmptyState": "Ask about game theory, explore a situation, or work out what you want to analyze.",
+  "analysis.chatEmptyHint": "If the canvas is blank, I can help you scope the topic before we run the analysis.",
+  "analysis.chatInputPlaceholder": "Ask a question or describe the situation...",
   "analysis.cannotChangeModel":
     "分析の実行中はモデルを変更できません。先に分析を停止してください。",
   "analysis.unsavedChanges":
@@ -477,10 +208,14 @@ const ja: TranslationKeys = {
   "analysis.progress.phasesComplete": "{{completed}}/{{total}} フェーズ完了",
   "analysis.progress.entityCount": "{{count}} エンティティ",
   "analysis.progress.entityCountPlural": "{{count}} エンティティ",
-
-  // ── Analysis Failures ──
+  "analysis.progress.cancelled": "Analysis cancelled",
+  "analysis.failure.rateLimit": "rate limited",
+  "analysis.failure.providerApiError": "provider API error",
+  "analysis.failure.connectorError": "connector error",
+  "analysis.failure.mcpTransportError": "MCP transport error",
+  "analysis.failure.validation": "validation error",
   "analysis.failure.timeout": "タイムアウト",
-  "analysis.failure.parseError": "パースエラー",
+  "analysis.failure.unknown": "unknown error",
   "analysis.failure.providerError": "プロバイダーエラー",
 
   // ── Analysis Phases ──
@@ -527,15 +262,11 @@ const ja: TranslationKeys = {
   "analysis.entities.scenario": "シナリオ",
   "analysis.entities.thesis": "テーゼ",
   "analysis.entities.metaCheck": "メタチェック",
-  "analysis.entities.noMatching": "一致するエンティティがありません",
-  "analysis.entities.searchHint":
-    "別の検索語を試すか、タイプフィルターを解除してください。",
   "analysis.entities.confidence.high": "高",
   "analysis.entities.confidence.medium": "中",
   "analysis.entities.confidence.low": "低",
   "analysis.entities.source.ai": "AI",
   "analysis.entities.source.human": "人間",
-  "analysis.entities.source.computed": "計算",
 } as const;
 
 export default ja;

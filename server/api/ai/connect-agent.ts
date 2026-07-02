@@ -8,7 +8,7 @@ import {
 } from '../../utils/resolve-claude-agent-env'
 
 interface ConnectBody {
-  agent: 'claude-code' | 'codex-cli' | 'opencode' | 'copilot'
+  agent: 'claude-code' | 'codex-cli' | 'opencode'
 }
 
 interface ConnectResult {
@@ -44,10 +44,6 @@ export default defineEventHandler(async (event) => {
 
   if (body.agent === 'opencode') {
     return connectOpenCode()
-  }
-
-  if (body.agent === 'copilot') {
-    return connectCopilot()
   }
 
   return { connected: false, models: [], error: `Unknown agent: ${body.agent}` } satisfies ConnectResult
@@ -409,65 +405,6 @@ async function connectOpenCode(): Promise<ConnectResult> {
     const raw = error instanceof Error ? error.message : 'Failed to connect'
     return { connected: false, models: [], error: friendlyOpenCodeError(raw) }
   }
-}
-
-/** Connect to GitHub Copilot CLI via @github/copilot-sdk and fetch available models. */
-async function connectCopilot(): Promise<ConnectResult> {
-  // Use standalone copilot binary to avoid Bun's node:sqlite issue
-  const { resolveCopilotCli } = await import('../../utils/copilot-client')
-  const cliPath = resolveCopilotCli()
-  if (!cliPath) {
-    return { connected: false, models: [], notInstalled: true, error: 'GitHub Copilot CLI not found' }
-  }
-
-  try {
-    const { CopilotClient } = await import('@github/copilot-sdk')
-    const client = new CopilotClient({ autoStart: true, cliPath })
-
-    await client.start()
-
-    let models: GroupedModel[] = []
-    try {
-      const modelList = await client.listModels()
-      models = modelList
-        .filter((m) => !m.policy || m.policy.state === 'enabled')
-        .map((m) => ({
-          value: m.id,
-          displayName: m.name,
-          description: m.capabilities?.supports?.vision ? 'vision' : '',
-          provider: 'copilot' as const,
-        }))
-    } catch (listErr) {
-      const msg = listErr instanceof Error ? listErr.message : 'Failed to list models'
-      await client.stop().catch(() => {})
-      return { connected: false, models: [], error: friendlyCopilotError(msg) }
-    }
-
-    await client.stop()
-
-    if (models.length === 0) {
-      return { connected: false, models: [], error: 'No models found. Run "copilot login" to authenticate first.' }
-    }
-
-    return { connected: true, models }
-  } catch (error) {
-    const raw = error instanceof Error ? error.message : 'Failed to connect'
-    return { connected: false, models: [], error: friendlyCopilotError(raw) }
-  }
-}
-
-/** Map Copilot SDK errors to user-friendly messages */
-function friendlyCopilotError(raw: string): string {
-  if (/not found|ENOENT/i.test(raw)) {
-    return 'GitHub Copilot CLI not found. Install it from https://docs.github.com/copilot/how-tos/copilot-cli'
-  }
-  if (/not authenticated|authenticate first|auth|unauthenticated|login/i.test(raw)) {
-    return 'Not authenticated. Run "copilot login" in your terminal first.'
-  }
-  if (/timed?\s*out/i.test(raw)) {
-    return 'Connection timed out. Please try again.'
-  }
-  return raw
 }
 
 /** Map OpenCode connection errors to user-friendly messages */

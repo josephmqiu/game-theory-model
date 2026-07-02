@@ -5,6 +5,7 @@ import type { MethodologyPhase, PhaseState } from "./methodology";
 
 export type EntityConfidence = "high" | "medium" | "low";
 export type EntitySource = "ai" | "human" | "computed";
+export type DisplayEntitySource = "ai" | "human";
 
 export const entityConfidenceSchema = z.enum(["high", "medium", "low"]);
 export const entitySourceSchema = z.enum(["ai", "human", "computed"]);
@@ -856,7 +857,7 @@ export interface AnalysisEntity {
  */
 export function displaySourceForProvenance(
   provenance: EntityProvenance | undefined,
-): EntitySource {
+): DisplayEntitySource {
   return provenance?.source === "user-edited" ? "human" : "ai";
 }
 

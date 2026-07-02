@@ -25,6 +25,9 @@ jobs:
       - name: Run branch-confidence gate
         run: bun run check:pr
 
+      - name: Run knip
+        run: bun run knip
+
   smoke-server:
     name: Smoke Server
     runs-on: ubuntu-latest
