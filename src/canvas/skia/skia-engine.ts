@@ -16,10 +16,6 @@ import {
   getActivePageChildren,
   getAllChildren,
 } from "@/stores/document-store";
-import {
-  resolveNodeForCanvas,
-  getDefaultTheme,
-} from "@/variables/resolve-variables";
 import { getCanvasBackground, MIN_ZOOM, MAX_ZOOM } from "../canvas-constants";
 import { entityTypeColor } from "@/constants/design-tokens";
 import {
@@ -93,7 +89,7 @@ function premeasureTextHeights(nodes: PenNode[]): PenNode[] {
             ? tNode.content.map((s) => s.text ?? "").join("")
             : "";
 
-      // Match Fabric.js wrapping: only premeasure when text actually wraps.
+      // Match Canvas 2D wrapping: only premeasure when text actually wraps.
       // textGrowth='auto' means auto-width (no wrapping) regardless of textAlign.
       // textGrowth=undefined with non-left textAlign uses fixed-width for alignment.
       const textAlign = tNode.textAlign;
@@ -355,10 +351,8 @@ export function flattenToRenderNodes(
           ? computeLayoutPositions(resolved, children)
           : children;
 
-      // Clipping — only clip for root frames (artboard behavior).
-      // Nested frames do NOT clip children, matching Fabric.js behavior.
-      // Fabric.js doesn't implement frame-level clipping, so children always overflow.
-      // TODO: add proper clipContent support once Fabric.js is fully replaced.
+      // Clipping: root frames act as artboards, while nested frames keep
+      // their children visible outside their bounds until clipContent exists.
       let childClip = clipCtx;
       const isRootFrame = node.type === "frame" && depth === 0;
       if (isRootFrame) {
@@ -642,21 +636,13 @@ export class SkiaEngine {
     collectReusableIds(pageChildren, this.reusableIds);
     collectInstanceIds(pageChildren, this.instanceIds);
 
-    // Resolve refs, variables, then flatten
+    // Resolve reusable refs before premeasure and flatten.
     const resolved = resolveRefs(pageChildren, allNodes, findInTree);
-
-    // Resolve design variables
-    const variables = docState.document.variables ?? {};
-    const themes = docState.document.themes;
-    const defaultTheme = getDefaultTheme(themes);
-    const variableResolved = resolved.map((n) =>
-      resolveNodeForCanvas(n, variables, defaultTheme),
-    );
 
     // Only premeasure text HEIGHTS for fixed-width text (where wrapping
     // estimation may differ from Canvas 2D). Never touch widths or
-    // container-relative sizing to maintain layout consistency with Fabric.js.
-    const measured = premeasureTextHeights(variableResolved);
+    // container-relative sizing to maintain the Skia layout inputs.
+    const measured = premeasureTextHeights(resolved);
 
     this.renderNodes = flattenToRenderNodes(measured);
 

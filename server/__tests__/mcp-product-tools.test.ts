@@ -20,7 +20,7 @@ import {
   handleDeleteRelationship,
   handleRerunPhases,
   handleAbortAnalysis,
-} from "@/mcp/server";
+} from "../mcp/product-tools";
 import {
   _resetLoopbackTriggersForTest,
   getRecordedLoopbackTriggers,

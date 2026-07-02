@@ -4,8 +4,6 @@ import type { PenDocument, PenNode, GroupNode, RefNode } from '@/types/pen'
 import type { VariableDefinition } from '@/types/variables'
 import { useHistoryStore } from '@/stores/history-store'
 import { useCanvasStore } from '@/stores/canvas-store'
-import { getDefaultTheme } from '@/variables/resolve-variables'
-import { replaceVariableRefsInTree } from '@/variables/replace-refs'
 import {
   createEmptyDocument,
   findNodeInTree,
@@ -614,35 +612,13 @@ export const useDocumentStore = create<DocumentStoreState>(
       if (!vars || !(name in vars)) return
       useHistoryStore.getState().pushState(state.document)
       const { [name]: _removed, ...rest } = vars
-      const activeTheme = getDefaultTheme(state.document.themes)
-      // Replace variable refs across all pages
-      const doc = state.document
-      if (doc.pages && doc.pages.length > 0) {
-        const newPages = doc.pages.map((p) => ({
-          ...p,
-          children: replaceVariableRefsInTree(p.children, name, null, vars, activeTheme),
-        }))
-        set({
-          document: {
-            ...doc,
-            variables: Object.keys(rest).length > 0 ? rest : undefined,
-            pages: newPages,
-          },
-          isDirty: true,
-        })
-      } else {
-        const newChildren = replaceVariableRefsInTree(
-          doc.children, name, null, vars, activeTheme,
-        )
-        set({
-          document: {
-            ...doc,
-            variables: Object.keys(rest).length > 0 ? rest : undefined,
-            children: newChildren,
-          },
-          isDirty: true,
-        })
-      }
+      set({
+        document: {
+          ...state.document,
+          variables: Object.keys(rest).length > 0 ? rest : undefined,
+        },
+        isDirty: true,
+      })
     },
 
     renameVariable: (oldName, newName) => {
@@ -654,27 +630,10 @@ export const useDocumentStore = create<DocumentStoreState>(
       const def = vars[oldName]
       const { [oldName]: _removed, ...rest } = vars
       const newVars = { ...rest, [newName]: def }
-      const activeTheme = getDefaultTheme(state.document.themes)
-      // Rename variable refs across all pages
-      const doc = state.document
-      if (doc.pages && doc.pages.length > 0) {
-        const newPages = doc.pages.map((p) => ({
-          ...p,
-          children: replaceVariableRefsInTree(p.children, oldName, newName, vars, activeTheme),
-        }))
-        set({
-          document: { ...doc, variables: newVars, pages: newPages },
-          isDirty: true,
-        })
-      } else {
-        const newChildren = replaceVariableRefsInTree(
-          doc.children, oldName, newName, vars, activeTheme,
-        )
-        set({
-          document: { ...doc, variables: newVars, children: newChildren },
-          isDirty: true,
-        })
-      }
+      set({
+        document: { ...state.document, variables: newVars },
+        isDirty: true,
+      })
     },
 
     setThemes: (themes) => {
