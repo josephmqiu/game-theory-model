@@ -115,9 +115,6 @@ describe("design guards (6A)", () => {
   });
 
   it("no inline fontFamily styles outside the allowed files", () => {
-    // font-picker renders font previews BY DESIGN — the one allowed use.
-    const allowed = new Set(["src/components/shared/font-picker.tsx"]);
-
     const offenders: string[] = [];
     const walk = (dir: string): void => {
       for (const entry of readdirSync(join(process.cwd(), dir), {
@@ -129,7 +126,6 @@ describe("design guards (6A)", () => {
         } else if (
           entry.name.endsWith(".tsx") &&
           !rel.includes("__tests__") &&
-          !allowed.has(rel) &&
           read(rel).includes("fontFamily:")
         ) {
           offenders.push(rel);
