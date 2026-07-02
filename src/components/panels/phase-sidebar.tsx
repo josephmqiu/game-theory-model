@@ -14,7 +14,7 @@ import {
   useRunStatusStore,
 } from "@/stores/run-status-store";
 import type { MethodologyPhase } from "@/types/methodology";
-import { V3_PHASES, getRunnablePhaseNumber } from "@/types/methodology";
+import { RUNNABLE_PHASES, getRunnablePhaseNumber } from "@/types/methodology";
 
 // ── Props ──
 
@@ -80,7 +80,7 @@ export function PhaseSidebar({
       {/* Phase list */}
       <nav className="flex-1 overflow-y-auto px-2 py-3">
         <ul className="space-y-0.5">
-          {V3_PHASES.map((phase) => {
+          {RUNNABLE_PHASES.map((phase) => {
             const phaseState = getPhaseState(phase);
             const status = phaseState?.status ?? "pending";
             const entityCount = getEntityCount(phase);

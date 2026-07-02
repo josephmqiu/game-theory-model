@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import type { AnalysisMutationEvent } from "../../../shared/types/events";
-import { V3_PHASES } from "../../../src/types/methodology";
+import { RUNNABLE_PHASES } from "../../../src/types/methodology";
 import * as runtimeStatus from "../runtime-status";
 import {
   newAnalysis,
@@ -89,8 +89,8 @@ describe("newAnalysis", () => {
     expect(a.name).toBe("US-China trade war");
     expect(a.entities).toEqual([]);
     expect(a.relationships).toEqual([]);
-    expect(a.phases).toHaveLength(V3_PHASES.length);
-    expect(a.phases.map((p) => p.phase)).toEqual(V3_PHASES);
+    expect(a.phases).toHaveLength(RUNNABLE_PHASES.length);
+    expect(a.phases.map((p) => p.phase)).toEqual(RUNNABLE_PHASES);
     expect(a.phases.every((p) => p.status === "pending")).toBe(true);
   });
 
@@ -620,10 +620,12 @@ describe("loadAnalysis", () => {
 
     const loaded = getAnalysis();
     expect(loaded.phases.map((phaseState) => phaseState.phase)).toEqual(
-      V3_PHASES,
+      RUNNABLE_PHASES,
     );
     expect(
-      loaded.phases.find((phaseState) => phaseState.phase === "historical-game"),
+      loaded.phases.find(
+        (phaseState) => phaseState.phase === "historical-game",
+      ),
     ).toMatchObject({
       status: "complete",
       entityIds: ["historical-entity"],

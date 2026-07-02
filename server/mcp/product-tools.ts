@@ -21,7 +21,7 @@ import type { MethodologyPhase } from "../../shared/types/methodology";
 import type { RelationshipType } from "../../shared/types/entity";
 import * as analysisOrchestrator from "../agents/analysis-agent";
 import * as revalidationService from "../services/revalidation-service";
-import { ALL_PHASES, V1_PHASES } from "../../src/types/methodology";
+import { ALL_PHASES, RUNNABLE_PHASES } from "../../src/types/methodology";
 
 export interface ToolDefinition {
   name: string;
@@ -275,7 +275,11 @@ export async function handleStartAnalysis(args: {
     args.provider,
     args.model,
   );
-  return JSON.stringify({ runId, status: "started", estimatedPhases: 3 });
+  return JSON.stringify({
+    runId,
+    status: "started",
+    estimatedPhases: RUNNABLE_PHASES.length,
+  });
 }
 
 function resolveToolRunId(): string | undefined {
@@ -310,20 +314,20 @@ function resolveEarliestRerunPhase(
   }
 
   const unsupportedPhases = phases.filter(
-    (phase) => !(V1_PHASES as readonly string[]).includes(phase),
+    (phase) => !(RUNNABLE_PHASES as readonly string[]).includes(phase),
   );
   if (unsupportedPhases.length > 0) {
     return {
       error:
-        `rerun_phases currently supports only implemented phases: ${V1_PHASES.join(", ")}. ` +
+        `rerun_phases supports only runnable phases: ${RUNNABLE_PHASES.join(", ")}. ` +
         `Unsupported: ${unsupportedPhases.join(", ")}`,
     };
   }
 
   return [...phases].sort(
     (left, right) =>
-      V1_PHASES.indexOf(left as MethodologyPhase) -
-      V1_PHASES.indexOf(right as MethodologyPhase),
+      RUNNABLE_PHASES.indexOf(left as MethodologyPhase) -
+      RUNNABLE_PHASES.indexOf(right as MethodologyPhase),
   )[0] as MethodologyPhase;
 }
 
@@ -513,7 +517,10 @@ export async function handleToolCall(
   try {
     switch (name) {
       case "start_analysis":
-        return { text: await handleStartAnalysis(toolArgs as never), isError: false };
+        return {
+          text: await handleStartAnalysis(toolArgs as never),
+          isError: false,
+        };
       case "get_analysis_status":
         return { text: handleGetAnalysisStatus(), isError: false };
       case "get_entity":
@@ -521,9 +528,15 @@ export async function handleToolCall(
       case "query_entities":
         return { text: handleQueryEntities(toolArgs as never), isError: false };
       case "query_relationships":
-        return { text: handleQueryRelationships(toolArgs as never), isError: false };
+        return {
+          text: handleQueryRelationships(toolArgs as never),
+          isError: false,
+        };
       case "request_loopback":
-        return { text: handleRequestLoopback(toolArgs as never), isError: false };
+        return {
+          text: handleRequestLoopback(toolArgs as never),
+          isError: false,
+        };
       case "create_entity":
         return { text: handleCreateEntity(toolArgs as never), isError: false };
       case "update_entity":
@@ -531,9 +544,15 @@ export async function handleToolCall(
       case "delete_entity":
         return { text: handleDeleteEntity(toolArgs as never), isError: false };
       case "create_relationship":
-        return { text: handleCreateRelationship(toolArgs as never), isError: false };
+        return {
+          text: handleCreateRelationship(toolArgs as never),
+          isError: false,
+        };
       case "delete_relationship":
-        return { text: handleDeleteRelationship(toolArgs as never), isError: false };
+        return {
+          text: handleDeleteRelationship(toolArgs as never),
+          isError: false,
+        };
       case "rerun_phases":
         return { text: handleRerunPhases(toolArgs as never), isError: false };
       case "abort_analysis":

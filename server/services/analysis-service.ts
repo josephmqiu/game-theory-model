@@ -7,7 +7,7 @@
 
 import { z } from "zod/v4";
 import type { MethodologyPhase } from "../../shared/types/methodology";
-import { V3_PHASES } from "../../shared/types/methodology";
+import { RUNNABLE_PHASES } from "../../shared/types/methodology";
 import type { RelationshipType } from "../../shared/types/entity";
 import {
   entityConfidenceSchema,
@@ -116,7 +116,7 @@ type SupportedPhase = Extract<
   | "meta-check"
 >;
 
-const SUPPORTED_PHASES: SupportedPhase[] = V3_PHASES.filter(
+const SUPPORTED_PHASES: SupportedPhase[] = RUNNABLE_PHASES.filter(
   (p): p is SupportedPhase =>
     p === "situational-grounding" ||
     p === "player-identification" ||
@@ -562,9 +562,7 @@ function buildPrompt(
   return { system: systemPrompt, user: parts.join("\n") };
 }
 
-function buildAnalysisEffortGuidance(
-  effortLevel: PhaseEffortLevel,
-): string {
+function buildAnalysisEffortGuidance(effortLevel: PhaseEffortLevel): string {
   const guidanceByEffort: Record<PhaseEffortLevel, string[]> = {
     quick: [
       "Analysis effort guidance:",
@@ -1899,7 +1897,8 @@ export async function runPhase(
   const schema = buildOutputSchema(phase);
   const emitActivity = (message: string, toolName?: string) => {
     context?.onActivity?.({
-      kind: toolName === "WebSearch" ? "web-search" : toolName ? "tool" : "note",
+      kind:
+        toolName === "WebSearch" ? "web-search" : toolName ? "tool" : "note",
       message,
       ...(toolName ? { toolName } : {}),
     });

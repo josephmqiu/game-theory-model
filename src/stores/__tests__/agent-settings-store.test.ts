@@ -18,7 +18,7 @@ vi.mock("@/utils/app-storage", () => {
   };
 });
 
-import { V3_PHASES } from "@/types/methodology";
+import { RUNNABLE_PHASES } from "@/types/methodology";
 import {
   buildAnalysisRuntimeOverrides,
   useAgentSettingsStore,
@@ -31,11 +31,17 @@ describe("agent-settings-store", () => {
   beforeEach(() => {
     storageState.data = {};
     vi.clearAllMocks();
-    useAgentSettingsStore.setState(useAgentSettingsStore.getInitialState(), true);
+    useAgentSettingsStore.setState(
+      useAgentSettingsStore.getInitialState(),
+      true,
+    );
   });
 
   afterEach(() => {
-    useAgentSettingsStore.setState(useAgentSettingsStore.getInitialState(), true);
+    useAgentSettingsStore.setState(
+      useAgentSettingsStore.getInitialState(),
+      true,
+    );
   });
 
   it("omits analysis runtime overrides until the user sets them", () => {
@@ -44,7 +50,7 @@ describe("agent-settings-store", () => {
         analysisWebSearch: undefined,
         analysisEffortLevel: undefined,
         analysisPhaseMode: "all",
-        analysisCustomPhases: V3_PHASES,
+        analysisCustomPhases: RUNNABLE_PHASES,
       }),
     ).toBeUndefined();
   });
@@ -58,7 +64,10 @@ describe("agent-settings-store", () => {
     });
 
     useAgentSettingsStore.getState().persist();
-    useAgentSettingsStore.setState(useAgentSettingsStore.getInitialState(), true);
+    useAgentSettingsStore.setState(
+      useAgentSettingsStore.getInitialState(),
+      true,
+    );
     useAgentSettingsStore.getState().hydrate();
 
     expect(useAgentSettingsStore.getState()).toMatchObject({
@@ -87,7 +96,7 @@ describe("agent-settings-store", () => {
       analysisWebSearch: undefined,
       analysisEffortLevel: undefined,
       analysisPhaseMode: "all",
-      analysisCustomPhases: V3_PHASES,
+      analysisCustomPhases: RUNNABLE_PHASES,
       mcpHttpPort: 3456,
       isHydrated: true,
     });

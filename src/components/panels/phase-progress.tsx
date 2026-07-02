@@ -6,7 +6,7 @@ import {
   useRunStatusStore,
 } from "@/stores/run-status-store";
 import {
-  V3_PHASES,
+  RUNNABLE_PHASES,
   PHASE_LABELS,
   getRunnablePhaseNumber,
 } from "@/types/methodology";
@@ -27,7 +27,7 @@ export function PhaseProgress({ className }: PhaseProgressProps) {
   const runStatus = useRunStatusStore((s) => s.runStatus);
 
   const runnablePhases = phases.filter((ps) =>
-    (V3_PHASES as readonly string[]).includes(ps.phase),
+    (RUNNABLE_PHASES as readonly string[]).includes(ps.phase),
   );
   const completedCount = runnablePhases.filter(
     (ps) => ps.status === "complete",

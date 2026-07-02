@@ -28,7 +28,7 @@ import {
   ALLOWED_PROVIDERS,
   PROVIDER_LABELS,
 } from "@/services/ai/allowed-providers";
-import { PHASE_LABELS, V3_PHASES } from "@/types/methodology";
+import { PHASE_LABELS, RUNNABLE_PHASES } from "@/types/methodology";
 import type { AnalysisEffortLevel } from "../../../shared/types/analysis-runtime";
 import ClaudeLogo from "@/components/icons/claude-logo";
 import OpenAILogo from "@/components/icons/openai-logo";
@@ -482,7 +482,7 @@ export default function AgentSettingsDialog() {
   );
 
   const handleAnalysisPhaseToggle = useCallback(
-    (phase: (typeof V3_PHASES)[number]) => {
+    (phase: (typeof RUNNABLE_PHASES)[number]) => {
       toggleAnalysisPhase(phase);
       persist();
     },
@@ -668,10 +668,9 @@ export default function AgentSettingsDialog() {
 
                 {analysisPhaseMode === "custom" && (
                   <div className="mt-2 space-y-1.5">
-                    {V3_PHASES.map((phase) => {
+                    {RUNNABLE_PHASES.map((phase) => {
                       const checked = analysisCustomPhases.includes(phase);
-                      const disableToggle =
-                        checked && selectedPhaseCount === 1;
+                      const disableToggle = checked && selectedPhaseCount === 1;
 
                       return (
                         <label

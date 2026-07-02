@@ -8,7 +8,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MethodologyPhase } from "../../../shared/types/methodology";
-import { resetAllServices, makeFactOutput } from "../../__test-utils__/fixtures";
+import {
+  resetAllServices,
+  makeFactOutput,
+} from "../../__test-utils__/fixtures";
 
 // ── Mock the adapter (called by runPhase internally) ──
 
@@ -103,7 +106,9 @@ describe("revalidation integration", () => {
 
     const entities = entityGraph.getEntitiesByPhase("situational-grounding");
     const root = entities.find((e) => (e.data as any).content === "Root")!;
-    const downstream = entities.find((e) => (e.data as any).content === "Downstream")!;
+    const downstream = entities.find(
+      (e) => (e.data as any).content === "Downstream",
+    )!;
 
     const result = entityGraph.getDownstreamEntityIds(root.id);
     expect(result).toContain(downstream.id);
@@ -166,7 +171,9 @@ describe("revalidation integration", () => {
     commitPhaseSnapshot({
       phase: "situational-grounding",
       runId: "seed-run",
-      entities: [makeFactOutput({ ref: "fact-1", content: "Stale fact" })] as any,
+      entities: [
+        makeFactOutput({ ref: "fact-1", content: "Stale fact" }),
+      ] as any,
       relationships: [],
     });
     const entities = entityGraph.getEntitiesByPhase("situational-grounding");
@@ -191,7 +198,9 @@ describe("revalidation integration", () => {
     commitPhaseSnapshot({
       phase: "situational-grounding",
       runId: "seed-run",
-      entities: [makeFactOutput({ ref: "fact-1", content: "Stale fact" })] as any,
+      entities: [
+        makeFactOutput({ ref: "fact-1", content: "Stale fact" }),
+      ] as any,
       relationships: [],
     });
     const entities = entityGraph.getEntitiesByPhase("situational-grounding");
@@ -210,7 +219,9 @@ describe("revalidation integration", () => {
     commitPhaseSnapshot({
       phase: "situational-grounding",
       runId: "seed-run",
-      entities: [makeFactOutput({ ref: "fact-1", content: "Stale fact" })] as any,
+      entities: [
+        makeFactOutput({ ref: "fact-1", content: "Stale fact" }),
+      ] as any,
       relationships: [],
     });
     const entities = entityGraph.getEntitiesByPhase("situational-grounding");
@@ -229,11 +240,15 @@ describe("revalidation integration", () => {
 
     // Instead, test the deferRevalidation path which is what scheduleRevalidation
     // calls when isRunning() returns true:
-    runtimeStatus.deferRevalidation([entities[0].id], { reason: "analysis-active" });
+    runtimeStatus.deferRevalidation([entities[0].id], {
+      reason: "analysis-active",
+    });
 
     // Stale IDs should have been deferred
     expect(runtimeStatus.hasDeferredRevalidationIds()).toBe(true);
-    expect(runtimeStatus.getDeferredRevalidationIds()).toContain(entities[0].id);
+    expect(runtimeStatus.getDeferredRevalidationIds()).toContain(
+      entities[0].id,
+    );
 
     // Release the run
     runtimeStatus.releaseRun("run-1", "completed");
@@ -241,6 +256,47 @@ describe("revalidation integration", () => {
     // Deferred IDs persist after release (consumer must explicitly consume)
     const deferred = runtimeStatus.getDeferredRevalidationIds();
     expect(deferred).toContain(entities[0].id);
+  });
+
+  // ── CRITICAL regression: revalidation must traverse the FULL runnable ladder ──
+  //
+  // With the old truncated V2 ladder, a revalidation starting at phase 1
+  // stopped after "assumptions" and never reached elimination/scenarios/
+  // meta-check — late-phase entities stayed stale forever.
+
+  it("revalidation re-runs every runnable phase through meta-check", async () => {
+    const { RUNNABLE_PHASES } =
+      await import("../../../shared/types/methodology");
+
+    commitPhaseSnapshot({
+      phase: "situational-grounding",
+      runId: "seed-run",
+      entities: [
+        makeFactOutput({ ref: "fact-1", content: "Stale fact" }),
+      ] as any,
+      relationships: [],
+    });
+    const entities = entityGraph.getEntitiesByPhase("situational-grounding");
+    entityGraph.markStale([entities[0].id]);
+
+    const startedPhases: string[] = [];
+    const unsub = revalidationService.onProgress((event) => {
+      if (event.type === "phase_started") {
+        startedPhases.push(event.phase);
+      }
+    });
+
+    const { runId } = revalidationService.revalidate([entities[0].id]);
+    // Let the async phase loop drain (each phase resolves via mocked adapter)
+    await vi.advanceTimersByTimeAsync(0);
+    unsub();
+
+    expect(startedPhases).toEqual([...RUNNABLE_PHASES]);
+    expect(startedPhases.at(-1)).toBe("meta-check");
+    expect(revalidationService.getRevalStatus(runId)).toMatchObject({
+      status: "completed",
+      phasesCompleted: RUNNABLE_PHASES.length,
+    });
   });
 
   it("dismiss clears failed status and returns to idle", () => {
