@@ -2,8 +2,6 @@
 
 A desktop application for AI-assisted game-theoretic analysis of real-world events. Discuss situations with AI through chat, and watch structured analysis materialize as an interactive entity graph on a canvas.
 
-![Game Theory Analyzer](.github/screenshot.png)
-
 ## What It Does
 
 Game Theory Analyzer helps you model real-world strategic interactions — negotiations, competitions, policy decisions — using formal game-theory frameworks. You chat with AI about a situation, and the system runs structured multi-phase analysis that produces structured findings such as:
