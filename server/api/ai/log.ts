@@ -1,5 +1,5 @@
 import { defineEventHandler, readRawBody, setResponseStatus } from 'h3'
-import { appendRunLogEntries } from '../../utils/ai-logger'
+import { appendRunLogEntries, isValidRunId } from '../../utils/ai-logger'
 
 interface LogFlushBody {
   runId?: string
@@ -10,7 +10,12 @@ export default defineEventHandler(async (event) => {
   const body = await readRawBody(event, 'utf8').catch(() => null)
   const parsed = normalizeBody(body)
 
-  if (!parsed || !parsed.runId || !Array.isArray(parsed.entries)) {
+  if (
+    !parsed ||
+    typeof parsed.runId !== 'string' ||
+    !isValidRunId(parsed.runId) ||
+    !Array.isArray(parsed.entries)
+  ) {
     setResponseStatus(event, 400)
     return { error: 'Invalid log payload.' }
   }

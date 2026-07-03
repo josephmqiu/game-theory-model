@@ -6,10 +6,10 @@ import type {
   CanvasInteraction,
 } from "@/types/canvas";
 import type { PenNode } from "@/types/pen";
-import { DEFAULT_PAGE_ID } from "@/stores/document-tree-utils";
 import { appStorage } from "@/utils/app-storage";
 
 const PREFS_KEY = "game-theory-canvas-preferences";
+const DEFAULT_PAGE_ID = "page-1";
 
 export type RightPanelTab = "design" | "code";
 
@@ -34,6 +34,12 @@ interface CanvasStoreState {
   pendingFigmaFile: File | null;
   activePageId: string | null;
   focusedEntityId: string | null;
+  /**
+   * Latest revision-log entry the user has SEEN per entity (3.1A) — the
+   * canvas updated-dot shows while the newest revalidation entry is above
+   * this watermark. Session-scoped by design; not persisted.
+   */
+  viewedRevisionLogNos: Record<string, number>;
 
   setActiveTool: (tool: ToolType) => void;
   setZoom: (zoom: number) => void;
@@ -55,6 +61,7 @@ interface CanvasStoreState {
   setPendingFigmaFile: (file: File | null) => void;
   setActivePageId: (pageId: string | null) => void;
   setFocusedEntityId: (id: string | null) => void;
+  markRevisionViewed: (entityId: string, logNo: number) => void;
   hydrate: () => void;
 }
 
@@ -91,6 +98,7 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
   pendingFigmaFile: null,
   activePageId: DEFAULT_PAGE_ID,
   focusedEntityId: null,
+  viewedRevisionLogNos: {},
 
   setActiveTool: (tool) => set({ activeTool: tool }),
 
@@ -195,6 +203,18 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
   setPendingFigmaFile: (file) => set({ pendingFigmaFile: file }),
   setActivePageId: (activePageId) => set({ activePageId }),
   setFocusedEntityId: (focusedEntityId) => set({ focusedEntityId }),
+
+  markRevisionViewed: (entityId, logNo) =>
+    set((s) =>
+      (s.viewedRevisionLogNos[entityId] ?? 0) >= logNo
+        ? s
+        : {
+            viewedRevisionLogNos: {
+              ...s.viewedRevisionLogNos,
+              [entityId]: logNo,
+            },
+          },
+    ),
 
   hydrate: () => {
     try {

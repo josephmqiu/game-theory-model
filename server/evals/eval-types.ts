@@ -8,6 +8,8 @@ export interface EvalFixture {
   complexityTier: "trivial" | "standard" | "complex";
   phases: Partial<Record<MethodologyPhase, PhaseExpectations>>;
   priorContext?: Partial<Record<MethodologyPhase, string>>;
+  /** Human objection block injected into the phase prompt (9A re-runs). */
+  challengeContext?: Partial<Record<MethodologyPhase, string>>;
 }
 
 export interface PhaseExpectations {

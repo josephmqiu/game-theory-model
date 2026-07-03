@@ -83,6 +83,17 @@ describe("MCP product tools integration", () => {
     expect(retrieved.data.content).toBe("A test fact");
   });
 
+  it("start_analysis reports the full runnable ladder as estimatedPhases", async () => {
+    const { RUNNABLE_PHASES } = await import("../../../src/types/methodology");
+    const result = await productTools.handleStartAnalysis({
+      topic: "Estimated phases test",
+    });
+    const parsed = JSON.parse(result);
+    expect(parsed.status).toBe("started");
+    expect(parsed.estimatedPhases).toBe(RUNNABLE_PHASES.length);
+    expect(parsed.estimatedPhases).toBe(9);
+  });
+
   it("query_entities filters by phase", () => {
     // Create entities for two phases
     productTools.handleCreateEntity({
@@ -157,10 +168,7 @@ describe("MCP product tools integration", () => {
   });
 
   it("handleToolCall returns error for unknown tool", async () => {
-    const result = await productTools.handleToolCall(
-      "nonexistent_tool",
-      {},
-    );
+    const result = await productTools.handleToolCall("nonexistent_tool", {});
     expect(result.isError).toBe(true);
     expect(result.text).toContain("Unknown tool");
   });

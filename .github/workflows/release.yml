@@ -1,0 +1,219 @@
+name: Release
+
+# Cuts a GitHub Release that the in-app auto-updater (electron-updater,
+# electron/auto-updater.ts) reads from. To ship an update:
+#   1. bump "version" in package.json
+#   2. git tag vX.Y.Z && git push origin vX.Y.Z
+# This builds mac (arm64 + x64), win, and linux, then publishes ONE release
+# carrying every installer plus the channel metadata files the client fetches:
+#   latest-mac.yml (Intel), latest-mac-arm64.yml (Apple Silicon),
+#   latest.yml (Windows), latest-linux.yml (Linux).
+#
+# The arch-split mac channel files are required because the app's custom mac
+# provider picks its channel by CPU arch (auto-updater.ts:57 —
+# arm64 -> "latest-mac-arm64", x64 -> "latest-mac"). electron-builder emits
+# both mac builds as "latest-mac.yml", so the arm64 job renames its copy before
+# upload to avoid a collision on the release.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build a release for, e.g. v1.2.3"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  # Validate and normalize the tag ONCE, before any checkout, so no untrusted
+  # input reaches `ref:` or a shell. Everything downstream consumes the
+  # regex-checked outputs, never the raw dispatch input.
+  prepare:
+    name: Validate tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - name: Validate tag format
+        id: v
+        env:
+          # Safe pattern: bind the (attacker-influenceable) input to an env var
+          # here, then reference it as "$RAW_TAG" in the script below — never
+          # interpolate ${{ ... }} directly into run:.
+          RAW_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Accept vX.Y.Z with an optional -alpha/-beta/-rc[.N] suffix, nothing else.
+          if ! printf '%s' "$RAW_TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)(\.[0-9]+)?)?$'; then
+            echo "::error::invalid tag '$RAW_TAG' — expected vX.Y.Z or vX.Y.Z-beta.N"
+            exit 1
+          fi
+          echo "tag=$RAW_TAG" >> "$GITHUB_OUTPUT"
+          # Prerelease tags are marked as such. NOTE: the client sets
+          # allowPrerelease=true (auto-updater.ts), so prereleases WILL be offered
+          # as auto-updates. Flip that flag in the app for stable-only updates.
+          if printf '%s' "$RAW_TAG" | grep -qiE '\-(alpha|beta|rc)'; then
+            echo "prerelease=--prerelease" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build (${{ matrix.platform }})
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac-arm64
+            build_args: --mac --arm64
+          - os: macos-latest
+            platform: mac-x64
+            build_args: --mac --x64
+          - os: windows-latest
+            platform: win
+            build_args: --win
+          - os: ubuntu-latest
+            platform: linux
+            build_args: --linux
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Validated in `prepare`, so this is a known-good vX.Y.Z ref.
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build web (electron target)
+        run: bun --bun run build
+        env:
+          BUILD_TARGET: electron
+
+      - name: Compile electron
+        run: bun run electron:compile
+
+      - name: Compile MCP server
+        run: bun run mcp:compile
+
+      - name: Build Electron app
+        # --publish never: we build here and publish once, atomically, in the
+        # release job below. electron-builder is not the uploader.
+        run: npx electron-builder --config electron-builder.yml ${{ matrix.build_args }} --publish never
+        env:
+          # Code signing + notarization. REQUIRED for a shippable auto-update:
+          # macOS Gatekeeper blocks unsigned/un-notarized auto-updates from
+          # launching, and electron-builder.yml sets `notarize: true`, so the mac
+          # build FAILS without the APPLE_* secrets. Windows SmartScreen warns on
+          # unsigned installers. Set these repo secrets before cutting a real
+          # release; until then, runs will fail on the mac notarize step (expected).
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Rename arm64 update channel metadata
+        if: matrix.platform == 'mac-arm64'
+        shell: bash
+        run: |
+          if [ -f dist-electron/latest-mac.yml ]; then
+            mv dist-electron/latest-mac.yml dist-electron/latest-mac-arm64.yml
+          else
+            echo "::error::expected dist-electron/latest-mac.yml from the arm64 build was not produced"
+            exit 1
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: |
+            dist-electron/*.dmg
+            dist-electron/*.zip
+            dist-electron/*.exe
+            dist-electron/*.AppImage
+            dist-electron/*.deb
+            dist-electron/latest*.yml
+            dist-electron/*.blockmap
+            !dist-electron/builder-debug.yml
+          retention-days: 7
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    # Requires every build to succeed — publish a complete release or none, so
+    # the auto-updater never sees a release missing a platform/arch.
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Verify updater channel files are present
+        shell: bash
+        run: |
+          ls -la artifacts
+          for f in latest-mac.yml latest-mac-arm64.yml latest.yml latest-linux.yml; do
+            if [ ! -f "artifacts/$f" ]; then
+              echo "::warning::missing channel file '$f' — that platform/arch will not auto-update"
+            fi
+          done
+
+      - name: Create or update the release and upload assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Idempotent: create the release on first run, reuse it on re-runs.
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "$TAG" --generate-notes $PRERELEASE
+          fi
+
+          # Channel metadata first (small, and what the client reads to decide).
+          gh release upload "$TAG" artifacts/latest*.yml --clobber
+
+          # Installers + delta blockmaps. nullglob so an absent target (e.g. no
+          # .deb) doesn't abort the upload.
+          shopt -s nullglob
+          assets=(
+            artifacts/*.dmg
+            artifacts/*.zip
+            artifacts/*.exe
+            artifacts/*.AppImage
+            artifacts/*.deb
+            artifacts/*.blockmap
+          )
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "::error::no installer artifacts found to upload"
+            exit 1
+          fi
+          gh release upload "$TAG" "${assets[@]}" --clobber

@@ -6,7 +6,10 @@ import type {
   AnalysisEntity,
   AnalysisRelationship,
 } from "@/types/entity";
-import type { AnalysisStateResponse, RunStatus } from "../../../../shared/types/api";
+import type {
+  AnalysisStateResponse,
+  RunStatus,
+} from "../../../../shared/types/api";
 
 const originalFetch = globalThis.fetch;
 const originalEventSource = globalThis.EventSource;
@@ -97,7 +100,6 @@ function makeEntity(id: string): AnalysisEntity {
     type: "fact",
     phase: "situational-grounding",
     confidence: "medium",
-    source: "ai",
     rationale: "",
     revision: 1,
     stale: false,
@@ -476,7 +478,9 @@ describe("analysis-client", () => {
     });
 
     await waitFor(() => {
-      expect(useEntityGraphStore.getState().analysis.entities).toEqual([entity]);
+      expect(useEntityGraphStore.getState().analysis.entities).toEqual([
+        entity,
+      ]);
     });
 
     expect(useRunStatusStore.getState().runStatus).toMatchObject({
@@ -548,7 +552,9 @@ describe("analysis-client", () => {
         );
       }
       if (input === "/api/ai/state") {
-        return Promise.resolve(stateResponse(makeAnalysis(), makeRunStatus(), 1));
+        return Promise.resolve(
+          stateResponse(makeAnalysis(), makeRunStatus(), 1),
+        );
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
@@ -593,7 +599,9 @@ describe("analysis-client", () => {
         );
       }
       if (input === "/api/ai/state") {
-        return Promise.resolve(stateResponse(makeAnalysis(), makeRunStatus(), 1));
+        return Promise.resolve(
+          stateResponse(makeAnalysis(), makeRunStatus(), 1),
+        );
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
     });
@@ -717,7 +725,9 @@ describe("analysis-client", () => {
     const { client, useEntityGraphStore, useRunStatusStore } =
       await loadModules();
 
-    await expect(client.hydrateAnalysisState()).rejects.toThrow("state failed 1");
+    await expect(client.hydrateAnalysisState()).rejects.toThrow(
+      "state failed 1",
+    );
 
     for (const delayMs of [1_000, 2_000, 4_000, 8_000]) {
       await vi.advanceTimersByTimeAsync(delayMs);

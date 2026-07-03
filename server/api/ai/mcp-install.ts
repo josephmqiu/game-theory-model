@@ -4,12 +4,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { MCP_DEFAULT_PORT } from "../../../src/constants/app";
+import { getCodexConfigPath } from "../../services/ai/codex-config";
 import {
-  getCodexConfigPath,
-  installMcpServer as installCodexMcpServer,
-  uninstallMcpServer as uninstallCodexMcpServer,
-} from "../../services/ai/codex-config";
-import { resolveMcpProxyScript } from "../../utils/mcp-server-manager";
+  registerCodexMcpServer,
+  unregisterCodexMcpServer,
+} from "../../services/ai/codex-mcp-registration";
+import { getMcpServerStatus } from "../../mcp/mcp-server";
 
 interface InstallBody {
   tool: string;
@@ -22,16 +22,13 @@ interface InstallResult {
   success: boolean;
   error?: string;
   configPath?: string;
+  /** How the codex registration landed: official CLI or legacy config file. */
+  method?: "cli" | "config-file";
 }
 
 const MCP_SERVER_NAME = "game-theory-analyzer";
 const UNSUPPORTED_CLI_ERROR =
   "This CLI is not yet supported with the in-process MCP server.";
-
-function resolveMcpProxyCommand(): string {
-  if (process.env.ELECTRON_RESOURCES_PATH) return "node";
-  return process.release?.name === "node" ? process.execPath : "node";
-}
 
 function buildClaudeHttpEntry(port: number): { type: "http"; url: string } {
   return {
@@ -40,7 +37,9 @@ function buildClaudeHttpEntry(port: number): { type: "http"; url: string } {
   };
 }
 
-async function readJsonConfig(filePath: string): Promise<Record<string, unknown>> {
+async function readJsonConfig(
+  filePath: string,
+): Promise<Record<string, unknown>> {
   try {
     const text = await readFile(filePath, "utf-8");
     return JSON.parse(text) as Record<string, unknown>;
@@ -99,28 +98,38 @@ export default defineEventHandler(async (event) => {
   setResponseHeaders(event, { "Content-Type": "application/json" });
 
   if (!body?.tool || !body?.action) {
-    return { success: false, error: "Missing tool or action field" } satisfies InstallResult;
+    return {
+      success: false,
+      error: "Missing tool or action field",
+    } satisfies InstallResult;
   }
 
-  const port = body.httpPort ?? MCP_DEFAULT_PORT;
+  // Prefer the ACTUAL bound port of the in-process server (it may be
+  // dynamically assigned when the default is taken), then the caller's
+  // hint, then the default.
+  const serverStatus = getMcpServerStatus();
+  const port =
+    (serverStatus.available ? serverStatus.port : undefined) ??
+    body.httpPort ??
+    MCP_DEFAULT_PORT;
 
   try {
     if (body.tool === "codex-cli") {
-      if (body.transportMode && body.transportMode !== "stdio") {
+      if (body.action === "uninstall") {
+        await unregisterCodexMcpServer();
         return {
-          success: false,
-          error: "Codex CLI MCP install only supports stdio transport.",
+          success: true,
+          configPath: getCodexConfigPath(),
         } satisfies InstallResult;
       }
 
-      if (body.action === "uninstall") {
-        uninstallCodexMcpServer();
-      } else {
-        installCodexMcpServer(resolveMcpProxyCommand(), [resolveMcpProxyScript()]);
-      }
+      const registration = await registerCodexMcpServer(
+        `http://127.0.0.1:${port}/mcp`,
+      );
 
       return {
         success: true,
+        method: registration.method,
         configPath: getCodexConfigPath(),
       } satisfies InstallResult;
     }

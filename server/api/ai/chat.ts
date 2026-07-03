@@ -6,22 +6,30 @@ import {
   setResponseStatus,
   type H3Event,
 } from "h3";
-import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { resolveClaudeCli } from "../../utils/resolve-claude-cli";
-import { runCodexExec } from "../../utils/codex-client";
-import {
-  buildClaudeAgentEnv,
-  getClaudeAgentDebugFilePath,
-} from "../../utils/resolve-claude-agent-env";
 import { serverLog } from "../../utils/ai-logger";
 import * as entityGraphService from "../../services/entity-graph-service";
 import { streamChat as claudeStreamChat } from "../../services/ai/claude-adapter";
-import { streamChat as codexStreamChat } from "../../services/ai/codex-adapter";
+import {
+  streamChat as codexStreamChat,
+  isCodexThreadExpiredError,
+} from "../../services/ai/codex-adapter";
+import {
+  beginTurn,
+  endSession,
+  endTurn,
+  getOrCreateSession,
+  markTurnActive,
+  touch,
+  type ChatSession,
+} from "../../services/ai/chat-sessions";
+import { analysisRuntimeConfig } from "../../config/analysis-runtime";
+import { startSSEKeepAlive } from "../../utils/sse-keepalive";
 
 const ALLOWED_PROVIDERS = ["anthropic", "openai"] as const;
+type StartedSessionTurn = Extract<ReturnType<typeof beginTurn>, { started: true }>;
 
 function isAllowedProvider(
   provider: string,
@@ -40,19 +48,42 @@ export const ALLOWED_MEDIA_TYPES = new Set([
   "image/gif",
   "image/webp",
 ]);
+export const MAX_CHAT_ATTACHMENTS = 10;
+export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+export const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+export const MAX_ATTACHMENT_BASE64_LENGTH =
+  Math.ceil(MAX_ATTACHMENT_BYTES / 3) * 4;
 
 /** Resolve file extension from media type, falling back to 'png' for disallowed types */
 export function resolveMediaExtension(mediaType: string): string {
   return ALLOWED_MEDIA_TYPES.has(mediaType) ? mediaType.split("/")[1] : "png";
 }
 
-interface ChatAttachmentWire {
+function estimateBase64DecodedBytes(data: string): number {
+  const normalized = data.replace(/\s/g, "");
+  const padding = normalized.endsWith("==")
+    ? 2
+    : normalized.endsWith("=")
+      ? 1
+      : 0;
+  return Math.max(0, Math.floor((normalized.length * 3) / 4) - padding);
+}
+
+function isBase64Payload(data: string): boolean {
+  const normalized = data.replace(/\s/g, "");
+  return (
+    normalized.length % 4 === 0 &&
+    /^[A-Za-z0-9+/]*={0,2}$/.test(normalized)
+  );
+}
+
+export interface ChatAttachmentWire {
   name: string;
   mediaType: string;
   data: string; // base64
 }
 
-interface ChatBody {
+export interface ChatBody {
   system: string;
   messages: Array<{
     role: "user" | "assistant";
@@ -60,33 +91,85 @@ interface ChatBody {
     attachments?: ChatAttachmentWire[];
   }>;
   model?: string;
-  provider?: "anthropic" | "openai" | "opencode" | "copilot";
+  provider?: "anthropic" | "openai";
   thinkingMode?: "adaptive" | "disabled" | "enabled";
   thinkingBudgetTokens?: number;
   effort?: "low" | "medium" | "high" | "max";
+  sessionKey?: string;
 }
 
 const chatAttachmentSchema = z.object({
   name: z.string(),
-  mediaType: z.string(),
-  data: z.string(),
+  mediaType: z.string().refine((value) => ALLOWED_MEDIA_TYPES.has(value), {
+    message: "Unsupported attachment media type",
+  }),
+  data: z
+    .string()
+    .max(MAX_ATTACHMENT_BASE64_LENGTH, "Attachment exceeds 5MiB")
+    .superRefine((value, ctx) => {
+      if (!isBase64Payload(value)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Attachment data must be base64",
+        });
+        return;
+      }
+      if (estimateBase64DecodedBytes(value) > MAX_ATTACHMENT_BYTES) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Attachment exceeds 5MiB",
+        });
+      }
+    }),
 });
 
-const chatBodySchema = z.object({
-  system: z.string().trim().min(1),
-  messages: z.array(
-    z.object({
-      role: z.enum(["user", "assistant"]),
-      content: z.string(),
-      attachments: z.array(chatAttachmentSchema).optional(),
-    }),
-  ),
-  model: z.string().trim().min(1),
-  provider: z.string().trim().min(1),
-  thinkingMode: z.enum(["adaptive", "disabled", "enabled"]).optional(),
-  thinkingBudgetTokens: z.number().positive().optional(),
-  effort: z.enum(["low", "medium", "high", "max"]).optional(),
-});
+const chatBodySchema = z
+  .object({
+    system: z.string().trim().min(1),
+    messages: z.array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string(),
+        attachments: z.array(chatAttachmentSchema).optional(),
+      }),
+    ),
+    model: z.string().trim().min(1),
+    provider: z.string().trim().min(1),
+    thinkingMode: z.enum(["adaptive", "disabled", "enabled"]).optional(),
+    thinkingBudgetTokens: z.number().positive().optional(),
+    effort: z.enum(["low", "medium", "high", "max"]).optional(),
+    sessionKey: z.string().trim().min(1).optional(),
+  })
+  .superRefine((body, ctx) => {
+    const attachments = body.messages.flatMap(
+      (message) => message.attachments ?? [],
+    );
+    if (attachments.length > MAX_CHAT_ATTACHMENTS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Too many attachments",
+        path: ["messages"],
+      });
+    }
+
+    const totalBytes = attachments.reduce(
+      (sum, attachment) => sum + estimateBase64DecodedBytes(attachment.data),
+      0,
+    );
+    if (totalBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Attachments exceed total size limit",
+        path: ["messages"],
+      });
+    }
+  });
+
+function writeSSE(controller: ReadableStreamDefaultController, payload: unknown) {
+  controller.enqueue(
+    new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`),
+  );
+}
 
 function badRequest(event: H3Event, error: string) {
   setResponseStatus(event, 400);
@@ -94,58 +177,21 @@ function badRequest(event: H3Event, error: string) {
   return { error };
 }
 
-async function readDebugTail(
-  path?: string,
-  maxLines = 40,
-): Promise<string[] | undefined> {
-  if (!path) return undefined;
-  try {
-    const raw = await readFile(path, "utf-8");
-    const lines = raw.split("\n").filter((l) => l.trim().length > 0);
-    const sanitized = lines.filter((l) => !SENSITIVE_LOG_PATTERN.test(l));
-    return sanitized.slice(-maxLines);
-  } catch {
-    return undefined;
-  }
+function conflict(event: H3Event, error: string) {
+  setResponseStatus(event, 409);
+  setResponseHeaders(event, { "Content-Type": "application/json" });
+  return { error };
 }
 
-function buildClaudeExitHint(
-  rawError: string,
-  debugTail?: string[],
-): string | undefined {
-  if (!/process exited with code 1/i.test(rawError)) return undefined;
-  if (!debugTail || debugTail.length === 0) return undefined;
-  const text = debugTail.join("\n");
-
-  const hints: string[] = [];
-  if (
-    /Failed to save config with lock: Error: EPERM|operation not permitted, .*\.claude\.json/i.test(
-      text,
-    )
-  ) {
-    hints.push(
-      "Claude Code cannot write ~/.claude.json in the current runtime (permission denied).",
-    );
-  }
-  if (/Connection error|Could not resolve host|Failed to connect/i.test(text)) {
-    hints.push(
-      "Upstream API connection failed (check proxy/DNS/network reachability to your ANTHROPIC_BASE_URL).",
-    );
-  }
-  if (
-    /ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false/i.test(
-      text,
-    )
-  ) {
-    hints.push(
-      'No API auth header detected. Run "claude login" to authenticate, ' +
-        "or set ANTHROPIC_API_KEY in ~/.claude/settings.json " +
-        '(env: { "ANTHROPIC_API_KEY": "sk-..." }).',
-    );
-  }
-
-  if (hints.length === 0) return undefined;
-  return `${rawError}\n${hints.join(" ")}`;
+function shouldForwardChatEvent(type: string): boolean {
+  return (
+    type === "text_delta" ||
+    type === "tool_call_start" ||
+    type === "tool_call_result" ||
+    type === "tool_call_error" ||
+    type === "session_expired" ||
+    type === "error"
+  );
 }
 
 /**
@@ -181,7 +227,7 @@ export default defineEventHandler(async (event) => {
     provider: parsed.provider,
   };
 
-  const provider = body.provider;
+  const provider = parsed.provider;
   const model = body.model;
   const systemLen = body.system.length;
   const messageLen = body.messages.reduce(
@@ -195,23 +241,31 @@ export default defineEventHandler(async (event) => {
     messageLen,
   });
 
+  const sessionTurn = body.sessionKey
+    ? beginTurn(body.sessionKey, provider)
+    : null;
+  if (sessionTurn && !sessionTurn.started) {
+    return conflict(event, "A turn is already streaming for this session");
+  }
+  const startedSessionTurn = sessionTurn?.started ? sessionTurn : null;
+
   setResponseHeaders(event, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
     Connection: "keep-alive",
   });
 
-  // Route to allowed providers only; opencode/copilot are dormant — functions retained below
+  // Route to allowed providers only; no fallback routing.
   if (body.provider === "anthropic")
-    return streamViaClaude(event, body, body.model, runId);
-  return streamViaCodexAdapter(event, body, body.model, runId);
+    return streamViaClaude(event, body, body.model, runId, startedSessionTurn);
+  return streamViaCodexAdapter(
+    event,
+    body,
+    body.model,
+    runId,
+    startedSessionTurn,
+  );
 });
-
-// Dormant provider functions — retained for future reactivation, suppress noUnusedLocals
-void streamViaOpenCode;
-void streamViaCopilot;
-void streamViaAgentSDK;
-void streamViaCodex;
 
 /** Stream via Codex adapter — wraps codex-adapter.streamChat() into SSE */
 function streamViaCodexAdapter(
@@ -219,23 +273,26 @@ function streamViaCodexAdapter(
   body: ChatBody,
   model?: string,
   runId?: string,
+  sessionResult?: StartedSessionTurn | null,
 ) {
   const abortController = new AbortController();
 
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
-      const pingTimer = setInterval(() => {
-        try {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "ping", content: "" })}\n\n`,
-            ),
-          );
-        } catch {
-          /* stream already closed */
-        }
-      }, KEEPALIVE_INTERVAL_MS);
+      let pingTimer: ReturnType<typeof setInterval> | null = null;
+      const startPingTimer = () => {
+        if (pingTimer) return;
+        pingTimer = startSSEKeepAlive(
+          () => writeSSE(controller, { type: "ping", content: "" }),
+          KEEPALIVE_INTERVAL_MS,
+        );
+      };
+      const stopPingTimer = () => {
+        if (!pingTimer) return;
+        clearInterval(pingTimer);
+        pingTimer = null;
+      };
 
       // Detect client disconnect and cancel the adapter
       const req = event.node?.req;
@@ -246,35 +303,67 @@ function streamViaCodexAdapter(
       }
 
       try {
-        const lastUserMsg = [...body.messages]
-          .reverse()
-          .find((m) => m.role === "user");
-        const prompt = lastUserMsg?.content ?? "";
+        let session: ChatSession | null = sessionResult?.session ?? null;
 
-        // Inject conversation history into system prompt so multi-turn
-        // context survives the single-prompt SDK limitation.
-        const effectiveSystemPrompt = buildEffectiveSystemPrompt(body);
+        if (sessionResult?.expired || sessionResult?.providerChanged) {
+          writeSSE(controller, { type: "session_expired" });
+        }
+        startPingTimer();
 
-        for await (const ev of codexStreamChat(
-          prompt,
-          effectiveSystemPrompt,
-          model ?? "o3-mini",
-          { runId, signal: abortController.signal },
-        )) {
-          clearInterval(pingTimer);
-          // Emit ChatEvent objects directly — client normalizeChunk() handles them
-          if (
-            ev.type === "text_delta" ||
-            ev.type === "tool_call_start" ||
-            ev.type === "tool_call_result" ||
-            ev.type === "tool_call_error" ||
-            ev.type === "error"
-          ) {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify(ev)}\n\n`),
-            );
+        const { prompt, systemPrompt } = body.sessionKey
+          ? sessionResult?.providerChanged
+            ? buildLegacyChatPromptParts(body)
+            : buildRuntimeSessionPromptParts(body)
+          : buildLegacyChatPromptParts(body);
+
+        const streamFreshCodexTurn = async () => {
+          for await (const ev of codexStreamChat(
+            prompt,
+            systemPrompt,
+            model ?? "o3-mini",
+            {
+              runId,
+              signal: abortController.signal,
+              ...(session?.codexThreadId
+                ? { existingThreadId: session.codexThreadId }
+                : {}),
+              ...(session
+                ? {
+                    onThreadId: (threadId: string) => {
+                      if (!session) return;
+                      session.codexThreadId = threadId;
+                      touch(session.key);
+                    },
+                  }
+                : {}),
+            },
+          )) {
+            stopPingTimer();
+            // Emit ChatEvent objects directly — client normalizeChunk() handles them
+            if (shouldForwardChatEvent(ev.type)) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(ev)}\n\n`),
+              );
+            }
+            // turn_complete is handled after the loop
           }
-          // turn_complete is handled after the loop
+          if (session) {
+            touch(session.key);
+          }
+        };
+
+        try {
+          await streamFreshCodexTurn();
+        } catch (error) {
+          if (!body.sessionKey || !isCodexThreadExpiredError(error)) {
+            throw error;
+          }
+          endSession(body.sessionKey);
+          session = getOrCreateSession(body.sessionKey, "openai").session;
+          markTurnActive(body.sessionKey);
+          writeSSE(controller, { type: "session_expired" });
+          startPingTimer();
+          await streamFreshCodexTurn();
         }
 
         serverLog(runId, "chat", "stream-complete");
@@ -301,7 +390,10 @@ function streamViaCodexAdapter(
           ),
         );
       } finally {
-        clearInterval(pingTimer);
+        stopPingTimer();
+        if (body.sessionKey) {
+          endTurn(body.sessionKey);
+        }
         controller.close();
       }
     },
@@ -316,23 +408,26 @@ function streamViaClaude(
   body: ChatBody,
   model?: string,
   runId?: string,
+  sessionResult?: StartedSessionTurn | null,
 ) {
   const abortController = new AbortController();
 
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
-      const pingTimer = setInterval(() => {
-        try {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "ping", content: "" })}\n\n`,
-            ),
-          );
-        } catch {
-          /* stream already closed */
-        }
-      }, KEEPALIVE_INTERVAL_MS);
+      let pingTimer: ReturnType<typeof setInterval> | null = null;
+      const startPingTimer = () => {
+        if (pingTimer) return;
+        pingTimer = startSSEKeepAlive(
+          () => writeSSE(controller, { type: "ping", content: "" }),
+          KEEPALIVE_INTERVAL_MS,
+        );
+      };
+      const stopPingTimer = () => {
+        if (!pingTimer) return;
+        clearInterval(pingTimer);
+        pingTimer = null;
+      };
 
       let attachTempDir: string | undefined;
 
@@ -345,17 +440,26 @@ function streamViaClaude(
       }
 
       try {
-        const lastUserMsg = [...body.messages]
-          .reverse()
-          .find((m) => m.role === "user");
-        let prompt = lastUserMsg?.content ?? "";
+        const session: ChatSession | null = sessionResult?.session ?? null;
+
+        if (sessionResult?.expired || sessionResult?.providerChanged) {
+          writeSSE(controller, { type: "session_expired" });
+        }
+        startPingTimer();
+
+        const promptParts = body.sessionKey
+          ? sessionResult?.providerChanged
+            ? buildLegacyChatPromptParts(body)
+            : buildRuntimeSessionPromptParts(body)
+          : buildLegacyChatPromptParts(body);
+        let prompt = promptParts.prompt;
 
         // Save image attachments to temp files inside the project directory
         // so Claude Code Agent SDK (which restricts reads to the project
-        // directory in plan mode) can access them — same logic as streamViaAgentSDK.
+        // directory in plan mode) can access them.
         const attachments = getLastUserAttachments(body);
         if (attachments.length > 0) {
-          const saved = await saveAttachmentsToTempFiles(attachments, true);
+          const saved = await saveAttachmentsToTempFiles(attachments);
           attachTempDir = saved.tempDir;
           const imageRefs = saved.files
             .map(
@@ -369,30 +473,38 @@ function streamViaClaude(
             (prompt || "Describe what you see in the image.");
         }
 
-        // Inject conversation history into system prompt so multi-turn
-        // context survives the single-prompt SDK limitation.
-        const effectiveSystemPrompt = buildEffectiveSystemPrompt(body);
-
         for await (const ev of claudeStreamChat(
           prompt,
-          effectiveSystemPrompt,
+          promptParts.systemPrompt,
           model ?? "claude-sonnet-4-6",
-          { runId, signal: abortController.signal },
+          {
+            runId,
+            signal: abortController.signal,
+            ...(session?.claudeSessionId
+              ? { resumeSessionId: session.claudeSessionId }
+              : {}),
+            ...(session
+              ? {
+                  onSessionId: (sessionId: string) => {
+                    if (!session) return;
+                    session.claudeSessionId = sessionId;
+                    touch(session.key);
+                  },
+                }
+              : {}),
+          },
         )) {
-          clearInterval(pingTimer);
+          stopPingTimer();
           // Emit ChatEvent objects directly — client normalizeChunk() handles them
-          if (
-            ev.type === "text_delta" ||
-            ev.type === "tool_call_start" ||
-            ev.type === "tool_call_result" ||
-            ev.type === "tool_call_error" ||
-            ev.type === "error"
-          ) {
+          if (shouldForwardChatEvent(ev.type)) {
             controller.enqueue(
               encoder.encode(`data: ${JSON.stringify(ev)}\n\n`),
             );
           }
           // turn_complete is handled after the loop
+        }
+        if (session) {
+          touch(session.key);
         }
 
         serverLog(runId, "chat", "stream-complete");
@@ -419,9 +531,17 @@ function streamViaClaude(
           ),
         );
       } finally {
-        clearInterval(pingTimer);
+        stopPingTimer();
+        if (body.sessionKey) {
+          endTurn(body.sessionKey);
+        }
         if (attachTempDir) {
-          rm(attachTempDir, { recursive: true, force: true }).catch(() => {});
+          rm(attachTempDir, { recursive: true, force: true }).catch((error) => {
+            serverLog(runId, "chat", "attachment-cleanup-failed", {
+              error: error instanceof Error ? error.message : String(error),
+              tempDir: attachTempDir,
+            });
+          });
         }
         controller.close();
       }
@@ -432,14 +552,41 @@ function streamViaClaude(
 }
 
 // Keep-alive ping interval (ms) — prevents client timeout while waiting for API TTFT
-const KEEPALIVE_INTERVAL_MS = 15_000;
+const KEEPALIVE_INTERVAL_MS =
+  analysisRuntimeConfig.analyzeSse.keepaliveIntervalMs;
+
+function getLastUserPrompt(body: Pick<ChatBody, "messages">): string {
+  const lastUserMsg = [...body.messages]
+    .reverse()
+    .find((m) => m.role === "user");
+  return lastUserMsg?.content ?? "";
+}
+
+export function buildLegacyChatPromptParts(
+  body: Pick<ChatBody, "system" | "messages">,
+): { prompt: string; systemPrompt: string } {
+  return {
+    prompt: getLastUserPrompt(body),
+    systemPrompt: buildEffectiveSystemPrompt(body),
+  };
+}
+
+export function buildRuntimeSessionPromptParts(
+  body: Pick<ChatBody, "system" | "messages">,
+): { prompt: string; systemPrompt: string } {
+  return {
+    prompt: getLastUserPrompt(body),
+    systemPrompt: body.system,
+  };
+}
 
 /**
- * Inject conversation history into the system prompt so multi-turn context
- * survives the single-prompt limitation of both the Claude Agent SDK and
- * Codex app-server JSON-RPC interface.
+ * Inject conversation history into the system prompt for the legacy no-session
+ * path. Runtime sessions deliberately bypass this helper.
  */
-function buildEffectiveSystemPrompt(body: ChatBody): string {
+export function buildEffectiveSystemPrompt(
+  body: Pick<ChatBody, "system" | "messages">,
+): string {
   // All messages except the last user message form the conversation context
   const contextMessages = body.messages.slice(0, -1);
   if (contextMessages.length === 0) return body.system;
@@ -450,40 +597,21 @@ function buildEffectiveSystemPrompt(body: ChatBody): string {
 
   return `${body.system}\n\n## Conversation History\n\n${conversationContext}`;
 }
-function getAgentThinkingConfig(
-  body: ChatBody,
-):
-  | { type: "adaptive" | "disabled" }
-  | { type: "enabled"; budgetTokens?: number }
-  | undefined {
-  if (!body.thinkingMode) return undefined;
-  if (body.thinkingMode === "enabled") {
-    return { type: "enabled", budgetTokens: body.thinkingBudgetTokens };
-  }
-  return { type: body.thinkingMode };
-}
 
 /**
  * Save base64 attachments to temp files. Returns { tempDir, files[] } — caller must clean up tempDir.
  *
- * When `insideProject` is true, files are saved under `.game-theory-analyzer-tmp/` in the
- * current working directory so that Claude Code Agent SDK (which restricts reads
- * to the project directory in plan mode) can access them.
+ * Files are saved under `.game-theory-analyzer-tmp/` in the current working
+ * directory so Claude Code Agent SDK can read them in plan mode.
  */
 async function saveAttachmentsToTempFiles(
   attachments: ChatAttachmentWire[],
-  insideProject = false,
 ): Promise<{ tempDir: string; files: string[] }> {
-  let tempDir: string;
-  if (insideProject) {
-    const { mkdirSync, chmodSync } = await import("node:fs");
-    const baseDir = join(process.cwd(), ".game-theory-analyzer-tmp");
-    mkdirSync(baseDir, { recursive: true, mode: 0o700 });
-    chmodSync(baseDir, 0o700);
-    tempDir = await mkdtemp(join(baseDir, "attach-"));
-  } else {
-    tempDir = await mkdtemp(join(tmpdir(), "game-theory-analyzer-attach-"));
-  }
+  const { mkdirSync, chmodSync } = await import("node:fs");
+  const baseDir = join(process.cwd(), ".game-theory-analyzer-tmp");
+  mkdirSync(baseDir, { recursive: true, mode: 0o700 });
+  chmodSync(baseDir, 0o700);
+  const tempDir = await mkdtemp(join(baseDir, "attach-"));
   const files: string[] = [];
   for (const att of attachments) {
     const ext = resolveMediaExtension(att.mediaType);
@@ -498,272 +626,6 @@ async function saveAttachmentsToTempFiles(
 function getLastUserAttachments(body: ChatBody): ChatAttachmentWire[] {
   const lastUser = [...body.messages].reverse().find((m) => m.role === "user");
   return lastUser?.attachments ?? [];
-}
-
-/**
- * Strip "NEVER use tools" and similar instructions from system prompt
- * when we need Claude Code Agent SDK to use its Read tool for image analysis.
- */
-function stripNoToolsRestriction(systemPrompt: string): string {
-  return systemPrompt
-    .replace(/^.*NEVER use tools.*$/gim, "")
-    .replace(/\n{3,}/g, "\n\n");
-}
-
-// @deprecated Replaced by claude-adapter.streamChat()
-/** Stream via Claude Agent SDK (uses local Claude Code OAuth login, no API key needed) */
-function streamViaAgentSDK(body: ChatBody, model?: string, runId?: string) {
-  const stream = new ReadableStream({
-    async start(controller) {
-      const encoder = new TextEncoder();
-      // Send keep-alive pings until the first real chunk arrives
-      const pingTimer = setInterval(() => {
-        try {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "ping", content: "" })}\n\n`,
-            ),
-          );
-        } catch {
-          /* stream already closed */
-        }
-      }, KEEPALIVE_INTERVAL_MS);
-      let debugFile: string | undefined;
-      let attachTempDir: string | undefined;
-
-      try {
-        const { query } = await import("@anthropic-ai/claude-agent-sdk");
-
-        // Build prompt from the last user message
-        const lastUserMsg = [...body.messages]
-          .reverse()
-          .find((m) => m.role === "user");
-        let prompt = lastUserMsg?.content ?? "";
-
-        // If the last user message has image attachments, save to temp files
-        // inside the project directory so Claude Code has read permission.
-        const attachments = getLastUserAttachments(body);
-        const hasImageAttachments = attachments.length > 0;
-        if (hasImageAttachments) {
-          const saved = await saveAttachmentsToTempFiles(attachments, true);
-          attachTempDir = saved.tempDir;
-          const imageRefs = saved.files
-            .map(
-              (f) =>
-                `First, use the Read tool to read the image file at "${f}". Then analyze it and respond to the user.`,
-            )
-            .join("\n");
-          prompt =
-            imageRefs +
-            "\n\n" +
-            (prompt || "Describe what you see in the image.");
-        }
-
-        // Remove CLAUDECODE env to allow running from within a CC terminal
-        const env = buildClaudeAgentEnv();
-        debugFile = getClaudeAgentDebugFilePath();
-
-        const claudePath = resolveClaudeCli();
-        const thinking = getAgentThinkingConfig(body);
-
-        // When images are attached, strip the "NEVER use tools" restriction from
-        // the system prompt so Claude Code will use its Read tool to view images.
-        const effectiveSystemPrompt = hasImageAttachments
-          ? stripNoToolsRestriction(body.system)
-          : body.system;
-
-        // When images are attached, use result-based flow (like validate.ts):
-        // let Claude Code read the image via its Read tool internally, then
-        // only emit the final result text. This avoids streaming intermediate
-        // tool-use preamble like "I need to read the file first".
-        if (hasImageAttachments) {
-          const runImageQuery = async (): Promise<string> => {
-            const q = query({
-              prompt,
-              options: {
-                systemPrompt: effectiveSystemPrompt,
-                ...(model ? { model } : {}),
-                maxTurns: 3,
-                plugins: [],
-                permissionMode: "plan",
-                persistSession: false,
-                ...(body.effort ? { effort: body.effort } : {}),
-                ...(thinking ? { thinking } : {}),
-                env,
-                ...(debugFile ? { debugFile } : {}),
-                ...(claudePath
-                  ? { pathToClaudeCodeExecutable: claudePath }
-                  : {}),
-              },
-            });
-
-            try {
-              for await (const message of q) {
-                if (message.type === "result") {
-                  const isErrorResult =
-                    "is_error" in message &&
-                    Boolean((message as { is_error?: boolean }).is_error);
-                  if (message.subtype === "success" && !isErrorResult) {
-                    return message.result ?? "";
-                  }
-                  const errors =
-                    "errors" in message ? (message.errors as string[]) : [];
-                  const resultText =
-                    "result" in message ? String(message.result ?? "") : "";
-                  const errContent =
-                    errors.join("; ") ||
-                    resultText ||
-                    `Query ended with: ${message.subtype}`;
-                  throw new Error(errContent);
-                }
-              }
-              return "";
-            } finally {
-              q.close();
-            }
-          };
-
-          const resultText = await runImageQuery();
-
-          clearInterval(pingTimer);
-          if (resultText) {
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ type: "text", content: resultText })}\n\n`,
-              ),
-            );
-          }
-        } else {
-          // Normal text-only chat: stream partial messages as before
-          const runQuery = async () => {
-            const q = query({
-              prompt,
-              options: {
-                systemPrompt: effectiveSystemPrompt,
-                ...(model ? { model } : {}),
-                maxTurns: 3,
-                includePartialMessages: true,
-                tools: [],
-                plugins: [],
-                permissionMode: "plan",
-                persistSession: false,
-                ...(body.effort ? { effort: body.effort } : {}),
-                ...(thinking ? { thinking } : {}),
-                env,
-                ...(debugFile ? { debugFile } : {}),
-                ...(claudePath
-                  ? { pathToClaudeCodeExecutable: claudePath }
-                  : {}),
-              },
-            });
-
-            let lastAssistantText = "";
-            let gotResult = false;
-
-            try {
-              for await (const message of q) {
-                if (message.type === "stream_event") {
-                  const ev = message.event;
-                  if (ev.type === "content_block_delta") {
-                    if (ev.delta.type === "text_delta") {
-                      clearInterval(pingTimer);
-                      const data = JSON.stringify({
-                        type: "text",
-                        content: ev.delta.text,
-                      });
-                      controller.enqueue(encoder.encode(`data: ${data}\n\n`));
-                    } else if (ev.delta.type === "thinking_delta") {
-                      // Keep pings alive during thinking — only stop on text output
-                      const data = JSON.stringify({
-                        type: "thinking",
-                        content: (ev.delta as any).thinking,
-                      });
-                      controller.enqueue(encoder.encode(`data: ${data}\n\n`));
-                    }
-                  }
-                } else if (message.type === "assistant") {
-                  // Track assistant text in case no result event follows
-                  const content = (message as any).content;
-                  if (Array.isArray(content)) {
-                    const text = content
-                      .filter((b: any) => b.type === "text")
-                      .map((b: any) => b.text)
-                      .join("");
-                    if (text) lastAssistantText = text;
-                  }
-                } else if (message.type === "result") {
-                  gotResult = true;
-                  const isErrorResult =
-                    "is_error" in message &&
-                    Boolean((message as { is_error?: boolean }).is_error);
-                  if (message.subtype !== "success" || isErrorResult) {
-                    const errors =
-                      "errors" in message ? (message.errors as string[]) : [];
-                    const resultText =
-                      "result" in message ? String(message.result ?? "") : "";
-                    const content =
-                      errors.join("; ") ||
-                      resultText ||
-                      `Query ended with: ${message.subtype}`;
-                    controller.enqueue(
-                      encoder.encode(
-                        `data: ${JSON.stringify({ type: "error", content })}\n\n`,
-                      ),
-                    );
-                  }
-                }
-              }
-            } finally {
-              q.close();
-            }
-
-            // Fallback: if the SDK yielded assistant text but never a result event,
-            // emit the assistant text so the stream doesn't hang silently.
-            if (!gotResult && lastAssistantText) {
-              serverLog(runId, "chat", "assistant-fallback", {
-                textLength: lastAssistantText.length,
-              });
-              clearInterval(pingTimer);
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ type: "text", content: lastAssistantText })}\n\n`,
-                ),
-              );
-            }
-          };
-
-          await runQuery();
-        }
-
-        serverLog(runId, "chat", "stream-complete");
-        controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ type: "done", content: "" })}\n\n`,
-          ),
-        );
-      } catch (error) {
-        const rawContent =
-          error instanceof Error ? error.message : "Unknown error";
-        const tail = await readDebugTail(debugFile);
-        const hintedContent = buildClaudeExitHint(rawContent, tail);
-        const content = hintedContent ?? rawContent;
-        serverLog(runId, "chat", "stream-error", { error: content });
-        controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ type: "error", content })}\n\n`,
-          ),
-        );
-      } finally {
-        clearInterval(pingTimer);
-        if (attachTempDir) {
-          rm(attachTempDir, { recursive: true, force: true }).catch(() => {});
-        }
-        controller.close();
-      }
-    },
-  });
-
-  return new Response(stream);
 }
 
 /** Error name → user-friendly label mapping */
@@ -818,443 +680,4 @@ export function formatOpenCodeError(error: unknown): string {
   // Fallback: truncated JSON
   const json = JSON.stringify(error);
   return json.length > 200 ? json.slice(0, 200) + "…" : json;
-}
-
-/** Parse an OpenCode model string ("providerID/modelID") into its parts */
-function parseOpenCodeModel(
-  model?: string,
-): { providerID: string; modelID: string } | undefined {
-  if (!model || !model.includes("/")) return undefined;
-  const idx = model.indexOf("/");
-  return { providerID: model.slice(0, idx), modelID: model.slice(idx + 1) };
-}
-
-function mapOpenCodeEffort(
-  effort?: "low" | "medium" | "high" | "max",
-): "low" | "medium" | "high" | undefined {
-  if (!effort) return undefined;
-  if (effort === "max") return "high";
-  return effort;
-}
-
-function buildOpenCodeReasoning(
-  body: ChatBody,
-): Record<string, unknown> | undefined {
-  const reasoning: Record<string, unknown> = {};
-  const effort = mapOpenCodeEffort(body.effort);
-  if (effort) {
-    reasoning.effort = effort;
-  }
-  if (body.thinkingMode === "enabled") {
-    reasoning.enabled = true;
-  } else if (body.thinkingMode === "disabled") {
-    reasoning.enabled = false;
-  }
-  if (
-    typeof body.thinkingBudgetTokens === "number" &&
-    body.thinkingBudgetTokens > 0
-  ) {
-    reasoning.budgetTokens = body.thinkingBudgetTokens;
-  }
-  return Object.keys(reasoning).length > 0 ? reasoning : undefined;
-}
-
-/** Wrap an async generator with a timeout — yields values until timeout fires */
-async function* streamWithTimeout<T>(
-  stream: AsyncGenerator<T>,
-  timeoutPromise: Promise<{ done: true; value: undefined }>,
-): AsyncGenerator<T> {
-  while (true) {
-    const result = (await Promise.race([
-      stream.next(),
-      timeoutPromise,
-    ])) as IteratorResult<T>;
-    if (result.done) break;
-    yield result.value;
-  }
-}
-
-// @deprecated Replaced by codex-adapter.streamChat() via streamViaCodexAdapter()
-function streamViaCodex(body: ChatBody, model?: string) {
-  const stream = new ReadableStream({
-    async start(controller) {
-      const encoder = new TextEncoder();
-      const pingTimer = setInterval(() => {
-        try {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "ping", content: "" })}\n\n`,
-            ),
-          );
-        } catch {
-          /* stream already closed */
-        }
-      }, KEEPALIVE_INTERVAL_MS);
-
-      let attachTempDir: string | undefined;
-      try {
-        const lastUserMsg = [...body.messages]
-          .reverse()
-          .find((m) => m.role === "user");
-        const prompt = lastUserMsg?.content ?? "";
-
-        // Save image attachments to temp files for Codex CLI
-        const attachments = getLastUserAttachments(body);
-        let imageFiles: string[] | undefined;
-        if (attachments.length > 0) {
-          const saved = await saveAttachmentsToTempFiles(attachments);
-          attachTempDir = saved.tempDir;
-          imageFiles = saved.files;
-        }
-
-        const result = await runCodexExec(prompt, {
-          model,
-          systemPrompt: body.system,
-          thinkingMode: body.thinkingMode,
-          thinkingBudgetTokens: body.thinkingBudgetTokens,
-          effort: body.effort,
-          imageFiles,
-        });
-
-        clearInterval(pingTimer);
-        if (result.error) {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "error", content: result.error })}\n\n`,
-            ),
-          );
-          return;
-        }
-
-        if (result.text) {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "text", content: result.text })}\n\n`,
-            ),
-          );
-        }
-
-        controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ type: "done", content: "" })}\n\n`,
-          ),
-        );
-      } catch (error) {
-        const content =
-          error instanceof Error ? error.message : "Unknown error";
-        controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ type: "error", content })}\n\n`,
-          ),
-        );
-      } finally {
-        clearInterval(pingTimer);
-        if (attachTempDir) {
-          rm(attachTempDir, { recursive: true, force: true }).catch(() => {});
-        }
-        controller.close();
-      }
-    },
-  });
-
-  return new Response(stream);
-}
-
-/** Stream via OpenCode SDK using event subscription for real-time streaming */
-function streamViaOpenCode(body: ChatBody, model?: string) {
-  const stream = new ReadableStream({
-    async start(controller) {
-      const encoder = new TextEncoder();
-      const pingTimer = setInterval(() => {
-        try {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "ping", content: "" })}\n\n`,
-            ),
-          );
-        } catch {
-          /* stream already closed */
-        }
-      }, KEEPALIVE_INTERVAL_MS);
-
-      let ocServer: { close(): void } | undefined;
-      try {
-        const { getOpencodeClient } =
-          await import("../../utils/opencode-client");
-        const oc = await getOpencodeClient();
-        const ocClient = oc.client;
-        ocServer = oc.server;
-
-        // Create a session for this conversation
-        const { data: session, error: sessionError } =
-          await ocClient.session.create({
-            title: "Game Theory Analyzer Chat",
-          });
-        if (sessionError || !session) {
-          throw new Error(
-            `Failed to create OpenCode session: ${formatOpenCodeError(sessionError)}`,
-          );
-        }
-
-        // Inject system prompt as context (no AI reply)
-        await ocClient.session.prompt({
-          sessionID: session.id,
-          noReply: true,
-          parts: [{ type: "text", text: body.system }],
-        });
-
-        // Build prompt from the last user message
-        const lastUserMsg = [...body.messages]
-          .reverse()
-          .find((m) => m.role === "user");
-        const prompt = lastUserMsg?.content ?? "";
-
-        const parsed = parseOpenCodeModel(model);
-        if (model && !parsed) {
-          console.warn(
-            `[AI] OpenCode: could not parse model string "${model}", sending without model override`,
-          );
-        }
-
-        // Build parts array, adding image attachments if present
-        const attachments = getLastUserAttachments(body);
-        const parts: Array<Record<string, unknown>> = [
-          ...attachments.map((a) => ({
-            type: "image",
-            url: `data:${a.mediaType};base64,${a.data}`,
-          })),
-          { type: "text", text: prompt || "Analyze these images." },
-        ];
-
-        console.log(
-          `[AI] OpenCode streaming prompt: model=${model}, parsed=${JSON.stringify(parsed)}`,
-        );
-
-        // Build prompt payload with optional model and reasoning
-        const promptPayload: Record<string, unknown> = {
-          sessionID: session.id,
-          ...(parsed ? { model: parsed } : {}),
-          parts,
-        };
-        const reasoning = buildOpenCodeReasoning(body);
-        if (reasoning) {
-          promptPayload.reasoning = reasoning;
-        }
-
-        // Subscribe to event stream for real-time deltas
-        const eventResult = await ocClient.event.subscribe();
-        const eventStream = eventResult.stream;
-
-        // Send prompt asynchronously — response comes via events
-        const { error: asyncError } = await ocClient.session.promptAsync(
-          promptPayload as any,
-        );
-        if (asyncError) {
-          const detail = formatOpenCodeError(asyncError);
-          console.error("[AI] OpenCode promptAsync error:", detail);
-          throw new Error(detail);
-        }
-
-        // Consume event stream, forwarding text deltas to client
-        let emittedText = false;
-        const sessionId = session.id;
-        const STREAM_TIMEOUT_MS = 180_000;
-        const timeoutPromise = new Promise<{ done: true; value: undefined }>(
-          (resolve) =>
-            setTimeout(
-              () => resolve({ done: true, value: undefined }),
-              STREAM_TIMEOUT_MS,
-            ),
-        );
-
-        for await (const event of streamWithTimeout(
-          eventStream,
-          timeoutPromise,
-        )) {
-          if (!event || !("type" in event)) continue;
-
-          const eventType = event.type as string;
-
-          // Stream text deltas for our session
-          if (eventType === "message.part.delta") {
-            const props = (event as any).properties;
-            if (props?.sessionID === sessionId && props.field === "text") {
-              const data = JSON.stringify({
-                type: "text",
-                content: props.delta,
-              });
-              controller.enqueue(encoder.encode(`data: ${data}\n\n`));
-              emittedText = true;
-            }
-            // Forward reasoning deltas as thinking chunks
-            if (props?.sessionID === sessionId && props.field === "reasoning") {
-              const data = JSON.stringify({
-                type: "thinking",
-                content: props.delta,
-              });
-              controller.enqueue(encoder.encode(`data: ${data}\n\n`));
-            }
-            continue;
-          }
-
-          // Session went idle — response complete
-          if (eventType === "session.idle") {
-            const props = (event as any).properties;
-            if (props?.sessionID === sessionId) break;
-            continue;
-          }
-
-          // Session error
-          if (eventType === "session.error") {
-            const props = (event as any).properties;
-            if (props?.sessionID === sessionId || !props?.sessionID) {
-              const errMsg = formatOpenCodeError(props?.error);
-              console.error("[AI] OpenCode session error:", errMsg);
-              const data = JSON.stringify({ type: "error", content: errMsg });
-              controller.enqueue(encoder.encode(`data: ${data}\n\n`));
-              break;
-            }
-            continue;
-          }
-        }
-
-        clearInterval(pingTimer);
-
-        if (!emittedText) {
-          console.warn("[AI] OpenCode returned no text via streaming events");
-          const data = JSON.stringify({
-            type: "error",
-            content:
-              "OpenCode returned an empty response. The model may not have generated any output.",
-          });
-          controller.enqueue(encoder.encode(`data: ${data}\n\n`));
-        }
-
-        controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ type: "done", content: "" })}\n\n`,
-          ),
-        );
-      } catch (error) {
-        const content =
-          error instanceof Error ? error.message : "Unknown error";
-        controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ type: "error", content })}\n\n`,
-          ),
-        );
-      } finally {
-        const { releaseOpencodeServer } =
-          await import("../../utils/opencode-client");
-        releaseOpencodeServer(ocServer);
-        clearInterval(pingTimer);
-        controller.close();
-      }
-    },
-  });
-
-  return new Response(stream);
-}
-
-/** Map ChatBody effort to Copilot SDK ReasoningEffort */
-function mapCopilotReasoningEffort(
-  effort?: "low" | "medium" | "high" | "max",
-): "low" | "medium" | "high" | "xhigh" | undefined {
-  if (!effort) return undefined;
-  if (effort === "max") return "xhigh";
-  return effort;
-}
-
-/** Stream via GitHub Copilot SDK (@github/copilot-sdk) */
-function streamViaCopilot(body: ChatBody, model?: string) {
-  const stream = new ReadableStream({
-    async start(controller) {
-      const encoder = new TextEncoder();
-      const pingTimer = setInterval(() => {
-        try {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "ping", content: "" })}\n\n`,
-            ),
-          );
-        } catch {
-          /* stream already closed */
-        }
-      }, KEEPALIVE_INTERVAL_MS);
-
-      let copilotClient: { stop(): Promise<unknown> } | undefined;
-      try {
-        const { CopilotClient, approveAll } =
-          await import("@github/copilot-sdk");
-        // Use standalone copilot binary to avoid Bun's node:sqlite issue
-        const { resolveCopilotCli } =
-          await import("../../utils/copilot-client");
-        const cliPath = resolveCopilotCli();
-        const client = new CopilotClient({
-          autoStart: true,
-          ...(cliPath ? { cliPath } : {}),
-        });
-        copilotClient = client;
-        await client.start();
-
-        const session = await client.createSession({
-          ...(model ? { model } : {}),
-          streaming: true,
-          onPermissionRequest: approveAll,
-          systemMessage: { mode: "replace", content: body.system },
-          ...(body.effort
-            ? { reasoningEffort: mapCopilotReasoningEffort(body.effort) }
-            : {}),
-        });
-
-        const lastUserMsg = [...body.messages]
-          .reverse()
-          .find((m) => m.role === "user");
-        const prompt = lastUserMsg?.content ?? "";
-
-        // Subscribe to streaming deltas
-        session.on("assistant.message_delta", (event) => {
-          clearInterval(pingTimer);
-          const deltaContent = (event as any).data?.deltaContent ?? "";
-          if (deltaContent) {
-            const data = JSON.stringify({
-              type: "text",
-              content: deltaContent,
-            });
-            try {
-              controller.enqueue(encoder.encode(`data: ${data}\n\n`));
-            } catch {
-              /* stream closed */
-            }
-          }
-        });
-
-        // Wait for completion
-        await session.sendAndWait({ prompt }, 120_000);
-        await session.destroy();
-
-        controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ type: "done", content: "" })}\n\n`,
-          ),
-        );
-      } catch (error) {
-        const content =
-          error instanceof Error ? error.message : "Unknown error";
-        controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ type: "error", content })}\n\n`,
-          ),
-        );
-      } finally {
-        clearInterval(pingTimer);
-        if (copilotClient) {
-          copilotClient.stop().catch(() => {});
-        }
-        controller.close();
-      }
-    },
-  });
-
-  return new Response(stream);
 }

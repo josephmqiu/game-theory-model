@@ -7,7 +7,7 @@
 
 import { z } from "zod/v4";
 import type { MethodologyPhase } from "../../shared/types/methodology";
-import { V3_PHASES } from "../../shared/types/methodology";
+import { RUNNABLE_PHASES } from "../../shared/types/methodology";
 import type { RelationshipType } from "../../shared/types/entity";
 import {
   entityConfidenceSchema,
@@ -92,6 +92,9 @@ export interface PhaseContext {
   priorEntities?: string;
   revisionRetryInstruction?: string;
   revisionSystemPrompt?: string;
+  /** Human objections against this phase's entities (9A) — the prompt
+   * instructs the model to address each one in the entity's rationale. */
+  challengeContext?: string;
   provider?: string;
   model?: string;
   runtime?: PhaseRuntimeContext;
@@ -116,7 +119,7 @@ type SupportedPhase = Extract<
   | "meta-check"
 >;
 
-const SUPPORTED_PHASES: SupportedPhase[] = V3_PHASES.filter(
+const SUPPORTED_PHASES: SupportedPhase[] = RUNNABLE_PHASES.filter(
   (p): p is SupportedPhase =>
     p === "situational-grounding" ||
     p === "player-identification" ||
@@ -535,6 +538,7 @@ function buildPrompt(
   revisionRetryInstruction?: string,
   revisionSystemPrompt?: string,
   runtime?: PhaseRuntimeContext,
+  challengeContext?: string,
 ): { system: string; user: string } {
   const systemPrompt = revisionSystemPrompt ?? PHASE_PROMPTS[phase];
   const effortGuidance = buildAnalysisEffortGuidance(
@@ -559,12 +563,13 @@ function buildPrompt(
   if (revisionRetryInstruction) {
     parts.push(`\nRevision retry instruction:\n\n${revisionRetryInstruction}`);
   }
+  if (challengeContext) {
+    parts.push(`\n${challengeContext}`);
+  }
   return { system: systemPrompt, user: parts.join("\n") };
 }
 
-function buildAnalysisEffortGuidance(
-  effortLevel: PhaseEffortLevel,
-): string {
+function buildAnalysisEffortGuidance(effortLevel: PhaseEffortLevel): string {
   const guidanceByEffort: Record<PhaseEffortLevel, string[]> = {
     quick: [
       "Analysis effort guidance:",
@@ -1893,13 +1898,15 @@ export async function runPhase(
     context?.revisionRetryInstruction,
     context?.revisionSystemPrompt,
     context?.runtime,
+    context?.challengeContext,
   );
   const model = context?.model ?? "claude-sonnet-4-20250514";
   const provider = context?.provider ?? "anthropic";
   const schema = buildOutputSchema(phase);
   const emitActivity = (message: string, toolName?: string) => {
     context?.onActivity?.({
-      kind: toolName === "WebSearch" ? "web-search" : toolName ? "tool" : "note",
+      kind:
+        toolName === "WebSearch" ? "web-search" : toolName ? "tool" : "note",
       message,
       ...(toolName ? { toolName } : {}),
     });

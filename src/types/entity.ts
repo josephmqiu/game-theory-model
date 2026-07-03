@@ -5,6 +5,7 @@ import type { MethodologyPhase, PhaseState } from "./methodology";
 
 export type EntityConfidence = "high" | "medium" | "low";
 export type EntitySource = "ai" | "human" | "computed";
+export type DisplayEntitySource = "ai" | "human";
 
 export const entityConfidenceSchema = z.enum(["high", "medium", "low"]);
 export const entitySourceSchema = z.enum(["ai", "human", "computed"]);
@@ -765,6 +766,79 @@ export const entityDataSchema = z.discriminatedUnion("type", [
   analysisReportDataSchema,
 ]);
 
+// ── Revision Log (E1B) ──
+//
+// Bounded per-entity history of content changes. Lives on the entity as
+// OPTIONAL fields so the .gta format stays at version 3: old files load
+// without it, old loaders tolerate it. logSource is its own namespace,
+// deliberately separate from provenance.source.
+
+export type RevisionLogSource =
+  | "phase"
+  | "human"
+  | "chat"
+  | "challenge"
+  | "revalidation";
+
+export interface FieldDiff {
+  /** Dot path within the entity, e.g. "data.content" or "confidence". */
+  field: string;
+  /** JSON-encoded previous value, truncated ~2KB with a marker. */
+  old: string;
+  /** JSON-encoded new value, truncated ~2KB with a marker. */
+  new: string;
+}
+
+export interface RevisionLogEntry {
+  /** Per-entity monotonic counter — {entityId, logNo} is the stable id. */
+  logNo: number;
+  ts: number;
+  logSource: RevisionLogSource;
+  runId?: string;
+  /** Empty array marks entity creation. */
+  fieldDiffs: FieldDiff[];
+  /**
+   * Set when a queued mid-run edit applied on top of a newer revision than
+   * the one the user saw when submitting (causality conflict marker).
+   */
+  conflict?: boolean;
+}
+
+/** Keep only the most recent entries per entity. */
+export const REVISION_LOG_LIMIT = 10;
+
+// ── Challenges (9A / 2.2A) ──
+//
+// Challenge records live at the ANALYSIS level keyed by entityId (E4A):
+// the challenged entity may be deleted by the re-run (outcome REMOVED), so
+// the record must outlive it. Optional field — .gta stays version 3.
+
+export type ChallengeOutcome = "REVISED" | "CONFIRMED" | "REMOVED";
+
+export interface ChallengeRecord {
+  id: string;
+  entityId: string;
+  /** The human analyst's objection, injected into re-run phase prompts. */
+  objection: string;
+  createdAt: number;
+  status: "pending" | "resolved";
+  outcome?: ChallengeOutcome;
+  resolvedAt?: number;
+  /** Revalidation run that resolved this challenge. */
+  runId?: string;
+  /** Log entry on the challenged entity holding the response diff (REVISED). */
+  responseLogNo?: number;
+  /** The entity's post-re-run rationale — the model's answer to the objection. */
+  responseRationale?: string;
+  /**
+   * Set when the re-run produced no diff, so the model's response was not
+   * independently verified by a concrete graph change.
+   */
+  unverified?: boolean;
+  /** Until-viewed badge state (2.2A). */
+  viewed?: boolean;
+}
+
 // ── Core Entity ──
 
 export interface AnalysisEntity {
@@ -773,13 +847,24 @@ export interface AnalysisEntity {
   phase: MethodologyPhase;
   data: EntityData;
   confidence: EntityConfidence;
-  /** @deprecated Use provenance.source instead */
-  source: EntitySource;
   provenance?: EntityProvenance;
   rationale: string;
   revision: number;
   stale: boolean; // true when downstream of a human edit, pending revalidation
   group?: string; // analytical group label assigned by canvas-service grouping
+  /** Bounded change history (E1B). Optional — absent in pre-log .gta files. */
+  revisionLog?: RevisionLogEntry[];
+}
+
+/**
+ * Display tier for an entity's origin, derived from provenance.
+ * Replaces the removed top-level `source` field ("ai" | "human" | "computed");
+ * pre-migration `.gta` files are normalized on load (see analysis-file.ts).
+ */
+export function displaySourceForProvenance(
+  provenance: EntityProvenance | undefined,
+): DisplayEntitySource {
+  return provenance?.source === "user-edited" ? "human" : "ai";
 }
 
 // ── Relationships ──
@@ -833,7 +918,6 @@ export interface AnalysisRelationship {
   fromEntityId: string;
   toEntityId: string;
   metadata?: Record<string, unknown>;
-  source?: EntitySource;
   provenance?: EntityProvenance;
 }
 
@@ -847,6 +931,8 @@ export interface Analysis {
   relationships: AnalysisRelationship[];
   phases: PhaseState[];
   centralThesis?: string;
+  /** Challenge records, analysis-level keyed by entityId (E4A). Optional — .gta stays v3. */
+  challenges?: ChallengeRecord[];
 }
 
 // ── File Format ──

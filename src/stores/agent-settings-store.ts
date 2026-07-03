@@ -6,10 +6,7 @@ import type {
   MCPTransportMode,
   GroupedModel,
 } from "@/types/agent-settings";
-import {
-  V3_PHASES,
-  type MethodologyPhase,
-} from "@/types/methodology";
+import { RUNNABLE_PHASES, type MethodologyPhase } from "@/types/methodology";
 import { MCP_DEFAULT_PORT } from "@/constants/app";
 import { appStorage } from "@/utils/app-storage";
 import { isAllowedProvider } from "@/services/ai/allowed-providers";
@@ -58,11 +55,9 @@ interface AgentSettingsState extends PersistedState {
 }
 
 const DEFAULT_ANALYSIS_PHASE_MODE: AnalysisPhaseMode = "all";
-const DEFAULT_ANALYSIS_CUSTOM_PHASES = [...V3_PHASES];
+const DEFAULT_ANALYSIS_CUSTOM_PHASES = [...RUNNABLE_PHASES];
 
-function isAnalysisEffortLevel(
-  value: unknown,
-): value is AnalysisEffortLevel {
+function isAnalysisEffortLevel(value: unknown): value is AnalysisEffortLevel {
   return value === "quick" || value === "standard" || value === "thorough";
 }
 
@@ -79,10 +74,10 @@ function normalizeAnalysisCustomPhases(
 
   const selected = new Set(
     phases.filter((phase): phase is MethodologyPhase =>
-      V3_PHASES.includes(phase as MethodologyPhase),
+      RUNNABLE_PHASES.includes(phase as MethodologyPhase),
     ),
   );
-  const normalized = V3_PHASES.filter((phase) => selected.has(phase));
+  const normalized = RUNNABLE_PHASES.filter((phase) => selected.has(phase));
 
   return normalized.length > 0
     ? normalized
@@ -119,7 +114,7 @@ export function buildAnalysisRuntimeOverrides(
   return Object.keys(runtime).length > 0 ? runtime : undefined;
 }
 
-// opencode and copilot are dormant — unreachable via ALLOWED_PROVIDERS
+// opencode is dormant — unreachable via ALLOWED_PROVIDERS
 const DEFAULT_PROVIDERS: Record<AIProviderType, AIProviderConfig> = {
   anthropic: {
     type: "anthropic",
@@ -138,13 +133,6 @@ const DEFAULT_PROVIDERS: Record<AIProviderType, AIProviderConfig> = {
   opencode: {
     type: "opencode",
     displayName: "OpenCode",
-    isConnected: false,
-    connectionMethod: null,
-    models: [],
-  },
-  copilot: {
-    type: "copilot",
-    displayName: "GitHub Copilot",
     isConnected: false,
     connectionMethod: null,
     models: [],
@@ -179,12 +167,6 @@ const DEFAULT_MCP_INTEGRATIONS: MCPCliIntegration[] = [
   {
     tool: "kiro-cli",
     displayName: "Kiro CLI",
-    enabled: false,
-    installed: false,
-  },
-  {
-    tool: "copilot-cli",
-    displayName: "GitHub Copilot CLI",
     enabled: false,
     installed: false,
   },
@@ -247,8 +229,7 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => ({
 
   setAnalysisWebSearch: (analysisWebSearch) => set({ analysisWebSearch }),
 
-  setAnalysisEffortLevel: (analysisEffortLevel) =>
-    set({ analysisEffortLevel }),
+  setAnalysisEffortLevel: (analysisEffortLevel) => set({ analysisEffortLevel }),
 
   setAnalysisPhaseMode: (analysisPhaseMode) =>
     set((state) => ({
@@ -261,7 +242,7 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => ({
 
   toggleAnalysisPhase: (phase) =>
     set((state) => {
-      if (!V3_PHASES.includes(phase)) {
+      if (!RUNNABLE_PHASES.includes(phase)) {
         return state;
       }
 
@@ -312,9 +293,8 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => ({
           analysisWebSearch,
           analysisEffortLevel,
           analysisPhaseMode,
-          analysisCustomPhases: normalizeAnalysisCustomPhases(
-            analysisCustomPhases,
-          ),
+          analysisCustomPhases:
+            normalizeAnalysisCustomPhases(analysisCustomPhases),
         }),
       );
     } catch {

@@ -20,9 +20,10 @@ scripts/figma-*
 server/evals/results/
 
 # Internal development docs
+# (DESIGN.md is committed — it is GENERATED from src/constants/design-tokens.ts
+#  via `bun run gen:design`; decision 4A)
 CLAUDE.md
 AGENTS.md
-DESIGN.md
 TODOS.md
 docs/
 
@@ -30,3 +31,6 @@ docs/
 .claude/
 .codex/
 .worktrees/
+
+# Playwright MCP session artifacts
+.playwright-mcp/

@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import { Pencil, ShieldQuestion, X, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
@@ -8,12 +16,28 @@ import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import * as analysisClient from "@/services/ai/analysis-client";
 import { useCanvasStore } from "@/stores/canvas-store";
 import { AnalysisReportOverlay } from "@/components/panels/analysis-report-overlay";
+import { useRunStatusStore } from "@/stores/run-status-store";
+import {
+  editFormReducer,
+  INITIAL_EDIT_STATE,
+  isBusy,
+  isSubmittable,
+  validateEditClientSide,
+} from "@/components/panels/entity-edit-state";
+import {
+  formatDiffField,
+  formatDiffValue,
+  latestLogNo,
+  latestRevalidationEntry,
+} from "@/services/entity/revision-peek";
 import type {
   AnalysisEntity,
+  ChallengeRecord,
   EntityType,
   EntityData,
   EntityConfidence,
-  EntitySource,
+  DisplayEntitySource,
+  FieldDiff,
   FactData,
   PlayerData,
   ObjectiveData,
@@ -43,49 +67,19 @@ import type {
   MetaCheckData,
   AnalysisReportData,
 } from "@/types/entity";
+import { displaySourceForProvenance } from "@/types/entity";
+import { entityTypeColor } from "@/constants/design-tokens";
+import { ChallengeOutcomeChip } from "@/components/panels/challenge-outcome-chip";
 
 // ── Props ──
 
 export interface EntityOverlayCardProps {
   entity: AnalysisEntity;
   screenPosition: { x: number; y: number };
-  onEdit: (entity: AnalysisEntity) => void;
-  onChallenge: (entity: AnalysisEntity) => void;
   onClose: () => void;
 }
 
-// ── Entity type palette (from DESIGN.md) ──
-
-const ENTITY_TYPE_COLORS: Record<EntityType, string> = {
-  fact: "#94A3B8",
-  player: "#60A5FA",
-  objective: "#60A5FA",
-  game: "#FBBF24",
-  strategy: "#34D399",
-  payoff: "#FCD34D",
-  "institutional-rule": "#A1A1AA",
-  "escalation-rung": "#4ADE80",
-  "interaction-history": "#818CF8",
-  "repeated-game-pattern": "#C084FC",
-  "trust-assessment": "#2DD4BF",
-  "dynamic-inconsistency": "#FB923C",
-  "signaling-effect": "#F472B6",
-  "payoff-matrix": "#FBBF24",
-  "game-tree": "#FBBF24",
-  "equilibrium-result": "#F59E0B",
-  "cross-game-constraint-table": "#FB923C",
-  "cross-game-effect": "#FB923C",
-  "signal-classification": "#F472B6",
-  "bargaining-dynamics": "#818CF8",
-  "option-value-assessment": "#2DD4BF",
-  "behavioral-overlay": "#C084FC",
-  assumption: "#E879F9",
-  "eliminated-outcome": "#EF4444",
-  scenario: "#22D3EE",
-  "central-thesis": "#A78BFA",
-  "meta-check": "#F97316",
-  "analysis-report": "#A1A1AA",
-};
+// ── Entity type palette (single source: design-tokens, decision 5.1A) ──
 
 const ENTITY_TYPE_I18N_KEYS: Record<EntityType, string> = {
   fact: "analysis.entities.fact",
@@ -134,10 +128,9 @@ const CONFIDENCE_I18N_KEYS: Record<EntityConfidence, string> = {
 
 // ── Source labels ──
 
-const SOURCE_I18N_KEYS: Record<EntitySource, string> = {
+const SOURCE_I18N_KEYS: Record<DisplayEntitySource, string> = {
   ai: "analysis.entities.source.ai",
   human: "analysis.entities.source.human",
-  computed: "analysis.entities.source.computed",
 };
 
 // ── Entity name extraction ──
@@ -621,29 +614,252 @@ function MetaCheckDetails({ data }: { data: MetaCheckData }) {
 }
 
 // ── Edit-mode field input ──
+//
+// Field anatomy per 1.2A: {label, input, inline error} — errors render
+// directly under the input they belong to. Field errors are provided via
+// context so every EditField can resolve its own error by name.
+
+const EditErrorsContext = createContext<Record<string, string>>({});
+
+function useFieldError(name?: string): string | undefined {
+  const errors = useContext(EditErrorsContext);
+  return name ? errors[name] : undefined;
+}
+
+function FieldError({ error }: { error?: string }) {
+  if (!error) return null;
+  return (
+    <p role="alert" className="mt-0.5 text-[11px] text-red-400">
+      {error}
+    </p>
+  );
+}
 
 function EditField({
   label,
   value,
   onChange,
   type = "text",
+  name,
+  multiline = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   type?: "text" | "number";
+  /** Field-error key, e.g. "data.content" or "rationale". */
+  name?: string;
+  multiline?: boolean;
 }) {
+  const error = useFieldError(name);
+  const inputClass = cn(
+    "mt-0.5 w-full rounded-sm border bg-zinc-800 px-2 py-1 text-[13px] text-zinc-200 outline-none",
+    error ? "border-red-400/70" : "border-zinc-700 focus:border-zinc-500",
+  );
   return (
     <div>
       <label className="text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-500">
         {label}
       </label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-0.5 w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1 text-[13px] text-zinc-200 outline-none focus:border-zinc-500"
+      {multiline ? (
+        <textarea
+          value={value}
+          rows={3}
+          onChange={(e) => onChange(e.target.value)}
+          className={cn(inputClass, "resize-y")}
+        />
+      ) : (
+        <input
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={inputClass}
+        />
+      )}
+      <FieldError error={error} />
+    </div>
+  );
+}
+
+/** Edits a string[] as one item per line. */
+function ListEditField({
+  label,
+  values,
+  onChange,
+  name,
+}: {
+  label: string;
+  values: string[];
+  onChange: (values: string[]) => void;
+  name?: string;
+}) {
+  const error = useFieldError(name);
+  return (
+    <div>
+      <label className="text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-500">
+        {label}{" "}
+        <span className="font-normal normal-case tracking-normal text-zinc-600">
+          (one per line)
+        </span>
+      </label>
+      <textarea
+        value={values.join("\n")}
+        rows={Math.max(2, Math.min(6, values.length + 1))}
+        onChange={(e) =>
+          onChange(
+            e.target.value
+              .split("\n")
+              .map((line) => line.trim())
+              .filter(Boolean),
+          )
+        }
+        className={cn(
+          "mt-0.5 w-full resize-y rounded-sm border bg-zinc-800 px-2 py-1 text-[13px] text-zinc-200 outline-none",
+          error ? "border-red-400/70" : "border-zinc-700 focus:border-zinc-500",
+        )}
       />
+      <FieldError error={error} />
+    </div>
+  );
+}
+
+// ── Edit forms for the previously uneditable meta entities ──
+
+function MetaCheckEdit({
+  data,
+  onChange,
+}: {
+  data: MetaCheckData;
+  onChange: (updated: EntityData) => void;
+}) {
+  const listError = useFieldError("data.questions");
+  const setQuestion = (
+    index: number,
+    patch: Partial<MetaCheckData["questions"][number]>,
+  ) => {
+    onChange({
+      ...data,
+      questions: data.questions.map((question, i) =>
+        i === index ? { ...question, ...patch } : question,
+      ),
+    });
+  };
+
+  return (
+    <div className="space-y-2">
+      <FieldError error={listError} />
+      {data.questions.map((question, index) => (
+        <MetaCheckQuestionEdit
+          key={question.question_number}
+          question={question}
+          index={index}
+          onPatch={setQuestion}
+        />
+      ))}
+    </div>
+  );
+}
+
+function MetaCheckQuestionEdit({
+  question,
+  index,
+  onPatch,
+}: {
+  question: MetaCheckData["questions"][number];
+  index: number;
+  onPatch: (
+    index: number,
+    patch: Partial<MetaCheckData["questions"][number]>,
+  ) => void;
+}) {
+  const answerError = useFieldError(`data.questions.${index}.answer`);
+  return (
+    <div>
+      <label className="text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-500">
+        Question {question.question_number}
+      </label>
+      <textarea
+        value={question.answer}
+        rows={2}
+        onChange={(e) => onPatch(index, { answer: e.target.value })}
+        className={cn(
+          "mt-0.5 w-full resize-y rounded-sm border bg-zinc-800 px-2 py-1 text-[13px] text-zinc-200 outline-none",
+          answerError
+            ? "border-red-400/70"
+            : "border-zinc-700 focus:border-zinc-500",
+        )}
+      />
+      <FieldError error={answerError} />
+      <label className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-400">
+        <input
+          type="checkbox"
+          checked={question.disruption_trigger_identified}
+          onChange={(e) =>
+            onPatch(index, {
+              disruption_trigger_identified: e.target.checked,
+            })
+          }
+        />
+        Disruption trigger identified
+      </label>
+    </div>
+  );
+}
+
+function AnalysisReportEdit({
+  data,
+  onChange,
+}: {
+  data: AnalysisReportData;
+  onChange: (updated: EntityData) => void;
+}) {
+  const set = (field: keyof AnalysisReportData, value: unknown) =>
+    onChange({ ...data, [field]: value } as EntityData);
+
+  return (
+    <div className="space-y-1.5">
+      <EditField
+        label="Executive summary"
+        name="data.executive_summary"
+        value={data.executive_summary}
+        onChange={(v) => set("executive_summary", v)}
+        multiline
+      />
+      <EditField
+        label="Why"
+        name="data.why"
+        value={data.why}
+        onChange={(v) => set("why", v)}
+        multiline
+      />
+      <ListEditField
+        label="Key evidence"
+        name="data.key_evidence"
+        values={data.key_evidence}
+        onChange={(v) => set("key_evidence", v)}
+      />
+      <ListEditField
+        label="Open assumptions"
+        name="data.open_assumptions"
+        values={data.open_assumptions}
+        onChange={(v) => set("open_assumptions", v)}
+      />
+      <ListEditField
+        label="What changes this"
+        name="data.what_would_change"
+        values={data.what_would_change}
+        onChange={(v) => set("what_would_change", v)}
+      />
+      <EditField
+        label="Source URL"
+        name="data.source_url"
+        value={data.source_url ?? ""}
+        onChange={(v) => set("source_url", v.trim() === "" ? null : v)}
+      />
+      <p className="text-[11px] text-zinc-600">
+        Entity references and the prediction verdict are AI-owned — re-run
+        synthesis to change them.
+      </p>
     </div>
   );
 }
@@ -666,18 +882,28 @@ function EditableEntityData({
         <div className="space-y-1.5">
           <EditField
             label="Content"
+            name="data.content"
             value={data.content}
             onChange={(v) => set("content", v)}
+            multiline
           />
           <EditField
             label="Date"
+            name="data.date"
             value={data.date}
             onChange={(v) => set("date", v)}
           />
           <EditField
             label="Source"
+            name="data.source"
             value={data.source}
             onChange={(v) => set("source", v)}
+          />
+          <EditField
+            label="Category"
+            name="data.category"
+            value={data.category}
+            onChange={(v) => set("category", v)}
           />
         </div>
       );
@@ -686,11 +912,13 @@ function EditableEntityData({
         <div className="space-y-1.5">
           <EditField
             label="Name"
+            name="data.name"
             value={data.name}
             onChange={(v) => set("name", v)}
           />
           <EditField
             label="Type"
+            name="data.playerType"
             value={data.playerType}
             onChange={(v) => set("playerType", v)}
           />
@@ -701,11 +929,14 @@ function EditableEntityData({
         <div className="space-y-1.5">
           <EditField
             label="Description"
+            name="data.description"
             value={data.description}
             onChange={(v) => set("description", v)}
+            multiline
           />
           <EditField
             label="Priority"
+            name="data.priority"
             value={data.priority}
             onChange={(v) => set("priority", v)}
           />
@@ -1029,9 +1260,9 @@ function EditableEntityData({
         </div>
       );
     case "meta-check":
-      return null;
+      return <MetaCheckEdit data={data} onChange={onChange} />;
     case "analysis-report":
-      return null; // not implemented — Task 4
+      return <AnalysisReportEdit data={data} onChange={onChange} />;
   }
 }
 
@@ -1122,7 +1353,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 function TypeBadge({ type }: { type: EntityType }) {
   const { t } = useTranslation();
-  const color = ENTITY_TYPE_COLORS[type];
+  const color = entityTypeColor(type);
   return (
     <span
       className="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.06em]"
@@ -1145,7 +1376,7 @@ function ConfidenceBadge({ confidence }: { confidence: EntityConfidence }) {
   );
 }
 
-function SourceBadge({ source }: { source: EntitySource }) {
+function SourceBadge({ source }: { source: DisplayEntitySource }) {
   const { t } = useTranslation();
   return (
     <span className="inline-flex items-center rounded-sm bg-zinc-800 px-1.5 py-0.5 text-[11px] font-medium text-zinc-400">
@@ -1180,51 +1411,411 @@ function PhaseBadge({ phase }: { phase: AnalysisEntity["phase"] }) {
   );
 }
 
+// ── Stale banner with revalidation countdown (2.3A) ──
+
+const REVALIDATION_DEBOUNCE_SECONDS = 2;
+
+function StaleBanner({ stale }: { stale: boolean }) {
+  const runStatus = useRunStatusStore((s) => s.runStatus);
+  const [secondsLeft, setSecondsLeft] = useState(REVALIDATION_DEBOUNCE_SECONDS);
+
+  useEffect(() => {
+    if (!stale) return;
+    setSecondsLeft(REVALIDATION_DEBOUNCE_SECONDS);
+    const interval = setInterval(() => {
+      setSecondsLeft((s) => (s > 0 ? s - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [stale]);
+
+  if (!stale) return null;
+
+  const label =
+    secondsLeft > 0
+      ? `Needs revalidation — re-running in ${secondsLeft}s…`
+      : runStatus.status === "running"
+        ? runStatus.kind === "revalidation"
+          ? "Needs revalidation — re-running…"
+          : "Needs revalidation — queued behind current analysis"
+        : "Needs revalidation — queued";
+
+  return (
+    <div className="rounded-sm border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-amber-400">
+      {label}
+    </div>
+  );
+}
+
+// ── "What changed" peek (3.1A) ──
+
+function DiffList({ diffs }: { diffs: FieldDiff[] }) {
+  return (
+    <dl className="mt-1 space-y-1">
+      {diffs.map((diff) => (
+        <div key={diff.field}>
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-500">
+            {formatDiffField(diff.field)}
+          </dt>
+          <dd className="mt-0.5 text-[12px] leading-snug">
+            <span className="text-zinc-500 line-through decoration-zinc-600">
+              {formatDiffValue(diff.old)}
+            </span>
+            <span className="mx-1 text-zinc-600">→</span>
+            <span className="text-zinc-200">{formatDiffValue(diff.new)}</span>
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function RevisionPeek({ entity }: { entity: AnalysisEntity }) {
+  const entry = latestRevalidationEntry(entity);
+  const markRevisionViewed = useCanvasStore((s) => s.markRevisionViewed);
+
+  // Seeing the peek clears the canvas updated-dot (3.1A "clears on view")
+  useEffect(() => {
+    if (entry) {
+      markRevisionViewed(entity.id, entry.logNo);
+    }
+  }, [entity.id, entry, markRevisionViewed]);
+
+  if (!entry) return null;
+
+  return (
+    <section className="rounded-sm border border-amber-500/20 bg-amber-500/5 px-2 py-1.5">
+      <h3 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-amber-400">
+        Updated by revalidation
+      </h3>
+      <DiffList diffs={entry.fieldDiffs} />
+    </section>
+  );
+}
+
+// ── Challenge sections (2.1A form + 2.2A resolution) ──
+
+const EMPTY_CHALLENGE_LIST: ChallengeRecord[] = [];
+
+function ChallengeResolutionSection({ entity }: { entity: AnalysisEntity }) {
+  const challenges = useEntityGraphStore(
+    (s) => s.analysis.challenges ?? EMPTY_CHALLENGE_LIST,
+  );
+  const entityChallenges = challenges.filter(
+    (record) => record.entityId === entity.id,
+  );
+
+  // Viewing the resolution clears the canvas badge (2.2A until-viewed)
+  const unviewedIds = entityChallenges
+    .filter((record) => record.status === "resolved" && !record.viewed)
+    .map((record) => record.id)
+    .join(",");
+  useEffect(() => {
+    if (!unviewedIds) return;
+    for (const id of unviewedIds.split(",")) {
+      void analysisClient.markChallengeViewed(id);
+    }
+  }, [unviewedIds]);
+
+  if (entityChallenges.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      {entityChallenges.map((record) => {
+        if (record.status === "pending") {
+          return (
+            <section
+              key={record.id}
+              className="rounded-sm border border-zinc-700 bg-zinc-800/60 px-2 py-1.5"
+            >
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-400">
+                Objection pending re-run
+              </h3>
+              <p className="mt-0.5 text-[12px] italic leading-snug text-zinc-400">
+                “{record.objection}”
+              </p>
+            </section>
+          );
+        }
+
+        const responseEntry =
+          record.outcome === "REVISED" && record.responseLogNo !== undefined
+            ? (entity.revisionLog ?? []).find(
+                (entry) => entry.logNo === record.responseLogNo,
+              )
+            : undefined;
+
+        return (
+          <section
+            key={record.id}
+            className="rounded-sm border border-zinc-700 bg-zinc-800/60 px-2 py-1.5"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-400">
+                Objection addressed
+              </h3>
+              {record.outcome && (
+                <ChallengeOutcomeChip outcome={record.outcome} />
+              )}
+            </div>
+            <p className="mt-1 text-[12px] italic leading-snug text-zinc-400">
+              “{record.objection}”
+            </p>
+            {record.responseRationale && (
+              <p className="mt-1 text-[12px] leading-snug text-zinc-300">
+                {record.responseRationale}
+              </p>
+            )}
+            {/* The outcome always ships WITH the change, never the chip alone */}
+            {responseEntry && responseEntry.fieldDiffs.length > 0 ? (
+              <DiffList diffs={responseEntry.fieldDiffs} />
+            ) : (
+              record.outcome === "CONFIRMED" && (
+                <p className="mt-1 text-[11px] text-zinc-500">
+                  {record.unverified
+                    ? "model kept it unchanged; review manually"
+                    : "No material change — the entity stood up to the objection."}
+                </p>
+              )
+            )}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Challenge form (2.1A) ──
+
+interface ChallengeFormHandle {
+  submit: () => void;
+  submittable: boolean;
+  submitting: boolean;
+}
+
+function ChallengeForm({
+  entity,
+  onStateChange,
+  onDone,
+}: {
+  entity: AnalysisEntity;
+  onStateChange: (handle: ChallengeFormHandle) => void;
+  onDone: (result: "created" | "queued") => void;
+}) {
+  const [objection, setObjection] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [downstreamIds, setDownstreamIds] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void analysisClient.getDownstreamEntityIds(entity.id).then((ids) => {
+      if (!cancelled) setDownstreamIds(ids);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [entity.id]);
+
+  const submittable = objection.trim().length >= 10 && !submitting;
+
+  const handleSubmit = useCallback(async () => {
+    if (objection.trim().length < 10 || submitting) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    const result = await analysisClient.challengeEntity(
+      entity.id,
+      objection.trim(),
+    );
+    setSubmitting(false);
+    if (result.status === "error") {
+      setSubmitError(result.error ?? "Challenge failed");
+      return;
+    }
+    onDone(result.status);
+  }, [entity.id, objection, submitting, onDone]);
+
+  // Lift submit control to the pinned action bar (1.2A)
+  useEffect(() => {
+    onStateChange({
+      submit: () => void handleSubmit(),
+      submittable,
+      submitting,
+    });
+  }, [handleSubmit, submittable, submitting, onStateChange]);
+
+  return (
+    <div className="space-y-2.5">
+      <p className="text-[12px] leading-snug text-zinc-400">
+        Object to this entity's conclusion. The analysis re-runs from its phase
+        with your objection in context, and the model must address it — by
+        revising the entity or defending it.
+      </p>
+
+      <div>
+        <label
+          htmlFor="challenge-objection"
+          className="text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-500"
+        >
+          Objection
+        </label>
+        <textarea
+          id="challenge-objection"
+          value={objection}
+          rows={3}
+          maxLength={2000}
+          placeholder='e.g. "The cited tariff rate is from 2024 — the March 2026 revision supersedes it."'
+          onChange={(e) => setObjection(e.target.value)}
+          className="mt-0.5 w-full resize-y rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1 text-[13px] text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-amber-500/60"
+        />
+        <div className="mt-0.5 flex items-center justify-between text-[11px] text-zinc-600">
+          <span>
+            {objection.trim().length < 10 ? "At least 10 characters" : ""}
+          </span>
+          <span>{objection.length} / 2000</span>
+        </div>
+      </div>
+
+      {/* Downstream preview (2.1A): what this challenge will invalidate */}
+      <div className="rounded-sm border border-zinc-700 bg-zinc-800/60 px-2 py-1.5">
+        {downstreamIds === null ? (
+          <p className="text-[11px] text-zinc-500">
+            Checking downstream impact…
+          </p>
+        ) : (
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-0.5" aria-hidden>
+              <span className="h-2 w-2 rounded-full bg-amber-500" />
+              {downstreamIds.slice(0, 8).map((id) => (
+                <span
+                  key={id}
+                  className="h-2 w-2 rounded-full border border-amber-500/60 bg-amber-500/20"
+                />
+              ))}
+            </div>
+            <p className="text-[11px] text-zinc-400">
+              This entity
+              {downstreamIds.length > 0
+                ? ` and ${downstreamIds.length} downstream ${
+                    downstreamIds.length === 1 ? "entity" : "entities"
+                  } will be marked stale and re-run`
+                : " will be marked stale and re-run"}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {submitError && (
+        <p role="alert" className="text-[12px] text-red-400">
+          {submitError}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ──
+
+type CardMode = "view" | "edit" | "challenge";
 
 export default function EntityOverlayCard({
   entity,
   screenPosition,
-  onEdit,
-  onChallenge,
   onClose,
 }: EntityOverlayCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
-  const [editing, setEditing] = useState(false);
+  const [mode, setMode] = useState<CardMode>("view");
   const [editData, setEditData] = useState<EntityData>(entity.data);
   const [editRationale, setEditRationale] = useState(entity.rationale);
+  const [formState, dispatch] = useReducer(editFormReducer, INITIAL_EDIT_STATE);
+  const [queuedNotice, setQueuedNotice] = useState<"edit" | "challenge" | null>(
+    null,
+  );
+  const queuedAtLogNo = useRef<number | null>(null);
+  const queuedAtEntityRevision = useRef<number | null>(null);
+  const [challengeHandle, setChallengeHandle] =
+    useState<ChallengeFormHandle | null>(null);
+  const [isClosing, setIsClosing] = useState(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prefersReducedMotionRef = useRef(false);
 
-  // Reset edit state when the entity prop changes (id or data)
+  useEffect(() => {
+    prefersReducedMotionRef.current =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    return () => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+      }
+    };
+  }, []);
+
+  const requestClose = useCallback(() => {
+    if (isClosing) return;
+    if (prefersReducedMotionRef.current) {
+      onClose();
+      return;
+    }
+
+    setIsClosing(true);
+    closeTimerRef.current = setTimeout(onClose, 140);
+  }, [isClosing, onClose]);
+
+  // Reset edit state when the entity prop changes identity
   useEffect(() => {
     setEditData(entity.data);
     setEditRationale(entity.rationale);
-    setEditing(false);
-  }, [entity.id, entity.data, entity.rationale]);
+    setMode("view");
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    setIsClosing(false);
+    dispatch({ type: "RESET" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entity.id]);
 
-  // Dismiss on Escape (cancel edit if editing, otherwise close)
+  const entityLatestLogNo = latestLogNo(entity.revisionLog);
+
+  // Clear the queued chip once the queued mutation landed.
+  useEffect(() => {
+    if (
+      queuedNotice &&
+      queuedAtLogNo.current !== null &&
+      queuedAtEntityRevision.current !== null &&
+      (entityLatestLogNo > queuedAtLogNo.current ||
+        entity.revision > queuedAtEntityRevision.current)
+    ) {
+      setQueuedNotice(null);
+      queuedAtLogNo.current = null;
+      queuedAtEntityRevision.current = null;
+    }
+  }, [entity.revision, entityLatestLogNo, queuedNotice]);
+
+  // Dismiss on Escape (cancel form if open, otherwise close)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (editing) {
-          setEditing(false);
-          setEditData(entity.data);
-          setEditRationale(entity.rationale);
-        } else {
-          onClose();
-        }
+      if (e.key !== "Escape") return;
+      if (mode !== "view") {
+        setMode("view");
+        setEditData(entity.data);
+        setEditRationale(entity.rationale);
+        dispatch({ type: "RESET" });
+      } else {
+        requestClose();
       }
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, editing, entity.data, entity.rationale]);
+  }, [requestClose, mode, entity.data, entity.rationale]);
 
-  // Click-away dismissal (disabled while editing to prevent accidental loss)
+  // Click-away dismissal (disabled while a form is open)
   useEffect(() => {
-    if (editing) return;
+    if (mode !== "view") return;
 
     const handlePointerDown = (e: PointerEvent) => {
       if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
-        onClose();
+        requestClose();
       }
     };
     // Delay listener to avoid the opening click triggering immediate close
@@ -1235,38 +1826,108 @@ export default function EntityOverlayCard({
       clearTimeout(timer);
       document.removeEventListener("pointerdown", handlePointerDown);
     };
-  }, [onClose, editing]);
+  }, [requestClose, mode]);
 
-  const handleSave = useCallback(() => {
-    const updates = {
-      data: editData,
-      rationale: editRationale,
-      source: "human" as const,
-      revision: entity.revision + 1,
-    };
+  const markEdited = useCallback(() => dispatch({ type: "EDIT" }), []);
 
-    if (analysisClient.isRunning()) {
-      // During active analysis, route edit through the server endpoint
-      // which handles queueing and stale propagation server-side.
-      void analysisClient.updateEntity(entity.id, updates);
-    } else {
-      // No analysis running — apply locally
-      useEntityGraphStore.getState().updateEntity(entity.id, updates);
+  const handleEditDataChange = useCallback(
+    (updated: EntityData) => {
+      setEditData(updated);
+      markEdited();
+    },
+    [markEdited],
+  );
+
+  const handleRationaleChange = useCallback(
+    (value: string) => {
+      setEditRationale(value);
+      markEdited();
+    },
+    [markEdited],
+  );
+
+  // Single write path (7A): every save goes through /api/ai/entity.
+  const handleSave = useCallback(async () => {
+    if (!isSubmittable(formState)) return; // double-submit guard
+    dispatch({ type: "SUBMIT" });
+
+    const fieldErrors = validateEditClientSide(entity, editData, editRationale);
+    if (Object.keys(fieldErrors).length > 0) {
+      dispatch({ type: "CLIENT_INVALID", fieldErrors });
+      return;
+    }
+    dispatch({ type: "CLIENT_VALID" });
+
+    // Optimistic apply (2.3A) — only when no run is active; queued edits
+    // apply server-side after the in-flight phase and arrive via SSE.
+    const running = analysisClient.isRunning();
+    const previous = entity;
+    if (!running) {
+      useEntityGraphStore.getState().upsertEntityFromServer({
+        ...entity,
+        data: editData,
+        rationale: editRationale,
+      });
     }
 
-    setEditing(false);
-    onEdit(entity);
-  }, [entity, editData, editRationale, onEdit]);
+    const result = await analysisClient.updateEntity(entity.id, {
+      data: editData,
+      rationale: editRationale,
+    });
+
+    if (result.status === "applied") {
+      dispatch({ type: "SERVER_APPLIED" });
+      // Quiet check, then return to view (2.3A)
+      setTimeout(() => {
+        setMode("view");
+        dispatch({ type: "RESET" });
+      }, 900);
+      return;
+    }
+    if (result.status === "queued") {
+      dispatch({ type: "SERVER_QUEUED" });
+      queuedAtLogNo.current = entityLatestLogNo;
+      queuedAtEntityRevision.current = entity.revision;
+      setQueuedNotice("edit");
+      setMode("view");
+      dispatch({ type: "RESET" });
+      return;
+    }
+    // Roll back the optimistic apply; the form stays open with preserved
+    // input and field errors (2.3A failure path).
+    if (!running) {
+      useEntityGraphStore.getState().upsertEntityFromServer(previous);
+    }
+    dispatch({
+      type: "SERVER_ERROR",
+      error: result.error ?? "Save failed",
+      fieldErrors: result.fieldErrors,
+    });
+  }, [entity, editData, editRationale, entityLatestLogNo, formState]);
 
   const handleCancel = useCallback(() => {
     setEditData(entity.data);
     setEditRationale(entity.rationale);
-    setEditing(false);
+    setMode("view");
+    dispatch({ type: "RESET" });
   }, [entity.data, entity.rationale]);
 
   const handleEntityNavigation = useCallback((entityId: string) => {
     useCanvasStore.getState().setFocusedEntityId(entityId);
   }, []);
+
+  const handleChallengeDone = useCallback(
+    (result: "created" | "queued") => {
+      if (result === "queued") {
+        queuedAtLogNo.current = entityLatestLogNo;
+        queuedAtEntityRevision.current = entity.revision;
+        setQueuedNotice("challenge");
+      }
+      setMode("view");
+      setChallengeHandle(null);
+    },
+    [entity.revision, entityLatestLogNo],
+  );
 
   // Position: right of node by default, flip left if near right edge
   const viewportWidth =
@@ -1282,109 +1943,142 @@ export default function EntityOverlayCard({
     ...(flipToLeft
       ? { right: viewportWidth - screenPosition.x + nodeOffset }
       : { left: screenPosition.x + nodeOffset }),
-    maxWidth: cardMaxWidth,
+    width: cardMaxWidth,
     maxHeight: 480,
     zIndex: 60,
   };
 
   const name = getEntityName(entity);
+  const editErrors = formState.phase === "failed" ? formState.fieldErrors : {};
+  const unmappedErrors = Object.entries(editErrors).filter(
+    ([key]) => key !== "updates",
+  );
 
   return (
     <div
       ref={cardRef}
-      className="overflow-y-auto rounded-md border border-zinc-700 bg-zinc-900 shadow-lg"
+      className={cn(
+        "overlay-card-motion flex flex-col overflow-hidden rounded-md border border-zinc-700 bg-zinc-900 shadow-lg opacity-100 transition-[opacity,transform] duration-[140ms] ease-out translate-y-0 motion-reduce:translate-y-0 motion-reduce:opacity-100 motion-reduce:transition-none",
+        isClosing && "translate-y-1 opacity-0",
+      )}
       style={style}
     >
-      <div className="space-y-3 p-3">
-        {/* Header badges */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <TypeBadge type={entity.type} />
-          <ConfidenceBadge confidence={entity.confidence} />
-          <SourceBadge source={entity.source} />
+      {/* ── PINNED header: badges + name + close (1.2A) ── */}
+      <header className="shrink-0 space-y-1.5 border-b border-zinc-800 p-3 pb-2">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <TypeBadge type={entity.type} />
+            <ConfidenceBadge confidence={entity.confidence} />
+            <SourceBadge
+              source={displaySourceForProvenance(entity.provenance)}
+            />
+            {mode === "edit" && (
+              <span className="inline-flex items-center rounded-sm bg-zinc-800 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300">
+                Editing
+              </span>
+            )}
+            {mode === "challenge" && (
+              <span className="inline-flex items-center rounded-sm bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-medium text-amber-400">
+                Challenge
+              </span>
+            )}
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Close"
+            onClick={requestClose}
+            className="-mr-1 -mt-1 shrink-0 text-zinc-500 hover:text-zinc-100"
+          >
+            <X size={14} />
+          </Button>
         </div>
-
-        {/* Entity name */}
-        <h2
-          className="text-lg font-bold leading-snug text-zinc-100"
-          style={{ fontFamily: "Satoshi, sans-serif" }}
-        >
+        <h2 className="text-base font-bold leading-snug text-zinc-100">
           {name}
         </h2>
-
-        {/* Phase badge */}
         <PhaseBadge phase={entity.phase} />
+      </header>
 
-        {/* Type-specific data — editable or read-only */}
-        <div className="border-t border-zinc-800 pt-2">
-          {editing ? (
-            <EditableEntityData data={editData} onChange={setEditData} />
-          ) : (
+      {/* ── SCROLLABLE field region — only this scrolls (1.2A) ── */}
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+        {mode === "view" && (
+          <>
+            <RevisionPeek entity={entity} />
+            <ChallengeResolutionSection entity={entity} />
+            {queuedNotice && (
+              <div className="rounded-sm border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-[11px] font-medium text-zinc-300">
+                {queuedNotice === "edit"
+                  ? "Queued — applies after current phase"
+                  : "Challenge queued — applies after current phase"}
+              </div>
+            )}
             <EntityDataSection
               entity={entity}
               onEntityClick={handleEntityNavigation}
             />
-          )}
-        </div>
-
-        {/* Rationale */}
-        {editing ? (
-          <div className="border-t border-zinc-800 pt-2">
-            <EditField
-              label="Rationale"
-              value={editRationale}
-              onChange={setEditRationale}
-            />
-          </div>
-        ) : (
-          entity.rationale && (
-            <div className="border-t border-zinc-800 pt-2">
-              <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-500">
-                Rationale
-              </dt>
-              <dd className="mt-0.5 text-[13px] leading-relaxed text-zinc-300">
-                {entity.rationale}
-              </dd>
-            </div>
-          )
+            {entity.rationale && (
+              <div className="border-t border-zinc-800 pt-2">
+                <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-500">
+                  Rationale
+                </dt>
+                <dd className="mt-0.5 text-[13px] leading-relaxed text-zinc-300">
+                  {entity.rationale}
+                </dd>
+              </div>
+            )}
+            <StaleBanner stale={entity.stale} />
+          </>
         )}
 
-        {/* Stale indicator */}
-        {entity.stale && (
-          <div className="rounded-sm border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-amber-400">
-            Needs revalidation
-          </div>
+        {mode === "edit" && (
+          <EditErrorsContext.Provider value={editErrors}>
+            <EditableEntityData
+              data={editData}
+              onChange={handleEditDataChange}
+            />
+            <div className="border-t border-zinc-800 pt-2">
+              <EditField
+                label="Rationale"
+                name="rationale"
+                value={editRationale}
+                onChange={handleRationaleChange}
+                multiline
+              />
+            </div>
+            {unmappedErrors.length > 0 && (
+              <ul role="alert" className="space-y-0.5 text-[11px] text-red-400">
+                {unmappedErrors.map(([field, message]) => (
+                  <li key={field}>
+                    {formatDiffField(field)}: {message}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </EditErrorsContext.Provider>
+        )}
+
+        {mode === "challenge" && (
+          <ChallengeForm
+            entity={entity}
+            onStateChange={setChallengeHandle}
+            onDone={handleChallengeDone}
+          />
         )}
       </div>
 
-      {/* Action buttons */}
-      <div className="flex items-center gap-1 border-t border-zinc-800 px-3 py-2">
-        {editing ? (
+      {/* ── PINNED action bar (1.2A) ── */}
+      <footer className="flex shrink-0 items-center gap-1 border-t border-zinc-800 px-3 py-2">
+        {mode === "view" && (
           <>
             <Button
               variant="ghost"
               size="sm"
-              onClick={handleSave}
-              className="text-xs text-emerald-400 hover:text-emerald-300"
-            >
-              <Check size={12} />
-              Save
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleCancel}
-              className="text-xs text-zinc-400 hover:text-zinc-100"
-            >
-              <X size={12} />
-              Cancel
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setEditing(true)}
+              onClick={() => {
+                setEditData(entity.data);
+                setEditRationale(entity.rationale);
+                dispatch({ type: "RESET" });
+                setMode("edit");
+              }}
               className="text-xs text-zinc-400 hover:text-zinc-100"
             >
               <Pencil size={12} />
@@ -1393,7 +2087,7 @@ export default function EntityOverlayCard({
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onChallenge(entity)}
+              onClick={() => setMode("challenge")}
               className="text-xs text-zinc-400 hover:text-zinc-100"
             >
               <ShieldQuestion size={12} />
@@ -1401,17 +2095,65 @@ export default function EntityOverlayCard({
             </Button>
           </>
         )}
-        <div className="ml-auto">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-100"
-          >
-            <X size={14} />
-          </Button>
-        </div>
-      </div>
+
+        {mode === "edit" && (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void handleSave()}
+              disabled={isBusy(formState) || formState.phase === "pristine"}
+              className="text-xs text-emerald-400 hover:text-emerald-300"
+            >
+              <Check size={12} />
+              {isBusy(formState)
+                ? "Saving…"
+                : formState.phase === "saved"
+                  ? "Saved"
+                  : "Save"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCancel}
+              disabled={isBusy(formState)}
+              className="text-xs text-zinc-400 hover:text-zinc-100"
+            >
+              <X size={12} />
+              Cancel
+            </Button>
+            {formState.phase === "failed" && (
+              <span role="alert" className="ml-auto text-[11px] text-red-400">
+                {formState.error}
+              </span>
+            )}
+          </>
+        )}
+
+        {mode === "challenge" && (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCancel}
+              className="text-xs text-zinc-400 hover:text-zinc-100"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => challengeHandle?.submit()}
+              disabled={!challengeHandle?.submittable}
+              className="ml-auto bg-amber-500 text-xs font-semibold text-zinc-950 hover:bg-amber-400 disabled:opacity-40"
+            >
+              {challengeHandle?.submitting
+                ? "Submitting…"
+                : "Challenge & re-run"}
+            </Button>
+          </>
+        )}
+      </footer>
     </div>
   );
 }

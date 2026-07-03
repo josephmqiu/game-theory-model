@@ -13,7 +13,6 @@ import { useTranslation } from "react-i18next";
 import ClaudeLogo from "@/components/icons/claude-logo";
 import OpenAILogo from "@/components/icons/openai-logo";
 import OpenCodeLogo from "@/components/icons/opencode-logo";
-import CopilotLogo from "@/components/icons/copilot-logo";
 import LanguageSelector from "@/components/shared/language-selector";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -36,14 +35,12 @@ const PROVIDER_ICONS: Record<
   anthropic: ClaudeLogo,
   openai: OpenAILogo,
   opencode: OpenCodeLogo,
-  copilot: CopilotLogo,
 };
 
 const PROVIDER_ORDER: AIProviderType[] = [
   "anthropic",
   "openai",
   "opencode",
-  "copilot",
 ];
 
 function AgentStatusButton() {
@@ -176,8 +173,21 @@ export default function TopBar({ onNewAnalysis, onOpenAnalysis }: TopBarProps) {
       : "No entities";
 
   return (
-    <div className="app-region-drag flex h-10 shrink-0 select-none items-center border-b border-border bg-card px-2">
-      <div className="app-region-no-drag electron-traffic-light-pad flex items-center gap-2">
+    <header className="app-region-drag flex h-10 shrink-0 select-none items-center border-b border-border bg-card px-2">
+      {/* Product mark (1.1A) — small, quiet, always present */}
+      <div className="electron-traffic-light-pad flex items-center gap-1.5 pr-3">
+        <span
+          aria-hidden
+          className="flex h-4 w-4 items-center justify-center rounded-[4px] bg-primary/15 text-[9px] font-bold leading-none text-primary"
+        >
+          GT
+        </span>
+        <span className="hidden text-[11px] font-medium tracking-wide text-txt-header lg:inline">
+          Game Theory Analyzer
+        </span>
+      </div>
+
+      <div className="app-region-no-drag flex items-center gap-2">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -252,12 +262,13 @@ export default function TopBar({ onNewAnalysis, onOpenAnalysis }: TopBarProps) {
       </div>
 
       <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-4">
-        <span
-          className="truncate text-xs text-foreground"
+        {/* Analysis title — the PRIMARY identity in the shell (1.1A) */}
+        <h1
+          className="truncate text-[13px] font-semibold text-txt-primary"
           suppressHydrationWarning
         >
           {displayName}
-        </span>
+        </h1>
         <span className="hidden text-[11px] text-muted-foreground sm:inline">
           {fileStatusLabel}
           {isDirty ? ` ${t("topbar.edited")}` : ""}
@@ -302,6 +313,6 @@ export default function TopBar({ onNewAnalysis, onOpenAnalysis }: TopBarProps) {
           </TooltipContent>
         </Tooltip>
       </div>
-    </div>
+    </header>
   );
 }

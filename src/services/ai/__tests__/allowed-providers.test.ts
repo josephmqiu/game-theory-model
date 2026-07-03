@@ -27,7 +27,6 @@ describe("allowed-providers", () => {
 
   it("isAllowedProvider returns false for disallowed providers", () => {
     expect(isAllowedProvider("opencode")).toBe(false);
-    expect(isAllowedProvider("copilot")).toBe(false);
     expect(isAllowedProvider("gemini")).toBe(false);
     expect(isAllowedProvider("")).toBe(false);
   });

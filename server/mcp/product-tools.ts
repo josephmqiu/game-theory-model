@@ -6,6 +6,7 @@ import {
 import {
   createEntity,
   updateEntity,
+  getEntityById,
   createRelationship,
   getStaleEntityIds,
   removeEntity,
@@ -21,7 +22,11 @@ import type { MethodologyPhase } from "../../shared/types/methodology";
 import type { RelationshipType } from "../../shared/types/entity";
 import * as analysisOrchestrator from "../agents/analysis-agent";
 import * as revalidationService from "../services/revalidation-service";
-import { ALL_PHASES, V1_PHASES } from "../../src/types/methodology";
+import {
+  validateEntityUpdates,
+  validateNewEntity,
+} from "../services/entity-update-validation";
+import { ALL_PHASES, RUNNABLE_PHASES } from "../../src/types/methodology";
 
 export interface ToolDefinition {
   name: string;
@@ -41,6 +46,7 @@ export const ANALYSIS_MODE_TOOL_DEFINITIONS = [
         id: { type: "string", description: "Entity ID to fetch" },
       },
       required: ["id"],
+      additionalProperties: false,
     },
   },
   {
@@ -65,6 +71,7 @@ export const ANALYSIS_MODE_TOOL_DEFINITIONS = [
         },
       },
       required: [],
+      additionalProperties: false,
     },
   },
   {
@@ -85,6 +92,7 @@ export const ANALYSIS_MODE_TOOL_DEFINITIONS = [
         },
       },
       required: [],
+      additionalProperties: false,
     },
   },
   {
@@ -104,6 +112,7 @@ export const ANALYSIS_MODE_TOOL_DEFINITIONS = [
         },
       },
       required: ["trigger_type", "justification"],
+      additionalProperties: false,
     },
   },
 ] as const satisfies readonly ToolDefinition[];
@@ -133,6 +142,7 @@ export const CHAT_MODE_TOOL_DEFINITIONS = [
         },
       },
       required: ["topic"],
+      additionalProperties: false,
     },
   },
   {
@@ -142,6 +152,7 @@ export const CHAT_MODE_TOOL_DEFINITIONS = [
       type: "object" as const,
       properties: {},
       required: [],
+      additionalProperties: false,
     },
   },
   {
@@ -175,6 +186,7 @@ export const CHAT_MODE_TOOL_DEFINITIONS = [
         },
       },
       required: ["type", "phase", "data"],
+      additionalProperties: false,
     },
   },
   {
@@ -192,6 +204,7 @@ export const CHAT_MODE_TOOL_DEFINITIONS = [
         },
       },
       required: ["id", "updates"],
+      additionalProperties: false,
     },
   },
   {
@@ -203,6 +216,7 @@ export const CHAT_MODE_TOOL_DEFINITIONS = [
         id: { type: "string", description: "Entity ID to delete" },
       },
       required: ["id"],
+      additionalProperties: false,
     },
   },
   {
@@ -225,6 +239,7 @@ export const CHAT_MODE_TOOL_DEFINITIONS = [
         },
       },
       required: ["type", "fromId", "toId"],
+      additionalProperties: false,
     },
   },
   {
@@ -236,6 +251,7 @@ export const CHAT_MODE_TOOL_DEFINITIONS = [
         id: { type: "string", description: "Relationship ID to delete" },
       },
       required: ["id"],
+      additionalProperties: false,
     },
   },
   {
@@ -252,6 +268,7 @@ export const CHAT_MODE_TOOL_DEFINITIONS = [
         },
       },
       required: ["phases"],
+      additionalProperties: false,
     },
   },
   {
@@ -261,6 +278,7 @@ export const CHAT_MODE_TOOL_DEFINITIONS = [
       type: "object" as const,
       properties: {},
       required: [],
+      additionalProperties: false,
     },
   },
 ] as const satisfies readonly ToolDefinition[];
@@ -275,7 +293,11 @@ export async function handleStartAnalysis(args: {
     args.provider,
     args.model,
   );
-  return JSON.stringify({ runId, status: "started", estimatedPhases: 3 });
+  return JSON.stringify({
+    runId,
+    status: "started",
+    estimatedPhases: RUNNABLE_PHASES.length,
+  });
 }
 
 function resolveToolRunId(): string | undefined {
@@ -310,20 +332,20 @@ function resolveEarliestRerunPhase(
   }
 
   const unsupportedPhases = phases.filter(
-    (phase) => !(V1_PHASES as readonly string[]).includes(phase),
+    (phase) => !(RUNNABLE_PHASES as readonly string[]).includes(phase),
   );
   if (unsupportedPhases.length > 0) {
     return {
       error:
-        `rerun_phases currently supports only implemented phases: ${V1_PHASES.join(", ")}. ` +
+        `rerun_phases supports only runnable phases: ${RUNNABLE_PHASES.join(", ")}. ` +
         `Unsupported: ${unsupportedPhases.join(", ")}`,
     };
   }
 
   return [...phases].sort(
     (left, right) =>
-      V1_PHASES.indexOf(left as MethodologyPhase) -
-      V1_PHASES.indexOf(right as MethodologyPhase),
+      RUNNABLE_PHASES.indexOf(left as MethodologyPhase) -
+      RUNNABLE_PHASES.indexOf(right as MethodologyPhase),
   )[0] as MethodologyPhase;
 }
 
@@ -387,17 +409,29 @@ export function handleCreateEntity(args: {
   revision?: number;
 }): string {
   const runId = resolveToolRunId();
+  const validation = validateNewEntity(args.type, args.data);
+  if (!validation.ok) {
+    return JSON.stringify({
+      error: "Validation failed",
+      fieldErrors: validation.fieldErrors,
+    });
+  }
+
   const entity = createEntity(
     {
-      type: args.type as never,
+      type: validation.type,
       phase: args.phase as MethodologyPhase,
-      data: args.data as never,
+      data: validation.data,
       confidence: (args.confidence as never) ?? "medium",
       rationale: args.rationale ?? "",
       revision: args.revision ?? 1,
       stale: false,
     },
-    { source: "ai-edited", ...(runId ? { runId } : {}) },
+    {
+      source: "ai-edited",
+      logSource: "chat",
+      ...(runId ? { runId } : {}),
+    },
   );
   return JSON.stringify({
     created: [entity],
@@ -412,15 +446,25 @@ export function handleUpdateEntity(args: {
   updates: Record<string, unknown>;
 }): string {
   const runId = resolveToolRunId();
-  const staleBefore = new Set(getStaleEntityIds());
-  const result = updateEntity(args.id, args.updates as never, {
-    source: "ai-edited",
-    ...(runId ? { runId } : {}),
-  });
-
-  if (!result) {
+  const existing = getEntityById(args.id);
+  if (!existing) {
     return JSON.stringify({ error: `Entity "${args.id}" not found` });
   }
+
+  const validation = validateEntityUpdates(existing, args.updates);
+  if (!validation.ok) {
+    return JSON.stringify({
+      error: "Validation failed",
+      fieldErrors: validation.fieldErrors,
+    });
+  }
+
+  const staleBefore = new Set(getStaleEntityIds());
+  const result = updateEntity(args.id, validation.updates, {
+    source: "ai-edited",
+    logSource: "chat",
+    ...(runId ? { runId } : {}),
+  });
 
   const staleAfter = getStaleEntityIds();
   const newlyStale = staleAfter.filter((id) => !staleBefore.has(id));
@@ -504,6 +548,26 @@ export function handleAbortAnalysis(): string {
   return JSON.stringify({ aborted: true, runId: activeStatus.runId });
 }
 
+type ProductToolHandler = (
+  args: Record<string, unknown>,
+) => string | Promise<string>;
+
+export const PRODUCT_TOOL_HANDLERS = {
+  start_analysis: (args) => handleStartAnalysis(args as never),
+  get_analysis_status: () => handleGetAnalysisStatus(),
+  get_entity: (args) => handleGetEntity(args as never),
+  query_entities: (args) => handleQueryEntities(args as never),
+  query_relationships: (args) => handleQueryRelationships(args as never),
+  request_loopback: (args) => handleRequestLoopback(args as never),
+  create_entity: (args) => handleCreateEntity(args as never),
+  update_entity: (args) => handleUpdateEntity(args as never),
+  delete_entity: (args) => handleDeleteEntity(args as never),
+  create_relationship: (args) => handleCreateRelationship(args as never),
+  delete_relationship: (args) => handleDeleteRelationship(args as never),
+  rerun_phases: (args) => handleRerunPhases(args as never),
+  abort_analysis: () => handleAbortAnalysis(),
+} satisfies Record<string, ProductToolHandler>;
+
 export async function handleToolCall(
   name: string,
   args: Record<string, unknown> | undefined,
@@ -511,36 +575,12 @@ export async function handleToolCall(
   const toolArgs = (args ?? {}) as Record<string, unknown>;
 
   try {
-    switch (name) {
-      case "start_analysis":
-        return { text: await handleStartAnalysis(toolArgs as never), isError: false };
-      case "get_analysis_status":
-        return { text: handleGetAnalysisStatus(), isError: false };
-      case "get_entity":
-        return { text: handleGetEntity(toolArgs as never), isError: false };
-      case "query_entities":
-        return { text: handleQueryEntities(toolArgs as never), isError: false };
-      case "query_relationships":
-        return { text: handleQueryRelationships(toolArgs as never), isError: false };
-      case "request_loopback":
-        return { text: handleRequestLoopback(toolArgs as never), isError: false };
-      case "create_entity":
-        return { text: handleCreateEntity(toolArgs as never), isError: false };
-      case "update_entity":
-        return { text: handleUpdateEntity(toolArgs as never), isError: false };
-      case "delete_entity":
-        return { text: handleDeleteEntity(toolArgs as never), isError: false };
-      case "create_relationship":
-        return { text: handleCreateRelationship(toolArgs as never), isError: false };
-      case "delete_relationship":
-        return { text: handleDeleteRelationship(toolArgs as never), isError: false };
-      case "rerun_phases":
-        return { text: handleRerunPhases(toolArgs as never), isError: false };
-      case "abort_analysis":
-        return { text: handleAbortAnalysis(), isError: false };
-      default:
-        throw new Error(`Unknown tool: ${name}`);
+    const handler =
+      PRODUCT_TOOL_HANDLERS[name as keyof typeof PRODUCT_TOOL_HANDLERS];
+    if (!handler) {
+      throw new Error(`Unknown tool: ${name}`);
     }
+    return { text: await handler(toolArgs), isError: false };
   } catch (error) {
     return {
       text: `Error: ${error instanceof Error ? error.message : String(error)}`,

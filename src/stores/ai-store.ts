@@ -137,7 +137,17 @@ interface AIState {
   addMessage: (msg: ChatMessage) => void;
   updateMessageById: (
     id: string,
-    updates: Partial<Pick<ChatMessage, "content" | "isStreaming" | "attachments" | "toolStatus">>,
+    updates: Partial<
+      Pick<
+        ChatMessage,
+        | "content"
+        | "isStreaming"
+        | "attachments"
+        | "toolStatus"
+        | "status"
+        | "error"
+      >
+    >,
   ) => void;
   updateLastMessage: (content: string) => void;
   setStreaming: (v: boolean) => void;

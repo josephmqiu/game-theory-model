@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { loadCanvasKit } from "@/canvas/skia/skia-init";
 import { SkiaEngine, screenToScene } from "@/canvas/skia/skia-engine";
 import { setSkiaEngineRef } from "@/canvas/skia-engine-ref";
@@ -9,8 +9,11 @@ import { routeEdges } from "@/services/entity/edge-routing";
 import { bundleEdges } from "@/services/entity/edge-bundling";
 import type { EntityRect } from "@/services/entity/edge-routing";
 import { getEntityCardMetrics } from "@/services/entity/entity-card-metrics";
-import type { AnalysisEntity } from "@/types/entity";
+import { hasUnseenRevalidationUpdate } from "@/services/entity/revision-peek";
+import type { AnalysisEntity, ChallengeRecord } from "@/types/entity";
 import type { MethodologyPhase } from "@/types/methodology";
+
+const EMPTY_CHALLENGES: ChallengeRecord[] = [];
 
 // ── Props ──
 
@@ -70,30 +73,64 @@ export default function AnalysisCanvas({
   const entities = useEntityGraphStore((s) => s.analysis.entities);
   const relationships = useEntityGraphStore((s) => s.analysis.relationships);
   const layout = useEntityGraphStore((s) => s.layout);
+  const challenges = useEntityGraphStore(
+    (s) => s.analysis.challenges ?? EMPTY_CHALLENGES,
+  );
+  const viewedRevisionLogNos = useCanvasStore((s) => s.viewedRevisionLogNos);
 
   // ── Initialize Skia engine ──
+
+  // CanvasKit loads asynchronously; the graph-sync effect below bails while
+  // the engine is absent, so it MUST re-run once the engine comes up —
+  // otherwise a store that hydrated first (reopening a saved analysis)
+  // leaves the canvas permanently blank.
+  const [engineReady, setEngineReady] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     let disposed = false;
+    let reducedMotionMedia: MediaQueryList | null = null;
+    let reducedMotionListener:
+      | ((event: MediaQueryListEvent) => void)
+      | null = null;
 
     loadCanvasKit().then((ck) => {
       if (disposed) return;
       const engine = new SkiaEngine(ck);
       engine.init(canvas);
+      if (typeof window.matchMedia === "function") {
+        reducedMotionMedia = window.matchMedia(
+          "(prefers-reduced-motion: reduce)",
+        );
+        engine.setReducedMotion(reducedMotionMedia.matches);
+        reducedMotionListener = (event: MediaQueryListEvent) => {
+          engine.setReducedMotion(event.matches);
+        };
+        reducedMotionMedia.addEventListener?.("change", reducedMotionListener);
+      } else {
+        engine.setReducedMotion(false);
+      }
       engineRef.current = engine;
       setSkiaEngineRef(engine);
+      setEngineReady(true);
       // Trigger initial render
       engine.markDirty();
     });
 
     return () => {
       disposed = true;
+      if (reducedMotionMedia && reducedMotionListener) {
+        reducedMotionMedia.removeEventListener?.(
+          "change",
+          reducedMotionListener,
+        );
+      }
       setSkiaEngineRef(null);
       engineRef.current?.dispose();
       engineRef.current = null;
+      setEngineReady(false);
     };
   }, []);
 
@@ -135,6 +172,7 @@ export default function AnalysisCanvas({
 
     // Filter relationships to visible entities
     const visibleIds = new Set(visibleEntities.map((e) => e.id));
+    const analysisEntityIds = new Set(entities.map((e) => e.id));
     const visibleRelationships = relationships.filter(
       (r) => visibleIds.has(r.fromEntityId) && visibleIds.has(r.toEntityId),
     );
@@ -159,17 +197,45 @@ export default function AnalysisCanvas({
     const routed = routeEdges(entityRects, visibleRelationships);
     const bundled = bundleEdges(routed);
 
+    // Attention badges (3.1A updated-dot + 2.2A unviewed challenge)
+    const unviewedChallengeEntityIds = new Set(
+      challenges
+        .filter((record) => record.status === "resolved" && !record.viewed)
+        .map((record) => record.entityId),
+    );
+    const badges = new Map<
+      string,
+      { updated?: boolean; challenge?: boolean }
+    >();
+    for (const entity of visibleEntities) {
+      const updated = hasUnseenRevalidationUpdate(entity, viewedRevisionLogNos);
+      const challenge = unviewedChallengeEntityIds.has(entity.id);
+      if (updated || challenge) {
+        badges.set(entity.id, { updated, challenge });
+      }
+    }
+
     // Store render data on the engine — the render loop handles drawing
     engine.renderNodes = renderNodes;
     engine.spatialIndex.rebuild(renderNodes);
-    engine.entityMap.clear();
-    for (const e of visibleEntities) engine.entityMap.set(e.id, e);
+    engine.setEntities(visibleEntities, analysisEntityIds);
     engine.entityRelationships = visibleRelationships;
     engine.routedEdges = bundled;
     engine.searchHighlightIds = new Set(searchHighlight);
+    engine.entityBadges = badges;
 
     engine.markDirty();
-  }, [revision, entities, relationships, layout, phaseFilter, searchHighlight]);
+  }, [
+    engineReady,
+    revision,
+    entities,
+    relationships,
+    layout,
+    phaseFilter,
+    searchHighlight,
+    challenges,
+    viewedRevisionLogNos,
+  ]);
 
   // ── Pan (mouse drag) ──
 

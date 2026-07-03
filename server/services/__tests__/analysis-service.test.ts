@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PHASE_FIXTURES } from "../../__test-utils__/fixtures";
+import { RUNNABLE_PHASES } from "../../../shared/types/methodology";
 
 // ── Fixtures ──
 
@@ -792,9 +794,13 @@ describe("analysis-service", () => {
       );
 
       const { runPhase } = await importService();
-      const result = await runPhase("situational-grounding", "US-China trade war", {
-        onActivity,
-      });
+      const result = await runPhase(
+        "situational-grounding",
+        "US-China trade war",
+        {
+          onActivity,
+        },
+      );
 
       expect(result.success).toBe(true);
       const [, , , , options] = mockClaudeRunAnalysisPhase.mock.calls[0];
@@ -831,11 +837,11 @@ describe("analysis-service", () => {
       const result = await runPhase(
         "situational-grounding",
         "US-China trade war",
-        { provider: "copilot" },
+        { provider: "unknown-provider" },
       );
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain("Unknown provider: copilot");
+      expect(result.error).toContain("Unknown provider: unknown-provider");
       expect(mockClaudeRunAnalysisPhase).not.toHaveBeenCalled();
       expect(mockCodexRunAnalysisPhase).not.toHaveBeenCalled();
     });
@@ -1152,6 +1158,35 @@ describe("analysis-service", () => {
       expect(user).toContain('{"entities":[]}');
     });
 
+    it("injects challenge objections with the address-in-rationale instruction (9A)", async () => {
+      const { _buildPrompt } = await importService();
+      const challengeContext = [
+        "HUMAN CHALLENGES — a human analyst has objected to specific entities from this phase.",
+        '1. Entity abc123 ("Tariff fact"): The cited tariff rate is outdated.',
+      ].join("\n");
+      const { user } = _buildPrompt(
+        "situational-grounding",
+        "US-China trade war",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        challengeContext,
+      );
+
+      expect(user).toContain("HUMAN CHALLENGES");
+      expect(user).toContain("The cited tariff rate is outdated.");
+    });
+
+    it("omits the challenge block when no challenges exist", async () => {
+      const { _buildPrompt } = await importService();
+      const { user } = _buildPrompt(
+        "situational-grounding",
+        "US-China trade war",
+      );
+      expect(user).not.toContain("HUMAN CHALLENGES");
+    });
+
     it("builds prompt with quick effort guidance", async () => {
       const { _buildPrompt } = await importService();
       const { user } = _buildPrompt(
@@ -1170,7 +1205,9 @@ describe("analysis-service", () => {
       expect(user).toContain(
         "Avoid unnecessary branching or long-tail possibilities.",
       );
-      expect(user).toContain("Prefer concise outputs when uncertainty is high.");
+      expect(user).toContain(
+        "Prefer concise outputs when uncertainty is high.",
+      );
     });
 
     it("builds prompt with thorough effort guidance", async () => {
@@ -1237,6 +1274,25 @@ describe("analysis-service", () => {
   });
 
   describe("_validatePhaseOutput", () => {
+    it("accepts every test-mode fixture for the full runnable phase ladder", async () => {
+      const { _validatePhaseOutput } = await importService();
+
+      for (const phase of RUNNABLE_PHASES) {
+        const fixture = PHASE_FIXTURES[phase];
+        expect(fixture, `missing fixture for ${phase}`).toBeDefined();
+
+        const result = _validatePhaseOutput(
+          fixture,
+          phase as Parameters<typeof _validatePhaseOutput>[1],
+        );
+        const message = result.success ? phase : `${phase}: ${result.error}`;
+        expect(result.success, message).toBe(true);
+        expect(result.entities.length, `entities for ${phase}`).toBeGreaterThan(
+          0,
+        );
+      }
+    });
+
     it("rejects non-object input", async () => {
       const { _validatePhaseOutput } = await importService();
       const result = _validatePhaseOutput([1, 2, 3], "situational-grounding");

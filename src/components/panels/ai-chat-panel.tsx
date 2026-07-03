@@ -1,4 +1,11 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+  useLayoutEffect,
+} from "react";
 import {
   Send,
   Plus,
@@ -31,20 +38,23 @@ import * as analysisClient from "@/services/ai/analysis-client";
 import ClaudeLogo from "@/components/icons/claude-logo";
 import OpenAILogo from "@/components/icons/openai-logo";
 import OpenCodeLogo from "@/components/icons/opencode-logo";
-import CopilotLogo from "@/components/icons/copilot-logo";
 import ChatMessage from "./chat-message";
 import { useChatHandlers } from "./ai-chat-handlers";
 import { FixedChecklist } from "./ai-chat-checklist";
 import { buildAnalysisCompleteMessage } from "./ai-chat-lifecycle";
+import type { ScrollEvent } from "./scroll-state";
+import { useScrollEngine } from "./use-scroll-engine";
 
 export type AIChatMode = "analysis";
 export type AIChatPresentation = "floating" | "docked";
+
+const MESSAGE_CHUNK_SIZE = 200;
+let fallbackScrollRunCounter = 0;
 
 const PROVIDER_ICON: Record<AIProviderType, typeof ClaudeLogo> = {
   anthropic: ClaudeLogo,
   openai: OpenAILogo,
   opencode: OpenCodeLogo,
-  copilot: CopilotLogo,
 };
 
 const CORNER_CLASSES: Record<PanelCorner, string> = {
@@ -63,6 +73,14 @@ function resolveNextModel(
   if (models.some((m) => m.value === currentModel)) return currentModel;
   if (models.some((m) => m.value === preferredModel)) return preferredModel;
   return models[0].value;
+}
+
+function createScrollRunId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  fallbackScrollRunCounter += 1;
+  return `chat-scroll-run-${fallbackScrollRunCounter}`;
 }
 
 type AnalysisTerminalStatus = "completed" | "failed" | "cancelled";
@@ -100,6 +118,10 @@ function isToolMessage(id: string): boolean {
   return id.startsWith("tool-");
 }
 
+function isSessionExpiredMessage(id: string): boolean {
+  return id.startsWith("session-expired-");
+}
+
 type ToolStatus = "running" | "done" | "error";
 
 export function resolveToolStatus(
@@ -116,9 +138,11 @@ export function resolveToolStatus(
 function ToolStatusMessage({
   content,
   status,
+  reduceMotion,
 }: {
   content: string;
   status: ToolStatus;
+  reduceMotion?: boolean;
 }) {
   return (
     <div className="flex items-center gap-2 py-1 px-2 my-0.5">
@@ -131,7 +155,7 @@ function ToolStatusMessage({
         )}
       >
         {status === "running" ? (
-          <Loader2 size={12} className="animate-spin" />
+          <Loader2 size={12} className={cn(!reduceMotion && "animate-spin")} />
         ) : status === "done" ? (
           <Wrench size={12} />
         ) : (
@@ -189,7 +213,6 @@ export default function AIChatPanel({
   presentation?: AIChatPresentation;
 }) {
   const { t } = useTranslation();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ offsetX: number; offsetY: number } | null>(null);
@@ -226,6 +249,17 @@ export default function AIChatPanel({
   const analysisId = useEntityGraphStore((s) => s.analysis.id);
 
   const [analysisRunning, setAnalysisRunning] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(MESSAGE_CHUNK_SIZE);
+  const [liveAnnouncement, setLiveAnnouncement] = useState("");
+  const pendingSendAnchorRef = useRef<{ previousLength: number } | null>(null);
+  const mountedWithStreamRef = useRef(isStreaming);
+  const didApplyReopenAnchorRef = useRef(false);
+  const previousStreamingRef = useRef(isStreaming);
+  const stopRequestedRef = useRef(false);
+  const previousLatestMessageIdRef = useRef<string | undefined>(undefined);
+  const activeScrollRunRef = useRef<{ runId: string; seq: number } | null>(
+    null,
+  );
 
   const noAvailableModels = !isLoadingModels && availableModels.length === 0;
   const canUseModel = !isLoadingModels && availableModels.length > 0;
@@ -234,6 +268,78 @@ export default function AIChatPanel({
   const isAnalysisMode = mode === "analysis";
   const previousAnalysisIdRef = useRef<string | null>(null);
   const terminalNoticeKeysRef = useRef<Set<string>>(new Set());
+  const visibleMessages = useMemo(() => {
+    const start = Math.max(0, messages.length - visibleCount);
+    return messages.slice(start);
+  }, [messages, visibleCount]);
+  const hasEarlierMessages = messages.length > visibleMessages.length;
+  const latestAssistantMessage = useMemo(
+    () =>
+      [...messages]
+        .reverse()
+        .find(
+          (message) =>
+            message.role === "assistant" &&
+            !isToolMessage(message.id) &&
+            !isSessionExpiredMessage(message.id),
+        ),
+    [messages],
+  );
+  const latestAssistantMessageId = latestAssistantMessage?.id;
+  const latestMessage = messages[messages.length - 1];
+  const sequenceStreamEvent = useCallback(() => {
+    const run = activeScrollRunRef.current;
+    if (!run) return undefined;
+    run.seq += 1;
+    return { runId: run.runId, seq: run.seq };
+  }, []);
+  const scrollEngine = useScrollEngine({
+    messages,
+    latestAssistantMessageId,
+    sequenceStreamEvent,
+  });
+  const {
+    state: scrollState,
+    dispatch: dispatchScroll,
+    scrollContainerRef,
+    messageListRef,
+    bottomSentinelRef,
+    setMessageRef,
+    preserveAnchorForNextLayout,
+    requestMessageAnchor,
+    scrollMessageToViewportRatio,
+    focusMessage,
+    jumpToLatest,
+    isAtLiveEdgeNow,
+    prefersReducedMotion,
+  } = scrollEngine;
+  const lifecycle = scrollState.lifecycle;
+
+  const beginScrollRun = useCallback(() => {
+    const runId = createScrollRunId();
+    activeScrollRunRef.current = { runId, seq: 0 };
+    dispatchScroll({ type: "RUN_STARTED", runId });
+    return runId;
+  }, [dispatchScroll]);
+
+  const dispatchRunScroll = useCallback(
+    (event: ScrollEvent) => {
+      dispatchScroll({ ...event, ...sequenceStreamEvent() } as ScrollEvent);
+    },
+    [dispatchScroll, sequenceStreamEvent],
+  );
+
+  const endScrollRun = useCallback(() => {
+    activeScrollRunRef.current = null;
+  }, []);
+
+  const refocusMessageAfterLayout = useCallback(
+    (messageId: string | undefined) => {
+      if (!messageId) return;
+      requestAnimationFrame(() => focusMessage(messageId));
+    },
+    [focusMessage],
+  );
 
   // Poll analysis orchestrator running state
   useEffect(() => {
@@ -247,11 +353,23 @@ export default function AIChatPanel({
   // Enhanced stop handler: aborts analysis orchestrator if running,
   // otherwise falls through to regular chat stream abort
   const handleStop = useCallback(() => {
+    const messageIdToRefocus = latestAssistantMessageId;
+    preserveAnchorForNextLayout();
     if (analysisClient.isRunning()) {
       analysisClient.abort();
     }
+    stopRequestedRef.current = true;
     stopStreaming();
-  }, [stopStreaming]);
+    dispatchRunScroll({ type: "ABORTED", cause: "user-stop" });
+    setLiveAnnouncement("Stopped");
+    refocusMessageAfterLayout(messageIdToRefocus);
+  }, [
+    dispatchRunScroll,
+    latestAssistantMessageId,
+    preserveAnchorForNextLayout,
+    refocusMessageAfterLayout,
+    stopStreaming,
+  ]);
 
   // Completion notices now follow canonical run status instead of terminal progress events.
   useEffect(() => {
@@ -310,10 +428,6 @@ export default function AIChatPanel({
       previousStatus = nextStatus;
     });
   }, []);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   // Ensure model preference is restored from localStorage on page refresh.
   useEffect(() => {
@@ -390,6 +504,79 @@ export default function AIChatPanel({
   }, [isStreaming, isMinimized, toggleMinimize]);
 
   useEffect(() => {
+    const handleOffline = () => {
+      dispatchRunScroll({ type: "RECONNECTING" });
+    };
+    const handleOnline = () => {
+      dispatchRunScroll({ type: "RECONNECTED" });
+    };
+
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      dispatchRunScroll({ type: "RECONNECTING" });
+    }
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
+    return () => {
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [dispatchRunScroll]);
+
+  useEffect(() => {
+    if (isStreaming && !previousStreamingRef.current) {
+      if (!activeScrollRunRef.current) {
+        beginScrollRun();
+      }
+      dispatchRunScroll({ type: "STREAM_STARTED" });
+      setLiveAnnouncement("Response started");
+    }
+
+    if (!isStreaming && previousStreamingRef.current) {
+      if (latestAssistantMessage?.status === "error") {
+        dispatchRunScroll({ type: "ERRORED" });
+        setLiveAnnouncement("Error");
+      } else if (
+        stopRequestedRef.current ||
+        latestAssistantMessage?.status === "stopped"
+      ) {
+        dispatchRunScroll({ type: "ABORTED", cause: "user-stop" });
+        setLiveAnnouncement("Stopped");
+      } else {
+        dispatchRunScroll({ type: "STREAM_COMPLETED" });
+        setLiveAnnouncement("Response complete");
+      }
+      stopRequestedRef.current = false;
+      mountedWithStreamRef.current = false;
+      endScrollRun();
+    }
+
+    previousStreamingRef.current = isStreaming;
+  }, [
+    beginScrollRun,
+    dispatchRunScroll,
+    endScrollRun,
+    isStreaming,
+    latestAssistantMessage?.status,
+  ]);
+
+  useEffect(() => {
+    if (messages.length === 0) {
+      setVisibleCount(MESSAGE_CHUNK_SIZE);
+      dispatchScroll({ type: "REACHED_LIVE_EDGE" });
+    }
+  }, [dispatchScroll, messages.length]);
+
+  useEffect(() => {
+    if (!latestMessage) return;
+    if (previousLatestMessageIdRef.current === latestMessage.id) return;
+    previousLatestMessageIdRef.current = latestMessage.id;
+
+    if (isSessionExpiredMessage(latestMessage.id)) {
+      dispatchRunScroll({ type: "SESSION_EXPIRED" });
+    }
+  }, [dispatchRunScroll, latestMessage]);
+
+  useEffect(() => {
     if (!isAnalysisMode) return;
 
     const previousAnalysisId = previousAnalysisIdRef.current;
@@ -402,6 +589,7 @@ export default function AIChatPanel({
     // Only stop streaming when the active analysis changes.
     // Chat history is preserved so a scoping conversation can carry forward
     // into the analysis the user chooses to run.
+    void analysisClient.endChatSession(previousAnalysisId);
     stopStreaming();
   }, [analysisId, isAnalysisMode, stopStreaming]);
 
@@ -494,7 +682,7 @@ export default function AIChatPanel({
         setDragStyle({
           left: rect.left - container.left,
           top: rect.top - container.top,
-          width: 320,
+          width: 420,
           height: rect.height,
         });
       }
@@ -550,10 +738,114 @@ export default function AIChatPanel({
     e.currentTarget.releasePointerCapture(e.pointerId);
   }, []);
 
+  const handleSubmit = useCallback(() => {
+    if (!canSendMessage) return;
+
+    if (scrollState.mode === "FOLLOWING") {
+      pendingSendAnchorRef.current = { previousLength: messages.length };
+    } else {
+      preserveAnchorForNextLayout();
+    }
+
+    beginScrollRun();
+    setLiveAnnouncement("Response started");
+    void handleSend();
+  }, [
+    beginScrollRun,
+    canSendMessage,
+    handleSend,
+    messages.length,
+    preserveAnchorForNextLayout,
+    scrollState.mode,
+  ]);
+
+  useLayoutEffect(() => {
+    const pending = pendingSendAnchorRef.current;
+    if (!pending) return;
+
+    const newUserMessage = messages
+      .slice(pending.previousLength)
+      .find((message) => message.role === "user");
+    if (!newUserMessage) return;
+
+    requestMessageAnchor(newUserMessage.id, 0.24);
+    pendingSendAnchorRef.current = null;
+  }, [messages, requestMessageAnchor]);
+
+  useLayoutEffect(() => {
+    if (didApplyReopenAnchorRef.current || messages.length === 0) return;
+    didApplyReopenAnchorRef.current = true;
+
+    if (isStreaming) {
+      if (!activeScrollRunRef.current) {
+        beginScrollRun();
+      }
+      dispatchRunScroll({ type: "STREAM_STARTED" });
+    }
+
+    const lastUserMessage = [...messages]
+      .reverse()
+      .find((message) => message.role === "user");
+    if (!lastUserMessage) return;
+
+    requestAnimationFrame(() => {
+      scrollMessageToViewportRatio(lastUserMessage.id, 0.2);
+      dispatchScroll(
+        isAtLiveEdgeNow()
+          ? { type: "REACHED_LIVE_EDGE" }
+          : { type: "USER_SCROLL_UP" },
+      );
+    });
+  }, [
+    beginScrollRun,
+    dispatchRunScroll,
+    dispatchScroll,
+    isAtLiveEdgeNow,
+    isStreaming,
+    messages,
+    scrollMessageToViewportRatio,
+  ]);
+
+  const handleLoadEarlier = useCallback(() => {
+    preserveAnchorForNextLayout();
+    setVisibleCount((count) =>
+      Math.min(messages.length, count + MESSAGE_CHUNK_SIZE),
+    );
+  }, [messages.length, preserveAnchorForNextLayout]);
+
+  const resendLastUserBefore = useCallback(
+    (assistantMessageId: string) => {
+      if (!canUseModel || isStreaming) return;
+      const assistantIndex = messages.findIndex(
+        (message) => message.id === assistantMessageId,
+      );
+      const priorMessages =
+        assistantIndex >= 0 ? messages.slice(0, assistantIndex) : messages;
+      const lastUserMessage = [...priorMessages]
+        .reverse()
+        .find((message) => message.role === "user");
+      if (!lastUserMessage) return;
+
+      preserveAnchorForNextLayout();
+      beginScrollRun();
+      void handleSend(lastUserMessage.content);
+      refocusMessageAfterLayout(assistantMessageId);
+    },
+    [
+      beginScrollRun,
+      canUseModel,
+      handleSend,
+      isStreaming,
+      messages,
+      preserveAnchorForNextLayout,
+      refocusMessageAfterLayout,
+    ],
+  );
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      handleSubmit();
     }
   };
 
@@ -566,6 +858,24 @@ export default function AIChatPanel({
     ? t("ai.generating")
     : t("analysis.chatInputPlaceholder");
   const displayTitle = messages.length === 0 ? t("analysis.title") : chatTitle;
+  const showLifecycleStrip =
+    lifecycle === "streaming" ||
+    lifecycle === "reconnecting" ||
+    lifecycle === "aborted" ||
+    lifecycle === "errored" ||
+    analysisRunning;
+  const lifecycleStripText =
+    lifecycle === "reconnecting"
+      ? "Reconnecting..."
+      : lifecycle === "aborted"
+        ? scrollState.abortCause === "user-stop"
+          ? "Response stopped"
+          : "Response interrupted"
+        : lifecycle === "errored"
+          ? "Response failed"
+          : mountedWithStreamRef.current
+            ? "Still responding..."
+            : "Assistant responding...";
 
   return (
     <div
@@ -573,7 +883,7 @@ export default function AIChatPanel({
       className={cn(
         isDocked
           ? "flex h-full min-h-0 flex-col"
-          : "absolute z-50 flex w-[320px] flex-col overflow-hidden rounded-xl border border-border bg-card/95 shadow-2xl backdrop-blur-sm",
+          : "absolute z-50 flex w-[420px] flex-col overflow-hidden rounded-xl border border-border bg-card/95 shadow-2xl backdrop-blur-sm",
         !isDocked && !dragStyle && CORNER_CLASSES[panelCorner],
       )}
       style={isDocked ? undefined : { ...dragStyle, height: panelHeight }}
@@ -622,7 +932,10 @@ export default function AIChatPanel({
           {isStreaming && (
             <Loader2
               size={13}
-              className="animate-spin text-muted-foreground ml-2"
+              className={cn(
+                "text-muted-foreground ml-2",
+                !prefersReducedMotion && "animate-spin",
+              )}
             />
           )}
         </div>
@@ -636,42 +949,145 @@ export default function AIChatPanel({
         </Button>
       </div>
 
+      <div aria-live="polite" className="sr-only">
+        {liveAnnouncement}
+      </div>
+
       {/* --- Messages --- */}
-      <div
-        className={cn(
-          "min-h-0 flex-1 overflow-y-auto bg-background/80 px-3.5 py-3",
-          isDocked ? "rounded-xl" : "rounded-b-xl",
-        )}
-      >
-        {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 text-center">
-            <p className="max-w-[240px] text-xs text-muted-foreground">
-              {emptyStateLabel}
-            </p>
-            <p className="mt-3 max-w-[220px] text-[10px] text-muted-foreground/60">
-              {emptyStateHint}
-            </p>
-          </div>
-        ) : (
-          messages.map((msg) =>
-            isToolMessage(msg.id) ? (
-              <ToolStatusMessage
-                key={msg.id}
-                content={msg.content}
-                status={resolveToolStatus(msg, isStreaming)}
-              />
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={scrollContainerRef}
+          data-testid="chat-transcript"
+          tabIndex={0}
+          aria-label="Chat transcript"
+          className={cn(
+            "h-full min-h-0 overflow-y-auto bg-background/80 px-3.5 py-3 outline-none focus-visible:ring-1 focus-visible:ring-amber-500/60",
+            isDocked ? "rounded-xl" : "rounded-b-xl",
+          )}
+        >
+          <div ref={messageListRef} className="min-h-full">
+            {messages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <p className="text-xs font-semibold text-foreground">
+                  Game Theory Analyzer
+                </p>
+                <p className="mt-2 max-w-[260px] text-xs text-muted-foreground">
+                  {emptyStateLabel}
+                </p>
+                <p className="mt-2 max-w-[240px] text-[10px] text-muted-foreground/60">
+                  {emptyStateHint}
+                </p>
+                <div className="mt-4 flex w-full max-w-[280px] flex-col gap-1.5">
+                  {[
+                    "Map the players and incentives",
+                    "Scope a strategic conflict",
+                  ].map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => setInput(prompt)}
+                      className="rounded-md border border-border bg-card px-2.5 py-1.5 text-left text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ) : (
-              <ChatMessage
-                key={msg.id}
-                role={msg.role}
-                content={msg.content}
-                isStreaming={msg.isStreaming && isStreaming}
-                attachments={msg.attachments}
-              />
-            ),
-          )
+              <>
+                {hasEarlierMessages && (
+                  <div className="mb-3 flex justify-center">
+                    <button
+                      type="button"
+                      onClick={handleLoadEarlier}
+                      className="rounded-sm border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                    >
+                      Load earlier messages
+                    </button>
+                  </div>
+                )}
+                {visibleMessages.map((msg) => {
+                  const showUnreadDivider =
+                    scrollState.mode === "READING" &&
+                    scrollState.unreadCount > 0 &&
+                    scrollState.firstUnreadMessageId === msg.id;
+
+                  return (
+                    <div key={msg.id} className="contents">
+                      {showUnreadDivider && (
+                        <div className="my-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-amber-400">
+                          <div className="h-px flex-1 bg-amber-500/45" />
+                          <span>New since you scrolled</span>
+                          <div className="h-px flex-1 bg-amber-500/45" />
+                        </div>
+                      )}
+                      {isToolMessage(msg.id) ? (
+                        <article
+                          ref={setMessageRef(msg.id)}
+                          tabIndex={0}
+                          aria-label="Assistant tool status message"
+                          className="outline-none focus-visible:ring-1 focus-visible:ring-amber-500/60"
+                        >
+                          <ToolStatusMessage
+                            content={msg.content}
+                            status={resolveToolStatus(msg, isStreaming)}
+                            reduceMotion={prefersReducedMotion}
+                          />
+                        </article>
+                      ) : isSessionExpiredMessage(msg.id) ? (
+                        <article
+                          ref={setMessageRef(msg.id)}
+                          tabIndex={0}
+                          aria-label="Session expired notice"
+                          className="flex items-center gap-2 px-2 py-1 text-[11px] text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-amber-500/60"
+                        >
+                          <div className="h-px flex-1 bg-border/70" />
+                          <span className="shrink-0">{msg.content}</span>
+                          <div className="h-px flex-1 bg-border/70" />
+                        </article>
+                      ) : (
+                        <ChatMessage
+                          ref={setMessageRef(msg.id)}
+                          id={msg.id}
+                          role={msg.role}
+                          content={msg.content}
+                          timestamp={msg.timestamp}
+                          isStreaming={!!msg.isStreaming && isStreaming}
+                          attachments={msg.attachments}
+                          status={msg.status}
+                          error={msg.error}
+                          onContinue={
+                            msg.status === "stopped"
+                              ? () => resendLastUserBefore(msg.id)
+                              : undefined
+                          }
+                          onRetry={
+                            msg.status === "error"
+                              ? () => resendLastUserBefore(msg.id)
+                              : undefined
+                          }
+                          reduceMotion={prefersReducedMotion}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            )}
+            <div ref={bottomSentinelRef} aria-hidden="true" className="h-px" />
+          </div>
+        </div>
+        {scrollState.mode !== "FOLLOWING" && (
+          <button
+            type="button"
+            onClick={jumpToLatest}
+            className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-amber-500/40 bg-card/95 px-3 py-1 text-xs font-semibold text-amber-400 shadow-lg backdrop-blur hover:bg-amber-500/10"
+          >
+            {scrollState.unreadCount > 0
+              ? `${scrollState.unreadCount} new`
+              : "Jump to latest"}
+          </button>
         )}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* --- Fixed Checklist --- */}
@@ -684,6 +1100,23 @@ export default function AIChatPanel({
           isDocked ? "rounded-xl" : "rounded-b-xl",
         )}
       >
+        {showLifecycleStrip && (
+          <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3.5 py-1.5 text-[11px] text-muted-foreground">
+            <span>{lifecycleStripText}</span>
+            {(isStreaming || analysisRunning) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleStop}
+                title={t("ai.stopGenerating")}
+                className="h-6 shrink-0 rounded-md px-2 text-[11px] text-destructive hover:text-destructive"
+              >
+                <Square size={10} fill="currentColor" />
+                <span>Stop</span>
+              </Button>
+            )}
+          </div>
+        )}
         <textarea
           ref={inputRef}
           value={input}
@@ -738,33 +1171,21 @@ export default function AIChatPanel({
 
           <div className="flex items-center gap-1 w-full">
             <div className="ml-auto flex items-center gap-0.5">
-              {isStreaming || analysisRunning ? (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={handleStop}
-                  title={t("ai.stopGenerating")}
-                  className="shrink-0 rounded-lg h-7 w-7 text-destructive hover:text-destructive hover:scale-110 active:scale-95 transition-all duration-150"
-                >
-                  <Square size={10} fill="currentColor" />
-                </Button>
-              ) : (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => handleSend()}
-                  disabled={!canSendMessage}
-                  title={t("ai.sendMessage")}
-                  className={cn(
-                    "shrink-0 rounded-lg h-7 w-7 transition-all duration-150",
-                    canSendMessage
-                      ? "text-foreground hover:text-primary hover:scale-110 active:scale-95"
-                      : "text-muted-foreground/30",
-                  )}
-                >
-                  <Send size={13} />
-                </Button>
-              )}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={handleSubmit}
+                disabled={!canSendMessage}
+                title={t("ai.sendMessage")}
+                className={cn(
+                  "shrink-0 rounded-lg h-7 w-7 transition-all duration-150",
+                  canSendMessage
+                    ? "text-foreground hover:text-primary hover:scale-110 active:scale-95"
+                    : "text-muted-foreground/30",
+                )}
+              >
+                <Send size={13} />
+              </Button>
             </div>
           </div>
         </div>

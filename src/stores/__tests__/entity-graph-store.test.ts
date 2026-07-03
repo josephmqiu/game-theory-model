@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useEntityGraphStore } from "@/stores/entity-graph-store";
 import type { AnalysisEntity, AnalysisRelationship } from "@/types/entity";
 import type { MethodologyPhase } from "@/types/methodology";
-import { V3_PHASES } from "@/types/methodology";
+import { RUNNABLE_PHASES } from "@/types/methodology";
 import {
   ENTITY_CARD_LAYOUT,
   getEntityCardMetrics,
@@ -17,7 +17,6 @@ function makeEntity(
 ): AnalysisEntity {
   return {
     confidence: "medium",
-    source: "ai",
     rationale: "",
     revision: 0,
     stale: false,
@@ -65,10 +64,10 @@ describe("entity-graph-store", () => {
       expect(state.analysis.id).toBeTruthy();
       expect(state.analysis.entities).toEqual([]);
       expect(state.analysis.relationships).toEqual([]);
-      expect(state.analysis.phases).toHaveLength(V3_PHASES.length);
+      expect(state.analysis.phases).toHaveLength(RUNNABLE_PHASES.length);
 
       for (const ps of state.analysis.phases) {
-        expect(V3_PHASES).toContain(ps.phase);
+        expect(RUNNABLE_PHASES).toContain(ps.phase);
         expect(ps.status).toBe("pending");
         expect(ps.entityIds).toEqual([]);
       }
@@ -830,7 +829,7 @@ describe("entity-graph-store", () => {
       const state = useEntityGraphStore.getState();
       expect(
         state.analysis.phases.map((phaseState) => phaseState.phase),
-      ).toEqual(V3_PHASES);
+      ).toEqual(RUNNABLE_PHASES);
       expect(
         state.analysis.phases.find(
           (phaseState) => phaseState.phase === "historical-game",
@@ -903,8 +902,7 @@ describe("entity-graph-store", () => {
       expect(state.layout.e1).toEqual({ x: 999, y: 555, pinned: true });
       expect(state.layout.e2).toEqual({
         x: 100,
-        y:
-          getEntityCardMetrics("fact").height + ENTITY_CARD_LAYOUT.verticalGap,
+        y: getEntityCardMetrics("fact").height + ENTITY_CARD_LAYOUT.verticalGap,
         pinned: false,
       });
     });

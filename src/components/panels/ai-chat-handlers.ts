@@ -9,6 +9,7 @@ import type { AIStreamChunk } from "@/services/ai/ai-types";
 import { CHAT_STREAM_THINKING_CONFIG } from "@/services/ai/ai-runtime-config";
 import type { AIProviderType } from "@/types/agent-settings";
 import type { ChatEvent } from "@/services/ai/chat-events";
+import { buildSessionExpiredMessage } from "./ai-chat-lifecycle";
 
 // ---------------------------------------------------------------------------
 // Normalized internal chunk — both legacy AIStreamChunk and new ChatEvent
@@ -21,6 +22,7 @@ type NormalizedChunk =
   | { kind: "tool_start"; toolName: string }
   | { kind: "tool_result"; toolName: string; output: unknown }
   | { kind: "tool_error"; toolName: string; error: string }
+  | { kind: "session_expired" }
   | { kind: "done" }
   | { kind: "error"; content: string };
 
@@ -47,6 +49,9 @@ function normalizeChunk(
   }
   if (t === "ping") {
     return null; // handled by streamChat internally
+  }
+  if (t === "session_expired") {
+    return { kind: "session_expired" };
   }
 
   // --- New ChatEvent types ---
@@ -197,7 +202,7 @@ export function useChatHandlers() {
   const availableModels = useAIStore((s) => s.availableModels);
   const isLoadingModels = useAIStore((s) => s.isLoadingModels);
   const addMessage = useAIStore((s) => s.addMessage);
-  const updateLastMessage = useAIStore((s) => s.updateLastMessage);
+  const updateMessageById = useAIStore((s) => s.updateMessageById);
   const setStreaming = useAIStore((s) => s.setStreaming);
 
   const handleSend = useCallback(
@@ -248,6 +253,7 @@ export function useChatHandlers() {
         ?.provider as AIProviderType | undefined;
 
       let accumulated = "";
+      let streamError: string | null = null;
       const abortController = new AbortController();
       useAIStore.getState().setAbortController(abortController);
 
@@ -258,6 +264,7 @@ export function useChatHandlers() {
       try {
         const context = buildEntityGraphContext();
         const systemPrompt = `${buildChatSystemPrompt()}\n\n${context}`;
+        const sessionKey = useEntityGraphStore.getState().analysis.id;
 
         const chatHistory = messages.map((message) => ({
           role: message.role,
@@ -278,7 +285,7 @@ export function useChatHandlers() {
           systemPrompt,
           trimmedHistory,
           model,
-          CHAT_STREAM_THINKING_CONFIG,
+          { ...CHAT_STREAM_THINKING_CONFIG, sessionKey },
           currentProvider,
           abortController.signal,
         )) {
@@ -289,9 +296,12 @@ export function useChatHandlers() {
             case "thinking": {
               chatThinking += chunk.content;
               const thinkingStep = `<step title="Thinking">${chatThinking}</step>`;
-              updateLastMessage(
-                thinkingStep + (accumulated ? `\n${accumulated}` : ""),
-              );
+              // Target the assistant message by id, not "last message": a
+              // session_expired divider or tool row appended mid-stream would
+              // otherwise steal the streamed text (mirrors the error case).
+              updateMessageById(assistantMsg.id, {
+                content: thinkingStep + (accumulated ? `\n${accumulated}` : ""),
+              });
               break;
             }
             case "text": {
@@ -299,7 +309,9 @@ export function useChatHandlers() {
               const thinkingPrefix = chatThinking
                 ? `<step title="Thinking">${chatThinking}</step>\n`
                 : "";
-              updateLastMessage(thinkingPrefix + accumulated);
+              updateMessageById(assistantMsg.id, {
+                content: thinkingPrefix + accumulated,
+              });
               break;
             }
             case "tool_start": {
@@ -355,9 +367,18 @@ export function useChatHandlers() {
               }
               break;
             }
+            case "session_expired": {
+              addMessage(buildSessionExpiredMessage());
+              break;
+            }
             case "error": {
+              streamError = chunk.content;
               accumulated += `\n\n**Error:** ${chunk.content}`;
-              updateLastMessage(accumulated);
+              updateMessageById(assistantMsg.id, {
+                content: accumulated,
+                status: "error",
+                error: chunk.content,
+              });
               break;
             }
             case "done":
@@ -370,8 +391,13 @@ export function useChatHandlers() {
           const errMsg =
             error instanceof Error ? error.message : "Unknown error";
           console.error("[chat] stream-error:", errMsg);
+          streamError = errMsg;
           accumulated = `**Error:** ${errMsg}`;
-          updateLastMessage(accumulated);
+          updateMessageById(assistantMsg.id, {
+            content: accumulated,
+            status: "error",
+            error: errMsg,
+          });
         }
       } finally {
         useAIStore.getState().setAbortController(null);
@@ -410,6 +436,16 @@ export function useChatHandlers() {
         if (lastMessage) {
           lastMessage.content = accumulated;
           lastMessage.isStreaming = false;
+          if (streamError) {
+            lastMessage.status = "error";
+            lastMessage.error = streamError;
+          } else if (abortController.signal.aborted) {
+            lastMessage.status = "stopped";
+            lastMessage.error = undefined;
+          } else {
+            lastMessage.status = undefined;
+            lastMessage.error = undefined;
+          }
         }
         return { messages: nextMessages };
       });
@@ -422,7 +458,7 @@ export function useChatHandlers() {
       messages,
       model,
       addMessage,
-      updateLastMessage,
+      updateMessageById,
       setStreaming,
     ],
   );

@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatEvent } from "../../../../shared/types/events";
 import { EventEmitter } from "node:events";
 
@@ -39,7 +32,9 @@ vi.mock("node:child_process", () => ({
         const data = args[0] as string;
         try {
           const parsed = JSON.parse(data.trim());
-          queueMicrotask(() => handler(parsed.method, parsed.id, parsed.params));
+          queueMicrotask(() =>
+            handler(parsed.method, parsed.id, parsed.params),
+          );
         } catch {
           // ignore non-JSON writes
         }
@@ -81,6 +76,12 @@ vi.mock("../../../utils/mcp-server-manager", () => ({
 
 function emitResponse(id: number, result: unknown) {
   const line = JSON.stringify({ jsonrpc: "2.0", id, result }) + "\n";
+  mockChild.stdout.emit("data", Buffer.from(line));
+}
+
+function emitErrorResponse(id: number, code: number, message: string) {
+  const line =
+    JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } }) + "\n";
   mockChild.stdout.emit("data", Buffer.from(line));
 }
 
@@ -295,7 +296,9 @@ describe("codex-adapter", () => {
         }
         if (method === "turn/start" && id !== undefined) {
           emitTurnStartResponse(id, "turn-chat-1");
-          queueMicrotask(() => emitTurnCompleted("thread-chat-456", "turn-chat-1"));
+          queueMicrotask(() =>
+            emitTurnCompleted("thread-chat-456", "turn-chat-1"),
+          );
         }
       });
 
@@ -305,17 +308,93 @@ describe("codex-adapter", () => {
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
       const threadStartReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes('"thread/start"'))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes('"thread/start"'))!
+          .trim(),
       );
       expect(threadStartReq.params.developerInstructions).toBe("system");
 
       const turnStartReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes('"turn/start"'))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes('"turn/start"'))!
+          .trim(),
       );
       expect(turnStartReq.params.threadId).toBe("thread-chat-456");
       expect(turnStartReq.params.input).toEqual([
         { type: "text", text: "hello" },
       ]);
+    });
+
+    it("reuses an existing thread without starting a new one", async () => {
+      const { streamChat, _resetConnection } = await import("../codex-adapter");
+      _resetConnection();
+      const onThreadId = vi.fn();
+
+      setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id, "turn-reused-1");
+          queueMicrotask(() =>
+            emitTurnCompleted("thread-existing", "turn-reused-1"),
+          );
+        }
+      });
+
+      for await (const _event of streamChat("hello", "system", "gpt-4o", {
+        existingThreadId: "thread-existing",
+        onThreadId,
+      })) {
+        // drain
+      }
+
+      expect(onThreadId).toHaveBeenCalledWith("thread-existing");
+      const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
+      expect(calls.some((call) => call[0].includes('"thread/start"'))).toBe(
+        false,
+      );
+      const turnStartReq = JSON.parse(
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes('"turn/start"'))!
+          .trim(),
+      );
+      expect(turnStartReq.params.threadId).toBe("thread-existing");
+    });
+
+    it("classifies unknown existing-thread errors as expired thread errors", async () => {
+      const { streamChat, _resetConnection, isCodexThreadExpiredError } =
+        await import("../codex-adapter");
+      _resetConnection();
+
+      setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitErrorResponse(id, -32000, "Thread not found: thread-missing");
+        }
+      });
+
+      let caught: unknown;
+      try {
+        for await (const _event of streamChat("hello", "system", "gpt-4o", {
+          existingThreadId: "thread-missing",
+        })) {
+          // drain
+        }
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(isCodexThreadExpiredError(caught)).toBe(true);
+      expect(caught).toBeInstanceOf(Error);
+      expect((caught as Error).message).toContain("codex-thread-expired:");
     });
 
     it("auto-approves MCP tool calls", async () => {
@@ -353,7 +432,10 @@ describe("codex-adapter", () => {
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
       const approvalReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes("item/tool/approveUserInput"))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes("item/tool/approveUserInput"))!
+          .trim(),
       );
       expect(approvalReq.params.approved).toBe(true);
       expect(approvalReq.params.id).toBe("approval-1");
@@ -405,7 +487,10 @@ describe("codex-adapter", () => {
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
       const rejectionReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes("respondApproval"))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes("respondApproval"))!
+          .trim(),
       );
       expect(rejectionReq.params.approved).toBe(false);
       expect(rejectionReq.params.reason).toBe(
@@ -449,7 +534,10 @@ describe("codex-adapter", () => {
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
       const interruptReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes("turn/interrupt"))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes("turn/interrupt"))!
+          .trim(),
       );
       expect(interruptReq.params).toEqual({
         threadId: "thread-1",
@@ -493,7 +581,9 @@ describe("codex-adapter", () => {
         if (event.type === "error") break;
       }
 
-      expect(events.filter((event) => event.type === "tool_call_start")).toHaveLength(50);
+      expect(
+        events.filter((event) => event.type === "tool_call_start"),
+      ).toHaveLength(50);
       const errorEvent = events.find((event) => event.type === "error") as
         | { type: "error"; message: string }
         | undefined;
@@ -501,7 +591,10 @@ describe("codex-adapter", () => {
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
       const interruptReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes("turn/interrupt"))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes("turn/interrupt"))!
+          .trim(),
       );
       expect(interruptReq.params).toEqual({
         threadId: "thread-1",
@@ -593,13 +686,62 @@ describe("codex-adapter", () => {
         type: "text_delta",
         content: "correct thread",
       });
-      expect(textEvents).toContainEqual({
+      // Once this turn's id is known, unscoped item deltas (no threadId/turnId)
+      // are dropped too — they are the cross-stream vector between concurrent
+      // chat turns sharing the app-server connection.
+      expect(textEvents).not.toContainEqual({
         type: "text_delta",
         content: " no filter",
       });
       expect(textEvents).not.toContainEqual({
         type: "text_delta",
         content: "wrong thread",
+      });
+    });
+
+    it("ignores notifications with the same threadId but a different turnId", async () => {
+      const { streamChat, _resetConnection } = await import("../codex-adapter");
+      _resetConnection();
+
+      setAutoResponder((method, id) => {
+        if (respondToChatConfig(method, id)) return;
+        if (method === "initialize" && id !== undefined) {
+          emitResponse(id, { protocolVersion: "1.0" });
+        }
+        if (method === "thread/start" && id !== undefined) {
+          emitThreadStartResponse(id);
+        }
+        if (method === "turn/start" && id !== undefined) {
+          emitTurnStartResponse(id, "turn-new");
+          queueMicrotask(() => {
+            emitNotification("item/agentMessage/delta", {
+              delta: "old turn",
+              threadId: "thread-1",
+              turnId: "turn-old",
+            });
+            emitNotification("item/agentMessage/delta", {
+              delta: "new turn",
+              threadId: "thread-1",
+              turnId: "turn-new",
+            });
+            emitTurnCompleted("thread-1", "turn-new");
+          });
+        }
+      });
+
+      const events: ChatEvent[] = [];
+      for await (const event of streamChat("hello", "system", "gpt-4o")) {
+        events.push(event);
+      }
+
+      const textEvents = events.filter((event) => event.type === "text_delta");
+      expect(textEvents).toContainEqual({
+        type: "text_delta",
+        content: "new turn",
+      });
+      expect(textEvents).not.toContainEqual({
+        type: "text_delta",
+        content: "old turn",
       });
     });
   });
@@ -664,53 +806,17 @@ describe("codex-adapter", () => {
 
       expect(result).toEqual(expected);
 
-      expect(mockInstallMcpServer).toHaveBeenNthCalledWith(
-        1,
-        expect.any(String),
-        ["/mock/dist/mcp-stdio-proxy.cjs"],
-        expect.objectContaining({
-          enabledTools: [
-            "get_entity",
-            "query_entities",
-            "query_relationships",
-            "request_loopback",
-          ],
-        }),
-      );
-      expect(mockInstallMcpServer).toHaveBeenNthCalledWith(
-        2,
-        expect.any(String),
-        ["/mock/dist/mcp-stdio-proxy.cjs"],
-        expect.objectContaining({
-          enabledTools: [
-            "get_entity",
-            "query_entities",
-            "query_relationships",
-            "request_loopback",
-            "start_analysis",
-            "get_analysis_status",
-            "create_entity",
-            "update_entity",
-            "delete_entity",
-            "create_relationship",
-            "delete_relationship",
-            "rerun_phases",
-            "abort_analysis",
-          ],
-        }),
-      );
+      // Decision 10: registration happens at explicit setup, never during
+      // phases — zero config writes on the run path.
+      expect(mockInstallMcpServer).not.toHaveBeenCalled();
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
-      const reloadReq = JSON.parse(
-        calls
-          .map((call) => call[0])
-          .find((call) => call.includes('"config/mcpServer/reload"'))!
-          .trim(),
-      );
-      expect(reloadReq.params).toEqual({});
 
       const turnStartReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes("outputSchema"))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes("outputSchema"))!
+          .trim(),
       );
       expect(turnStartReq.params.outputSchema).toEqual(schema);
       expect(turnStartReq.params.input).toEqual([
@@ -769,27 +875,36 @@ describe("codex-adapter", () => {
       await runAnalysisPhase("test", "system", "gpt-4o", {});
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
-      const reloadIndex = calls.findIndex((call) =>
-        call[0].includes('"config/mcpServer/reload"'),
-      );
       const listIndex = calls.findIndex((call) =>
         call[0].includes('"mcpServerStatus/list"'),
       );
       const threadStartIndex = calls.findIndex((call) =>
         call[0].includes('"thread/start"'),
       );
-      expect(reloadIndex).toBeGreaterThan(-1);
-      expect(listIndex).toBeGreaterThan(reloadIndex);
+      // Registration is verified (read-only) before the thread starts; no
+      // config write or reload happens on the run path (decision 10).
+      expect(listIndex).toBeGreaterThan(-1);
       expect(threadStartIndex).toBeGreaterThan(listIndex);
+      expect(
+        calls.findIndex((call) =>
+          call[0].includes('"config/mcpServer/reload"'),
+        ),
+      ).toBe(-1);
 
       const threadStartReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes('"thread/start"'))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes('"thread/start"'))!
+          .trim(),
       );
       expect(threadStartReq.params.developerInstructions).toBe("system");
       expect(threadStartReq.params.config).toEqual({ web_search: "live" });
 
       const turnStartReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes('"turn/start"'))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes('"turn/start"'))!
+          .trim(),
       );
       expect(turnStartReq.params.threadId).toBe("thread-abc-123");
       expect(turnStartReq.params.input).toEqual([
@@ -845,13 +960,22 @@ describe("codex-adapter", () => {
         }
       });
 
-      await runAnalysisPhase("test", "system", "gpt-4o", {}, {
-        webSearch: false,
-      });
+      await runAnalysisPhase(
+        "test",
+        "system",
+        "gpt-4o",
+        {},
+        {
+          webSearch: false,
+        },
+      );
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
       const threadStartReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes('"thread/start"'))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes('"thread/start"'))!
+          .trim(),
       );
       expect(threadStartReq.params.config).toEqual({ web_search: "disabled" });
     });
@@ -909,9 +1033,15 @@ describe("codex-adapter", () => {
         }
       });
 
-      await runAnalysisPhase("analyze this", "system", "gpt-4o", {}, {
-        onActivity,
-      });
+      await runAnalysisPhase(
+        "analyze this",
+        "system",
+        "gpt-4o",
+        {},
+        {
+          onActivity,
+        },
+      );
 
       expect(onActivity).toHaveBeenCalledWith({
         kind: "web-search",
@@ -972,9 +1102,15 @@ describe("codex-adapter", () => {
         }
       });
 
-      await runAnalysisPhase("analyze this", "system", "gpt-4o", {}, {
-        onActivity,
-      });
+      await runAnalysisPhase(
+        "analyze this",
+        "system",
+        "gpt-4o",
+        {},
+        {
+          onActivity,
+        },
+      );
 
       expect(onActivity).toHaveBeenCalledWith({
         kind: "web-search",
@@ -1033,9 +1169,15 @@ describe("codex-adapter", () => {
         }
       });
 
-      await runAnalysisPhase("analyze this", "system", "gpt-4o", {}, {
-        onActivity,
-      });
+      await runAnalysisPhase(
+        "analyze this",
+        "system",
+        "gpt-4o",
+        {},
+        {
+          onActivity,
+        },
+      );
 
       expect(onActivity).toHaveBeenCalledWith({
         kind: "tool",
@@ -1125,7 +1267,10 @@ describe("codex-adapter", () => {
 
       const calls = mockChild.stdin.write.mock.calls as unknown as string[][];
       const approvalReq = JSON.parse(
-        calls.map((call) => call[0]).find((call) => call.includes("item/tool/approveUserInput"))!.trim(),
+        calls
+          .map((call) => call[0])
+          .find((call) => call.includes("item/tool/approveUserInput"))!
+          .trim(),
       );
       expect(approvalReq.params.approved).toBe(true);
       expect(approvalReq.params.reason).toBe(
@@ -1415,13 +1560,19 @@ describe("codex-adapter", () => {
       });
 
       await expect(
-        runAnalysisPhase("analyze", "system", "gpt-4o", {}, {
-          signal: controller.signal,
-        }),
+        runAnalysisPhase(
+          "analyze",
+          "system",
+          "gpt-4o",
+          {},
+          {
+            signal: controller.signal,
+          },
+        ),
       ).rejects.toThrow(/^Aborted$/);
     });
 
-    it("throws when restoring the chat MCP surface fails", async () => {
+    it("reloads once and fails with setup guidance when the MCP server is not registered", async () => {
       const { runAnalysisPhase, _resetConnection } =
         await import("../codex-adapter");
       _resetConnection();
@@ -1433,59 +1584,25 @@ describe("codex-adapter", () => {
         }
         if (method === "config/mcpServer/reload" && id !== undefined) {
           reloadCount += 1;
-          if (reloadCount === 1) {
-            emitResponse(id, { ok: true });
-            return;
-          }
-          const line =
-            JSON.stringify({
-              jsonrpc: "2.0",
-              id,
-              error: {
-                code: -32000,
-                message: "restore failed",
-              },
-            }) + "\n";
-          mockChild.stdout.emit("data", Buffer.from(line));
+          emitResponse(id, { ok: true });
         }
         if (method === "mcpServerStatus/list" && id !== undefined) {
-          emitResponse(id, {
-            data: [
-              {
-                name: "game_theory_analyzer_mcp",
-                tools: {
-                  get_entity: {},
-                  query_entities: {},
-                  query_relationships: {},
-                  request_loopback: {},
-                },
-              },
-            ],
-          });
-        }
-        if (method === "thread/start" && id !== undefined) {
-          emitThreadStartResponse(id);
-        }
-        if (method === "turn/start" && id !== undefined) {
-          emitTurnStartResponse(id);
-          queueMicrotask(() => {
-            emitItemCompleted({
-              id: "agent-msg-restore",
-              type: "agentMessage",
-              text: '{"entities":[]}',
-              phase: "final_answer",
-            });
-            emitTurnCompleted();
-          });
+          // Registration missing — the user never ran setup
+          emitResponse(id, { data: [] });
         }
       });
 
       await expect(
         runAnalysisPhase("analyze", "system", "gpt-4o", {}),
-      ).rejects.toThrow(/restore failed/);
-    });
+      ).rejects.toThrow(/not registered with Codex.*Agent Settings/s);
 
-    it("keeps the primary turn failure when MCP restore also fails", async () => {
+      // The adapter attempts ONE config reload (a read on Codex's side) in
+      // case registration landed after the app-server booted — never more.
+      expect(reloadCount).toBe(1);
+      expect(mockInstallMcpServer).not.toHaveBeenCalled();
+    }, 15_000);
+
+    it("keeps the primary turn failure as the thrown error", async () => {
       const { runAnalysisPhase, _resetConnection } =
         await import("../codex-adapter");
       _resetConnection();

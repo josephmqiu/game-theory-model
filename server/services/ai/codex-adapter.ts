@@ -5,10 +5,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { filterCodexEnv } from "../../utils/codex-client";
 import { serverLog, serverWarn } from "../../utils/ai-logger";
-import { resolveMcpProxyScript } from "../../utils/mcp-server-manager";
 import type { ChatEvent } from "../../../shared/types/events";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
-import { CODEX_MCP_SERVER_NAME, installMcpServer } from "./codex-config";
+import { CODEX_MCP_SERVER_NAME } from "./codex-config";
 import { ANALYSIS_TOOL_NAMES, CHAT_TOOL_NAMES } from "./tool-surfaces";
 import type { AnalysisActivityCallback } from "./analysis-activity";
 
@@ -20,6 +19,10 @@ export interface StreamChatOptions {
   timeoutMs?: number;
   /** Abort signal — when aborted, sends turn/interrupt and ends the stream */
   signal?: AbortSignal;
+  /** Existing Codex app-server thread id to reuse for this chat session. */
+  existingThreadId?: string;
+  /** Called with the Codex app-server thread id used for this turn. */
+  onThreadId?: (id: string) => void;
 }
 
 export interface AnalysisRunOptions {
@@ -48,6 +51,27 @@ interface JsonRpcResponse {
   id: number;
   result?: unknown;
   error?: { code: number; message: string; data?: unknown };
+}
+
+export class CodexThreadExpiredError extends Error {
+  readonly threadId: string;
+
+  constructor(threadId: string, causeMessage: string) {
+    super(`codex-thread-expired: ${causeMessage}`);
+    this.name = "CodexThreadExpiredError";
+    this.threadId = threadId;
+  }
+}
+
+export function isCodexThreadExpiredError(
+  error: unknown,
+): error is CodexThreadExpiredError {
+  return (
+    error instanceof CodexThreadExpiredError ||
+    (error instanceof Error &&
+      (error.name === "CodexThreadExpiredError" ||
+        error.message.startsWith("codex-thread-expired:")))
+  );
 }
 
 // ── JSON-RPC client ──
@@ -110,6 +134,13 @@ function extractTurnId(result: unknown): string {
 function getTurnIdFromParams(params: Record<string, unknown>): string | null {
   const turn = asRecord(params.turn);
   return typeof turn?.id === "string" ? turn.id : null;
+}
+
+function getNotificationTurnId(params: Record<string, unknown>): string | null {
+  if (typeof params.turnId === "string" && params.turnId.length > 0) {
+    return params.turnId;
+  }
+  return getTurnIdFromParams(params);
 }
 
 function getTurnErrorMessage(params: Record<string, unknown>): string | null {
@@ -199,13 +230,16 @@ function normalizeAnalysisError(error: unknown): Error {
   if (message === "Aborted") {
     return new Error("Aborted");
   }
-  if (
-    message.startsWith("Codex turn failed:") ||
-    message.startsWith("Failed to restore chat MCP config:")
-  ) {
+  if (message.startsWith("Codex turn failed:")) {
     return error instanceof Error ? error : new Error(message);
   }
   return new Error(buildCodexTurnFailureMessage(message));
+}
+
+function isUnknownThreadErrorMessage(message: string): boolean {
+  return /thread.*(not found|unknown|missing|invalid|expired|does not exist)|no such thread/i.test(
+    message,
+  );
 }
 
 function logSendRequestFailure(
@@ -322,42 +356,9 @@ function handleIncomingLine(conn: AppServerConnection, line: string): void {
 
 const ANALYSIS_TIMEOUT_MS = analysisRuntimeConfig.codex.analysisTimeoutMs;
 
-function resolveMcpServerCommand(): string {
-  // In Electron, process.execPath is the Electron binary (GUI app), not a
-  // Node.js runtime. Codex needs a real Node/Bun binary to spawn the MCP
-  // server subprocess. Fall back to "node" (on PATH) in Electron production.
-  if (process.env.ELECTRON_RESOURCES_PATH) return "node";
-  return process.release?.name === "node" ? process.execPath : "node";
-}
-
-function installToolSurface(
-  toolNames: readonly string[],
-  runId?: string,
-): void {
-  const env: Record<string, string> = {};
-  if (runId) {
-    env.ANALYSIS_RUN_ID = runId;
-  }
-  if (process.env.MCP_PORT?.trim()) {
-    env.MCP_PORT = process.env.MCP_PORT.trim();
-  }
-
-  installMcpServer(resolveMcpServerCommand(), [resolveMcpProxyScript()], {
-    enabledTools: [...toolNames],
-    env: Object.keys(env).length > 0 ? env : undefined,
-  });
-  serverLog(runId, "codex-adapter", "mcp-config-written", {
-    toolNames,
-  });
-}
-
-function installAnalysisToolSurface(runId?: string): void {
-  installToolSurface(ANALYSIS_TOOL_NAMES, runId);
-}
-
-function installChatToolSurface(): void {
-  installToolSurface(CHAT_TOOL_NAMES);
-}
+// The MCP server registration is owned by explicit setup (decision 10):
+// `codex mcp add <name> --url` at install time via codex-mcp-registration.ts.
+// Runs perform ZERO config writes — they only verify the registration below.
 
 async function reloadMcpServerConfig(
   conn: AppServerConnection,
@@ -372,12 +373,13 @@ async function ensureConfiguredMcpServerAvailable(
   toolNames: readonly string[],
   runId?: string,
 ): Promise<void> {
-  // Retry with backoff: config/mcpServer/reload may return before Codex
-  // finishes initializing the MCP subprocess (initialize + tools/list).
+  // Retry with backoff: the app-server may still be initializing the MCP
+  // connection (initialize + tools/list) when the first run starts.
   const MAX_ATTEMPTS = 5;
   const RETRY_DELAYS = [0, 300, 600, 1200, 2400];
 
   let lastError: Error | null = null;
+  let reloadAttempted = false;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     if (attempt > 0) {
@@ -422,6 +424,19 @@ async function ensureConfiguredMcpServerAvailable(
       .find((entry) => entry?.name === CODEX_MCP_SERVER_NAME);
 
     if (!target) {
+      // Registration may have happened after this app-server booted (e.g.
+      // the user just clicked install in Agent Settings). One reload —
+      // a config READ on Codex's side — before continuing to retry.
+      if (!reloadAttempted) {
+        reloadAttempted = true;
+        try {
+          await reloadMcpServerConfig(conn, runId);
+        } catch (err) {
+          serverWarn(runId, "codex-adapter", "mcp-config-reload-failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
       if (attempt < MAX_ATTEMPTS - 1) {
         serverLog(runId, "codex-adapter", "mcp-status-retry", {
           attempt: attempt + 1,
@@ -430,7 +445,10 @@ async function ensureConfiguredMcpServerAvailable(
         });
         continue;
       }
-      throw new Error(`MCP server "${CODEX_MCP_SERVER_NAME}" is not loaded`);
+      throw new Error(
+        `MCP server "${CODEX_MCP_SERVER_NAME}" is not registered with Codex. ` +
+          "Open Agent Settings and install the Codex CLI integration.",
+      );
     }
 
     const availableTools = Object.keys(asRecord(target.tools) ?? {});
@@ -617,12 +635,9 @@ export async function* streamChat(
   const runId = options?.runId;
   const timeoutMs = options?.timeoutMs ?? CHAT_TIMEOUT_MS;
 
-  installChatToolSurface();
-
   let conn: AppServerConnection;
   try {
     conn = await startAppServer(runId);
-    await reloadMcpServerConfig(conn, runId);
     await ensureConfiguredMcpServerAvailable(conn, CHAT_TOOL_NAMES, runId);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -634,25 +649,33 @@ export async function* streamChat(
     return;
   }
 
-  // Create a thread
+  // Create or reuse a thread
   let threadId: string;
   let turnId: string | null = null;
-  try {
-    const threadResult = await sendRequest(conn, "thread/start", {
-      developerInstructions: systemPrompt,
-      model,
-    });
-    threadId = extractThreadId(threadResult);
+  if (options?.existingThreadId) {
+    threadId = options.existingThreadId;
     currentThreadId = threadId;
-    serverLog(runId, "codex-adapter", "thread-started", { threadId });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    yield {
-      type: "error",
-      message: `Failed to create thread: ${msg}`,
-      recoverable: false,
-    };
-    return;
+    options.onThreadId?.(threadId);
+    serverLog(runId, "codex-adapter", "thread-reused", { threadId });
+  } else {
+    try {
+      const threadResult = await sendRequest(conn, "thread/start", {
+        developerInstructions: systemPrompt,
+        model,
+      });
+      threadId = extractThreadId(threadResult);
+      currentThreadId = threadId;
+      options?.onThreadId?.(threadId);
+      serverLog(runId, "codex-adapter", "thread-started", { threadId });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      yield {
+        type: "error",
+        message: `Failed to create thread: ${msg}`,
+        recoverable: false,
+      };
+      return;
+    }
   }
 
   // Abort signal — when the client disconnects, interrupt the turn
@@ -674,14 +697,22 @@ export async function* streamChat(
 
   const removeListener = onNotification(conn, (method, params) => {
     // Thread filtering: skip notifications for a different thread (best-effort).
-    // If the notification has no threadId, accept it.
+    // Keep accepting unscoped turn/started, but after this turn is known,
+    // item/* notifications must carry the matching turnId.
     const notifThreadId = params.threadId as string | undefined;
     if (notifThreadId && notifThreadId !== threadId) return;
 
+    const notifTurnId = getNotificationTurnId(params);
+
     if (method === "turn/started") {
-      turnId = getTurnIdFromParams(params) ?? turnId;
+      turnId = notifTurnId ?? turnId;
       return;
     }
+
+    if (turnId && method.startsWith("item/") && notifTurnId !== turnId) {
+      return;
+    }
+    if (turnId && notifTurnId && notifTurnId !== turnId) return;
 
     // Text delta
     if (method === "item/agentMessage/delta") {
@@ -725,7 +756,7 @@ export async function* streamChat(
 
     // Turn completed
     if (method === "turn/completed") {
-      turnId = getTurnIdFromParams(params) ?? turnId;
+      turnId = notifTurnId ?? turnId;
       const errorMessage = getTurnErrorMessage(params);
       if (errorMessage) {
         turnError = errorMessage;
@@ -760,7 +791,16 @@ export async function* streamChat(
     }
 
     // File/command/permissions approval — auto-reject with warning.
-    // TODO: Forward to UI for user review instead of auto-rejecting
+    //
+    // Investigated (decision 10): the app-server raises these requests when
+    // a turn tries to escape its sandbox (apply file changes, run shell
+    // commands, or widen permissions). Our analysis/chat turns are MCP-tool
+    // only — the product tool surface has no file or shell capability — so
+    // any such request is the model going off-script, and rejecting is the
+    // correct non-interactive posture (matches Codex's own "untrusted"
+    // approval tier). Forwarding to the UI for human review would only make
+    // sense if we ever grant Codex workspace access, which we deliberately
+    // do not.
     if (
       method === FILE_CHANGE_APPROVAL ||
       method === COMMAND_APPROVAL ||
@@ -811,6 +851,9 @@ export async function* streamChat(
   } catch (err) {
     removeListener();
     const msg = err instanceof Error ? err.message : String(err);
+    if (options?.existingThreadId && isUnknownThreadErrorMessage(msg)) {
+      throw new CodexThreadExpiredError(options.existingThreadId, msg);
+    }
     yield {
       type: "error",
       message: `Failed to start turn: ${msg}`,
@@ -923,8 +966,8 @@ export async function* streamChat(
  * Run a single analysis phase using Codex with structured JSON output.
  * Returns the parsed JSON result.
  *
- * Registers the read-only analysis MCP surface, reloads app-server config,
- * runs a structured-output turn, then restores the chat MCP surface.
+ * Verifies the statically registered MCP server is available (no config
+ * writes — decision 10), then runs a structured-output turn.
  */
 export async function runAnalysisPhase<T = unknown>(
   prompt: string,
@@ -934,17 +977,14 @@ export async function runAnalysisPhase<T = unknown>(
   options?: AnalysisRunOptions,
 ): Promise<T> {
   const runId = options?.runId;
-  installAnalysisToolSurface(runId);
 
   const conn = await startAppServer(runId);
-  let restoreError: Error | null = null;
   let primaryError: Error | null = null;
   let threadId = "";
   let turnId: string | null = null;
   let parsedResult: T | null = null;
 
   try {
-    await reloadMcpServerConfig(conn, runId);
     await ensureConfiguredMcpServerAvailable(conn, ANALYSIS_TOOL_NAMES, runId);
 
     const webSearchMode = options?.webSearch === false ? "disabled" : "live";
@@ -1273,23 +1313,6 @@ export async function runAnalysisPhase<T = unknown>(
     }
   } catch (error) {
     primaryError = normalizeAnalysisError(error);
-  } finally {
-    try {
-      installChatToolSurface();
-      await reloadMcpServerConfig(conn, runId);
-      serverLog(runId, "codex-adapter", "analysis-mcp-restored");
-    } catch (err) {
-      restoreError =
-        err instanceof Error
-          ? err
-          : new Error(`Failed to restore chat MCP config: ${String(err)}`);
-      serverWarn(runId, "codex-adapter", "mcp-restore-failed", {
-        message: restoreError.message,
-      });
-      if (!primaryError) {
-        primaryError = restoreError;
-      }
-    }
   }
 
   if (primaryError) {
@@ -1316,4 +1339,5 @@ export function _getConnection(): AppServerConnection | null {
 export function _resetConnection(): void {
   connection = null;
   nextRequestId = 1;
+  currentThreadId = null;
 }

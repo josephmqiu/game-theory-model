@@ -6,8 +6,7 @@ export type {
 } from "../../src/types/methodology";
 
 export {
-  V2_PHASES,
-  V3_PHASES,
+  RUNNABLE_PHASES,
   countCompletedRunnablePhases,
   getRunnablePhaseNumber,
   isRunnablePhase,

@@ -1,5 +1,5 @@
 import type { CanvasKit, Canvas, Surface, Paint } from "canvaskit-wasm";
-import type { PenNode, ContainerProps, EllipseNode } from "@/types/pen";
+import type { PenNode, EllipseNode } from "@/types/pen";
 import type {
   AnalysisEntity,
   AnalysisRelationship,
@@ -11,31 +11,15 @@ import type { RoutedEdge } from "@/services/entity/edge-routing";
 import type { BundledEdge } from "@/services/entity/edge-bundling";
 import { entityDisplayName } from "@/services/entity/entity-to-pennode";
 import { useCanvasStore } from "@/stores/canvas-store";
-import {
-  useDocumentStore,
-  getActivePageChildren,
-  getAllChildren,
-} from "@/stores/document-store";
-import {
-  resolveNodeForCanvas,
-  getDefaultTheme,
-} from "@/variables/resolve-variables";
 import { getCanvasBackground, MIN_ZOOM, MAX_ZOOM } from "../canvas-constants";
-import {
-  resolvePadding,
-  isNodeVisible,
-  getNodeWidth,
-  getNodeHeight,
-  computeLayoutPositions,
-  inferLayout,
-} from "../canvas-layout-engine";
-import { parseSizing, defaultLineHeight } from "../canvas-text-measure";
+import { entityTypeColor } from "@/constants/design-tokens";
 import { SkiaRenderer, type RenderNode } from "./skia-renderer";
 import { SpatialIndex } from "./skia-hit-test";
-import { parseColor, wrapLine, cssFontFamily } from "./skia-paint-utils";
+import { parseColor } from "./skia-paint-utils";
 import { viewportMatrix, zoomToPoint as vpZoomToPoint } from "./skia-viewport";
 import { shouldDrawFrameLabel } from "./frame-label-utils";
 import { measureText, drawText2D } from "./skia-overlays";
+import { getEntityArrivalSettleStyle } from "./entity-arrival-motion";
 import {
   getActiveAgentIndicators,
   getActiveAgentFrames,
@@ -49,429 +33,6 @@ const getNodeRevealTime = (_id: string): number | undefined => undefined;
 // Re-export for use by canvas component
 export { screenToScene } from "./skia-viewport";
 export { SpatialIndex } from "./skia-hit-test";
-
-// ---------------------------------------------------------------------------
-// Pre-measure text widths using Canvas 2D (browser fonts)
-// ---------------------------------------------------------------------------
-
-let _measureCtx: CanvasRenderingContext2D | null = null;
-function getMeasureCtx(): CanvasRenderingContext2D {
-  if (!_measureCtx) {
-    const c = document.createElement("canvas");
-    _measureCtx = c.getContext("2d")!;
-  }
-  return _measureCtx;
-}
-
-/**
- * Walk the node tree and fix text HEIGHTS using actual Canvas 2D wrapping.
- *
- * Only targets fixed-width text with auto height — these are the cases where
- * estimateTextHeight may underestimate because its width estimation differs
- * from Canvas 2D's actual text measurement, leading to incorrect wrap counts.
- *
- * IMPORTANT: This function never touches WIDTH or container-relative sizing
- * strings (fill_container / fit_content). Changing widths breaks layout
- * resolution in computeLayoutPositions.
- */
-function premeasureTextHeights(nodes: PenNode[]): PenNode[] {
-  return nodes.map((node) => {
-    let result = node;
-
-    if (node.type === "text") {
-      const tNode = node as import("@/types/pen").TextNode;
-      const hasFixedWidth = typeof tNode.width === "number" && tNode.width > 0;
-      const isContainerHeight =
-        typeof tNode.height === "string" &&
-        (tNode.height === "fill_container" || tNode.height === "fit_content");
-      const textGrowth = tNode.textGrowth;
-      const content =
-        typeof tNode.content === "string"
-          ? tNode.content
-          : Array.isArray(tNode.content)
-            ? tNode.content.map((s) => s.text ?? "").join("")
-            : "";
-
-      // Match Fabric.js wrapping: only premeasure when text actually wraps.
-      // textGrowth='auto' means auto-width (no wrapping) regardless of textAlign.
-      // textGrowth=undefined with non-left textAlign uses fixed-width for alignment.
-      const textAlign = tNode.textAlign;
-      const isFixedWidthText =
-        textGrowth === "fixed-width" ||
-        textGrowth === "fixed-width-height" ||
-        (textGrowth !== "auto" && textAlign != null && textAlign !== "left");
-      if (content && hasFixedWidth && isFixedWidthText && !isContainerHeight) {
-        const fontSize = tNode.fontSize ?? 16;
-        const fontWeight = tNode.fontWeight ?? "400";
-        const fontFamily =
-          tNode.fontFamily ??
-          'Inter, -apple-system, "Noto Sans SC", "PingFang SC", system-ui, sans-serif';
-        const ctx = getMeasureCtx();
-        ctx.font = `${fontWeight} ${fontSize}px ${cssFontFamily(fontFamily)}`;
-
-        // Fixed-width text with auto height: wrap and measure actual height
-        const wrapWidth = (tNode.width as number) + fontSize * 0.2;
-        const rawLines = content.split("\n");
-        const wrappedLines: string[] = [];
-        for (const raw of rawLines) {
-          if (!raw) {
-            wrappedLines.push("");
-            continue;
-          }
-          wrapLine(ctx, raw, wrapWidth, wrappedLines);
-        }
-        const lineHeightMul = tNode.lineHeight ?? defaultLineHeight(fontSize);
-        const lineHeight = lineHeightMul * fontSize;
-        const glyphH = fontSize * 1.13;
-        const measuredHeight = Math.ceil(
-          wrappedLines.length <= 1
-            ? glyphH + 2
-            : (wrappedLines.length - 1) * lineHeight + glyphH + 2,
-        );
-        const currentHeight =
-          typeof tNode.height === "number" ? tNode.height : 0;
-        const explicitLineCount = rawLines.length;
-        const needsHeight =
-          currentHeight <= 0 || wrappedLines.length > explicitLineCount;
-        if (needsHeight && measuredHeight > currentHeight) {
-          result = { ...node, height: measuredHeight } as unknown as PenNode;
-        }
-      }
-    }
-
-    // Recurse into children
-    if ("children" in result && result.children) {
-      const children = result.children;
-      const measured = premeasureTextHeights(children);
-      if (measured !== children) {
-        result = { ...result, children: measured } as unknown as PenNode;
-      }
-    }
-
-    return result;
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Flatten document tree → absolute-positioned RenderNode list
-// ---------------------------------------------------------------------------
-
-interface ClipInfo {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  rx: number;
-}
-
-function sizeToNumber(
-  val: number | string | undefined,
-  fallback: number,
-): number {
-  if (typeof val === "number") return val;
-  if (typeof val === "string") {
-    const m = val.match(/\((\d+(?:\.\d+)?)\)/);
-    if (m) return parseFloat(m[1]);
-    const n = parseFloat(val);
-    if (!isNaN(n)) return n;
-  }
-  return fallback;
-}
-
-function cornerRadiusVal(
-  cr: number | [number, number, number, number] | undefined,
-): number {
-  if (cr === undefined) return 0;
-  if (typeof cr === "number") return cr;
-  return cr[0];
-}
-
-/** Resolve RefNodes inline (same logic as use-canvas-sync.ts). */
-function resolveRefs(
-  nodes: PenNode[],
-  rootNodes: PenNode[],
-  findInTree: (nodes: PenNode[], id: string) => PenNode | null,
-  visited = new Set<string>(),
-): PenNode[] {
-  return nodes.flatMap((node) => {
-    if (node.type !== "ref") {
-      if ("children" in node && node.children) {
-        return [
-          {
-            ...node,
-            children: resolveRefs(
-              node.children,
-              rootNodes,
-              findInTree,
-              visited,
-            ),
-          } as PenNode,
-        ];
-      }
-      return [node];
-    }
-    if (visited.has(node.ref)) return [];
-    const component = findInTree(rootNodes, node.ref);
-    if (!component) return [];
-    visited.add(node.ref);
-    const resolved: Record<string, unknown> = { ...component };
-    for (const [key, val] of Object.entries(node)) {
-      if (
-        key === "type" ||
-        key === "ref" ||
-        key === "descendants" ||
-        key === "children"
-      )
-        continue;
-      if (val !== undefined) resolved[key] = val;
-    }
-    resolved.type = component.type;
-    if (!resolved.name) resolved.name = component.name;
-    delete resolved.reusable;
-    const resolvedNode = resolved as unknown as PenNode;
-    if ("children" in component && component.children) {
-      const refNode = node as import("@/types/pen").RefNode;
-      (resolvedNode as PenNode & ContainerProps).children = remapIds(
-        component.children,
-        node.id,
-        refNode.descendants,
-      );
-    }
-    visited.delete(node.ref);
-    return [resolvedNode];
-  });
-}
-
-function remapIds(
-  children: PenNode[],
-  refId: string,
-  overrides?: Record<string, Partial<PenNode>>,
-): PenNode[] {
-  return children.map((child) => {
-    const virtualId = `${refId}__${child.id}`;
-    const ov = overrides?.[child.id] ?? {};
-    const mapped = { ...child, ...ov, id: virtualId } as PenNode;
-    if ("children" in mapped && mapped.children) {
-      (mapped as PenNode & ContainerProps).children = remapIds(
-        mapped.children,
-        refId,
-        overrides,
-      );
-    }
-    return mapped;
-  });
-}
-
-export function flattenToRenderNodes(
-  nodes: PenNode[],
-  offsetX = 0,
-  offsetY = 0,
-  parentAvailW?: number,
-  parentAvailH?: number,
-  clipCtx?: ClipInfo,
-  depth = 0,
-): RenderNode[] {
-  const result: RenderNode[] = [];
-
-  // Reverse order: children[0] = top layer = rendered last (frontmost)
-  for (let i = nodes.length - 1; i >= 0; i--) {
-    const node = nodes[i];
-    if (!isNodeVisible(node)) continue;
-
-    // Resolve fill_container / fit_content
-    let resolved = node;
-    if (parentAvailW !== undefined || parentAvailH !== undefined) {
-      let changed = false;
-      const r: Record<string, unknown> = { ...node };
-      if ("width" in node && typeof node.width !== "number") {
-        const s = parseSizing(node.width);
-        if (s === "fill" && parentAvailW) {
-          r.width = parentAvailW;
-          changed = true;
-        } else if (s === "fit") {
-          r.width = getNodeWidth(node, parentAvailW);
-          changed = true;
-        }
-      }
-      if ("height" in node && typeof node.height !== "number") {
-        const s = parseSizing(node.height);
-        if (s === "fill" && parentAvailH) {
-          r.height = parentAvailH;
-          changed = true;
-        } else if (s === "fit") {
-          r.height = getNodeHeight(node, parentAvailH, parentAvailW);
-          changed = true;
-        }
-      }
-      if (changed) resolved = r as unknown as PenNode;
-    }
-
-    // Compute height for frames without explicit numeric height
-    if (
-      node.type === "frame" &&
-      "children" in node &&
-      node.children?.length &&
-      (!("height" in resolved) || typeof resolved.height !== "number")
-    ) {
-      const computedH = getNodeHeight(resolved, parentAvailH, parentAvailW);
-      if (computedH > 0)
-        resolved = { ...resolved, height: computedH } as unknown as PenNode;
-    }
-
-    const absX = (resolved.x ?? 0) + offsetX;
-    const absY = (resolved.y ?? 0) + offsetY;
-    const absW = "width" in resolved ? sizeToNumber(resolved.width, 100) : 100;
-    const absH =
-      "height" in resolved ? sizeToNumber(resolved.height, 100) : 100;
-
-    result.push({
-      node: { ...resolved, x: absX, y: absY } as PenNode,
-      absX,
-      absY,
-      absW,
-      absH,
-      clipRect: clipCtx,
-    });
-
-    // Recurse into children
-    const children = "children" in node ? node.children : undefined;
-    if (children && children.length > 0) {
-      const nodeW = getNodeWidth(resolved, parentAvailW);
-      const nodeH = getNodeHeight(resolved, parentAvailH, parentAvailW);
-      const pad = resolvePadding(
-        "padding" in resolved
-          ? (resolved as PenNode & ContainerProps).padding
-          : undefined,
-      );
-      const childAvailW = Math.max(0, nodeW - pad.left - pad.right);
-      const childAvailH = Math.max(0, nodeH - pad.top - pad.bottom);
-
-      const layout =
-        ("layout" in node ? (node as ContainerProps).layout : undefined) ||
-        inferLayout(node);
-      const positioned =
-        layout && layout !== "none"
-          ? computeLayoutPositions(resolved, children)
-          : children;
-
-      // Clipping — only clip for root frames (artboard behavior).
-      // Nested frames do NOT clip children, matching Fabric.js behavior.
-      // Fabric.js doesn't implement frame-level clipping, so children always overflow.
-      // TODO: add proper clipContent support once Fabric.js is fully replaced.
-      let childClip = clipCtx;
-      const isRootFrame = node.type === "frame" && depth === 0;
-      if (isRootFrame) {
-        const crRaw =
-          "cornerRadius" in node ? cornerRadiusVal(node.cornerRadius) : 0;
-        const cr = Math.min(crRaw, nodeH / 2);
-        childClip = { x: absX, y: absY, w: nodeW, h: nodeH, rx: cr };
-      }
-
-      const childRNs = flattenToRenderNodes(
-        positioned,
-        absX,
-        absY,
-        childAvailW,
-        childAvailH,
-        childClip,
-        depth + 1,
-      );
-
-      // Propagate parent flip to children: mirror positions within parent bounds
-      // and toggle child flipX/flipY. Must run BEFORE rotation propagation.
-      const parentFlipX = node.flipX === true;
-      const parentFlipY = node.flipY === true;
-      if (parentFlipX || parentFlipY) {
-        const pcx = absX + nodeW / 2;
-        const pcy = absY + nodeH / 2;
-        for (const crn of childRNs) {
-          const updates: Record<string, unknown> = {};
-          if (parentFlipX) {
-            const ccx = crn.absX + crn.absW / 2;
-            crn.absX = 2 * pcx - ccx - crn.absW / 2;
-            const childFlip = crn.node.flipX === true;
-            updates.flipX = !childFlip || undefined;
-          }
-          if (parentFlipY) {
-            const ccy = crn.absY + crn.absH / 2;
-            crn.absY = 2 * pcy - ccy - crn.absH / 2;
-            const childFlip = crn.node.flipY === true;
-            updates.flipY = !childFlip || undefined;
-          }
-          crn.node = {
-            ...crn.node,
-            x: crn.absX,
-            y: crn.absY,
-            ...updates,
-          } as PenNode;
-        }
-      }
-
-      // Propagate parent rotation to children: rotate their positions around
-      // the parent's center and accumulate the rotation angle.
-      // Children are in the parent's LOCAL (unrotated) coordinate space, so we
-      // need to apply the parent's rotation to get correct absolute positions.
-      const parentRot = node.rotation ?? 0;
-      if (parentRot !== 0) {
-        const cx = absX + nodeW / 2;
-        const cy = absY + nodeH / 2;
-        const rad = (parentRot * Math.PI) / 180;
-        const cosA = Math.cos(rad);
-        const sinA = Math.sin(rad);
-
-        for (const crn of childRNs) {
-          // Rotate child CENTER around parent center
-          const ccx = crn.absX + crn.absW / 2;
-          const ccy = crn.absY + crn.absH / 2;
-          const dx = ccx - cx;
-          const dy = ccy - cy;
-          const newCx = cx + dx * cosA - dy * sinA;
-          const newCy = cy + dx * sinA + dy * cosA;
-          crn.absX = newCx - crn.absW / 2;
-          crn.absY = newCy - crn.absH / 2;
-          // Accumulate rotation and update node position
-          const childRot = crn.node.rotation ?? 0;
-          crn.node = {
-            ...crn.node,
-            x: crn.absX,
-            y: crn.absY,
-            rotation: childRot + parentRot,
-          } as PenNode;
-        }
-      }
-
-      result.push(...childRNs);
-    }
-  }
-
-  return result;
-}
-
-// ---------------------------------------------------------------------------
-// Component / instance ID collection (from raw tree, before ref resolution)
-// ---------------------------------------------------------------------------
-
-function collectReusableIds(nodes: PenNode[], result: Set<string>) {
-  for (const node of nodes) {
-    if (node.type === "frame" && node.reusable === true) {
-      result.add(node.id);
-    }
-    if ("children" in node && node.children) {
-      collectReusableIds(node.children, result);
-    }
-  }
-}
-
-function collectInstanceIds(nodes: PenNode[], result: Set<string>) {
-  for (const node of nodes) {
-    if (node.type === "ref") {
-      result.add(node.id);
-    }
-    if ("children" in node && node.children) {
-      collectInstanceIds(node.children, result);
-    }
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Point-to-line-segment distance (for edge hit testing)
@@ -510,13 +71,15 @@ export class SkiaEngine {
   entityRelationships: AnalysisRelationship[] = [];
   routedEdges: RoutedEdge[] = [];
   searchHighlightIds = new Set<string>();
-
-  // Component/instance IDs for colored frame labels
-  private reusableIds = new Set<string>();
-  private instanceIds = new Set<string>();
+  /** Per-entity attention badges: 3.1A updated-dot + 2.2A unviewed challenge. */
+  entityBadges = new Map<string, { updated?: boolean; challenge?: boolean }>();
+  private entityArrivalTimestamps = new Map<string, number>();
+  private knownEntityIds = new Set<string>();
+  private prefersReducedMotion = false;
 
   // Agent animation: track start time so glow only pulses ~2 times
   private agentAnimStart = 0;
+  private renderTimestampMs = 0;
 
   private canvasEl: HTMLCanvasElement | null = null;
   private animFrameId = 0;
@@ -526,10 +89,6 @@ export class SkiaEngine {
   zoom = 1;
   panX = 0;
   panY = 0;
-
-  // Drag suppression — prevents syncFromDocument during drag
-  // so the layout engine doesn't override visual positions
-  dragSyncSuppressed = false;
 
   // Interaction state
   hoveredNodeId: string | null = null;
@@ -611,62 +170,41 @@ export class SkiaEngine {
   }
 
   // ---------------------------------------------------------------------------
-  // Document sync
-  // ---------------------------------------------------------------------------
-
-  syncFromDocument() {
-    if (this.dragSyncSuppressed) return;
-    const docState = useDocumentStore.getState();
-    const activePageId = useCanvasStore.getState().activePageId;
-    const pageChildren = getActivePageChildren(docState.document, activePageId);
-    const allNodes = getAllChildren(docState.document);
-
-    // Simple findNodeInTree
-    const findInTree = (nodes: PenNode[], id: string): PenNode | null => {
-      for (const n of nodes) {
-        if (n.id === id) return n;
-        if ("children" in n && n.children) {
-          const found = findInTree(n.children, id);
-          if (found) return found;
-        }
-      }
-      return null;
-    };
-
-    // Collect reusable/instance IDs from raw tree (before ref resolution strips them)
-    this.reusableIds.clear();
-    this.instanceIds.clear();
-    collectReusableIds(pageChildren, this.reusableIds);
-    collectInstanceIds(pageChildren, this.instanceIds);
-
-    // Resolve refs, variables, then flatten
-    const resolved = resolveRefs(pageChildren, allNodes, findInTree);
-
-    // Resolve design variables
-    const variables = docState.document.variables ?? {};
-    const themes = docState.document.themes;
-    const defaultTheme = getDefaultTheme(themes);
-    const variableResolved = resolved.map((n) =>
-      resolveNodeForCanvas(n, variables, defaultTheme),
-    );
-
-    // Only premeasure text HEIGHTS for fixed-width text (where wrapping
-    // estimation may differ from Canvas 2D). Never touch widths or
-    // container-relative sizing to maintain layout consistency with Fabric.js.
-    const measured = premeasureTextHeights(variableResolved);
-
-    this.renderNodes = flattenToRenderNodes(measured);
-
-    this.spatialIndex.rebuild(this.renderNodes);
-    this.markDirty();
-  }
-
-  // ---------------------------------------------------------------------------
   // Render loop
   // ---------------------------------------------------------------------------
 
   markDirty() {
     this.dirty = true;
+  }
+
+  setReducedMotion(enabled: boolean) {
+    this.prefersReducedMotion = enabled;
+    this.markDirty();
+  }
+
+  setEntities(
+    entities: AnalysisEntity[],
+    knownEntityIds: Iterable<string> = entities.map((entity) => entity.id),
+  ) {
+    const nextEntityMap = new Map<string, AnalysisEntity>();
+    const nextKnownIds = new Set(knownEntityIds);
+    const now = Date.now();
+
+    for (const entity of entities) {
+      nextEntityMap.set(entity.id, entity);
+      if (!this.prefersReducedMotion && !this.knownEntityIds.has(entity.id)) {
+        this.entityArrivalTimestamps.set(entity.id, now);
+      }
+    }
+
+    for (const id of [...this.entityArrivalTimestamps.keys()]) {
+      if (!nextKnownIds.has(id)) {
+        this.entityArrivalTimestamps.delete(id);
+      }
+    }
+
+    this.entityMap = nextEntityMap;
+    this.knownEntityIds = nextKnownIds;
   }
 
   private startRenderLoop() {
@@ -683,6 +221,7 @@ export class SkiaEngine {
     if (!this.surface || !this.canvasEl) return;
     const canvas = this.surface.getCanvas();
     const ck = this.ck;
+    this.renderTimestampMs = Date.now();
 
     const dpr = window.devicePixelRatio || 1;
     const selectedIds = new Set(
@@ -839,12 +378,10 @@ export class SkiaEngine {
 
     // Draw frame labels (root frames + reusable components + instances at any depth)
     for (const rn of this.renderNodes) {
-      const isReusable = this.reusableIds.has(rn.node.id);
-      const isInstance = this.instanceIds.has(rn.node.id);
       const label = rn.node.name;
       if (
         !label ||
-        !shouldDrawFrameLabel(rn.node, rn.clipRect, isReusable, isInstance)
+        !shouldDrawFrameLabel(rn.node, rn.clipRect, false, false)
       ) {
         continue;
       }
@@ -853,8 +390,8 @@ export class SkiaEngine {
         label,
         rn.absX,
         rn.absY,
-        isReusable,
-        isInstance,
+        false,
+        false,
         this.zoom,
       );
     }
@@ -869,7 +406,7 @@ export class SkiaEngine {
     }
 
     if (hasAgentOverlays) {
-      const now = Date.now();
+      const now = this.renderTimestampMs;
       if (this.agentAnimStart === 0) this.agentAnimStart = now;
       const elapsed = now - this.agentAnimStart;
       // Frame glow: smooth fade-in → fade-out (single bell, ~1.2s)
@@ -1035,6 +572,7 @@ export class SkiaEngine {
     relationships: AnalysisRelationship[],
     entities: AnalysisEntity[],
   ) {
+    this.renderTimestampMs = Date.now();
     const entityMap = new Map<string, AnalysisEntity>();
     for (const e of entities) entityMap.set(e.id, e);
 
@@ -1130,42 +668,11 @@ export class SkiaEngine {
     }
   }
 
-  // ── Entity type colors (from DESIGN.md Entity Type Palette) ──
-
-  private static ENTITY_TYPE_COLOR: Record<string, string> = {
-    player: "#60A5FA",
-    objective: "#818CF8",
-    game: "#FBBF24",
-    strategy: "#F59E0B",
-    fact: "#94A3B8",
-    payoff: "#FCD34D",
-    "institutional-rule": "#A1A1AA",
-    "escalation-rung": "#4ADE80",
-    "interaction-history": "#60A5FA",
-    "repeated-game-pattern": "#94A3B8",
-    "trust-assessment": "#34D399",
-    "dynamic-inconsistency": "#F472B6",
-    "signaling-effect": "#F472B6",
-    "payoff-matrix": "#FCD34D",
-    "game-tree": "#FBBF24",
-    "equilibrium-result": "#A78BFA",
-    "cross-game-constraint-table": "#A1A1AA",
-    "cross-game-effect": "#A1A1AA",
-    "signal-classification": "#F472B6",
-    "bargaining-dynamics": "#F59E0B",
-    "option-value-assessment": "#FCD34D",
-    "behavioral-overlay": "#F97316",
-    assumption: "#CBD5E1",
-    "eliminated-outcome": "#EF4444",
-    scenario: "#22D3EE",
-    "central-thesis": "#A78BFA",
-    "meta-check": "#F97316",
-    "analysis-report": "#A1A1AA",
-  };
+  // ── Entity type colors (single source: design-tokens, decision 5.1A) ──
 
   /** Resolve entity type color, with player index hue pool support. */
   private entityColor(entityType: EntityType): string {
-    return SkiaEngine.ENTITY_TYPE_COLOR[entityType] ?? "#A1A1AA";
+    return entityTypeColor(entityType);
   }
 
   // ── Draw a single entity node ──
@@ -1179,13 +686,30 @@ export class SkiaEngine {
   ) {
     const ck = this.ck;
     const { absX, absY, absW, absH } = rn;
+    const arrival = getEntityArrivalSettleStyle(
+      this.entityArrivalTimestamps.get(rn.node.id),
+      this.renderTimestampMs || Date.now(),
+      this.prefersReducedMotion,
+    );
+    const transformed = arrival.scale !== 1;
+    if (transformed) {
+      canvas.save();
+      canvas.translate(absX + absW / 2, absY + absH / 2);
+      canvas.scale(arrival.scale, arrival.scale);
+      canvas.translate(-(absX + absW / 2), -(absY + absH / 2));
+    }
+    if (arrival.active) {
+      this.markDirty();
+    }
+
     const entityType = entity?.type ?? "fact";
     const color = this.entityColor(entityType);
     const confidence = entity?.confidence ?? "medium";
     const isStale = entity?.stale ?? false;
-    const isHumanEdited = entity?.source === "human";
+    const isHumanEdited = entity?.provenance?.source === "user-edited";
+    const effectiveOpacityMultiplier = opacityMultiplier * arrival.opacity;
 
-    const nodeOpacity = (isStale ? 0.4 : 1.0) * opacityMultiplier;
+    const nodeOpacity = (isStale ? 0.4 : 1.0) * effectiveOpacityMultiplier;
 
     // ── Human-edited glow (subtle shadow in entity color, behind everything) ──
     if (isHumanEdited && !isStale) {
@@ -1193,7 +717,7 @@ export class SkiaEngine {
       glowPaint.setStyle(ck.PaintStyle.Fill);
       glowPaint.setAntiAlias(true);
       const gc = parseColor(ck, color);
-      gc[3] = 0.25;
+      gc[3] = 0.25 * arrival.opacity;
       glowPaint.setColor(gc);
       const sigma = 6;
       const filter = ck.MaskFilter.MakeBlur(ck.BlurStyle.Normal, sigma, true);
@@ -1301,6 +825,33 @@ export class SkiaEngine {
       excPaint.delete();
     }
 
+    // ── Attention badges: updated-dot (3.1A) + unviewed challenge (2.2A) ──
+    const badges = entity ? this.entityBadges.get(entity.id) : undefined;
+    if (badges?.updated || badges?.challenge) {
+      // Slot next to (or in place of) the stale badge at the top-right
+      let badgeX = absX + absW - (isStale ? 28 : 12);
+      const badgeY = absY + 12;
+      const drawDot = (colorHex: string) => {
+        const ringPaint = new ck.Paint();
+        ringPaint.setStyle(ck.PaintStyle.Fill);
+        ringPaint.setAntiAlias(true);
+        ringPaint.setColor(parseColor(ck, "#09090B"));
+        canvas.drawCircle(badgeX, badgeY, 6.5, ringPaint);
+        ringPaint.delete();
+        const dotPaint = new ck.Paint();
+        dotPaint.setStyle(ck.PaintStyle.Fill);
+        dotPaint.setAntiAlias(true);
+        dotPaint.setColor(parseColor(ck, colorHex));
+        canvas.drawCircle(badgeX, badgeY, 5, dotPaint);
+        dotPaint.delete();
+        badgeX -= 15;
+      };
+      // Amber: updated by revalidation, unseen. Violet: objection addressed,
+      // unviewed. Both clear when the overlay card is opened.
+      if (badges.updated) drawDot("#F59E0B");
+      if (badges.challenge) drawDot("#A78BFA");
+    }
+
     // ── Draw child text nodes (badge + name + meta) via renderer ──
     const children =
       "children" in rn.node ? (rn.node as any).children : undefined;
@@ -1331,10 +882,10 @@ export class SkiaEngine {
           } as PenNode;
         }
         // Adjust text opacity for stale/dimmed nodes
-        if (isStale || opacityMultiplier < 1.0) {
+        if (isStale || effectiveOpacityMultiplier < 1.0) {
           childRN.node = {
             ...childRN.node,
-            opacity: Math.min(isStale ? 0.4 : 1.0, opacityMultiplier),
+            opacity: Math.min(isStale ? 0.4 : 1.0, effectiveOpacityMultiplier),
           } as PenNode;
         }
         this.renderer.drawNode(canvas, childRN, emptySet);
@@ -1348,7 +899,9 @@ export class SkiaEngine {
       focusPaint.setStyle(ck.PaintStyle.Stroke);
       focusPaint.setAntiAlias(true);
       focusPaint.setStrokeWidth(2);
-      focusPaint.setColor(parseColor(ck, color));
+      const focusColor = parseColor(ck, color);
+      focusColor[3] *= arrival.opacity;
+      focusPaint.setColor(focusColor);
       const focusRRect = ck.RRectXY(
         ck.LTRBRect(absX - 1, absY - 1, absX + absW + 1, absY + absH + 1),
         7,
@@ -1356,6 +909,10 @@ export class SkiaEngine {
       );
       canvas.drawRRect(focusRRect, focusPaint);
       focusPaint.delete();
+    }
+
+    if (transformed) {
+      canvas.restore();
     }
   }
 

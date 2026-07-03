@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { TFunction } from "i18next";
 import type { RunFailureKind, RunStatus } from "../../shared/types/api";
-import { V3_PHASES } from "@/types/methodology";
+import { RUNNABLE_PHASES } from "@/types/methodology";
 
 export type ConnectionState =
   | "CONNECTING"
@@ -29,7 +29,7 @@ function createInitialRunStatus(): RunStatus {
     activePhase: null,
     progress: {
       completed: 0,
-      total: V3_PHASES.length,
+      total: RUNNABLE_PHASES.length,
     },
     deferredRevalidationPending: false,
   };
@@ -86,10 +86,7 @@ const FAILURE_DEFAULT_LABELS: Record<RunFailureKind, string> = {
   unknown: "unknown error",
 };
 
-export function getRunFailureLabel(
-  kind: RunFailureKind,
-  t: TFunction,
-): string {
+export function getRunFailureLabel(kind: RunFailureKind, t: TFunction): string {
   return t(FAILURE_I18N_KEYS[kind], {
     defaultValue: FAILURE_DEFAULT_LABELS[kind],
   });

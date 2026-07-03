@@ -23,6 +23,12 @@ describe("ChatEvent", () => {
     expect(isTerminalEvent(event)).toBe(true);
   });
 
+  it("recognizes session_expired as non-terminal", () => {
+    const event: ChatEvent = { type: "session_expired" };
+    expect(isChatEvent(event)).toBe(true);
+    expect(isTerminalEvent(event)).toBe(false);
+  });
+
   it("recognizes tool_call events", () => {
     const start: ChatEvent = {
       type: "tool_call_start",

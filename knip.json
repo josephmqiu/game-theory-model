@@ -1,0 +1,38 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/router.tsx",
+    "src/routes/**/*.{ts,tsx}",
+    "server/api/**/*.{ts,tsx}",
+    "server/plugins/**/*.{ts,tsx}",
+    "electron/main.ts",
+    "electron/preload.ts",
+    "scripts/**/*.{js,cjs,mjs,ts,tsx}",
+    "smoke-tests/**/*.{js,cjs,mjs,ts,tsx}",
+    "**/*.{test,spec}.{ts,tsx}"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx,css}",
+    "server/**/*.{ts,tsx}",
+    "shared/**/*.{ts,tsx}",
+    "electron/**/*.{ts,tsx}"
+  ],
+  "ignoreIssues": {
+    "src/canvas/**": ["exports", "types"],
+    "src/stores/**": ["exports", "types"]
+  },
+  "ignoreDependencies": ["h3", "@vitest/coverage-v8"],
+  "ignoreBinaries": ["gsettings", "codex"],
+  // Keep files/dependencies as hard errors. Exports/types are warn-only because
+  // this app intentionally keeps shared/type barrels and pen/style public
+  // surfaces that Knip cannot distinguish from dead internal implementation.
+  "rules": {
+    "files": "error",
+    "dependencies": "error",
+    "devDependencies": "error",
+    "unlisted": "error",
+    "binaries": "error",
+    "exports": "warn",
+    "types": "warn"
+  }
+}

@@ -17,6 +17,7 @@ import AIChatPanel from "@/components/panels/ai-chat-panel";
 import { PhaseSidebar } from "@/components/panels/phase-sidebar";
 import { PhaseProgress } from "@/components/panels/phase-progress";
 import EntityOverlayCard from "@/components/panels/entity-overlay-card";
+import { ChallengeRemovedNotice } from "@/components/panels/challenge-removed-notice";
 import {
   buildAnalysisRuntimeOverrides,
   useAgentSettingsStore,
@@ -85,8 +86,8 @@ export default function EditorLayout() {
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(200);
-  const [chatWidth, setChatWidth] = useState(320);
-  const canvasSurfaceRef = useRef<HTMLDivElement>(null);
+  const [chatWidth, setChatWidth] = useState(420);
+  const canvasSurfaceRef = useRef<HTMLElement>(null);
 
   const clearEditorChrome = useCallback(() => {
     setPhaseFilter(null);
@@ -94,9 +95,15 @@ export default function EditorLayout() {
     setSelectedEntityId(null);
   }, []);
 
+  const endCurrentChatSession = useCallback(() => {
+    const currentAnalysisId = useEntityGraphStore.getState().analysis.id;
+    void analysisClient.endChatSession(currentAnalysisId);
+  }, []);
+
   const handleOpenAnalysis = useCallback(
     async (filePath?: string) => {
       analysisClient.abort();
+      endCurrentChatSession();
       const opened = filePath
         ? await openAnalysisFromPath(filePath)
         : await openAnalysis();
@@ -107,22 +114,29 @@ export default function EditorLayout() {
 
       clearEditorChrome();
     },
-    [clearEditorChrome],
+    [clearEditorChrome, endCurrentChatSession],
   );
 
   const handleNewAnalysis = useCallback(() => {
-    const state = useEntityGraphStore.getState();
-    if (state.isDirty) {
-      const confirmed = window.confirm(t("analysis.unsavedChanges"));
-      if (!confirmed) {
-        return;
+    void (async () => {
+      const state = useEntityGraphStore.getState();
+      if (state.isDirty) {
+        const confirmed = window.confirm(t("analysis.unsavedChanges"));
+        if (!confirmed) {
+          return;
+        }
       }
-    }
 
-    analysisClient.abort();
-    clearEditorChrome();
-    useEntityGraphStore.getState().newAnalysis("");
-  }, [clearEditorChrome, t]);
+      analysisClient.abort();
+      endCurrentChatSession();
+      clearEditorChrome();
+      const reset = await analysisClient.resetAnalysis("");
+      if (!reset.ok) {
+        console.warn("[editor] server-reset-failed", reset.error);
+        useEntityGraphStore.getState().newAnalysis("");
+      }
+    })();
+  }, [clearEditorChrome, endCurrentChatSession, t]);
 
   const startOrchestrator = useCallback(
     (topic: string, provider?: string, model?: string) => {
@@ -246,15 +260,14 @@ export default function EditorLayout() {
       : null;
 
   const handleRerunPhase = useCallback(
-    (_phase: MethodologyPhase) => {
-      const topic = useEntityGraphStore.getState().analysis.topic;
-      if (!topic) {
-        return;
-      }
-
-      startOrchestrator(topic);
+    (phase: MethodologyPhase) => {
+      void analysisClient.rerunPhase(phase).then((result) => {
+        if (result.error) {
+          console.error("[editor] phase-rerun-failed", result.error);
+        }
+      });
     },
-    [startOrchestrator],
+    [],
   );
 
   const showAnalysisLauncher =
@@ -271,12 +284,15 @@ export default function EditorLayout() {
 
         <div className="flex min-h-0 flex-1">
           {sidebarCollapsed ? (
-            <div className="flex w-10 flex-col items-center border-r border-zinc-700 bg-zinc-900 pt-2">
+            <div className="flex w-10 flex-col items-center border-r border-border bg-card pt-2">
               <Button
                 variant="ghost"
                 size="icon-sm"
+                aria-label={t("analysis.sidebar.expand", {
+                  defaultValue: "Expand phases panel",
+                })}
                 onClick={() => setSidebarCollapsed(false)}
-                className="text-muted-foreground"
+                className="hit-area-44 text-muted-foreground"
               >
                 <PanelLeft size={16} />
               </Button>
@@ -284,13 +300,20 @@ export default function EditorLayout() {
           ) : (
             <>
               <div
-                className="flex shrink-0 flex-col border-r border-zinc-700 bg-zinc-900"
+                className="flex shrink-0 flex-col border-r border-border bg-card"
                 style={{ width: sidebarWidth }}
               >
-                <div className="flex items-center justify-end border-b border-zinc-700 px-1 py-0.5">
+                {/* Scannable panel heading (1.1A) */}
+                <div className="flex items-center justify-between border-b border-border py-0.5 pl-3 pr-1">
+                  <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-txt-header">
+                    {t("analysis.sidebar.heading", { defaultValue: "Phases" })}
+                  </h2>
                   <Button
                     variant="ghost"
                     size="icon-sm"
+                    aria-label={t("analysis.sidebar.collapse", {
+                      defaultValue: "Collapse phases panel",
+                    })}
                     onClick={() => setSidebarCollapsed(true)}
                     className="text-muted-foreground"
                   >
@@ -316,8 +339,11 @@ export default function EditorLayout() {
             </>
           )}
 
-          <div
+          <main
             ref={canvasSurfaceRef}
+            aria-label={t("analysis.canvas.label", {
+              defaultValue: "Analysis canvas",
+            })}
             className="relative flex min-w-0 flex-1 flex-col"
           >
             <AnalysisCanvas
@@ -331,25 +357,27 @@ export default function EditorLayout() {
             )}
 
             <PhaseProgress className="absolute bottom-4 left-1/2 -translate-x-1/2" />
+            <ChallengeRemovedNotice className="absolute bottom-4 right-4 z-40 max-w-sm" />
 
             {selectedEntity && selectedEntityScreenPosition && (
               <EntityOverlayCard
                 entity={selectedEntity}
                 screenPosition={selectedEntityScreenPosition}
-                onEdit={() => {}}
-                onChallenge={() => {}}
                 onClose={() => setSelectedEntityId(null)}
               />
             )}
-          </div>
+          </main>
 
           {chatCollapsed ? (
             <div className="flex w-10 flex-col items-center border-l border-border bg-card pt-2">
               <Button
                 variant="ghost"
                 size="icon-sm"
+                aria-label={t("chat.expand", {
+                  defaultValue: "Expand chat panel",
+                })}
                 onClick={() => setChatCollapsed(false)}
-                className="text-muted-foreground"
+                className="hit-area-44 text-muted-foreground"
               >
                 <PanelRight size={16} />
               </Button>
@@ -358,17 +386,24 @@ export default function EditorLayout() {
             <>
               <ResizeHandle
                 onDrag={(delta) =>
-                  setChatWidth((w) => Math.min(500, Math.max(240, w - delta)))
+                  setChatWidth((w) => Math.min(640, Math.max(380, w - delta)))
                 }
               />
               <div
                 className="flex shrink-0 flex-col border-l border-border bg-card"
                 style={{ width: chatWidth }}
               >
-                <div className="flex items-center justify-end border-b border-border px-1 py-0.5">
+                {/* Scannable panel heading (1.1A) */}
+                <div className="flex items-center justify-between border-b border-border py-0.5 pl-3 pr-1">
+                  <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-txt-header">
+                    {t("chat.heading", { defaultValue: "AI Chat" })}
+                  </h2>
                   <Button
                     variant="ghost"
                     size="icon-sm"
+                    aria-label={t("chat.collapse", {
+                      defaultValue: "Collapse chat panel",
+                    })}
                     onClick={() => setChatCollapsed(true)}
                     className="text-muted-foreground"
                   >

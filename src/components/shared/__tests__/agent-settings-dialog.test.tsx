@@ -13,8 +13,10 @@ describe("agent settings dialog MCP config", () => {
   it("keeps copied and displayed MCP HTTP config pinned to localhost", () => {
     const source = readFileSync(dialogPath, "utf8");
 
-    expect(source).toContain('http://127.0.0.1:${mcpServerPort}/mcp');
-    expect(source).not.toContain('http://${mcpServerLocalIp}:${mcpHttpPort}/mcp');
+    expect(source).toContain("http://127.0.0.1:${mcpServerPort}/mcp");
+    expect(source).not.toContain(
+      "http://${mcpServerLocalIp}:${mcpHttpPort}/mcp",
+    );
     expect(source).toContain("callMcpInstall(");
     expect(source).toContain("mcpServerPort");
   });
@@ -27,7 +29,7 @@ describe("agent settings dialog MCP config", () => {
     expect(source).toContain("setAnalysisEffortLevel");
     expect(source).toContain("setAnalysisPhaseMode");
     expect(source).toContain("toggleAnalysisPhase");
-    expect(source).toContain("V3_PHASES.map");
+    expect(source).toContain("RUNNABLE_PHASES.map");
     expect(source).not.toContain("analysis settings page");
   });
 });

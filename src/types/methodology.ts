@@ -30,25 +30,11 @@ export interface PhaseEntityLike {
   phase: MethodologyPhase;
 }
 
-/** Phases implemented in v1 */
-export const V1_PHASES: MethodologyPhase[] = [
-  "situational-grounding",
-  "player-identification",
-  "baseline-model",
-];
-
-/** Phases implemented in v2 (adds Phase 4 + Phase 6 + Phase 7) */
-export const V2_PHASES: MethodologyPhase[] = [
-  "situational-grounding",
-  "player-identification",
-  "baseline-model",
-  "historical-game",
-  "formal-modeling",
-  "assumptions",
-];
-
-/** All runnable phases in order (excludes revalidation, which is the orthogonal loopback mechanism) */
-export const V3_PHASES: MethodologyPhase[] = [
+/**
+ * All 9 runnable phases in order. Excludes "revalidation", which is the
+ * orthogonal loopback mechanism and is never re-runnable as a phase.
+ */
+export const RUNNABLE_PHASES: MethodologyPhase[] = [
   "situational-grounding",
   "player-identification",
   "baseline-model",
@@ -100,16 +86,14 @@ export const PHASE_NUMBERS: Record<MethodologyPhase, number> = {
   "meta-check": 10,
 };
 
-const RUNNABLE_PHASE_SET = new Set<MethodologyPhase>(V3_PHASES);
+const RUNNABLE_PHASE_SET = new Set<MethodologyPhase>(RUNNABLE_PHASES);
 
 export function isRunnablePhase(phase: string): phase is MethodologyPhase {
   return RUNNABLE_PHASE_SET.has(phase as MethodologyPhase);
 }
 
-export function getRunnablePhaseNumber(
-  phase: MethodologyPhase,
-): number | null {
-  const index = V3_PHASES.indexOf(phase);
+export function getRunnablePhaseNumber(phase: MethodologyPhase): number | null {
+  const index = RUNNABLE_PHASES.indexOf(phase);
   return index === -1 ? null : index + 1;
 }
 
@@ -126,7 +110,7 @@ export function normalizePhaseStates<T extends PhaseEntityLike>(
   }
 
   const entityIdsByPhase = new Map<MethodologyPhase, string[]>();
-  for (const phase of V3_PHASES) {
+  for (const phase of RUNNABLE_PHASES) {
     entityIdsByPhase.set(phase, []);
   }
 
@@ -137,13 +121,14 @@ export function normalizePhaseStates<T extends PhaseEntityLike>(
     entityIdsByPhase.get(entity.phase)?.push(entity.id);
   }
 
-  return V3_PHASES.map((phase) => {
+  return RUNNABLE_PHASES.map((phase) => {
     const existing = existingStates.get(phase);
     const entityIds = entityIdsByPhase.get(phase) ?? [];
 
     return {
       phase,
-      status: existing?.status ?? (entityIds.length > 0 ? "complete" : "pending"),
+      status:
+        existing?.status ?? (entityIds.length > 0 ? "complete" : "pending"),
       entityIds,
       ...(existing?.lastRun ? { lastRun: existing.lastRun } : {}),
       ...(existing?.error ? { error: existing.error } : {}),

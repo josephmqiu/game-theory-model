@@ -44,6 +44,11 @@ const IS_TEST_MODE =
   process.env.NODE_ENV === 'test' ||
   process.env.VITEST === 'true' ||
   process.env.VITEST === '1'
+const RUN_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
+
+export function isValidRunId(runId: string): boolean {
+  return RUN_ID_PATTERN.test(runId)
+}
 
 export function serverLog(
   runId: string | undefined,
@@ -313,6 +318,9 @@ function sanitizeData(data?: Record<string, unknown>): Record<string, unknown> {
 }
 
 function getLogPath(runId: string): string {
+  if (!isValidRunId(runId)) {
+    throw new Error('Invalid runId')
+  }
   return join(LOG_DIR, `${runId}.jsonl`)
 }
 

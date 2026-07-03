@@ -111,7 +111,12 @@ describe("analysis report overlay — design system compliance", () => {
 
 describe("entity-overlay-card integration with analysis-report type", () => {
   it("assigns analysis-report the neutral zinc color (#A1A1AA) since it is a meta-entity, not a domain entity", () => {
-    expect(entityOverlaySource).toContain('"analysis-report": "#A1A1AA"');
+    // The palette now lives in the single-source tokens module (5.1A)
+    const tokensSource = readFileSync(
+      join(process.cwd(), "src/constants/design-tokens.ts"),
+      "utf8",
+    );
+    expect(tokensSource).toContain('"analysis-report": "#A1A1AA"');
   });
 
   it("maps analysis-report to an i18n key for localized display name", () => {
@@ -124,11 +129,15 @@ describe("entity-overlay-card integration with analysis-report type", () => {
     expect(entityOverlaySource).toContain("d.executive_summary");
   });
 
-  it("makes analysis-report non-editable since reports are AI-generated read-only artifacts", () => {
-    const editMatch = entityOverlaySource.match(
-      /case\s+"analysis-report":\s*\n\s*return\s+null/,
+  it("makes analysis-report editable with an AI-owned carve-out (plan Phase 1, item 3)", () => {
+    // The report's text fields are human-editable via AnalysisReportEdit;
+    // entity references and the prediction verdict stay AI-owned.
+    expect(entityOverlaySource).toMatch(
+      /case\s+"analysis-report":\s*\n?\s*return\s+<AnalysisReportEdit/,
     );
-    expect(editMatch).not.toBeNull();
+    expect(entityOverlaySource).toContain(
+      "Entity references and the prediction verdict are AI-owned",
+    );
   });
 
   it("renders the AnalysisReportOverlay component inside the entity data section", () => {

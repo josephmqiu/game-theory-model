@@ -1,6 +1,7 @@
 import type {
   AnalysisEntity,
   AnalysisRelationship,
+  RevisionLogSource,
 } from "../../shared/types/entity";
 import type { MethodologyPhase } from "../../shared/types/methodology";
 import type {
@@ -8,6 +9,7 @@ import type {
   PhaseOutputRelationship,
 } from "./analysis-service";
 import * as entityGraphService from "./entity-graph-service";
+import { computeFieldDiffs } from "./revision-log";
 
 interface CommitPhaseSnapshotInput {
   phase: MethodologyPhase;
@@ -15,10 +17,18 @@ interface CommitPhaseSnapshotInput {
   entities: PhaseOutputEntity[];
   relationships: PhaseOutputRelationship[];
   allowLargeReductionCommit?: boolean;
+  challengedEntityIds?: ReadonlySet<string>;
+  /**
+   * What kind of run produced this snapshot — threads through to the
+   * revision log so revalidation-driven changes are distinguishable from
+   * first-pass phase output (E4A). Defaults to a normal analysis pass.
+   */
+  trigger?: "analysis" | "revalidation";
 }
 
 interface AppliedCommitSummary {
   entitiesCreated: number;
+  /** Entities whose content actually changed (no-op commits don't count). */
   entitiesUpdated: number;
   entitiesDeleted: number;
   relationshipsCreated: number;
@@ -65,8 +75,18 @@ function isUserEditedEntity(entity: AnalysisEntity): boolean {
   return entity.provenance?.source === "user-edited";
 }
 
-function isAiOwnedEntity(entity: AnalysisEntity): boolean {
-  return !isUserEditedEntity(entity);
+function isProtectedUserEditedEntity(
+  entity: AnalysisEntity,
+  challengedEntityIds?: ReadonlySet<string>,
+): boolean {
+  return isUserEditedEntity(entity) && !challengedEntityIds?.has(entity.id);
+}
+
+function isAiOwnedEntity(
+  entity: AnalysisEntity,
+  challengedEntityIds?: ReadonlySet<string>,
+): boolean {
+  return !isProtectedUserEditedEntity(entity, challengedEntityIds);
 }
 
 function relationshipPhaseMatches(
@@ -229,7 +249,8 @@ function maybeRequireTruncationRetry(
   allowLargeReductionCommit: boolean,
 ): RetryRequiredResult | null {
   const looksTruncated =
-    originalAiEntityCount > 4 && returnedAiEntityCount * 2 < originalAiEntityCount;
+    originalAiEntityCount > 4 &&
+    returnedAiEntityCount * 2 < originalAiEntityCount;
 
   if (!looksTruncated || allowLargeReductionCommit) {
     return null;
@@ -270,14 +291,24 @@ export function commitPhaseSnapshot({
   entities,
   relationships,
   allowLargeReductionCommit = false,
+  challengedEntityIds,
+  trigger = "analysis",
 }: CommitPhaseSnapshotInput): CommitPhaseSnapshotResult {
+  const logSource: RevisionLogSource =
+    trigger === "revalidation" ? "revalidation" : "phase";
   const analysis = entityGraphService.getAnalysis();
-  const entityById = new Map(analysis.entities.map((entity) => [entity.id, entity]));
+  const entityById = new Map(
+    analysis.entities.map((entity) => [entity.id, entity]),
+  );
   const currentPhaseEntities = analysis.entities.filter(
     (entity) => entity.phase === phase,
   );
-  const currentPhaseIds = new Set(currentPhaseEntities.map((entity) => entity.id));
-  const aiOwnedCurrentPhaseEntities = currentPhaseEntities.filter(isAiOwnedEntity);
+  const currentPhaseIds = new Set(
+    currentPhaseEntities.map((entity) => entity.id),
+  );
+  const aiOwnedCurrentPhaseEntities = currentPhaseEntities.filter((entity) =>
+    isAiOwnedEntity(entity, challengedEntityIds),
+  );
 
   assertUniqueBatchEntities(entities);
 
@@ -293,7 +324,9 @@ export function commitPhaseSnapshot({
   const returnedAiEntityCount = entities.filter((entity) => {
     if (entity.id === null) return true;
     const existing = entityById.get(entity.id);
-    return existing !== undefined && isAiOwnedEntity(existing);
+    return (
+      existing !== undefined && isAiOwnedEntity(existing, challengedEntityIds)
+    );
   }).length;
 
   const retryRequired = maybeRequireTruncationRetry(
@@ -323,7 +356,7 @@ export function commitPhaseSnapshot({
           revision: 1,
           stale: false,
         },
-        { source: "phase-derived", runId, phase },
+        { source: "phase-derived", runId, phase, logSource },
       );
       refToServerId.set(entity.ref, created.id);
       entitiesCreated += 1;
@@ -337,22 +370,33 @@ export function commitPhaseSnapshot({
 
     refToServerId.set(entity.ref, existing.id);
 
-    if (isUserEditedEntity(existing)) {
+    if (isProtectedUserEditedEntity(existing, challengedEntityIds)) {
+      continue;
+    }
+
+    // Content-equality gate (E4A): a snapshot that returns an entity with
+    // identical content is a no-op — no revision bump, no SSE churn, no
+    // revision-log entry. Previously every commit bumped unconditionally.
+    const incoming = {
+      type: entity.type,
+      phase: entity.phase,
+      data: entity.data,
+      confidence: entity.confidence,
+      rationale: entity.rationale,
+    };
+    if (computeFieldDiffs(existing, incoming).length === 0) {
+      retainedAiEntityIds.add(existing.id);
       continue;
     }
 
     const updated = entityGraphService.updateEntity(
       existing.id,
       {
-        type: entity.type,
-        phase: entity.phase,
-        data: entity.data,
-        confidence: entity.confidence,
-        rationale: entity.rationale,
+        ...incoming,
         revision: existing.revision + 1,
         stale: false,
       },
-      { source: "phase-derived", runId },
+      { source: "phase-derived", runId, logSource },
     );
 
     if (updated === null) {

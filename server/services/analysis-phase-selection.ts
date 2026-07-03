@@ -1,10 +1,10 @@
 import type { MethodologyPhase } from "../../shared/types/methodology";
-import { V3_PHASES } from "../../shared/types/methodology";
+import { RUNNABLE_PHASES } from "../../shared/types/methodology";
 
 export type SupportedAnalysisPhase = Exclude<MethodologyPhase, "revalidation">;
 
 export const SUPPORTED_ANALYSIS_PHASES: SupportedAnalysisPhase[] = [
-  ...V3_PHASES,
+  ...RUNNABLE_PHASES,
 ] as SupportedAnalysisPhase[];
 
 export function getCanonicalAnalysisPhaseIndex(

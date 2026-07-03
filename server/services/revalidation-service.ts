@@ -6,18 +6,24 @@
 import type { MethodologyPhase } from "../../shared/types/methodology";
 import type { AnalysisProgressEvent } from "../../shared/types/events";
 import type { ResolvedAnalysisRuntime } from "../../shared/types/analysis-runtime";
-import { V2_PHASES, PHASE_NUMBERS } from "../../src/types/methodology";
+import { RUNNABLE_PHASES, PHASE_NUMBERS } from "../../src/types/methodology";
 import { analysisRuntimeConfig } from "../config/analysis-runtime";
 import * as entityGraphService from "./entity-graph-service";
 import * as orchestrator from "../agents/analysis-agent";
 import * as runtimeStatus from "./runtime-status";
 import { runPhase } from "./analysis-service";
 import { commitPhaseSnapshot } from "./revision-diff";
-import { createRunLogger, serverWarn, timer } from "../utils/ai-logger";
+import {
+  createRunLogger,
+  serverWarn,
+  timer,
+  type RunLogger,
+} from "../utils/ai-logger";
 
 // ── Constants ──
 
 const DEBOUNCE_MS = analysisRuntimeConfig.revalidation.debounceMs;
+export const MAX_REVAL_RUN_STATUSES = 50;
 
 // ── Revalidation run status tracking ──
 
@@ -25,7 +31,8 @@ export type RevalRunStatusValue =
   | "running"
   | "completed"
   | "failed"
-  | "deferred";
+  | "deferred"
+  | "aborted";
 
 export interface RevalRunStatus {
   runId: string;
@@ -46,6 +53,72 @@ const revalRunStatuses = new Map<string, RevalRunStatus>();
 let lastRunProvider: string | undefined;
 let lastRunModel: string | undefined;
 let lastRunRuntime: ResolvedAnalysisRuntime | undefined;
+
+function setRevalRunStatus(runId: string, status: RevalRunStatus): void {
+  if (revalRunStatuses.has(runId)) {
+    revalRunStatuses.delete(runId);
+  }
+  revalRunStatuses.set(runId, status);
+  evictOldRevalRunStatuses();
+}
+
+function evictOldRevalRunStatuses(): void {
+  while (revalRunStatuses.size > MAX_REVAL_RUN_STATUSES) {
+    const oldestEvictable = Array.from(revalRunStatuses.entries()).find(
+      ([, status]) => status.status !== "running",
+    );
+    if (!oldestEvictable) return;
+    revalRunStatuses.delete(oldestEvictable[0]);
+  }
+}
+
+function getRunningRevalStatus(): RevalRunStatus | null {
+  const statuses = Array.from(revalRunStatuses.values());
+  for (let index = statuses.length - 1; index >= 0; index -= 1) {
+    const status = statuses[index];
+    if (status.status === "running" && runtimeStatus.isActiveRun(status.runId)) {
+      return status;
+    }
+  }
+  return null;
+}
+
+async function dropStaleCommitIfNeeded(
+  runId: string,
+  phase: MethodologyPhase,
+  capturedEpoch: number,
+  logger: RunLogger,
+): Promise<boolean> {
+  const currentEpoch = entityGraphService.getAnalysisEpoch();
+  const active = runtimeStatus.isActiveRun(runId);
+  if (currentEpoch === capturedEpoch && active) {
+    return false;
+  }
+
+  const detail = {
+    phase,
+    capturedEpoch,
+    currentEpoch,
+    active,
+  };
+  logger.warn("revalidation", "stale-commit-dropped", detail);
+  serverWarn(runId, "revalidation", "stale-commit-dropped", detail);
+
+  const existing = revalRunStatuses.get(runId);
+  if (existing?.status === "running") {
+    setRevalRunStatus(runId, {
+      runId,
+      status: "aborted",
+      phasesCompleted: existing.phasesCompleted,
+      error: "Revalidation became stale before commit",
+    });
+  }
+  if (active) {
+    runtimeStatus.releaseRun(runId, "cancelled");
+  }
+  await logger.flush();
+  return true;
+}
 
 function queuePendingRevalidation(staleIds: string[]): void {
   if (staleIds.length === 0) return;
@@ -84,7 +157,7 @@ function emitProgress(event: AnalysisProgressEvent): void {
 
 /**
  * Determine the earliest phase that needs re-running based on stale entity provenance.
- * Returns the first V1 phase (by order) that contains at least one stale entity.
+ * Returns the first runnable phase (by order) that contains at least one stale entity.
  */
 function findEarliestStalePhase(staleIds: string[]): MethodologyPhase | null {
   if (staleIds.length === 0) return null;
@@ -111,12 +184,114 @@ function findEarliestStalePhase(staleIds: string[]): MethodologyPhase | null {
 }
 
 /**
- * Get the ordered list of V1 phases starting from a given phase through the end.
+ * Get the ordered list of runnable phases starting from a given phase through the end.
  */
 function phasesFrom(startPhase: MethodologyPhase): MethodologyPhase[] {
-  const startIdx = V2_PHASES.indexOf(startPhase);
+  const startIdx = RUNNABLE_PHASES.indexOf(startPhase);
   if (startIdx === -1) return [];
-  return V2_PHASES.slice(startIdx);
+  return RUNNABLE_PHASES.slice(startIdx);
+}
+
+// ── Challenge handling (9A / 2.2A) ──
+
+function entityDisplayName(entity: {
+  id: string;
+  data: Record<string, unknown>;
+}): string {
+  if (typeof entity.data.name === "string") return entity.data.name;
+  if (typeof entity.data.content === "string") {
+    return entity.data.content.slice(0, 80);
+  }
+  return entity.id;
+}
+
+/**
+ * Pending challenges whose entity currently belongs to the given phase.
+ * Challenges against already-deleted entities have no phase to run in; they
+ * resolve as REMOVED when any phase commit runs (handled in resolution).
+ */
+function pendingChallengesForPhase(
+  phase: MethodologyPhase,
+): ReturnType<typeof entityGraphService.getPendingChallenges> {
+  return entityGraphService.getPendingChallenges().filter((challenge) => {
+    const entity = entityGraphService.getEntityById(challenge.entityId);
+    return entity?.phase === phase;
+  });
+}
+
+/**
+ * Build the objection block injected into the phase prompt (9A). The model is
+ * explicitly instructed to address each objection in the challenged entity's
+ * rationale — whether it revises, keeps, or removes the entity.
+ */
+function buildChallengeContext(
+  challenges: ReturnType<typeof entityGraphService.getPendingChallenges>,
+): string | undefined {
+  if (challenges.length === 0) return undefined;
+
+  const lines = challenges.map((challenge, index) => {
+    const entity = entityGraphService.getEntityById(challenge.entityId);
+    const name = entity
+      ? entityDisplayName(
+          entity as { id: string; data: Record<string, unknown> },
+        )
+      : challenge.entityId;
+    return `${index + 1}. Entity ${challenge.entityId} ("${name}"): ${challenge.objection}`;
+  });
+
+  return [
+    "HUMAN CHALLENGES — a human analyst has objected to specific entities from this phase.",
+    "For EACH challenged entity below, you MUST:",
+    "- Re-examine it against the objection using available evidence.",
+    "- If the objection is valid, revise the entity (or omit it if it cannot stand).",
+    "- Whether you revise it or keep it unchanged, the entity's `rationale` field MUST directly address the objection and explain your verdict.",
+    "",
+    ...lines,
+  ].join("\n");
+}
+
+/**
+ * Resolve challenges after the phase they target has been re-run (2.2A).
+ * Outcomes: REMOVED (entity deleted by re-run), REVISED (content changed in
+ * this run — response diff lives at {entityId, responseLogNo}), CONFIRMED
+ * (model kept it; rationale carries the answer to the objection).
+ */
+function resolveChallengesAfterRerun(
+  challenges: ReturnType<typeof entityGraphService.getPendingChallenges>,
+  runId: string,
+): void {
+  for (const challenge of challenges) {
+    const entity = entityGraphService.getEntityById(challenge.entityId);
+    if (!entity) {
+      entityGraphService.resolveChallenge(challenge.id, {
+        outcome: "REMOVED",
+        runId,
+      });
+      continue;
+    }
+
+    const responseEntry = [...(entity.revisionLog ?? [])]
+      .reverse()
+      .find((entry) => entry.runId === runId && entry.fieldDiffs.length > 0);
+
+    if (responseEntry) {
+      entityGraphService.resolveChallenge(challenge.id, {
+        outcome: "REVISED",
+        runId,
+        responseLogNo: responseEntry.logNo,
+        responseRationale: entity.rationale,
+      });
+    } else {
+      // No-diff CONFIRMED is intentionally not treated as verified evidence:
+      // the graph did not change, so the UI asks the analyst to review it.
+      entityGraphService.resolveChallenge(challenge.id, {
+        outcome: "CONFIRMED",
+        runId,
+        responseRationale: entity.rationale,
+        unverified: true,
+      });
+    }
+  }
 }
 
 // ── Core API ──
@@ -169,7 +344,7 @@ export function revalidate(
     runtimeStatus.deferRevalidation(ids, {
       reason: "analysis-active",
     });
-    revalRunStatuses.set(runId, {
+    setRevalRunStatus(runId, {
       runId,
       status: "deferred",
       phasesCompleted: 0,
@@ -192,7 +367,7 @@ export function revalidate(
 
   if (!startPhase) {
     runtimeStatus.consumeDeferredRevalidationIds();
-    revalRunStatuses.set(runId, {
+    setRevalRunStatus(runId, {
       runId,
       status: "completed",
       phasesCompleted: 0,
@@ -208,7 +383,7 @@ export function revalidate(
     })
   ) {
     queuePendingRevalidation(staleEntityIds ?? []);
-    revalRunStatuses.set(runId, {
+    setRevalRunStatus(runId, {
       runId,
       status: "deferred",
       phasesCompleted: 0,
@@ -225,11 +400,18 @@ export function revalidate(
   runtimeStatus.consumeDeferredRevalidationIds();
 
   // Register as running before async work begins
-  revalRunStatuses.set(runId, { runId, status: "running", phasesCompleted: 0 });
+  setRevalRunStatus(runId, {
+    runId,
+    status: "running",
+    phasesCompleted: 0,
+  });
 
   // Execute phase re-runs asynchronously
   const capturedStartPhase = startPhase;
-  Promise.resolve().then(() => executeRevalidation(runId, capturedStartPhase));
+  const capturedEpoch = entityGraphService.getAnalysisEpoch();
+  Promise.resolve().then(() =>
+    executeRevalidation(runId, capturedStartPhase, capturedEpoch),
+  );
 
   return { runId };
 }
@@ -240,6 +422,7 @@ export function revalidate(
 async function executeRevalidation(
   runId: string,
   startPhase: MethodologyPhase,
+  capturedEpoch: number,
 ): Promise<void> {
   const logger = createRunLogger(runId);
   const revalTimer = timer();
@@ -267,7 +450,10 @@ async function executeRevalidation(
     const freshAnalysis = entityGraphService.getAnalysis();
 
     // Build prior context from entities in earlier completed phases
-    const completedPhases = V2_PHASES.slice(0, V2_PHASES.indexOf(p));
+    const completedPhases = RUNNABLE_PHASES.slice(
+      0,
+      RUNNABLE_PHASES.indexOf(p),
+    );
     const priorEntities = freshAnalysis.entities
       .filter((e) => completedPhases.includes(e.phase))
       .map((e) => ({
@@ -284,23 +470,40 @@ async function executeRevalidation(
     const priorContext =
       priorEntities.length > 0 ? JSON.stringify(priorEntities) : undefined;
 
+    // Objections against this phase's entities are injected into the prompt
+    // (9A) and resolved against the re-run outcome after the commit (2.2A).
+    const phaseChallenges = pendingChallengesForPhase(p);
+    const challengedEntityIds = new Set(
+      phaseChallenges.map((challenge) => challenge.entityId),
+    );
+    const challengeContext = buildChallengeContext(phaseChallenges);
+
     const phaseStart = Date.now();
     let result = await runPhase(p, topic, {
       provider: lastRunProvider,
       model: lastRunModel,
       runtime: lastRunRuntime,
       priorEntities: priorContext,
+      challengeContext,
       logger,
       runId,
     });
 
     if (result.success) {
       try {
+        if (
+          await dropStaleCommitIfNeeded(runId, p, capturedEpoch, logger)
+        ) {
+          return;
+        }
+
         let commitResult = commitPhaseSnapshot({
           phase: p,
           runId,
           entities: result.entities,
           relationships: result.relationships,
+          trigger: "revalidation",
+          challengedEntityIds,
         });
 
         if (commitResult.status === "retry_required") {
@@ -315,6 +518,7 @@ async function executeRevalidation(
             model: lastRunModel,
             runtime: lastRunRuntime,
             priorEntities: priorContext,
+            challengeContext,
             revisionRetryInstruction: commitResult.retryMessage,
             logger,
             runId,
@@ -322,7 +526,7 @@ async function executeRevalidation(
 
           if (!result.success) {
             const error = result.error ?? "Revalidation phase failed";
-            revalRunStatuses.set(runId, {
+            setRevalRunStatus(runId, {
               runId,
               status: "failed",
               phasesCompleted,
@@ -340,12 +544,20 @@ async function executeRevalidation(
             return;
           }
 
+          if (
+            await dropStaleCommitIfNeeded(runId, p, capturedEpoch, logger)
+          ) {
+            return;
+          }
+
           commitResult = commitPhaseSnapshot({
             phase: p,
             runId,
             entities: result.entities,
             relationships: result.relationships,
             allowLargeReductionCommit: true,
+            trigger: "revalidation",
+            challengedEntityIds,
           });
         }
 
@@ -359,8 +571,10 @@ async function executeRevalidation(
           );
         }
 
+        resolveChallengesAfterRerun(phaseChallenges, runId);
+
         phasesCompleted++;
-        revalRunStatuses.set(runId, {
+        setRevalRunStatus(runId, {
           runId,
           status: "running",
           phasesCompleted,
@@ -383,7 +597,7 @@ async function executeRevalidation(
           err instanceof Error
             ? `Revision diff validation error: ${err.message}`
             : `Revision diff validation error: ${String(err)}`;
-        revalRunStatuses.set(runId, {
+        setRevalRunStatus(runId, {
           runId,
           status: "failed",
           phasesCompleted,
@@ -402,7 +616,7 @@ async function executeRevalidation(
       }
     } else {
       const error = result.error ?? "Revalidation phase failed";
-      revalRunStatuses.set(runId, {
+      setRevalRunStatus(runId, {
         runId,
         status: "failed",
         phasesCompleted,
@@ -421,7 +635,23 @@ async function executeRevalidation(
     }
   }
 
-  revalRunStatuses.set(runId, { runId, status: "completed", phasesCompleted });
+  // Challenges whose entity no longer exists at all (deleted by an earlier
+  // phase's cascade rather than its own re-run) resolve as REMOVED.
+  resolveChallengesAfterRerun(
+    entityGraphService
+      .getPendingChallenges()
+      .filter(
+        (challenge) =>
+          entityGraphService.getEntityById(challenge.entityId) === null,
+      ),
+    runId,
+  );
+
+  setRevalRunStatus(runId, {
+    runId,
+    status: "completed",
+    phasesCompleted,
+  });
   runtimeStatus.releaseRun(runId, "completed");
 
   const totalEntities = entityGraphService.getAnalysis().entities.length;
@@ -452,6 +682,29 @@ export function getActiveRevalStatus(): RevalRunStatus | null {
   }
 
   return null;
+}
+
+export function isRevalidating(): boolean {
+  return getRunningRevalStatus() !== null;
+}
+
+export function cancelActiveRevalidation(): RevalRunStatus | null {
+  const active = getRunningRevalStatus();
+  if (!active) {
+    return null;
+  }
+
+  const aborted: RevalRunStatus = {
+    ...active,
+    status: "aborted",
+    error: "Cancelled by new analysis",
+  };
+  setRevalRunStatus(active.runId, aborted);
+  runtimeStatus.releaseRun(active.runId, "cancelled");
+  serverWarn(active.runId, "revalidation", "cancelled", {
+    reason: "new-analysis",
+  });
+  return aborted;
 }
 
 /**

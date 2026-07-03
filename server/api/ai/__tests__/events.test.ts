@@ -83,6 +83,10 @@ function parseEvents(chunks: string[]): Array<Record<string, unknown>> {
     .map((entry) => JSON.parse(entry.slice(6)) as Record<string, unknown>);
 }
 
+function parseNonPingEvents(chunks: string[]): Array<Record<string, unknown>> {
+  return parseEvents(chunks).filter((event) => event.channel !== "ping");
+}
+
 function emitMutation(
   revision: number,
   event: Record<string, unknown>,
@@ -146,7 +150,11 @@ describe("/api/ai/events", () => {
       Connection: "keep-alive",
     });
 
-    expect(parseEvents(res.chunks)).toEqual([
+    expect(parseEvents(res.chunks)).toContainEqual({
+      channel: "ping",
+      revision: 0,
+    });
+    expect(parseNonPingEvents(res.chunks)).toEqual([
       {
         channel: "mutation",
         revision: 4,
@@ -189,7 +197,7 @@ describe("/api/ai/events", () => {
     res.close();
     await pending;
 
-    expect(parseEvents(res.chunks)).toEqual([
+    expect(parseNonPingEvents(res.chunks)).toEqual([
       {
         channel: "progress",
         revision: 7,

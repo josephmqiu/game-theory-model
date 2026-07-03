@@ -15,7 +15,7 @@ describe("phase status UI", () => {
   it("keeps runnable phase numbering and failure rendering in the progress bar source", () => {
     const source = readFileSync(phaseProgressPath, "utf8");
 
-    expect(source).toContain("V3_PHASES");
+    expect(source).toContain("RUNNABLE_PHASES");
     expect(source).toContain("getRunnablePhaseNumber");
     expect(source).toContain("analysis.progress.phaseFailed");
   });
@@ -23,7 +23,7 @@ describe("phase status UI", () => {
   it("renders later runnable phases as live entries in the sidebar source", () => {
     const source = readFileSync(phaseSidebarPath, "utf8");
 
-    expect(source).toContain("V3_PHASES.map");
+    expect(source).toContain("RUNNABLE_PHASES.map");
     expect(source).toContain("PHASE_I18N_KEYS[phase]");
     expect(source).toContain("getRunnablePhaseNumber(phase)");
     expect(source).not.toContain("Coming soon");

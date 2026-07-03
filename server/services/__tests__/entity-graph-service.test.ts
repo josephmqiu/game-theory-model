@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import type { AnalysisMutationEvent } from "../../../shared/types/events";
-import { V3_PHASES } from "../../../src/types/methodology";
+import { RUNNABLE_PHASES } from "../../../src/types/methodology";
 import * as runtimeStatus from "../runtime-status";
 import {
   newAnalysis,
   loadAnalysis,
   getAnalysis,
+  getAnalysisEpoch,
   createEntity,
   createRelationship,
   updateEntity,
@@ -20,6 +21,11 @@ import {
   removeRelationship,
   removePhaseEntities,
   setPhaseStatus,
+  createChallenge,
+  getChallenges,
+  getPendingChallenges,
+  resolveChallenge,
+  markChallengeViewed,
   getIsDirty,
   getRevision,
   getFileName,
@@ -89,8 +95,8 @@ describe("newAnalysis", () => {
     expect(a.name).toBe("US-China trade war");
     expect(a.entities).toEqual([]);
     expect(a.relationships).toEqual([]);
-    expect(a.phases).toHaveLength(V3_PHASES.length);
-    expect(a.phases.map((p) => p.phase)).toEqual(V3_PHASES);
+    expect(a.phases).toHaveLength(RUNNABLE_PHASES.length);
+    expect(a.phases.map((p) => p.phase)).toEqual(RUNNABLE_PHASES);
     expect(a.phases.every((p) => p.status === "pending")).toBe(true);
   });
 
@@ -101,6 +107,25 @@ describe("newAnalysis", () => {
 
     expect(runtimeStatus.getRevision()).toBe(revisionBefore + 1);
     expect(getIsDirty()).toBe(false);
+  });
+
+  it("bumps the analysis epoch on new and loaded analyses", () => {
+    const epochBefore = getAnalysisEpoch();
+
+    newAnalysis("US-China trade war");
+    const afterNew = getAnalysisEpoch();
+
+    loadAnalysis({
+      id: "loaded-id",
+      name: "Loaded",
+      topic: "loaded topic",
+      entities: [],
+      relationships: [],
+      phases: [],
+    });
+
+    expect(afterNew).toBe(epochBefore + 1);
+    expect(getAnalysisEpoch()).toBe(afterNew + 1);
   });
 });
 
@@ -212,6 +237,80 @@ describe("updateEntity", () => {
     expect(staleIds).toContain(e3.id);
     // e1 itself should NOT be marked stale
     expect(staleIds).not.toContain(e1.id);
+  });
+
+  // ── E1B/E4A: revision log capture on updates ──
+
+  it("appends a human log entry with field diffs when logSource is set", () => {
+    newAnalysis("test");
+    const entity = createEntity(makeFactData(), defaultProvenance);
+
+    const updated = updateEntity(
+      entity.id,
+      { rationale: "human correction" },
+      { source: "user-edited", logSource: "human" },
+    );
+
+    const entry = updated!.revisionLog?.at(-1);
+    expect(entry).toMatchObject({ logNo: 1, logSource: "human" });
+    expect(entry!.fieldDiffs).toEqual([
+      {
+        field: "rationale",
+        old: '"test rationale"',
+        new: '"human correction"',
+      },
+    ]);
+    expect(entry!.conflict).toBeUndefined();
+  });
+
+  it("does not log when logSource is absent (internal writers)", () => {
+    newAnalysis("test");
+    const entity = createEntity(makeFactData(), defaultProvenance);
+    const updated = updateEntity(
+      entity.id,
+      { rationale: "silent update" },
+      { source: "ai-edited" },
+    );
+    expect(updated!.revisionLog).toBeUndefined();
+  });
+
+  it("conflict-marks queued edits that applied on top of newer revisions", () => {
+    newAnalysis("test");
+    const entity = createEntity(makeFactData(), defaultProvenance);
+
+    // A phase commit lands first (logNo 1)...
+    updateEntity(
+      entity.id,
+      { rationale: "phase rewrite" },
+      { source: "phase-derived", logSource: "phase" },
+    );
+
+    // ...then a queued human edit drains, based on logNo 0 (pre-commit view)
+    const updated = updateEntity(
+      entity.id,
+      { rationale: "stale-view edit" },
+      { source: "user-edited", logSource: "human", baseLogNo: 0 },
+    );
+
+    const entry = updated!.revisionLog?.at(-1);
+    expect(entry).toMatchObject({
+      logNo: 2,
+      logSource: "human",
+      conflict: true,
+    });
+  });
+
+  it("does not conflict-mark edits whose base is still the latest", () => {
+    newAnalysis("test");
+    const entity = createEntity(makeFactData(), defaultProvenance);
+
+    const updated = updateEntity(
+      entity.id,
+      { rationale: "clean edit" },
+      { source: "user-edited", logSource: "human", baseLogNo: 0 },
+    );
+
+    expect(updated!.revisionLog?.at(-1)?.conflict).toBeUndefined();
   });
 });
 
@@ -377,6 +476,24 @@ describe("markStale + getStaleEntityIds", () => {
     clearStale([e1.id]);
 
     expect(runtimeStatus.getRevision()).toBe(revisionBefore + 1);
+  });
+
+  it("clearStale emits stale_cleared only for entities that were stale", () => {
+    newAnalysis("test");
+    const e1 = createEntity(makeFactData(), defaultProvenance);
+    const e2 = createEntity(makeFactData(), defaultProvenance);
+    markStale([e1.id]);
+
+    const events: AnalysisMutationEvent[] = [];
+    const unsub = onMutation((event) => events.push(event));
+    // e2 was never stale — only e1 should be reported so the client card
+    // drops its "Needs revalidation" badge (confirmed no-diff challenge path).
+    clearStale([e1.id, e2.id]);
+    unsub();
+
+    const cleared = events.filter((e) => e.type === "stale_cleared");
+    expect(cleared).toHaveLength(1);
+    expect((cleared[0] as { entityIds: string[] }).entityIds).toEqual([e1.id]);
   });
 });
 
@@ -587,7 +704,6 @@ describe("loadAnalysis", () => {
           id: "historical-entity",
           ...makeFactData(),
           phase: "historical-game" as const,
-          source: "ai" as const,
           provenance: {
             source: "phase-derived" as const,
             runId: "run-legacy",
@@ -620,10 +736,12 @@ describe("loadAnalysis", () => {
 
     const loaded = getAnalysis();
     expect(loaded.phases.map((phaseState) => phaseState.phase)).toEqual(
-      V3_PHASES,
+      RUNNABLE_PHASES,
     );
     expect(
-      loaded.phases.find((phaseState) => phaseState.phase === "historical-game"),
+      loaded.phases.find(
+        (phaseState) => phaseState.phase === "historical-game",
+      ),
     ).toMatchObject({
       status: "complete",
       entityIds: ["historical-entity"],
@@ -669,6 +787,24 @@ describe("onMutation", () => {
     }
 
     unsub();
+  });
+
+  it("continues mutation delivery when one listener throws", () => {
+    newAnalysis("test");
+    const events: AnalysisMutationEvent[] = [];
+    const throwingUnsub = onMutation(() => {
+      throw new Error("closed stream");
+    });
+    const observingUnsub = onMutation((event) => events.push(event));
+
+    expect(() => createEntity(makeFactData(), defaultProvenance)).not.toThrow();
+
+    expect(getAnalysis().entities).toHaveLength(1);
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("entity_created");
+
+    throwingUnsub();
+    observingUnsub();
   });
 
   it("callback receives entity_updated events with previousProvenance", () => {
@@ -843,5 +979,118 @@ describe("onMutation", () => {
 
     createEntity(makeFactData(), defaultProvenance);
     expect(events).toHaveLength(1); // no new events after unsub
+  });
+});
+
+// ── Challenges (9A / 2.2A / E4A) ──
+
+describe("challenges", () => {
+  it("createChallenge records at analysis level, logs a challenge entry, and stale-marks self + downstream", () => {
+    newAnalysis("test");
+    const challenged = createEntity(makeFactData(), defaultProvenance);
+    const dependent = createEntity(makeFactData(), defaultProvenance);
+    createRelationship({
+      type: "depends-on",
+      fromEntityId: challenged.id,
+      toEntityId: dependent.id,
+    });
+
+    const result = createChallenge(challenged.id, "The rate cited is stale.");
+
+    expect(result).not.toBeNull();
+    expect(result!.challenge).toMatchObject({
+      entityId: challenged.id,
+      objection: "The rate cited is stale.",
+      status: "pending",
+      viewed: false,
+    });
+
+    // Record lives on the analysis, keyed by entityId (E4A)
+    expect(getChallenges()).toHaveLength(1);
+    expect(getAnalysis().challenges).toHaveLength(1);
+
+    // Challenge revision entry on the entity — provenance untouched so the
+    // re-run may still revise or remove it
+    const entity = getAnalysis().entities.find((e) => e.id === challenged.id)!;
+    expect(entity.revisionLog?.at(-1)).toMatchObject({
+      logSource: "challenge",
+      fieldDiffs: [],
+    });
+    expect(entity.provenance?.source).toBe("phase-derived");
+
+    // Self + downstream are stale so revalidation re-runs from this phase
+    expect(result!.staleMarked).toEqual([challenged.id, dependent.id]);
+    expect(getStaleEntityIds()).toEqual(
+      expect.arrayContaining([challenged.id, dependent.id]),
+    );
+  });
+
+  it("createChallenge returns null for unknown entities", () => {
+    newAnalysis("test");
+    expect(createChallenge("missing", "objection text here")).toBeNull();
+  });
+
+  it("resolveChallenge transitions pending → resolved exactly once", () => {
+    newAnalysis("test");
+    const entity = createEntity(makeFactData(), defaultProvenance);
+    const { challenge } = createChallenge(entity.id, "Needs re-examination.")!;
+
+    const resolved = resolveChallenge(challenge.id, {
+      outcome: "CONFIRMED",
+      runId: "reval-1",
+      responseRationale: "Evidence still supports this.",
+    });
+
+    expect(resolved).toMatchObject({
+      status: "resolved",
+      outcome: "CONFIRMED",
+      runId: "reval-1",
+      responseRationale: "Evidence still supports this.",
+      viewed: false,
+    });
+    expect(getPendingChallenges()).toHaveLength(0);
+
+    // Second resolution is a no-op that returns the already-resolved record
+    const again = resolveChallenge(challenge.id, {
+      outcome: "REVISED",
+      runId: "reval-2",
+    });
+    expect(again?.outcome).toBe("CONFIRMED");
+  });
+
+  it("markChallengeViewed flips the until-viewed badge state", () => {
+    newAnalysis("test");
+    const entity = createEntity(makeFactData(), defaultProvenance);
+    const { challenge } = createChallenge(entity.id, "Check the sourcing.")!;
+
+    const viewed = markChallengeViewed(challenge.id);
+    expect(viewed?.viewed).toBe(true);
+    expect(markChallengeViewed("missing")).toBeNull();
+  });
+
+  it("emits challenge_created and challenge_updated mutation events", () => {
+    newAnalysis("test");
+    const entity = createEntity(makeFactData(), defaultProvenance);
+    const events: AnalysisMutationEvent[] = [];
+    const unsub = onMutation((event) => events.push(event));
+
+    const { challenge } = createChallenge(entity.id, "Objection for events.")!;
+    resolveChallenge(challenge.id, { outcome: "CONFIRMED" });
+    unsub();
+
+    const types = events.map((e) => e.type);
+    expect(types).toContain("challenge_created");
+    expect(types).toContain("challenge_updated");
+  });
+
+  it("challenge records survive entity deletion (REMOVED path precondition)", () => {
+    newAnalysis("test");
+    const entity = createEntity(makeFactData(), defaultProvenance);
+    const { challenge } = createChallenge(entity.id, "About to be deleted.")!;
+
+    removeEntity(entity.id);
+
+    expect(getPendingChallenges()).toHaveLength(1);
+    expect(getPendingChallenges()[0].id).toBe(challenge.id);
   });
 });

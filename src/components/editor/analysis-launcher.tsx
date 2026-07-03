@@ -50,7 +50,7 @@ export default function AnalysisLauncher({
   return (
     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center">
       {/* Question */}
-      <p className="mb-4 font-[Geist,sans-serif] text-[13px] font-medium text-zinc-500">
+      <p className="mb-4 font-sans text-[13px] font-medium text-zinc-500">
         {t("analysis.launcherInputPlaceholder")}
       </p>
 
@@ -72,7 +72,7 @@ export default function AnalysisLauncher({
             }
           }}
           placeholder={t("analysis.launcherHint")}
-          className="h-8 flex-1 bg-transparent font-[Geist,sans-serif] text-[13px] font-medium text-zinc-200 placeholder:text-zinc-600 outline-none"
+          className="h-8 flex-1 bg-transparent font-sans text-[13px] font-medium text-zinc-200 placeholder:text-zinc-600 outline-none"
         />
         {input.trim().length > 0 && canUseModel && (
           <CornerDownLeft size={13} className="shrink-0 text-zinc-500" />
@@ -88,7 +88,7 @@ export default function AnalysisLauncher({
             onClick={() => submitTopic(topic)}
             disabled={!canUseModel}
             className={cn(
-              "rounded-full border border-zinc-700 px-3 py-1 font-[Geist,sans-serif] text-[11px] font-medium text-zinc-500 transition-colors",
+              "rounded-full border border-zinc-700 px-3 py-1 font-sans text-[11px] font-medium text-zinc-500 transition-colors",
               canUseModel
                 ? "hover:border-zinc-600 hover:text-zinc-300"
                 : "cursor-default opacity-50",
@@ -100,7 +100,7 @@ export default function AnalysisLauncher({
       </div>
 
       {/* Model indicator */}
-      <p className="mt-5 font-[Geist,sans-serif] text-[11px] text-zinc-600">
+      <p className="mt-5 font-sans text-[11px] text-zinc-600">
         {isLoadingModels
           ? t("ai.loadingModels")
           : noAvailableModels

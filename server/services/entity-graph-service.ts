@@ -7,16 +7,23 @@ import type {
   AnalysisEntity,
   AnalysisRelationship,
   Analysis,
+  ChallengeOutcome,
+  ChallengeRecord,
   EntityProvenance,
-  EntitySource,
   RelationshipType,
+  RevisionLogSource,
 } from "../../shared/types/entity";
+import {
+  appendRevisionLog,
+  computeFieldDiffs,
+  latestLogNo,
+} from "./revision-log";
 import type {
   MethodologyPhase,
   PhaseStatus,
 } from "../../shared/types/methodology";
 import type { AnalysisMutationEvent } from "../../shared/types/events";
-import { serverLog } from "../utils/ai-logger";
+import { serverLog, serverWarn } from "../utils/ai-logger";
 import { RELATIONSHIP_CATEGORY } from "../../src/types/entity";
 import * as runtimeStatus from "./runtime-status";
 import {
@@ -29,6 +36,7 @@ import {
 let analysis: Analysis = createEmptyAnalysis("");
 let _isDirty = false;
 let _revision = 0;
+let _analysisEpoch = 0;
 let _fileName: string | null = null;
 let _filePath: string | null = null;
 let _fileHandle: FileSystemFileHandle | null = null;
@@ -57,7 +65,13 @@ function normalizeAnalysis(analysisState: Analysis): Analysis {
 
 function emit(event: AnalysisMutationEvent): void {
   for (const cb of listeners) {
-    cb(event);
+    try {
+      cb(event);
+    } catch (error) {
+      serverWarn(undefined, "entity-graph", "listener-error", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }
 
@@ -101,23 +115,11 @@ function mutate(options?: { markDirty?: boolean }): void {
   runtimeStatus.incrementRevision();
 }
 
-function entitySourceForProvenance(
-  source: EntityProvenance["source"],
-): EntitySource {
-  switch (source) {
-    case "user-edited":
-      return "human";
-    case "ai-edited":
-    case "phase-derived":
-    default:
-      return "ai";
-  }
-}
-
 // ── Core API ──
 
 export function newAnalysis(topic: string): void {
   analysis = createEmptyAnalysis(topic);
+  _analysisEpoch += 1;
   _isDirty = false;
   _fileName = null;
   _filePath = null;
@@ -134,6 +136,7 @@ export function loadAnalysis(
   },
 ): void {
   analysis = normalizeAnalysis(loaded);
+  _analysisEpoch += 1;
   _isDirty = false;
   _fileName = source?.fileName ?? null;
   _filePath = source?.filePath ?? null;
@@ -145,12 +148,18 @@ export function getAnalysis(): Readonly<Analysis> {
   return normalizeAnalysis(analysis);
 }
 
+export function getAnalysisEpoch(): number {
+  return _analysisEpoch;
+}
+
 export function createEntity(
-  data: Omit<AnalysisEntity, "id" | "provenance" | "source">,
+  data: Omit<AnalysisEntity, "id" | "provenance">,
   provenance: {
     source: EntityProvenance["source"];
     runId?: string;
     phase?: string;
+    /** When set, records a creation entry in the entity's revision log (E1B). */
+    logSource?: RevisionLogSource;
   },
 ): AnalysisEntity {
   // Dedup: if an entity with this data already exists by matching id, skip
@@ -168,8 +177,16 @@ export function createEntity(
   const entity: AnalysisEntity = {
     ...data,
     id,
-    source: entitySourceForProvenance(provenance.source),
     provenance: fullProvenance,
+    ...(provenance.logSource
+      ? {
+          revisionLog: appendRevisionLog(undefined, {
+            logSource: provenance.logSource,
+            fieldDiffs: [], // empty diffs mark creation
+            runId: provenance.runId,
+          }),
+        }
+      : {}),
   };
 
   // Dedup by ID — if somehow a duplicate sneaks through
@@ -217,7 +234,6 @@ export function createRelationship(
     id: nanoid(),
     ...(provenance
       ? {
-          source: entitySourceForProvenance(provenance.source),
           provenance: {
             source: provenance.source,
             runId: provenance.runId,
@@ -246,8 +262,18 @@ export function createRelationship(
 
 export function updateEntity(
   id: string,
-  updates: Partial<Omit<AnalysisEntity, "id" | "provenance" | "source">>,
-  provenance: { source: EntityProvenance["source"]; runId?: string },
+  updates: Partial<Omit<AnalysisEntity, "id" | "provenance">>,
+  provenance: {
+    source: EntityProvenance["source"];
+    runId?: string;
+    /** When set, records a field-diff entry in the revision log (E1B). */
+    logSource?: RevisionLogSource;
+    /**
+     * Latest logNo the editor saw when submitting (queued mid-run edits).
+     * If newer entries landed in between, the entry is conflict-marked.
+     */
+    baseLogNo?: number;
+  },
 ): AnalysisEntity | null {
   const existing = analysis.entities.find((e) => e.id === id);
   if (!existing) return null;
@@ -268,9 +294,23 @@ export function updateEntity(
     ...existing,
     ...updates,
     id, // preserve original ID
-    source: entitySourceForProvenance(provenance.source),
     provenance: newProvenance,
   };
+
+  if (provenance.logSource) {
+    const fieldDiffs = computeFieldDiffs(existing, updated);
+    if (fieldDiffs.length > 0) {
+      const superseded =
+        provenance.baseLogNo !== undefined &&
+        latestLogNo(existing.revisionLog) > provenance.baseLogNo;
+      updated.revisionLog = appendRevisionLog(existing.revisionLog, {
+        logSource: provenance.logSource,
+        fieldDiffs,
+        runId: provenance.runId,
+        conflict: superseded,
+      });
+    }
+  }
 
   analysis = {
     ...analysis,
@@ -332,6 +372,10 @@ export function removeRelationship(id: string): boolean {
   return true;
 }
 
+export function getEntityById(id: string): AnalysisEntity | null {
+  return analysis.entities.find((e) => e.id === id) ?? null;
+}
+
 export function getEntitiesByPhase(phase: MethodologyPhase): AnalysisEntity[] {
   return analysis.entities.filter((e) => e.phase === phase);
 }
@@ -375,6 +419,13 @@ export function clearStale(entityIds: string[]): void {
   if (entityIds.length === 0) return;
 
   const idSet = new Set(entityIds);
+  // Only the entities that were actually stale change — emit those so the
+  // client can drop the "Needs revalidation" badge. A confirmed no-diff
+  // challenge produces no entity_updated, so without this the card would
+  // stay stale on the client until a full snapshot resync.
+  const cleared = analysis.entities
+    .filter((e) => idSet.has(e.id) && e.stale)
+    .map((e) => e.id);
   analysis = {
     ...analysis,
     entities: analysis.entities.map((e) =>
@@ -382,6 +433,9 @@ export function clearStale(entityIds: string[]): void {
     ),
   };
   mutate();
+  if (cleared.length > 0) {
+    emit({ type: "stale_cleared", entityIds: cleared });
+  }
 }
 
 export function getStaleEntityIds(): string[] {
@@ -390,6 +444,138 @@ export function getStaleEntityIds(): string[] {
 
 export function getDownstreamEntityIds(entityId: string): string[] {
   return bfsDownstream(entityId, analysis.relationships);
+}
+
+// ── Challenges (9A / 2.2A) ──
+//
+// Records live at the analysis level keyed by entityId (E4A): the challenged
+// entity may be deleted by the re-run (outcome REMOVED), so the record must
+// outlive it. The objection does NOT flip entity provenance — the challenged
+// entity stays AI-owned so the revalidation re-run may revise or remove it.
+
+export function createChallenge(
+  entityId: string,
+  objection: string,
+): { challenge: ChallengeRecord; staleMarked: string[] } | null {
+  const entity = analysis.entities.find((e) => e.id === entityId);
+  if (!entity) return null;
+
+  const challenge: ChallengeRecord = {
+    id: nanoid(),
+    entityId,
+    objection,
+    createdAt: Date.now(),
+    status: "pending",
+    viewed: false,
+  };
+
+  // Challenge revision entry on the entity (its own logSource namespace)
+  const challenged: AnalysisEntity = {
+    ...entity,
+    revisionLog: appendRevisionLog(entity.revisionLog, {
+      logSource: "challenge",
+      fieldDiffs: [],
+    }),
+  };
+
+  analysis = {
+    ...analysis,
+    entities: analysis.entities.map((e) =>
+      e.id === entityId ? challenged : e,
+    ),
+    challenges: [...(analysis.challenges ?? []), challenge],
+  };
+  mutate();
+  emit({ type: "challenge_created", challenge });
+  emit({
+    type: "entity_updated",
+    entity: challenged,
+    previousProvenance: entity.provenance ?? {
+      source: "phase-derived",
+      timestamp: 0,
+    },
+  });
+  serverLog(undefined, "entity-graph", "challenge-created", {
+    challengeId: challenge.id,
+    entityId,
+    objectionLength: objection.length,
+  });
+
+  // The challenged entity itself must re-run, plus everything downstream
+  const staleTargets = [
+    entityId,
+    ...bfsDownstream(entityId, analysis.relationships),
+  ];
+  markStale(staleTargets);
+
+  return { challenge, staleMarked: staleTargets };
+}
+
+export function getChallenges(): ChallengeRecord[] {
+  return [...(analysis.challenges ?? [])];
+}
+
+export function getPendingChallenges(): ChallengeRecord[] {
+  return (analysis.challenges ?? []).filter((c) => c.status === "pending");
+}
+
+export function resolveChallenge(
+  id: string,
+  resolution: {
+    outcome: ChallengeOutcome;
+    runId?: string;
+    responseLogNo?: number;
+    responseRationale?: string;
+    unverified?: boolean;
+  },
+): ChallengeRecord | null {
+  const existing = (analysis.challenges ?? []).find((c) => c.id === id);
+  if (!existing || existing.status === "resolved") return existing ?? null;
+
+  const resolved: ChallengeRecord = {
+    ...existing,
+    status: "resolved",
+    outcome: resolution.outcome,
+    resolvedAt: Date.now(),
+    runId: resolution.runId,
+    responseLogNo: resolution.responseLogNo,
+    responseRationale: resolution.responseRationale,
+    unverified: resolution.unverified,
+    viewed: false,
+  };
+
+  analysis = {
+    ...analysis,
+    challenges: (analysis.challenges ?? []).map((c) =>
+      c.id === id ? resolved : c,
+    ),
+  };
+  mutate();
+  emit({ type: "challenge_updated", challenge: resolved });
+  serverLog(resolution.runId, "entity-graph", "challenge-resolved", {
+    challengeId: id,
+    entityId: resolved.entityId,
+    outcome: resolution.outcome,
+  });
+
+  return resolved;
+}
+
+export function markChallengeViewed(id: string): ChallengeRecord | null {
+  const existing = (analysis.challenges ?? []).find((c) => c.id === id);
+  if (!existing) return null;
+  if (existing.viewed) return existing;
+
+  const viewed: ChallengeRecord = { ...existing, viewed: true };
+  analysis = {
+    ...analysis,
+    challenges: (analysis.challenges ?? []).map((c) =>
+      c.id === id ? viewed : c,
+    ),
+  };
+  mutate();
+  emit({ type: "challenge_updated", challenge: viewed });
+  return viewed;
 }
 
 export function removeEntity(id: string): boolean {
@@ -531,6 +717,7 @@ export function _resetForTest(): void {
   analysis = createEmptyAnalysis("");
   _isDirty = false;
   _revision = 0;
+  _analysisEpoch = 0;
   _fileName = null;
   _filePath = null;
   _fileHandle = null;

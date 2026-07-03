@@ -11,6 +11,7 @@ import * as revalidationService from "../../services/revalidation-service";
 import * as entityGraphService from "../../services/entity-graph-service";
 import * as runtimeStatus from "../../services/runtime-status";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
+import { startSSEKeepAlive } from "../../utils/sse-keepalive";
 
 const HEARTBEAT_INTERVAL_MS =
   analysisRuntimeConfig.analyzeSse.keepaliveIntervalMs;
@@ -72,7 +73,7 @@ export default defineEventHandler((event) => {
   const unsubOrchestrator = analysisOrchestrator.onProgress(onProgress);
   const unsubRevalidation = revalidationService.onProgress(onProgress);
 
-  const heartbeat = setInterval(() => {
+  const heartbeat = startSSEKeepAlive(() => {
     writeEvent(res, {
       channel: "ping",
       revision: runtimeStatus.getRevision(),

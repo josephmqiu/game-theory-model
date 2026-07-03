@@ -13,7 +13,6 @@ function makeEntity(
 ): AnalysisEntity {
   return {
     confidence: "medium",
-    source: "ai",
     rationale: "",
     revision: 1,
     stale: false,
@@ -55,6 +54,24 @@ describe("entityToRenderNode", () => {
     expect(rn.absX).toBe(100);
     expect(rn.absY).toBe(200);
     expect(rn.node.role).toBe("entity-fact");
+  });
+
+  it("adds an AI-facing semantic explain breadcrumb to entity cards", () => {
+    const entity = makeEntity({
+      id: "p1",
+      type: "player",
+      phase: "player-identification",
+      data: {
+        type: "player",
+        name: "USA",
+        playerType: "primary",
+        knowledge: [],
+      },
+    });
+
+    const rn = entityToRenderNode(entity, makeLayoutEntry());
+
+    expect(rn.node.explain).toBe("player entity card: USA (phase 2)");
   });
 
   it("maps a player entity to correct size (260x100) and role", () => {

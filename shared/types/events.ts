@@ -1,6 +1,7 @@
 import type {
   AnalysisEntity,
   AnalysisRelationship,
+  ChallengeRecord,
   EntityProvenance,
 } from "./entity";
 
@@ -47,6 +48,9 @@ export type AnalysisMutationEvent =
     }
   | { type: "relationship_updated"; relationship: AnalysisRelationship }
   | { type: "stale_marked"; entityIds: string[] }
+  | { type: "stale_cleared"; entityIds: string[] }
+  | { type: "challenge_created"; challenge: ChallengeRecord }
+  | { type: "challenge_updated"; challenge: ChallengeRecord }
   | { type: "state_changed" };
 
 export type AnalysisEvent = AnalysisProgressEvent | AnalysisMutationEvent;
@@ -56,5 +60,6 @@ export type ChatEvent =
   | { type: "tool_call_start"; toolName: string; input: unknown }
   | { type: "tool_call_result"; toolName: string; output: unknown }
   | { type: "tool_call_error"; toolName: string; error: string }
+  | { type: "session_expired" }
   | { type: "turn_complete" }
   | { type: "error"; message: string; recoverable: boolean };

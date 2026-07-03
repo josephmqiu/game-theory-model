@@ -203,6 +203,7 @@ describe("claude-adapter", () => {
       ]);
       expect(callArgs.options.permissionMode).toBe("bypassPermissions");
       expect(callArgs.options.includePartialMessages).toBe(true);
+      expect(callArgs.options.persistSession).toBe(false);
       expect(callArgs.options.settingSources).toEqual([]);
       expect(callArgs.options.mcpServers).toBeDefined();
       expect(callArgs.options.mcpServers.chat).toBeDefined();
@@ -261,6 +262,57 @@ describe("claude-adapter", () => {
         { type: "text_delta", content: "world" },
         { type: "turn_complete" },
       ]);
+    });
+
+    it("passes resume and reports the SDK session id", async () => {
+      const { streamChat } = await import("../claude-adapter");
+      const onSessionId = vi.fn();
+
+      mockQuery.mockImplementation(() => {
+        let idx = 0;
+        const messages = [
+          {
+            type: "system",
+            subtype: "init",
+            session_id: "claude-session-1",
+          },
+          {
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            result: "done",
+            session_id: "claude-session-1",
+          },
+        ];
+        return {
+          close: mockQueryClose,
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                if (idx < messages.length) {
+                  return { done: false, value: messages[idx++] };
+                }
+                return { done: true, value: undefined };
+              },
+            };
+          },
+        };
+      });
+
+      const events: ChatEvent[] = [];
+      for await (const ev of streamChat("hello", "sys", "model", {
+        resumeSessionId: "claude-session-previous",
+        onSessionId,
+      })) {
+        events.push(ev);
+      }
+
+      const callArgs = mockQuery.mock.calls[0][0];
+      expect(callArgs.options.resume).toBe("claude-session-previous");
+      expect(callArgs.options.persistSession).toBe(true);
+      expect(onSessionId).toHaveBeenCalledTimes(1);
+      expect(onSessionId).toHaveBeenCalledWith("claude-session-1");
+      expect(events).toContainEqual({ type: "turn_complete" });
     });
 
     it("normalizes tool use to tool_call_start", async () => {
