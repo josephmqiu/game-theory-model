@@ -202,7 +202,6 @@ export function useChatHandlers() {
   const availableModels = useAIStore((s) => s.availableModels);
   const isLoadingModels = useAIStore((s) => s.isLoadingModels);
   const addMessage = useAIStore((s) => s.addMessage);
-  const updateLastMessage = useAIStore((s) => s.updateLastMessage);
   const updateMessageById = useAIStore((s) => s.updateMessageById);
   const setStreaming = useAIStore((s) => s.setStreaming);
 
@@ -297,9 +296,12 @@ export function useChatHandlers() {
             case "thinking": {
               chatThinking += chunk.content;
               const thinkingStep = `<step title="Thinking">${chatThinking}</step>`;
-              updateLastMessage(
-                thinkingStep + (accumulated ? `\n${accumulated}` : ""),
-              );
+              // Target the assistant message by id, not "last message": a
+              // session_expired divider or tool row appended mid-stream would
+              // otherwise steal the streamed text (mirrors the error case).
+              updateMessageById(assistantMsg.id, {
+                content: thinkingStep + (accumulated ? `\n${accumulated}` : ""),
+              });
               break;
             }
             case "text": {
@@ -307,7 +309,9 @@ export function useChatHandlers() {
               const thinkingPrefix = chatThinking
                 ? `<step title="Thinking">${chatThinking}</step>\n`
                 : "";
-              updateLastMessage(thinkingPrefix + accumulated);
+              updateMessageById(assistantMsg.id, {
+                content: thinkingPrefix + accumulated,
+              });
               break;
             }
             case "tool_start": {
@@ -454,7 +458,6 @@ export function useChatHandlers() {
       messages,
       model,
       addMessage,
-      updateLastMessage,
       updateMessageById,
       setStreaming,
     ],

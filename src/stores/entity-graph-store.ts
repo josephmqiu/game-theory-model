@@ -76,6 +76,7 @@ interface EntityGraphStoreState extends AnalysisFileReference {
   removeRelationshipFromServer: (id: string) => void;
   upsertChallengeFromServer: (challenge: ChallengeRecord) => void;
   markStaleFromServer: (entityIds: string[]) => void;
+  clearStaleFromServer: (entityIds: string[]) => void;
   syncAnalysisFromServer: (analysis: Analysis) => void;
   reconcileLayout: () => void;
   pinEntityPosition: (id: string, x: number, y: number) => void;
@@ -516,6 +517,19 @@ export const useEntityGraphStore = create<EntityGraphStoreState>(
           ...state.analysis,
           entities: state.analysis.entities.map((entity) =>
             idSet.has(entity.id) ? { ...entity, stale: true } : entity,
+          ),
+        },
+        revision: state.revision + 1,
+      }));
+    },
+
+    clearStaleFromServer: (entityIds) => {
+      const idSet = new Set(entityIds);
+      set((state) => ({
+        analysis: {
+          ...state.analysis,
+          entities: state.analysis.entities.map((entity) =>
+            idSet.has(entity.id) ? { ...entity, stale: false } : entity,
           ),
         },
         revision: state.revision + 1,

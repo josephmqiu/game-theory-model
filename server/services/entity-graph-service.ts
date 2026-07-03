@@ -419,6 +419,13 @@ export function clearStale(entityIds: string[]): void {
   if (entityIds.length === 0) return;
 
   const idSet = new Set(entityIds);
+  // Only the entities that were actually stale change — emit those so the
+  // client can drop the "Needs revalidation" badge. A confirmed no-diff
+  // challenge produces no entity_updated, so without this the card would
+  // stay stale on the client until a full snapshot resync.
+  const cleared = analysis.entities
+    .filter((e) => idSet.has(e.id) && e.stale)
+    .map((e) => e.id);
   analysis = {
     ...analysis,
     entities: analysis.entities.map((e) =>
@@ -426,6 +433,9 @@ export function clearStale(entityIds: string[]): void {
     ),
   };
   mutate();
+  if (cleared.length > 0) {
+    emit({ type: "stale_cleared", entityIds: cleared });
+  }
 }
 
 export function getStaleEntityIds(): string[] {

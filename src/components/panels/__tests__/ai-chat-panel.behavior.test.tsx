@@ -62,8 +62,7 @@ function installScrollToMock() {
     optionsOrLeft?: ScrollToOptions | number,
     top?: number,
   ) {
-    const nextTop =
-      typeof optionsOrLeft === "object" ? optionsOrLeft.top : top;
+    const nextTop = typeof optionsOrLeft === "object" ? optionsOrLeft.top : top;
     if (typeof nextTop === "number") {
       (this as HTMLElement).scrollTop = nextTop;
     }
@@ -173,7 +172,10 @@ describe("AIChatPanel scroll behavior", () => {
   afterEach(() => {
     cleanup();
     useAIStore.setState(useAIStore.getInitialState(), true);
-    useAgentSettingsStore.setState(useAgentSettingsStore.getInitialState(), true);
+    useAgentSettingsStore.setState(
+      useAgentSettingsStore.getInitialState(),
+      true,
+    );
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -391,9 +393,11 @@ describe("AIChatPanel scroll behavior", () => {
   });
 
   it("renders a quiet session-expired divider from the chat event stream", async () => {
-    streamChatMock.mockImplementationOnce(async function* sessionExpiredStream() {
-      yield { type: "session_expired", content: "" };
-    });
+    streamChatMock.mockImplementationOnce(
+      async function* sessionExpiredStream() {
+        yield { type: "session_expired", content: "" };
+      },
+    );
 
     renderPanel([message("u1", "user", "Question")]);
 
@@ -403,6 +407,27 @@ describe("AIChatPanel scroll behavior", () => {
     fireEvent.click(screen.getByTitle("Send message"));
 
     expect(await screen.findByText(/Session expired/)).toBeTruthy();
+  });
+
+  it("keeps the session-expired divider when the stream then answers", async () => {
+    streamChatMock.mockImplementationOnce(
+      async function* sessionExpiredThenAnswer() {
+        yield { type: "session_expired", content: "" };
+        yield { type: "text_delta", content: "Fresh answer" };
+      },
+    );
+
+    renderPanel([message("u1", "user", "Question")]);
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Continue" },
+    });
+    fireEvent.click(screen.getByTitle("Send message"));
+
+    // The answer must land in the assistant bubble, not overwrite the appended
+    // session-expired divider (regression: streaming used updateLastMessage).
+    expect(await screen.findByText(/Session expired/)).toBeTruthy();
+    expect(await screen.findByText("Fresh answer")).toBeTruthy();
   });
 
   it("anchors the last user message near 20 percent when reopened during a stream", async () => {

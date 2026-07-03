@@ -48,6 +48,7 @@ export type AnalysisMutationEvent =
     }
   | { type: "relationship_updated"; relationship: AnalysisRelationship }
   | { type: "stale_marked"; entityIds: string[] }
+  | { type: "stale_cleared"; entityIds: string[] }
   | { type: "challenge_created"; challenge: ChallengeRecord }
   | { type: "challenge_updated"; challenge: ChallengeRecord }
   | { type: "state_changed" };

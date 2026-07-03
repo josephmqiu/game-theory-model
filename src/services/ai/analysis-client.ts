@@ -199,6 +199,9 @@ function applyMutationEvent(event: AnalysisMutationEvent): boolean {
     case "stale_marked":
       store.markStaleFromServer(event.entityIds);
       return false;
+    case "stale_cleared":
+      store.clearStaleFromServer(event.entityIds);
+      return false;
     case "challenge_created":
     case "challenge_updated":
       store.upsertChallengeFromServer(event.challenge);

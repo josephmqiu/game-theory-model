@@ -477,6 +477,24 @@ describe("markStale + getStaleEntityIds", () => {
 
     expect(runtimeStatus.getRevision()).toBe(revisionBefore + 1);
   });
+
+  it("clearStale emits stale_cleared only for entities that were stale", () => {
+    newAnalysis("test");
+    const e1 = createEntity(makeFactData(), defaultProvenance);
+    const e2 = createEntity(makeFactData(), defaultProvenance);
+    markStale([e1.id]);
+
+    const events: AnalysisMutationEvent[] = [];
+    const unsub = onMutation((event) => events.push(event));
+    // e2 was never stale — only e1 should be reported so the client card
+    // drops its "Needs revalidation" badge (confirmed no-diff challenge path).
+    clearStale([e1.id, e2.id]);
+    unsub();
+
+    const cleared = events.filter((e) => e.type === "stale_cleared");
+    expect(cleared).toHaveLength(1);
+    expect((cleared[0] as { entityIds: string[] }).entityIds).toEqual([e1.id]);
+  });
 });
 
 describe("removePhaseEntities", () => {
