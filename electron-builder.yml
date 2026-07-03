@@ -27,9 +27,10 @@ mac:
   target:
     - dmg
     - zip
-  hardenedRuntime: true
-  gatekeeperAssess: false
-  notarize: true
+  # OSS project — ship unsigned. No Apple Developer signing or notarization.
+  # Users open via right-click → Open on first launch.
+  identity: null
+  notarize: false
 
 dmg:
   title: "${productName} ${version}"

@@ -118,19 +118,11 @@ jobs:
         # release job below. electron-builder is not the uploader.
         run: npx electron-builder --config electron-builder.yml ${{ matrix.build_args }} --publish never
         env:
-          # Code signing + notarization. REQUIRED for a shippable auto-update:
-          # macOS Gatekeeper blocks unsigned/un-notarized auto-updates from
-          # launching, and electron-builder.yml sets `notarize: true`, so the mac
-          # build FAILS without the APPLE_* secrets. Windows SmartScreen warns on
-          # unsigned installers. Set these repo secrets before cutting a real
-          # release; until then, runs will fail on the mac notarize step (expected).
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # OSS project — unsigned builds on every platform (no Apple signing/
+          # notarization, no Windows cert). Disable macOS identity auto-discovery
+          # so electron-builder doesn't try (and fail) to sign on CI. Users open
+          # via right-click → Open (macOS) / "Run anyway" (Windows) on first launch.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Rename arm64 update channel metadata
         if: matrix.platform == 'mac-arm64'
