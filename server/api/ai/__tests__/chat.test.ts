@@ -376,7 +376,9 @@ describe("/api/ai/chat", () => {
 
     // Keepalive pings now run on resumed sessions too (long-TTFT fix), so the
     // first *meaningful* event — not literally events[0] — must be session_expired.
-    const meaningful = events.filter((e) => e.type !== "ping");
+    const meaningful = events.filter(
+      (e) => (e as { type: string }).type !== "ping",
+    );
     expect(meaningful[0]).toEqual({ type: "session_expired" });
     expect(events).toContainEqual({
       type: "text_delta",
