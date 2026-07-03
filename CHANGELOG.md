@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-03
+
 ### Added
 
 - Server-validated entity edits with a per-entity revision log
@@ -15,17 +17,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Design tokens, bundled Geist UI fonts, and regenerated design documentation
 - Edit and challenge UI flows with optimistic saves
 - Local packaged-app smoke command for macOS pre-release checks
+- Tag-triggered GitHub Release workflow so the desktop app can auto-update from GitHub Releases (macOS arm64/x64, Windows, Linux)
 
 ### Fixed
 
 - Phase ladder revalidation now reaches all 9 phases instead of stopping at 6
 - Desktop smoke CI sandbox behavior for Electron launch validation
+- Edits or a new analysis started during a revalidation can no longer commit stale entities into the graph
+- Chat-driven (AI tool) entity edits are now validated against per-type schemas and recorded in the revision log
+- Runtime chat sessions no longer leak or lock a session after an interrupted turn
+- Streamed answers no longer overwrite the session-expired divider
+- Entity cards clear the "Needs revalidation" badge after a challenge is confirmed unchanged
 
 ### Changed
 
 - Removed about 27k lines of dead Pencil-fork code, with `knip` guarding CI against regressions
 - Synced the OpenPencil v0.7.5 shortlist as the pinned canvas and AI-backend reference
 - Added the motion language with reduced-motion support
+- Removed the scheduled Desktop Smoke CI workflow (smoke remains runnable locally and on PRs)
 
 ## [0.4.1] - 2026-03-23
 
