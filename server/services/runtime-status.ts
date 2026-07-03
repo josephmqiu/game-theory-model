@@ -93,7 +93,7 @@ function clearFailureFields(status: RunStatus): RunStatus {
   };
 }
 
-function isActiveRun(runId: string): boolean {
+export function isActiveRun(runId: string): boolean {
   return activeRun !== null && activeRun.runId === runId;
 }
 

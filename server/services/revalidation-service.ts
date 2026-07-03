@@ -13,11 +13,17 @@ import * as orchestrator from "../agents/analysis-agent";
 import * as runtimeStatus from "./runtime-status";
 import { runPhase } from "./analysis-service";
 import { commitPhaseSnapshot } from "./revision-diff";
-import { createRunLogger, serverWarn, timer } from "../utils/ai-logger";
+import {
+  createRunLogger,
+  serverWarn,
+  timer,
+  type RunLogger,
+} from "../utils/ai-logger";
 
 // ── Constants ──
 
 const DEBOUNCE_MS = analysisRuntimeConfig.revalidation.debounceMs;
+export const MAX_REVAL_RUN_STATUSES = 50;
 
 // ── Revalidation run status tracking ──
 
@@ -25,7 +31,8 @@ export type RevalRunStatusValue =
   | "running"
   | "completed"
   | "failed"
-  | "deferred";
+  | "deferred"
+  | "aborted";
 
 export interface RevalRunStatus {
   runId: string;
@@ -46,6 +53,72 @@ const revalRunStatuses = new Map<string, RevalRunStatus>();
 let lastRunProvider: string | undefined;
 let lastRunModel: string | undefined;
 let lastRunRuntime: ResolvedAnalysisRuntime | undefined;
+
+function setRevalRunStatus(runId: string, status: RevalRunStatus): void {
+  if (revalRunStatuses.has(runId)) {
+    revalRunStatuses.delete(runId);
+  }
+  revalRunStatuses.set(runId, status);
+  evictOldRevalRunStatuses();
+}
+
+function evictOldRevalRunStatuses(): void {
+  while (revalRunStatuses.size > MAX_REVAL_RUN_STATUSES) {
+    const oldestEvictable = Array.from(revalRunStatuses.entries()).find(
+      ([, status]) => status.status !== "running",
+    );
+    if (!oldestEvictable) return;
+    revalRunStatuses.delete(oldestEvictable[0]);
+  }
+}
+
+function getRunningRevalStatus(): RevalRunStatus | null {
+  const statuses = Array.from(revalRunStatuses.values());
+  for (let index = statuses.length - 1; index >= 0; index -= 1) {
+    const status = statuses[index];
+    if (status.status === "running" && runtimeStatus.isActiveRun(status.runId)) {
+      return status;
+    }
+  }
+  return null;
+}
+
+async function dropStaleCommitIfNeeded(
+  runId: string,
+  phase: MethodologyPhase,
+  capturedEpoch: number,
+  logger: RunLogger,
+): Promise<boolean> {
+  const currentEpoch = entityGraphService.getAnalysisEpoch();
+  const active = runtimeStatus.isActiveRun(runId);
+  if (currentEpoch === capturedEpoch && active) {
+    return false;
+  }
+
+  const detail = {
+    phase,
+    capturedEpoch,
+    currentEpoch,
+    active,
+  };
+  logger.warn("revalidation", "stale-commit-dropped", detail);
+  serverWarn(runId, "revalidation", "stale-commit-dropped", detail);
+
+  const existing = revalRunStatuses.get(runId);
+  if (existing?.status === "running") {
+    setRevalRunStatus(runId, {
+      runId,
+      status: "aborted",
+      phasesCompleted: existing.phasesCompleted,
+      error: "Revalidation became stale before commit",
+    });
+  }
+  if (active) {
+    runtimeStatus.releaseRun(runId, "cancelled");
+  }
+  await logger.flush();
+  return true;
+}
 
 function queuePendingRevalidation(staleIds: string[]): void {
   if (staleIds.length === 0) return;
@@ -209,10 +282,13 @@ function resolveChallengesAfterRerun(
         responseRationale: entity.rationale,
       });
     } else {
+      // No-diff CONFIRMED is intentionally not treated as verified evidence:
+      // the graph did not change, so the UI asks the analyst to review it.
       entityGraphService.resolveChallenge(challenge.id, {
         outcome: "CONFIRMED",
         runId,
         responseRationale: entity.rationale,
+        unverified: true,
       });
     }
   }
@@ -268,7 +344,7 @@ export function revalidate(
     runtimeStatus.deferRevalidation(ids, {
       reason: "analysis-active",
     });
-    revalRunStatuses.set(runId, {
+    setRevalRunStatus(runId, {
       runId,
       status: "deferred",
       phasesCompleted: 0,
@@ -291,7 +367,7 @@ export function revalidate(
 
   if (!startPhase) {
     runtimeStatus.consumeDeferredRevalidationIds();
-    revalRunStatuses.set(runId, {
+    setRevalRunStatus(runId, {
       runId,
       status: "completed",
       phasesCompleted: 0,
@@ -307,7 +383,7 @@ export function revalidate(
     })
   ) {
     queuePendingRevalidation(staleEntityIds ?? []);
-    revalRunStatuses.set(runId, {
+    setRevalRunStatus(runId, {
       runId,
       status: "deferred",
       phasesCompleted: 0,
@@ -324,11 +400,18 @@ export function revalidate(
   runtimeStatus.consumeDeferredRevalidationIds();
 
   // Register as running before async work begins
-  revalRunStatuses.set(runId, { runId, status: "running", phasesCompleted: 0 });
+  setRevalRunStatus(runId, {
+    runId,
+    status: "running",
+    phasesCompleted: 0,
+  });
 
   // Execute phase re-runs asynchronously
   const capturedStartPhase = startPhase;
-  Promise.resolve().then(() => executeRevalidation(runId, capturedStartPhase));
+  const capturedEpoch = entityGraphService.getAnalysisEpoch();
+  Promise.resolve().then(() =>
+    executeRevalidation(runId, capturedStartPhase, capturedEpoch),
+  );
 
   return { runId };
 }
@@ -339,6 +422,7 @@ export function revalidate(
 async function executeRevalidation(
   runId: string,
   startPhase: MethodologyPhase,
+  capturedEpoch: number,
 ): Promise<void> {
   const logger = createRunLogger(runId);
   const revalTimer = timer();
@@ -407,6 +491,12 @@ async function executeRevalidation(
 
     if (result.success) {
       try {
+        if (
+          await dropStaleCommitIfNeeded(runId, p, capturedEpoch, logger)
+        ) {
+          return;
+        }
+
         let commitResult = commitPhaseSnapshot({
           phase: p,
           runId,
@@ -436,7 +526,7 @@ async function executeRevalidation(
 
           if (!result.success) {
             const error = result.error ?? "Revalidation phase failed";
-            revalRunStatuses.set(runId, {
+            setRevalRunStatus(runId, {
               runId,
               status: "failed",
               phasesCompleted,
@@ -451,6 +541,12 @@ async function executeRevalidation(
               runId,
               error,
             });
+            return;
+          }
+
+          if (
+            await dropStaleCommitIfNeeded(runId, p, capturedEpoch, logger)
+          ) {
             return;
           }
 
@@ -478,7 +574,7 @@ async function executeRevalidation(
         resolveChallengesAfterRerun(phaseChallenges, runId);
 
         phasesCompleted++;
-        revalRunStatuses.set(runId, {
+        setRevalRunStatus(runId, {
           runId,
           status: "running",
           phasesCompleted,
@@ -501,7 +597,7 @@ async function executeRevalidation(
           err instanceof Error
             ? `Revision diff validation error: ${err.message}`
             : `Revision diff validation error: ${String(err)}`;
-        revalRunStatuses.set(runId, {
+        setRevalRunStatus(runId, {
           runId,
           status: "failed",
           phasesCompleted,
@@ -520,7 +616,7 @@ async function executeRevalidation(
       }
     } else {
       const error = result.error ?? "Revalidation phase failed";
-      revalRunStatuses.set(runId, {
+      setRevalRunStatus(runId, {
         runId,
         status: "failed",
         phasesCompleted,
@@ -551,7 +647,11 @@ async function executeRevalidation(
     runId,
   );
 
-  revalRunStatuses.set(runId, { runId, status: "completed", phasesCompleted });
+  setRevalRunStatus(runId, {
+    runId,
+    status: "completed",
+    phasesCompleted,
+  });
   runtimeStatus.releaseRun(runId, "completed");
 
   const totalEntities = entityGraphService.getAnalysis().entities.length;
@@ -582,6 +682,29 @@ export function getActiveRevalStatus(): RevalRunStatus | null {
   }
 
   return null;
+}
+
+export function isRevalidating(): boolean {
+  return getRunningRevalStatus() !== null;
+}
+
+export function cancelActiveRevalidation(): RevalRunStatus | null {
+  const active = getRunningRevalStatus();
+  if (!active) {
+    return null;
+  }
+
+  const aborted: RevalRunStatus = {
+    ...active,
+    status: "aborted",
+    error: "Cancelled by new analysis",
+  };
+  setRevalRunStatus(active.runId, aborted);
+  runtimeStatus.releaseRun(active.runId, "cancelled");
+  serverWarn(active.runId, "revalidation", "cancelled", {
+    reason: "new-analysis",
+  });
+  return aborted;
 }
 
 /**

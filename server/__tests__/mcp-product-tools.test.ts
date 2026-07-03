@@ -275,6 +275,32 @@ describe("entity CRUD tools", () => {
     expect(result.created).toHaveLength(1);
     expect(result.created[0].provenance.source).toBe("ai-edited");
     expect(result.created[0].provenance.runId).toBe("run-active");
+    expect(result.created[0].revisionLog?.at(-1)).toMatchObject({
+      logSource: "chat",
+      fieldDiffs: [],
+    });
+  });
+
+  it("rejects invalid chat-created entities without mutating the graph", () => {
+    const result = JSON.parse(
+      handleCreateEntity({
+        type: "fact",
+        phase: "situational-grounding",
+        data: {
+          type: "fact",
+          date: "2026-03-19",
+          source: "test",
+          content: "New fact",
+          category: "not-a-category",
+        },
+        confidence: "high",
+        rationale: "test",
+      }),
+    );
+
+    expect(result.error).toBe("Validation failed");
+    expect(result.fieldErrors["data.category"]).toBeTruthy();
+    expect(getAnalysis().entities).toHaveLength(0);
   });
 
   it("updates entities using the nested updates payload", () => {
@@ -290,6 +316,32 @@ describe("entity CRUD tools", () => {
     expect(result.updated).toHaveLength(1);
     expect(result.updated[0].rationale).toBe("updated rationale");
     expect(result.updated[0].provenance.source).toBe("ai-edited");
+    expect(result.updated[0].revisionLog?.at(-1)).toMatchObject({
+      logSource: "chat",
+      fieldDiffs: [
+        {
+          field: "rationale",
+          old: '"test rationale"',
+          new: '"updated rationale"',
+        },
+      ],
+    });
+  });
+
+  it("rejects invalid chat updates without mutating the entity", () => {
+    const entity = createEntity(makeFactData(), defaultProvenance);
+
+    const result = JSON.parse(
+      handleUpdateEntity({
+        id: entity.id,
+        updates: { data: { category: "not-a-category" } },
+      }),
+    );
+
+    expect(result.error).toBe("Validation failed");
+    expect(result.fieldErrors["data.category"]).toBeTruthy();
+    expect(getAnalysis().entities[0].data).toEqual(entity.data);
+    expect(getAnalysis().entities[0].revisionLog).toBeUndefined();
   });
 
   it("deletes entities by id", () => {

@@ -648,6 +648,41 @@ export async function endChatSession(key: string): Promise<void> {
   }
 }
 
+export async function resetAnalysis(
+  topic = "",
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const response = await fetch("/api/ai/entity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "newAnalysis", topic }),
+    });
+    const result = (await response.json().catch(() => ({}))) as {
+      analysis?: Analysis;
+      error?: string;
+    };
+
+    if (!response.ok || result.error) {
+      return {
+        ok: false,
+        error: result.error ?? `HTTP ${response.status}`,
+      };
+    }
+
+    if (result.analysis) {
+      applyAnalysisSnapshot(result.analysis);
+    } else {
+      useEntityGraphStore.getState().newAnalysis(topic);
+    }
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Network error",
+    };
+  }
+}
+
 export async function hydrateAnalysisState(): Promise<AnalysisStateResponse | null> {
   const manager = getEventStreamManager();
   if (!manager) {

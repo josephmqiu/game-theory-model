@@ -6,6 +6,7 @@ import {
   newAnalysis,
   loadAnalysis,
   getAnalysis,
+  getAnalysisEpoch,
   createEntity,
   createRelationship,
   updateEntity,
@@ -106,6 +107,25 @@ describe("newAnalysis", () => {
 
     expect(runtimeStatus.getRevision()).toBe(revisionBefore + 1);
     expect(getIsDirty()).toBe(false);
+  });
+
+  it("bumps the analysis epoch on new and loaded analyses", () => {
+    const epochBefore = getAnalysisEpoch();
+
+    newAnalysis("US-China trade war");
+    const afterNew = getAnalysisEpoch();
+
+    loadAnalysis({
+      id: "loaded-id",
+      name: "Loaded",
+      topic: "loaded topic",
+      entities: [],
+      relationships: [],
+      phases: [],
+    });
+
+    expect(afterNew).toBe(epochBefore + 1);
+    expect(getAnalysisEpoch()).toBe(afterNew + 1);
   });
 });
 
@@ -749,6 +769,24 @@ describe("onMutation", () => {
     }
 
     unsub();
+  });
+
+  it("continues mutation delivery when one listener throws", () => {
+    newAnalysis("test");
+    const events: AnalysisMutationEvent[] = [];
+    const throwingUnsub = onMutation(() => {
+      throw new Error("closed stream");
+    });
+    const observingUnsub = onMutation((event) => events.push(event));
+
+    expect(() => createEntity(makeFactData(), defaultProvenance)).not.toThrow();
+
+    expect(getAnalysis().entities).toHaveLength(1);
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("entity_created");
+
+    throwingUnsub();
+    observingUnsub();
   });
 
   it("callback receives entity_updated events with previousProvenance", () => {

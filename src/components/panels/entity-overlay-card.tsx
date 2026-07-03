@@ -1571,7 +1571,9 @@ function ChallengeResolutionSection({ entity }: { entity: AnalysisEntity }) {
             ) : (
               record.outcome === "CONFIRMED" && (
                 <p className="mt-1 text-[11px] text-zinc-500">
-                  No material change — the entity stood up to the objection.
+                  {record.unverified
+                    ? "model kept it unchanged; review manually"
+                    : "No material change — the entity stood up to the objection."}
                 </p>
               )
             )}

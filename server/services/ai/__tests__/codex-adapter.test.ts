@@ -367,11 +367,8 @@ describe("codex-adapter", () => {
     });
 
     it("classifies unknown existing-thread errors as expired thread errors", async () => {
-      const {
-        streamChat,
-        _resetConnection,
-        isCodexThreadExpiredError,
-      } = await import("../codex-adapter");
+      const { streamChat, _resetConnection, isCodexThreadExpiredError } =
+        await import("../codex-adapter");
       _resetConnection();
 
       setAutoResponder((method, id) => {
@@ -689,7 +686,10 @@ describe("codex-adapter", () => {
         type: "text_delta",
         content: "correct thread",
       });
-      expect(textEvents).toContainEqual({
+      // Once this turn's id is known, unscoped item deltas (no threadId/turnId)
+      // are dropped too — they are the cross-stream vector between concurrent
+      // chat turns sharing the app-server connection.
+      expect(textEvents).not.toContainEqual({
         type: "text_delta",
         content: " no filter",
       });

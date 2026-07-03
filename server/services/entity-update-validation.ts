@@ -89,6 +89,10 @@ export type EntityUpdateValidationResult =
   | { ok: true; updates: ValidatedEntityUpdates }
   | { ok: false; fieldErrors: Record<string, string> };
 
+export type NewEntityValidationResult =
+  | { ok: true; type: EntityType; data: EntityData }
+  | { ok: false; fieldErrors: Record<string, string> };
+
 function collectIssues(
   issues: z.core.$ZodIssue[],
   prefix: string,
@@ -184,4 +188,48 @@ export function validateEntityUpdates(
   }
 
   return { ok: true, updates: sanitized };
+}
+
+function isEntityType(value: string): value is EntityType {
+  return Object.prototype.hasOwnProperty.call(DATA_SCHEMAS, value);
+}
+
+/**
+ * Validate model-created entity data against the same per-type schema used for
+ * edits. `type` is supplied out-of-band by the tool call, but `data.type` must
+ * not contradict it.
+ */
+export function validateNewEntity(
+  type: string,
+  data: Record<string, unknown>,
+): NewEntityValidationResult {
+  if (!isEntityType(type)) {
+    return {
+      ok: false,
+      fieldErrors: { type: `Unsupported entity type: ${type}` },
+    };
+  }
+
+  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+    return {
+      ok: false,
+      fieldErrors: { data: "Expected an object of entity fields" },
+    };
+  }
+
+  if ("type" in data && data.type !== type) {
+    return {
+      ok: false,
+      fieldErrors: { "data.type": "Entity type cannot be changed" },
+    };
+  }
+
+  const parsed = DATA_SCHEMAS[type].safeParse({ ...data, type });
+  if (parsed.success) {
+    return { ok: true, type, data: parsed.data };
+  }
+
+  const fieldErrors: Record<string, string> = {};
+  collectIssues(parsed.error.issues, "data", fieldErrors);
+  return { ok: false, fieldErrors };
 }

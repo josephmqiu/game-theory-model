@@ -697,17 +697,22 @@ export async function* streamChat(
 
   const removeListener = onNotification(conn, (method, params) => {
     // Thread filtering: skip notifications for a different thread (best-effort).
-    // If the notification has no threadId, accept it.
+    // Keep accepting unscoped turn/started, but after this turn is known,
+    // item/* notifications must carry the matching turnId.
     const notifThreadId = params.threadId as string | undefined;
     if (notifThreadId && notifThreadId !== threadId) return;
 
     const notifTurnId = getNotificationTurnId(params);
-    if (turnId && notifTurnId && notifTurnId !== turnId) return;
 
     if (method === "turn/started") {
       turnId = notifTurnId ?? turnId;
       return;
     }
+
+    if (turnId && method.startsWith("item/") && notifTurnId !== turnId) {
+      return;
+    }
+    if (turnId && notifTurnId && notifTurnId !== turnId) return;
 
     // Text delta
     if (method === "item/agentMessage/delta") {

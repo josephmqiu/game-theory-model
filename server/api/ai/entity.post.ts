@@ -3,6 +3,7 @@ import type { H3Event } from "h3";
 import { z } from "zod";
 import * as entityGraphService from "../../services/entity-graph-service";
 import * as analysisOrchestrator from "../../agents/analysis-agent";
+import * as revalidationService from "../../services/revalidation-service";
 import { validateEntityUpdates } from "../../services/entity-update-validation";
 import { latestLogNo } from "../../services/revision-log";
 import { endAllSessions } from "../../services/ai/chat-sessions";
@@ -117,6 +118,18 @@ export default defineEventHandler(async (event) => {
   const isReadAction = body.action === "get" || body.action === "downstream";
   const isQueueableMutation =
     body.action === "update" || body.action === "challenge";
+
+  if (revalidationService.isRevalidating()) {
+    if (body.action === "newAnalysis") {
+      revalidationService.cancelActiveRevalidation();
+    } else if (isQueueableMutation) {
+      setResponseStatus(event, 409);
+      return {
+        error: "Revalidation in progress, retry shortly",
+        retryable: true,
+      };
+    }
+  }
 
   // If analysis running, queue graph mutations. For updates, capture the
   // latest logNo the editor could have seen NOW — when the queued edit

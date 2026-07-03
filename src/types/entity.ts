@@ -776,6 +776,7 @@ export const entityDataSchema = z.discriminatedUnion("type", [
 export type RevisionLogSource =
   | "phase"
   | "human"
+  | "chat"
   | "challenge"
   | "revalidation";
 
@@ -829,6 +830,11 @@ export interface ChallengeRecord {
   responseLogNo?: number;
   /** The entity's post-re-run rationale — the model's answer to the objection. */
   responseRationale?: string;
+  /**
+   * Set when the re-run produced no diff, so the model's response was not
+   * independently verified by a concrete graph change.
+   */
+  unverified?: boolean;
   /** Until-viewed badge state (2.2A). */
   viewed?: boolean;
 }

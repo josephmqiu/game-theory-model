@@ -77,6 +77,7 @@ const mockEntityGraph = {
     phases: [],
   })),
   getStaleEntityIds: vi.fn(() => [] as string[]),
+  getAnalysisEpoch: vi.fn(() => 0),
   clearStale: vi.fn(),
   removePhaseEntities: vi.fn(),
   markStale: vi.fn(),
@@ -180,6 +181,7 @@ describe("revalidation-service", () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     mockIsRunning.mockReturnValue(false);
+    mockEntityGraph.getAnalysisEpoch.mockReturnValue(0);
     revalidation = await importRevalidation();
     revalidation._resetForTest();
   });
@@ -618,6 +620,107 @@ describe("revalidation-service", () => {
     );
   });
 
+  it("drops a revalidation commit when the analysis epoch changed mid-run", async () => {
+    let epoch = 0;
+    mockEntityGraph.getAnalysisEpoch.mockImplementation(() => epoch);
+    mockEntityGraph.getAnalysis.mockReturnValue({
+      id: "test",
+      name: "test",
+      topic: "test topic",
+      entities: [makeEntity("e1", "situational-grounding", true)],
+      relationships: [],
+      phases: [],
+    });
+    mockRunPhase.mockImplementation(async (phase) => {
+      epoch = 1;
+      return makePhaseResult(phase);
+    });
+
+    const { runId } = revalidation.revalidate(["e1"]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(mockCommitPhaseSnapshot).not.toHaveBeenCalled();
+    expect(mockEntityGraph.clearStale).not.toHaveBeenCalled();
+    expect(revalidation.getRevalStatus(runId)).toMatchObject({
+      status: "aborted",
+      error: "Revalidation became stale before commit",
+    });
+    expect(runtimeStatus.isActiveRun(runId)).toBe(false);
+  });
+
+  it("cancels the active revalidation and prevents its later commit", async () => {
+    let finishPhase!: (result: PhaseResult) => void;
+    mockEntityGraph.getAnalysis.mockReturnValue({
+      id: "test",
+      name: "test",
+      topic: "test topic",
+      entities: [],
+      relationships: [],
+      phases: [],
+    });
+    mockRunPhase.mockImplementation(
+      async (phase) =>
+        new Promise<PhaseResult>((resolve) => {
+          finishPhase = () => resolve(makePhaseResult(phase));
+        }),
+    );
+
+    const { runId } = revalidation.revalidate(undefined, "meta-check");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revalidation.isRevalidating()).toBe(true);
+
+    const aborted = revalidation.cancelActiveRevalidation();
+    expect(aborted).toMatchObject({
+      runId,
+      status: "aborted",
+      error: "Cancelled by new analysis",
+    });
+    expect(revalidation.isRevalidating()).toBe(false);
+
+    finishPhase(makePhaseResult("meta-check"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(mockCommitPhaseSnapshot).not.toHaveBeenCalled();
+    expect(revalidation.getRevalStatus(runId)).toMatchObject({
+      status: "aborted",
+    });
+  });
+
+  it("caps retained revalidation statuses while preserving a running status", async () => {
+    let finishPhase!: (result: PhaseResult) => void;
+    mockEntityGraph.getAnalysis.mockReturnValue({
+      id: "test",
+      name: "test",
+      topic: "test topic",
+      entities: [],
+      relationships: [],
+      phases: [],
+    });
+    mockRunPhase.mockImplementation(
+      async (phase) =>
+        new Promise<PhaseResult>((resolve) => {
+          finishPhase = () => resolve(makePhaseResult(phase));
+        }),
+    );
+
+    const running = revalidation.revalidate(undefined, "meta-check");
+    await vi.advanceTimersByTimeAsync(0);
+    const completedRunIds: string[] = [];
+
+    for (let index = 0; index < revalidation.MAX_REVAL_RUN_STATUSES + 5; index += 1) {
+      completedRunIds.push(revalidation.revalidate().runId);
+    }
+
+    expect(revalidation.getRevalStatus(running.runId)?.status).toBe("running");
+    expect(revalidation.getRevalStatus(completedRunIds[0])).toBeNull();
+    expect(revalidation.getRevalStatus(completedRunIds.at(-1)!)).toMatchObject({
+      status: "completed",
+    });
+
+    finishPhase(makePhaseResult("meta-check"));
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
   // ── 16. getRevalStatus returns status for tracked runs ──
 
   it("getRevalStatus returns running/completed status", async () => {
@@ -911,6 +1014,7 @@ describe("revalidation-service", () => {
       expect.objectContaining({
         outcome: "CONFIRMED",
         responseRationale: "Confirmed: evidence still supports this.",
+        unverified: true,
       }),
     );
   });

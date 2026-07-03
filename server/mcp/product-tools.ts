@@ -6,6 +6,7 @@ import {
 import {
   createEntity,
   updateEntity,
+  getEntityById,
   createRelationship,
   getStaleEntityIds,
   removeEntity,
@@ -21,6 +22,10 @@ import type { MethodologyPhase } from "../../shared/types/methodology";
 import type { RelationshipType } from "../../shared/types/entity";
 import * as analysisOrchestrator from "../agents/analysis-agent";
 import * as revalidationService from "../services/revalidation-service";
+import {
+  validateEntityUpdates,
+  validateNewEntity,
+} from "../services/entity-update-validation";
 import { ALL_PHASES, RUNNABLE_PHASES } from "../../src/types/methodology";
 
 export interface ToolDefinition {
@@ -404,17 +409,29 @@ export function handleCreateEntity(args: {
   revision?: number;
 }): string {
   const runId = resolveToolRunId();
+  const validation = validateNewEntity(args.type, args.data);
+  if (!validation.ok) {
+    return JSON.stringify({
+      error: "Validation failed",
+      fieldErrors: validation.fieldErrors,
+    });
+  }
+
   const entity = createEntity(
     {
-      type: args.type as never,
+      type: validation.type,
       phase: args.phase as MethodologyPhase,
-      data: args.data as never,
+      data: validation.data,
       confidence: (args.confidence as never) ?? "medium",
       rationale: args.rationale ?? "",
       revision: args.revision ?? 1,
       stale: false,
     },
-    { source: "ai-edited", ...(runId ? { runId } : {}) },
+    {
+      source: "ai-edited",
+      logSource: "chat",
+      ...(runId ? { runId } : {}),
+    },
   );
   return JSON.stringify({
     created: [entity],
@@ -429,15 +446,25 @@ export function handleUpdateEntity(args: {
   updates: Record<string, unknown>;
 }): string {
   const runId = resolveToolRunId();
-  const staleBefore = new Set(getStaleEntityIds());
-  const result = updateEntity(args.id, args.updates as never, {
-    source: "ai-edited",
-    ...(runId ? { runId } : {}),
-  });
-
-  if (!result) {
+  const existing = getEntityById(args.id);
+  if (!existing) {
     return JSON.stringify({ error: `Entity "${args.id}" not found` });
   }
+
+  const validation = validateEntityUpdates(existing, args.updates);
+  if (!validation.ok) {
+    return JSON.stringify({
+      error: "Validation failed",
+      fieldErrors: validation.fieldErrors,
+    });
+  }
+
+  const staleBefore = new Set(getStaleEntityIds());
+  const result = updateEntity(args.id, validation.updates, {
+    source: "ai-edited",
+    logSource: "chat",
+    ...(runId ? { runId } : {}),
+  });
 
   const staleAfter = getStaleEntityIds();
   const newlyStale = staleAfter.filter((id) => !staleBefore.has(id));

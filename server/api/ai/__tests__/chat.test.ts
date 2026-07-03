@@ -186,17 +186,15 @@ describe("/api/ai/chat", () => {
       provider: "anthropic",
       model: "claude-sonnet-4-6",
     });
-    claudeStreamChatMock.mockImplementation(
-      async function* (
-        _prompt: string,
-        _systemPrompt: string,
-        _model: string,
-        options?: { onSessionId?: (id: string) => void },
-      ) {
-        options?.onSessionId?.("claude-session-1");
-        yield { type: "turn_complete" };
-      },
-    );
+    claudeStreamChatMock.mockImplementation(async function* (
+      _prompt: string,
+      _systemPrompt: string,
+      _model: string,
+      options?: { onSessionId?: (id: string) => void },
+    ) {
+      options?.onSessionId?.("claude-session-1");
+      yield { type: "turn_complete" };
+    });
 
     const route = (await import("../chat")).default;
     const response = asSseResponse(await route({} as never));
@@ -213,17 +211,15 @@ describe("/api/ai/chat", () => {
 
   it("resumes a Claude runtime session on the second turn", async () => {
     const route = (await import("../chat")).default;
-    claudeStreamChatMock.mockImplementation(
-      async function* (
-        _prompt: string,
-        _systemPrompt: string,
-        _model: string,
-        options?: { onSessionId?: (id: string) => void },
-      ) {
-        options?.onSessionId?.("claude-session-1");
-        yield { type: "turn_complete" };
-      },
-    );
+    claudeStreamChatMock.mockImplementation(async function* (
+      _prompt: string,
+      _systemPrompt: string,
+      _model: string,
+      options?: { onSessionId?: (id: string) => void },
+    ) {
+      options?.onSessionId?.("claude-session-1");
+      yield { type: "turn_complete" };
+    });
 
     readBodyMock.mockResolvedValueOnce({
       system: "system",
@@ -256,17 +252,15 @@ describe("/api/ai/chat", () => {
 
   it("reuses a Codex thread on the second turn", async () => {
     const route = (await import("../chat")).default;
-    codexStreamChatMock.mockImplementation(
-      async function* (
-        _prompt: string,
-        _systemPrompt: string,
-        _model: string,
-        options?: { onThreadId?: (id: string) => void },
-      ) {
-        options?.onThreadId?.("thread-1");
-        yield { type: "turn_complete" };
-      },
-    );
+    codexStreamChatMock.mockImplementation(async function* (
+      _prompt: string,
+      _systemPrompt: string,
+      _model: string,
+      options?: { onThreadId?: (id: string) => void },
+    ) {
+      options?.onThreadId?.("thread-1");
+      yield { type: "turn_complete" };
+    });
 
     readBodyMock.mockResolvedValueOnce({
       system: "system",
@@ -301,18 +295,16 @@ describe("/api/ai/chat", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-02T00:00:00.000Z"));
     const route = (await import("../chat")).default;
-    claudeStreamChatMock.mockImplementation(
-      async function* (
-        _prompt: string,
-        _systemPrompt: string,
-        _model: string,
-        options?: { onSessionId?: (id: string) => void },
-      ) {
-        options?.onSessionId?.("claude-session-new");
-        yield { type: "text_delta", content: "fresh" };
-        yield { type: "turn_complete" };
-      },
-    );
+    claudeStreamChatMock.mockImplementation(async function* (
+      _prompt: string,
+      _systemPrompt: string,
+      _model: string,
+      options?: { onSessionId?: (id: string) => void },
+    ) {
+      options?.onSessionId?.("claude-session-new");
+      yield { type: "text_delta", content: "fresh" };
+      yield { type: "turn_complete" };
+    });
 
     readBodyMock.mockResolvedValueOnce({
       system: "system",
@@ -332,9 +324,7 @@ describe("/api/ai/chat", () => {
       provider: "anthropic",
       model: "claude-sonnet-4-6",
     });
-    const events = await readSseEvents(
-      asSseResponse(await route({} as never)),
-    );
+    const events = await readSseEvents(asSseResponse(await route({} as never)));
 
     expect(events[0]).toEqual({ type: "session_expired" });
     expect(events).toContainEqual({ type: "text_delta", content: "fresh" });
@@ -343,32 +333,28 @@ describe("/api/ai/chat", () => {
   it("recreates and marks a Codex session expired when the stored thread is gone", async () => {
     const route = (await import("../chat")).default;
     codexStreamChatMock
-      .mockImplementationOnce(
-        async function* (
-          _prompt: string,
-          _systemPrompt: string,
-          _model: string,
-          options?: { onThreadId?: (id: string) => void },
-        ) {
-          options?.onThreadId?.("thread-1");
-          yield { type: "turn_complete" };
-        },
-      )
+      .mockImplementationOnce(async function* (
+        _prompt: string,
+        _systemPrompt: string,
+        _model: string,
+        options?: { onThreadId?: (id: string) => void },
+      ) {
+        options?.onThreadId?.("thread-1");
+        yield { type: "turn_complete" };
+      })
       .mockImplementationOnce(async function* () {
         throw new MockCodexThreadExpiredError();
       })
-      .mockImplementationOnce(
-        async function* (
-          _prompt: string,
-          _systemPrompt: string,
-          _model: string,
-          options?: { onThreadId?: (id: string) => void },
-        ) {
-          options?.onThreadId?.("thread-2");
-          yield { type: "text_delta", content: "fresh codex" };
-          yield { type: "turn_complete" };
-        },
-      );
+      .mockImplementationOnce(async function* (
+        _prompt: string,
+        _systemPrompt: string,
+        _model: string,
+        options?: { onThreadId?: (id: string) => void },
+      ) {
+        options?.onThreadId?.("thread-2");
+        yield { type: "text_delta", content: "fresh codex" };
+        yield { type: "turn_complete" };
+      });
 
     readBodyMock.mockResolvedValueOnce({
       system: "system",
@@ -386,11 +372,12 @@ describe("/api/ai/chat", () => {
       provider: "openai",
       model: "gpt-5.4",
     });
-    const events = await readSseEvents(
-      asSseResponse(await route({} as never)),
-    );
+    const events = await readSseEvents(asSseResponse(await route({} as never)));
 
-    expect(events[0]).toEqual({ type: "session_expired" });
+    // Keepalive pings now run on resumed sessions too (long-TTFT fix), so the
+    // first *meaningful* event — not literally events[0] — must be session_expired.
+    const meaningful = events.filter((e) => e.type !== "ping");
+    expect(meaningful[0]).toEqual({ type: "session_expired" });
     expect(events).toContainEqual({
       type: "text_delta",
       content: "fresh codex",
@@ -398,7 +385,9 @@ describe("/api/ai/chat", () => {
     expect(codexStreamChatMock.mock.calls[1][3].existingThreadId).toBe(
       "thread-1",
     );
-    expect(codexStreamChatMock.mock.calls[2][3].existingThreadId).toBeUndefined();
+    expect(
+      codexStreamChatMock.mock.calls[2][3].existingThreadId,
+    ).toBeUndefined();
   });
 
   it("returns 409 for a concurrent turn on the same runtime session", async () => {
@@ -440,17 +429,15 @@ describe("/api/ai/chat", () => {
 
   it("releases the session turn flag after stream completion", async () => {
     const route = (await import("../chat")).default;
-    codexStreamChatMock.mockImplementation(
-      async function* (
-        _prompt: string,
-        _systemPrompt: string,
-        _model: string,
-        options?: { onThreadId?: (id: string) => void },
-      ) {
-        options?.onThreadId?.("thread-1");
-        yield { type: "turn_complete" };
-      },
-    );
+    codexStreamChatMock.mockImplementation(async function* (
+      _prompt: string,
+      _systemPrompt: string,
+      _model: string,
+      options?: { onThreadId?: (id: string) => void },
+    ) {
+      options?.onThreadId?.("thread-1");
+      yield { type: "turn_complete" };
+    });
 
     readBodyMock.mockResolvedValueOnce({
       system: "system",
@@ -472,7 +459,10 @@ describe("/api/ai/chat", () => {
     await secondResponse.text();
 
     expect(codexStreamChatMock).toHaveBeenCalledTimes(2);
-    expect(setResponseStatusMock).not.toHaveBeenCalledWith(expect.anything(), 409);
+    expect(setResponseStatusMock).not.toHaveBeenCalledWith(
+      expect.anything(),
+      409,
+    );
   });
 
   it("releases the session turn flag after a stream error", async () => {
@@ -513,29 +503,25 @@ describe("/api/ai/chat", () => {
 
   it("expires and folds history for the first turn after a provider switch only", async () => {
     const route = (await import("../chat")).default;
-    claudeStreamChatMock.mockImplementation(
-      async function* (
-        _prompt: string,
-        _systemPrompt: string,
-        _model: string,
-        options?: { onSessionId?: (id: string) => void },
-      ) {
-        options?.onSessionId?.("claude-session-1");
-        yield { type: "turn_complete" };
-      },
-    );
-    codexStreamChatMock.mockImplementation(
-      async function* (
-        _prompt: string,
-        _systemPrompt: string,
-        _model: string,
-        options?: { onThreadId?: (id: string) => void },
-      ) {
-        options?.onThreadId?.("thread-1");
-        yield { type: "text_delta", content: "codex answer" };
-        yield { type: "turn_complete" };
-      },
-    );
+    claudeStreamChatMock.mockImplementation(async function* (
+      _prompt: string,
+      _systemPrompt: string,
+      _model: string,
+      options?: { onSessionId?: (id: string) => void },
+    ) {
+      options?.onSessionId?.("claude-session-1");
+      yield { type: "turn_complete" };
+    });
+    codexStreamChatMock.mockImplementation(async function* (
+      _prompt: string,
+      _systemPrompt: string,
+      _model: string,
+      options?: { onThreadId?: (id: string) => void },
+    ) {
+      options?.onThreadId?.("thread-1");
+      yield { type: "text_delta", content: "codex answer" };
+      yield { type: "turn_complete" };
+    });
 
     readBodyMock.mockResolvedValueOnce({
       system: "system",

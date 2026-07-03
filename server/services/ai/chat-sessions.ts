@@ -11,6 +11,7 @@ export interface ChatSession {
 }
 
 export const EXPIRY_MS = 30 * 60 * 1000;
+export const MAX_CHAT_SESSIONS = 100;
 
 interface SessionAccessResult {
   session: ChatSession | null;
@@ -52,14 +53,39 @@ function createSession(key: string, provider: ChatSessionProvider): ChatSession 
   };
 }
 
+function sweepSessions(now = Date.now(), preserveKey?: string): void {
+  for (const [key, session] of sessions.entries()) {
+    if (key === preserveKey) continue;
+    if (isExpired(session, now)) {
+      sessions.delete(key);
+    }
+  }
+
+  while (sessions.size > MAX_CHAT_SESSIONS) {
+    let oldestKey: string | null = null;
+    let oldestActivity = Infinity;
+    for (const [key, session] of sessions.entries()) {
+      if (session.lastActivityAt < oldestActivity) {
+        oldestKey = key;
+        oldestActivity = session.lastActivityAt;
+      }
+    }
+    if (!oldestKey) return;
+    sessions.delete(oldestKey);
+  }
+}
+
 export function getOrCreateSession(
   key: string,
   provider: ChatSessionProvider,
 ): GetOrCreateSessionResult {
+  const now = Date.now();
+  sweepSessions(now, key);
   const existing = sessions.get(key);
   if (!existing) {
     const session = createSession(key, provider);
     sessions.set(key, session);
+    sweepSessions();
     return {
       session,
       created: true,
@@ -68,10 +94,11 @@ export function getOrCreateSession(
     };
   }
 
-  if (isExpired(existing)) {
+  if (isExpired(existing, now)) {
     sessions.delete(key);
     const session = createSession(key, provider);
     sessions.set(key, session);
+    sweepSessions();
     return {
       session,
       created: true,
@@ -84,6 +111,7 @@ export function getOrCreateSession(
     sessions.delete(key);
     const session = createSession(key, provider);
     sessions.set(key, session);
+    sweepSessions();
     return {
       session,
       created: true,
@@ -105,8 +133,10 @@ export function beginTurn(
   key: string,
   provider: ChatSessionProvider,
 ): BeginTurnResult {
+  const now = Date.now();
+  sweepSessions(now, key);
   const existing = sessions.get(key);
-  if (existing?.activeTurn) {
+  if (existing && !isExpired(existing, now) && existing.activeTurn) {
     return {
       started: false,
       session: existing,
@@ -138,12 +168,14 @@ export function endTurn(key: string): SessionAccessResult {
 }
 
 export function getSession(key: string): SessionAccessResult {
+  const now = Date.now();
+  sweepSessions(now, key);
   const session = sessions.get(key);
   if (!session) {
     return { session: null, expired: false };
   }
 
-  if (isExpired(session)) {
+  if (isExpired(session, now)) {
     sessions.delete(key);
     return { session: null, expired: true };
   }

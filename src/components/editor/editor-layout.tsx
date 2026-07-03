@@ -118,18 +118,24 @@ export default function EditorLayout() {
   );
 
   const handleNewAnalysis = useCallback(() => {
-    const state = useEntityGraphStore.getState();
-    if (state.isDirty) {
-      const confirmed = window.confirm(t("analysis.unsavedChanges"));
-      if (!confirmed) {
-        return;
+    void (async () => {
+      const state = useEntityGraphStore.getState();
+      if (state.isDirty) {
+        const confirmed = window.confirm(t("analysis.unsavedChanges"));
+        if (!confirmed) {
+          return;
+        }
       }
-    }
 
-    analysisClient.abort();
-    endCurrentChatSession();
-    clearEditorChrome();
-    useEntityGraphStore.getState().newAnalysis("");
+      analysisClient.abort();
+      endCurrentChatSession();
+      clearEditorChrome();
+      const reset = await analysisClient.resetAnalysis("");
+      if (!reset.ok) {
+        console.warn("[editor] server-reset-failed", reset.error);
+        useEntityGraphStore.getState().newAnalysis("");
+      }
+    })();
   }, [clearEditorChrome, endCurrentChatSession, t]);
 
   const startOrchestrator = useCallback(

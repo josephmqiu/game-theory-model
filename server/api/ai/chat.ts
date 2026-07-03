@@ -48,10 +48,33 @@ export const ALLOWED_MEDIA_TYPES = new Set([
   "image/gif",
   "image/webp",
 ]);
+export const MAX_CHAT_ATTACHMENTS = 10;
+export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+export const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+export const MAX_ATTACHMENT_BASE64_LENGTH =
+  Math.ceil(MAX_ATTACHMENT_BYTES / 3) * 4;
 
 /** Resolve file extension from media type, falling back to 'png' for disallowed types */
 export function resolveMediaExtension(mediaType: string): string {
   return ALLOWED_MEDIA_TYPES.has(mediaType) ? mediaType.split("/")[1] : "png";
+}
+
+function estimateBase64DecodedBytes(data: string): number {
+  const normalized = data.replace(/\s/g, "");
+  const padding = normalized.endsWith("==")
+    ? 2
+    : normalized.endsWith("=")
+      ? 1
+      : 0;
+  return Math.max(0, Math.floor((normalized.length * 3) / 4) - padding);
+}
+
+function isBase64Payload(data: string): boolean {
+  const normalized = data.replace(/\s/g, "");
+  return (
+    normalized.length % 4 === 0 &&
+    /^[A-Za-z0-9+/]*={0,2}$/.test(normalized)
+  );
 }
 
 export interface ChatAttachmentWire {
@@ -77,26 +100,70 @@ export interface ChatBody {
 
 const chatAttachmentSchema = z.object({
   name: z.string(),
-  mediaType: z.string(),
-  data: z.string(),
+  mediaType: z.string().refine((value) => ALLOWED_MEDIA_TYPES.has(value), {
+    message: "Unsupported attachment media type",
+  }),
+  data: z
+    .string()
+    .max(MAX_ATTACHMENT_BASE64_LENGTH, "Attachment exceeds 5MiB")
+    .superRefine((value, ctx) => {
+      if (!isBase64Payload(value)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Attachment data must be base64",
+        });
+        return;
+      }
+      if (estimateBase64DecodedBytes(value) > MAX_ATTACHMENT_BYTES) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Attachment exceeds 5MiB",
+        });
+      }
+    }),
 });
 
-const chatBodySchema = z.object({
-  system: z.string().trim().min(1),
-  messages: z.array(
-    z.object({
-      role: z.enum(["user", "assistant"]),
-      content: z.string(),
-      attachments: z.array(chatAttachmentSchema).optional(),
-    }),
-  ),
-  model: z.string().trim().min(1),
-  provider: z.string().trim().min(1),
-  thinkingMode: z.enum(["adaptive", "disabled", "enabled"]).optional(),
-  thinkingBudgetTokens: z.number().positive().optional(),
-  effort: z.enum(["low", "medium", "high", "max"]).optional(),
-  sessionKey: z.string().trim().min(1).optional(),
-});
+const chatBodySchema = z
+  .object({
+    system: z.string().trim().min(1),
+    messages: z.array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string(),
+        attachments: z.array(chatAttachmentSchema).optional(),
+      }),
+    ),
+    model: z.string().trim().min(1),
+    provider: z.string().trim().min(1),
+    thinkingMode: z.enum(["adaptive", "disabled", "enabled"]).optional(),
+    thinkingBudgetTokens: z.number().positive().optional(),
+    effort: z.enum(["low", "medium", "high", "max"]).optional(),
+    sessionKey: z.string().trim().min(1).optional(),
+  })
+  .superRefine((body, ctx) => {
+    const attachments = body.messages.flatMap(
+      (message) => message.attachments ?? [],
+    );
+    if (attachments.length > MAX_CHAT_ATTACHMENTS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Too many attachments",
+        path: ["messages"],
+      });
+    }
+
+    const totalBytes = attachments.reduce(
+      (sum, attachment) => sum + estimateBase64DecodedBytes(attachment.data),
+      0,
+    );
+    if (totalBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Attachments exceed total size limit",
+        path: ["messages"],
+      });
+    }
+  });
 
 function writeSSE(controller: ReadableStreamDefaultController, payload: unknown) {
   controller.enqueue(
@@ -241,13 +308,7 @@ function streamViaCodexAdapter(
         if (sessionResult?.expired || sessionResult?.providerChanged) {
           writeSSE(controller, { type: "session_expired" });
         }
-        if (
-          !body.sessionKey ||
-          sessionResult?.expired ||
-          sessionResult?.providerChanged
-        ) {
-          startPingTimer();
-        }
+        startPingTimer();
 
         const { prompt, systemPrompt } = body.sessionKey
           ? sessionResult?.providerChanged
@@ -384,13 +445,7 @@ function streamViaClaude(
         if (sessionResult?.expired || sessionResult?.providerChanged) {
           writeSSE(controller, { type: "session_expired" });
         }
-        if (
-          !body.sessionKey ||
-          sessionResult?.expired ||
-          sessionResult?.providerChanged
-        ) {
-          startPingTimer();
-        }
+        startPingTimer();
 
         const promptParts = body.sessionKey
           ? sessionResult?.providerChanged
@@ -481,7 +536,12 @@ function streamViaClaude(
           endTurn(body.sessionKey);
         }
         if (attachTempDir) {
-          rm(attachTempDir, { recursive: true, force: true }).catch(() => {});
+          rm(attachTempDir, { recursive: true, force: true }).catch((error) => {
+            serverLog(runId, "chat", "attachment-cleanup-failed", {
+              error: error instanceof Error ? error.message : String(error),
+              tempDir: attachTempDir,
+            });
+          });
         }
         controller.close();
       }

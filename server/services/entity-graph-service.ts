@@ -23,7 +23,7 @@ import type {
   PhaseStatus,
 } from "../../shared/types/methodology";
 import type { AnalysisMutationEvent } from "../../shared/types/events";
-import { serverLog } from "../utils/ai-logger";
+import { serverLog, serverWarn } from "../utils/ai-logger";
 import { RELATIONSHIP_CATEGORY } from "../../src/types/entity";
 import * as runtimeStatus from "./runtime-status";
 import {
@@ -36,6 +36,7 @@ import {
 let analysis: Analysis = createEmptyAnalysis("");
 let _isDirty = false;
 let _revision = 0;
+let _analysisEpoch = 0;
 let _fileName: string | null = null;
 let _filePath: string | null = null;
 let _fileHandle: FileSystemFileHandle | null = null;
@@ -64,7 +65,13 @@ function normalizeAnalysis(analysisState: Analysis): Analysis {
 
 function emit(event: AnalysisMutationEvent): void {
   for (const cb of listeners) {
-    cb(event);
+    try {
+      cb(event);
+    } catch (error) {
+      serverWarn(undefined, "entity-graph", "listener-error", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }
 
@@ -112,6 +119,7 @@ function mutate(options?: { markDirty?: boolean }): void {
 
 export function newAnalysis(topic: string): void {
   analysis = createEmptyAnalysis(topic);
+  _analysisEpoch += 1;
   _isDirty = false;
   _fileName = null;
   _filePath = null;
@@ -128,6 +136,7 @@ export function loadAnalysis(
   },
 ): void {
   analysis = normalizeAnalysis(loaded);
+  _analysisEpoch += 1;
   _isDirty = false;
   _fileName = source?.fileName ?? null;
   _filePath = source?.filePath ?? null;
@@ -137,6 +146,10 @@ export function loadAnalysis(
 
 export function getAnalysis(): Readonly<Analysis> {
   return normalizeAnalysis(analysis);
+}
+
+export function getAnalysisEpoch(): number {
+  return _analysisEpoch;
 }
 
 export function createEntity(
@@ -503,6 +516,7 @@ export function resolveChallenge(
     runId?: string;
     responseLogNo?: number;
     responseRationale?: string;
+    unverified?: boolean;
   },
 ): ChallengeRecord | null {
   const existing = (analysis.challenges ?? []).find((c) => c.id === id);
@@ -516,6 +530,7 @@ export function resolveChallenge(
     runId: resolution.runId,
     responseLogNo: resolution.responseLogNo,
     responseRationale: resolution.responseRationale,
+    unverified: resolution.unverified,
     viewed: false,
   };
 
@@ -692,6 +707,7 @@ export function _resetForTest(): void {
   analysis = createEmptyAnalysis("");
   _isDirty = false;
   _revision = 0;
+  _analysisEpoch = 0;
   _fileName = null;
   _filePath = null;
   _fileHandle = null;

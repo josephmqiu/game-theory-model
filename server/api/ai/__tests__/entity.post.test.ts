@@ -9,6 +9,8 @@ const getAnalysisMock = vi.fn();
 const newAnalysisMock = vi.fn();
 const isRunningMock = vi.fn();
 const queueEditMock = vi.fn();
+const isRevalidatingMock = vi.fn();
+const cancelActiveRevalidationMock = vi.fn();
 
 vi.mock("h3", () => ({
   defineEventHandler: (handler: unknown) => handler,
@@ -39,6 +41,12 @@ vi.mock("../../../agents/analysis-agent", () => ({
   queueEdit: (...args: unknown[]) => queueEditMock(...args),
 }));
 
+vi.mock("../../../services/revalidation-service", () => ({
+  isRevalidating: () => isRevalidatingMock(),
+  cancelActiveRevalidation: (...args: unknown[]) =>
+    cancelActiveRevalidationMock(...args),
+}));
+
 const factEntity = {
   id: "entity-1",
   type: "fact",
@@ -55,6 +63,7 @@ describe("/api/ai/entity", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     isRunningMock.mockReturnValue(false);
+    isRevalidatingMock.mockReturnValue(false);
     getEntityByIdMock.mockReturnValue(factEntity);
     getStaleEntityIdsMock.mockReturnValue(["entity-2"]);
     getAnalysisMock.mockReturnValue({ id: "analysis-1" });
@@ -165,6 +174,42 @@ describe("/api/ai/entity", () => {
     expect(updateEntityMock).not.toHaveBeenCalled();
   });
 
+  it("returns retryable 409 for updates while revalidation is active", async () => {
+    isRevalidatingMock.mockReturnValue(true);
+    readBodyMock.mockResolvedValue({
+      action: "update",
+      id: "entity-1",
+      updates: { confidence: "high" },
+    });
+
+    const route = (await import("../entity.post")).default;
+    const result = await route({} as never);
+
+    expect(result).toEqual({
+      error: "Revalidation in progress, retry shortly",
+      retryable: true,
+    });
+    expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 409);
+    expect(updateEntityMock).not.toHaveBeenCalled();
+    expect(queueEditMock).not.toHaveBeenCalled();
+  });
+
+  it("cancels active revalidation before starting a new analysis", async () => {
+    isRevalidatingMock.mockReturnValue(true);
+    getAnalysisMock.mockReturnValue({ id: "analysis-new", entities: [] });
+    readBodyMock.mockResolvedValue({
+      action: "newAnalysis",
+      topic: "",
+    });
+
+    const route = (await import("../entity.post")).default;
+    const result = await route({} as never);
+
+    expect(cancelActiveRevalidationMock).toHaveBeenCalledTimes(1);
+    expect(newAnalysisMock).toHaveBeenCalledWith("");
+    expect(result).toEqual({ analysis: { id: "analysis-new", entities: [] } });
+  });
+
   it("validates BEFORE queueing while an analysis run is active", async () => {
     isRunningMock.mockReturnValue(true);
     readBodyMock.mockResolvedValue({
@@ -267,6 +312,26 @@ describe("/api/ai/entity", () => {
       staleMarked: ["entity-1", "entity-2", "entity-3"],
       downstreamCount: 2,
     });
+  });
+
+  it("returns retryable 409 for challenges while revalidation is active", async () => {
+    isRevalidatingMock.mockReturnValue(true);
+    readBodyMock.mockResolvedValue({
+      action: "challenge",
+      id: "entity-1",
+      objection: "Wait for the revalidation before accepting this objection.",
+    });
+
+    const route = (await import("../entity.post")).default;
+    const result = await route({} as never);
+
+    expect(result).toEqual({
+      error: "Revalidation in progress, retry shortly",
+      retryable: true,
+    });
+    expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 409);
+    expect(createChallengeMock).not.toHaveBeenCalled();
+    expect(queueEditMock).not.toHaveBeenCalled();
   });
 
   it("rejects objections shorter than 10 characters with 400", async () => {

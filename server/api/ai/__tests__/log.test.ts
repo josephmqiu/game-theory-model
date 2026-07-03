@@ -7,6 +7,8 @@ const appendRunLogEntriesMock = vi.fn();
 
 vi.mock("../../../utils/ai-logger", () => ({
   appendRunLogEntries: (...args: unknown[]) => appendRunLogEntriesMock(...args),
+  // Mirror the real guard so the handler's runId validation runs in tests.
+  isValidRunId: (runId: string) => /^[A-Za-z0-9_-]{1,64}$/.test(runId),
 }));
 
 import handler from "../log";
@@ -92,7 +94,7 @@ describe("/api/ai/log", () => {
           sub: "orchestrator",
           event: "raw-response",
           run: "run-beacon",
-          raw: "{\"bad\":true}",
+          raw: '{"bad":true}',
         },
       ],
     });

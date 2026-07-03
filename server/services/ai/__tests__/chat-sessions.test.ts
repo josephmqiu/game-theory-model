@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   EXPIRY_MS,
+  MAX_CHAT_SESSIONS,
   _resetForTest,
   beginTurn,
   endAllSessions,
@@ -85,6 +86,30 @@ describe("chat-sessions", () => {
     const next = beginTurn("analysis-1", "anthropic");
     expect(next.started).toBe(true);
     expect(next.session).toBe(first.session);
+  });
+
+  it("allows a new turn when a stale active turn has expired", () => {
+    const first = beginTurn("analysis-1", "anthropic");
+    expect(first.started).toBe(true);
+    expect(first.session.activeTurn).toBe(true);
+
+    vi.advanceTimersByTime(EXPIRY_MS + 1);
+
+    const next = beginTurn("analysis-1", "anthropic");
+    expect(next.started).toBe(true);
+    expect(next.expired).toBe(true);
+    expect(next.session).not.toBe(first.session);
+    expect(next.session.activeTurn).toBe(true);
+  });
+
+  it("caps sessions and evicts the oldest by last activity", () => {
+    for (let index = 0; index < MAX_CHAT_SESSIONS + 1; index += 1) {
+      getOrCreateSession(`analysis-${index}`, "anthropic");
+      vi.advanceTimersByTime(1);
+    }
+
+    expect(getSession("analysis-0").session).toBeNull();
+    expect(getSession(`analysis-${MAX_CHAT_SESSIONS}`).session).not.toBeNull();
   });
 
   it("reports and drops an expired session from getSession", () => {
