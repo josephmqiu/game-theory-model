@@ -170,6 +170,8 @@ const tr: TranslationKeys = {
   "agents.customKeyStoredPlain": "Bu tarayıcı anahtarları şifrelenmemiş olarak saklar. Şifreli depolama için masaüstü uygulamasını kullanın.",
   "agents.customKeyNotEncrypted": "İşletim sistemi şifrelemesi kullanılamıyor; anahtar kaydedilmedi. Sistem anahtar zincirinizi etkinleştirip tekrar deneyin.",
   "agents.customConnect": "Bağlan",
+  "agents.searchProviderNone": "Yok",
+  "agents.customClearKey": "API anahtarını temizle",
 
   // ── Figma Import ──
 

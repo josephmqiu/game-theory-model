@@ -173,6 +173,8 @@ const de: TranslationKeys = {
   "agents.customKeyStoredPlain": "Dieser Browser speichert Schlüssel unverschlüsselt. Verwenden Sie die Desktop-App für verschlüsselte Speicherung.",
   "agents.customKeyNotEncrypted": "OS-Verschlüsselung ist nicht verfügbar; der Schlüssel wurde nicht gespeichert. Aktivieren Sie Ihren System-Schlüsselbund und versuchen Sie es erneut.",
   "agents.customConnect": "Verbinden",
+  "agents.searchProviderNone": "Keine",
+  "agents.customClearKey": "API-Schlüssel löschen",
 
   // ── Figma Import ──
 

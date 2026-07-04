@@ -172,6 +172,8 @@ const fr: TranslationKeys = {
   "agents.customKeyStoredPlain": "Ce navigateur stocke les clés sans chiffrement. Utilisez l'application de bureau pour un stockage chiffré.",
   "agents.customKeyNotEncrypted": "Le chiffrement du système d'exploitation n'est pas disponible ; la clé n'a pas été enregistrée. Activez votre trousseau système et réessayez.",
   "agents.customConnect": "Connecter",
+  "agents.searchProviderNone": "Aucun",
+  "agents.customClearKey": "Effacer la clé API",
 
   // ── Figma Import ──
 

@@ -170,6 +170,8 @@ const vi: TranslationKeys = {
   "agents.customKeyStoredPlain": "Trình duyệt này lưu khóa không mã hóa. Sử dụng ứng dụng máy tính để bàn để lưu trữ được mã hóa.",
   "agents.customKeyNotEncrypted": "Mã hóa của hệ điều hành không khả dụng; khóa chưa được lưu. Bật chuỗi khóa hệ thống của bạn và thử lại.",
   "agents.customConnect": "Kết nối",
+  "agents.searchProviderNone": "Không có",
+  "agents.customClearKey": "Xóa khóa API",
 
   // ── Figma Import ──
 

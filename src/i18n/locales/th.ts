@@ -169,6 +169,8 @@ const th: TranslationKeys = {
   "agents.customKeyStoredPlain": "เบราว์เซอร์นี้จัดเก็บคีย์แบบไม่เข้ารหัส ใช้แอปเดสก์ท็อปสำหรับการจัดเก็บแบบเข้ารหัส",
   "agents.customKeyNotEncrypted": "การเข้ารหัสของระบบปฏิบัติการไม่พร้อมใช้งาน คีย์จึงไม่ถูกบันทึก เปิดใช้งานพวงกุญแจของระบบแล้วลองอีกครั้ง",
   "agents.customConnect": "เชื่อมต่อ",
+  "agents.searchProviderNone": "ไม่มี",
+  "agents.customClearKey": "ล้างคีย์ API",
 
   // ── Figma Import ──
 

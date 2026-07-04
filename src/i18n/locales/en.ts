@@ -168,6 +168,8 @@ const en = {
   "agents.customKeyStoredPlain": "This browser stores keys unencrypted. Use the desktop app for encrypted storage.",
   "agents.customKeyNotEncrypted": "OS encryption is unavailable; the key was not saved. Enable your system keychain and try again.",
   "agents.customConnect": "Connect",
+  "agents.searchProviderNone": "None",
+  "agents.customClearKey": "Clear API key",
 
   // ── Figma Import ──
 

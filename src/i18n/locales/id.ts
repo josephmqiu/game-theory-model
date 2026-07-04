@@ -171,6 +171,8 @@ const id: TranslationKeys = {
   "agents.customKeyStoredPlain": "Browser ini menyimpan kunci tanpa enkripsi. Gunakan aplikasi desktop untuk penyimpanan terenkripsi.",
   "agents.customKeyNotEncrypted": "Enkripsi OS tidak tersedia; kunci tidak disimpan. Aktifkan keychain sistem Anda dan coba lagi.",
   "agents.customConnect": "Hubungkan",
+  "agents.searchProviderNone": "Tidak ada",
+  "agents.customClearKey": "Hapus kunci API",
 
   // ── Figma Import ──
 

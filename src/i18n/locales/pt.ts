@@ -172,6 +172,8 @@ const pt: TranslationKeys = {
   "agents.customKeyStoredPlain": "Este navegador armazena as chaves sem criptografia. Use o app de desktop para armazenamento criptografado.",
   "agents.customKeyNotEncrypted": "A criptografia do sistema operacional está indisponível; a chave não foi salva. Ative o chaveiro do sistema e tente novamente.",
   "agents.customConnect": "Conectar",
+  "agents.searchProviderNone": "Nenhum",
+  "agents.customClearKey": "Limpar chave de API",
 
   // ── Figma Import ──
 

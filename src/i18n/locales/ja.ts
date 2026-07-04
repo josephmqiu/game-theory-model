@@ -173,6 +173,8 @@ const ja: TranslationKeys = {
   "agents.customKeyStoredPlain": "このブラウザーはキーを暗号化せずに保存します。暗号化ストレージにはデスクトップアプリを使用してください。",
   "agents.customKeyNotEncrypted": "OS の暗号化が利用できないため、キーは保存されませんでした。システムのキーチェーンを有効にして再試行してください。",
   "agents.customConnect": "接続",
+  "agents.searchProviderNone": "なし",
+  "agents.customClearKey": "API キーをクリア",
 
   // ── Figma Import ──
 

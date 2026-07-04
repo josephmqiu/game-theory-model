@@ -171,6 +171,8 @@ const hi: TranslationKeys = {
   "agents.customKeyStoredPlain": "यह ब्राउज़र कुंजियों को अनएन्क्रिप्टेड संग्रहीत करता है। एन्क्रिप्टेड संग्रहण के लिए डेस्कटॉप ऐप का उपयोग करें।",
   "agents.customKeyNotEncrypted": "OS एन्क्रिप्शन उपलब्ध नहीं है; कुंजी सहेजी नहीं गई। अपना सिस्टम कीचेन सक्षम करें और पुनः प्रयास करें।",
   "agents.customConnect": "कनेक्ट करें",
+  "agents.searchProviderNone": "कोई नहीं",
+  "agents.customClearKey": "API कुंजी साफ़ करें",
 
   // ── Figma Import ──
 

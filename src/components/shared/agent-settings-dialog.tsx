@@ -707,7 +707,7 @@ function CustomProviderRow() {
                   variant="ghost"
                   size="icon-sm"
                   onClick={handleClearKey}
-                  aria-label="Clear API key"
+                  aria-label={t("agents.customClearKey")}
                   className="shrink-0"
                 >
                   <Trash2 size={12} />
@@ -775,7 +775,7 @@ function CustomProviderRow() {
                 }}
                 className={cn(CUSTOM_INPUT_CLASS, "mt-1")}
               >
-                <option value="">None</option>
+                <option value="">{t("agents.searchProviderNone")}</option>
                 <option value="tavily">Tavily</option>
                 <option value="brave">Brave</option>
               </select>

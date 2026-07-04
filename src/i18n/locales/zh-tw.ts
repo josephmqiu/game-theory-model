@@ -165,6 +165,8 @@ const zhTW: TranslationKeys = {
   "agents.customKeyStoredPlain": "此瀏覽器以未加密方式儲存金鑰。請使用桌面應用程式進行加密儲存。",
   "agents.customKeyNotEncrypted": "作業系統加密無法使用；金鑰未儲存。請啟用系統鑰匙圈後再試一次。",
   "agents.customConnect": "連線",
+  "agents.searchProviderNone": "無",
+  "agents.customClearKey": "清除 API 金鑰",
 
   // ── Figma Import ──
 

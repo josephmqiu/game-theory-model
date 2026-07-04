@@ -169,6 +169,8 @@ const ko: TranslationKeys = {
   "agents.customKeyStoredPlain": "이 브라우저는 키를 암호화하지 않고 저장합니다. 암호화된 저장을 위해 데스크톱 앱을 사용하세요.",
   "agents.customKeyNotEncrypted": "OS 암호화를 사용할 수 없어 키가 저장되지 않았습니다. 시스템 키체인을 활성화하고 다시 시도하세요.",
   "agents.customConnect": "연결",
+  "agents.searchProviderNone": "없음",
+  "agents.customClearKey": "API 키 지우기",
 
   // ── Figma Import ──
 

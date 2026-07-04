@@ -182,6 +182,8 @@ const ru: TranslationKeys = {
   "agents.customKeyStoredPlain": "Этот браузер хранит ключи без шифрования. Используйте настольное приложение для зашифрованного хранения.",
   "agents.customKeyNotEncrypted": "Шифрование ОС недоступно; ключ не сохранён. Включите системную связку ключей и повторите попытку.",
   "agents.customConnect": "Подключить",
+  "agents.searchProviderNone": "Нет",
+  "agents.customClearKey": "Очистить ключ API",
 
   // ── Figma Import ──
 
