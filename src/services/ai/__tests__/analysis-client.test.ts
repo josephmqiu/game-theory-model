@@ -11,6 +11,17 @@ import type {
   RunStatus,
 } from "../../../../shared/types/api";
 
+// Custom-provider payload resolution reads the API key from secret storage at
+// send time — mock it so the analyze body can be asserted without a keychain.
+const getSecretMock = vi.hoisted(() =>
+  vi.fn(async (_key: string): Promise<string | null> => null),
+);
+vi.mock("@/utils/secret-storage", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/utils/secret-storage")>();
+  return { ...actual, getSecret: getSecretMock };
+});
+
 const originalFetch = globalThis.fetch;
 const originalEventSource = globalThis.EventSource;
 
@@ -228,6 +239,8 @@ describe("analysis-client", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.resetModules();
+    getSecretMock.mockReset();
+    getSecretMock.mockResolvedValue(null);
     MockEventSource.reset();
     vi.stubGlobal(
       "EventSource",
@@ -586,6 +599,87 @@ describe("analysis-client", () => {
         }),
       }),
     );
+  });
+
+  it("attaches custom BYOK credentials to the analyze body for the custom provider", async () => {
+    getSecretMock.mockResolvedValue("sk-custom-123");
+    const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
+      if (input === "/api/ai/analyze") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ runId: "run-custom" }), {
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (input === "/api/ai/state") {
+        return Promise.resolve(
+          stateResponse(makeAnalysis(), makeRunStatus(), 1),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const { client } = await loadModules();
+    const { useAgentSettingsStore } =
+      await import("@/stores/agent-settings-store");
+    useAgentSettingsStore.getState().setCustomProvider({
+      baseURL: "https://api.example.com/v1",
+      hasNativeWebSearch: true,
+    });
+
+    await expect(
+      client.startAnalysis("Topic", "custom", "custom-model"),
+    ).resolves.toEqual({ runId: "run-custom" });
+
+    const analyzeCall = fetchMock.mock.calls.find(
+      ([url]) => url === "/api/ai/analyze",
+    );
+    expect(analyzeCall).toBeDefined();
+    const body = JSON.parse(
+      (analyzeCall![1] as RequestInit).body as string,
+    ) as { provider: string; custom?: unknown };
+    expect(body.provider).toBe("custom");
+    expect(body.custom).toEqual({
+      baseURL: "https://api.example.com/v1",
+      apiKey: "sk-custom-123",
+      hasNativeWebSearch: true,
+    });
+    expect(getSecretMock).toHaveBeenCalledWith("customProvider.apiKey");
+  });
+
+  it("omits the custom field for non-custom providers", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
+      if (input === "/api/ai/analyze") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ runId: "run-anthropic" }), {
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (input === "/api/ai/state") {
+        return Promise.resolve(
+          stateResponse(makeAnalysis(), makeRunStatus(), 1),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${String(input)}`));
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const { client } = await loadModules();
+
+    await expect(
+      client.startAnalysis("Topic", "anthropic", "claude-sonnet-4-6"),
+    ).resolves.toEqual({ runId: "run-anthropic" });
+
+    const analyzeCall = fetchMock.mock.calls.find(
+      ([url]) => url === "/api/ai/analyze",
+    );
+    const body = JSON.parse(
+      (analyzeCall![1] as RequestInit).body as string,
+    ) as Record<string, unknown>;
+    expect("custom" in body).toBe(false);
+    expect(getSecretMock).not.toHaveBeenCalled();
   });
 
   it("rejects non-JSON analyze responses", async () => {

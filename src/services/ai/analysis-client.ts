@@ -23,6 +23,7 @@ import type { MethodologyPhase } from "@/types/methodology";
 import i18n from "@/i18n";
 import { getEntityCardMetrics } from "@/services/entity/entity-card-metrics";
 import { formatPhaseActivityNote } from "./phase-activity-format";
+import { resolveCustomProviderPayload } from "./ai-service";
 
 export interface AnalysisPhaseActivityEvent {
   type: "phase_activity";
@@ -707,6 +708,19 @@ export async function startAnalysis(
 
   getEventStreamManager();
 
+  // The custom (BYOK) provider needs its connection details attached at send
+  // time — the server never caches them. Resolve before opening the request so
+  // a not-configured failure never leaves a dangling controller.
+  let custom: Awaited<ReturnType<typeof resolveCustomProviderPayload>> = null;
+  if (provider === "custom") {
+    custom = await resolveCustomProviderPayload();
+    if (!custom) {
+      throw new Error(
+        "Custom provider is not configured. Set the base URL and API key in Settings.",
+      );
+    }
+  }
+
   const controller = new AbortController();
   currentController = controller;
   abortRequested = false;
@@ -715,7 +729,13 @@ export async function startAnalysis(
     const response = await fetch("/api/ai/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topic, provider, model, runtime }),
+      body: JSON.stringify({
+        topic,
+        provider,
+        model,
+        runtime,
+        ...(custom ? { custom } : {}),
+      }),
       signal: controller.signal,
     });
 
