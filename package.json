@@ -33,6 +33,7 @@
     "test:smoke:packaged": "bun run scripts/packaged-smoke.ts",
     "test:live:codex": "bun run mcp:compile && bun run smoke-tests/live-codex.ts",
     "test:live:claude": "bun run smoke-tests/live-claude.ts",
+    "test:live:custom": "bun run smoke-tests/live-custom.ts",
     "typecheck": "tsc --noEmit",
     "knip": "knip",
     "check:fast": "bun run typecheck && bun run test:unit",
