@@ -303,6 +303,64 @@ describe("custom-openai-adapter streamChat", () => {
     expect(tools.some((t) => t.function.name === "web_search")).toBe(true);
   });
 
+  it("truncates an oversized tool result before appending it to history", async () => {
+    const huge = "y".repeat(50_000);
+    createMock
+      .mockResolvedValueOnce(
+        streamOf([
+          toolCallChunk(0, "call_big", "query_entities", "{}"),
+          { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+        ]),
+      )
+      .mockResolvedValueOnce(streamOf([textChunk("done", "stop")]));
+    handleToolCallMock.mockResolvedValueOnce({ text: huge, isError: false });
+
+    await collect(streamChat(BASE_INPUT));
+
+    const secondMessages = lastParams(1).messages as Array<{
+      role: string;
+      content: string;
+      tool_call_id?: string;
+    }>;
+    const toolMsg = secondMessages.find(
+      (m) => m.role === "tool" && m.tool_call_id === "call_big",
+    )!;
+    expect(toolMsg.content.length).toBeLessThan(50_000);
+    expect(toolMsg.content).toContain("[truncated");
+  });
+
+  it("mechanically trims mid-turn when accumulated tool results exceed budget", async () => {
+    const big = "z".repeat(29_000);
+    let round = 0;
+    createMock.mockImplementation(() => {
+      round++;
+      if (round <= 6) {
+        return Promise.resolve(
+          streamOf([
+            toolCallChunk(0, `c${round}`, "query_entities", "{}"),
+            { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+          ]),
+        );
+      }
+      return Promise.resolve(streamOf([textChunk("final", "stop")]));
+    });
+    handleToolCallMock.mockResolvedValue({ text: big, isError: false });
+
+    await collect(streamChat(BASE_INPUT));
+
+    // Without mid-turn trimming, six 29k results would push a request well past
+    // the 120k budget; the trim keeps every request within it.
+    const lengths = createMock.mock.calls.map(([params]) => {
+      const msgs = (params as { messages: Array<{ content?: unknown }> })
+        .messages;
+      return msgs.reduce(
+        (n, m) => n + (typeof m.content === "string" ? m.content.length : 0),
+        0,
+      );
+    });
+    expect(Math.max(...lengths)).toBeLessThanOrEqual(120_000);
+  });
+
   it("retries once without tools when the endpoint rejects tool definitions", async () => {
     createMock
       .mockRejectedValueOnce(
@@ -320,6 +378,91 @@ describe("custom-openai-adapter streamChat", () => {
         (e) =>
           e.type === "text_delta" &&
           e.content.includes("rejected tool definitions"),
+      ),
+    ).toBe(true);
+    expect(events.at(-1)).toEqual({ type: "turn_complete" });
+  });
+
+  it("stops mid-stream when the signal aborts during streaming", async () => {
+    const controller = new AbortController();
+    createMock.mockResolvedValueOnce({
+      async *[Symbol.asyncIterator]() {
+        yield textChunk("first");
+        // Abort between chunks: the next loop iteration must bail before
+        // forwarding anything further, and must NOT emit turn_complete.
+        controller.abort();
+        yield textChunk(" second", "stop");
+      },
+    });
+
+    const events = await collect(
+      streamChat(BASE_INPUT, { signal: controller.signal }),
+    );
+
+    expect(events).toEqual([{ type: "text_delta", content: "first" }]);
+  });
+
+  it("excludes web_search when no search provider is configured", async () => {
+    // beforeEach clears the search config, so isSearchConfigured() is false.
+    createMock.mockResolvedValueOnce(streamOf([textChunk("hi", "stop")]));
+
+    await collect(streamChat({ ...BASE_INPUT, hasNativeWebSearch: false }));
+
+    const tools = (lastParams(0).tools ?? []) as Array<{
+      function: { name: string };
+    }>;
+    expect(tools.some((t) => t.function.name === "web_search")).toBe(false);
+    // Other product tools are still offered.
+    expect(tools.length).toBeGreaterThan(0);
+  });
+
+  it("treats a non-tool finish_reason (length) as a completed turn", async () => {
+    createMock.mockResolvedValueOnce(
+      streamOf([textChunk("partial answer", "length")]),
+    );
+
+    const events = await collect(streamChat(BASE_INPUT));
+
+    expect(events).toEqual([
+      { type: "text_delta", content: "partial answer" },
+      { type: "turn_complete" },
+    ]);
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces a tool-handler error as tool_call_error and feeds it back", async () => {
+    createMock
+      .mockResolvedValueOnce(
+        streamOf([
+          toolCallChunk(0, "call_e", "query_entities", "{}"),
+          { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+        ]),
+      )
+      .mockResolvedValueOnce(streamOf([textChunk("ok", "stop")]));
+    // handleToolCall returns a structured error (isError) rather than throwing.
+    handleToolCallMock.mockResolvedValueOnce({
+      text: "Error: entity not found",
+      isError: true,
+    });
+
+    const events = await collect(streamChat(BASE_INPUT));
+
+    expect(events).toContainEqual({
+      type: "tool_call_error",
+      toolName: "query_entities",
+      error: "Error: entity not found",
+    });
+    // The handler's error text is still appended as the tool result so the
+    // model can recover on the next round.
+    const secondMessages = lastParams(1).messages as Array<
+      Record<string, unknown>
+    >;
+    expect(
+      secondMessages.some(
+        (m) =>
+          m.role === "tool" &&
+          m.tool_call_id === "call_e" &&
+          m.content === "Error: entity not found",
       ),
     ).toBe(true);
     expect(events.at(-1)).toEqual({ type: "turn_complete" });
@@ -450,6 +593,56 @@ describe("custom-openai-adapter runAnalysisPhase", () => {
     ).toBe(true);
   });
 
+  it("responds to non-function tool calls so no tool_call_id is orphaned", async () => {
+    createMock
+      .mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: "c_custom",
+                  type: "custom",
+                  custom: { name: "x", input: "y" },
+                },
+              ],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        choices: [
+          {
+            message: { content: '{"entities":[],"relationships":[]}' },
+            finish_reason: "stop",
+          },
+        ],
+      });
+
+    const result = await runAnalysisPhase(
+      "prompt",
+      "system",
+      "test-model",
+      schema,
+      analysisOpts,
+    );
+
+    expect(result).toEqual({ entities: [], relationships: [] });
+    expect(handleToolCallMock).not.toHaveBeenCalled();
+    // The non-function tool_call id still gets a tool response in round 2.
+    const secondMessages = lastParams(1).messages as Array<{
+      role: string;
+      tool_call_id?: string;
+    }>;
+    expect(
+      secondMessages.some(
+        (m) => m.role === "tool" && m.tool_call_id === "c_custom",
+      ),
+    ).toBe(true);
+  });
+
   it("throws a clear error when the final JSON is unparseable", async () => {
     createMock.mockResolvedValueOnce({
       choices: [
@@ -460,5 +653,76 @@ describe("custom-openai-adapter runAnalysisPhase", () => {
     await expect(
       runAnalysisPhase("prompt", "system", "test-model", schema, analysisOpts),
     ).rejects.toThrow(/unparseable JSON/);
+  });
+
+  it("runs the analysis tool loop: executes a tool, then returns final JSON", async () => {
+    createMock
+      // Round 1: model requests a tool.
+      .mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: "call_a",
+                  type: "function",
+                  function: {
+                    name: "query_entities",
+                    arguments: '{"phase":"x"}',
+                  },
+                },
+              ],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+      })
+      // Round 2: model returns the structured answer.
+      .mockResolvedValueOnce({
+        choices: [
+          {
+            message: { content: '{"entities":[],"relationships":[]}' },
+            finish_reason: "stop",
+          },
+        ],
+      });
+    handleToolCallMock.mockResolvedValueOnce({ text: "[]", isError: false });
+
+    const result = await runAnalysisPhase(
+      "prompt",
+      "system",
+      "test-model",
+      schema,
+      analysisOpts,
+    );
+
+    expect(result).toEqual({ entities: [], relationships: [] });
+    // The tool ran with the BYOK creds threaded through the context.
+    expect(handleToolCallMock).toHaveBeenCalledWith(
+      "query_entities",
+      { phase: "x" },
+      expect.objectContaining({
+        customCredentials: expect.objectContaining({
+          baseURL: "https://api.example.com/v1",
+        }),
+      }),
+    );
+    // Round 2 carries the assistant tool_calls message + the tool result
+    // answering call_a — no orphaned tool_call_id.
+    expect(createMock).toHaveBeenCalledTimes(2);
+    const secondMessages = lastParams(1).messages as Array<
+      Record<string, unknown>
+    >;
+    expect(
+      secondMessages.some(
+        (m) => m.role === "assistant" && Array.isArray(m.tool_calls),
+      ),
+    ).toBe(true);
+    expect(
+      secondMessages.some(
+        (m) => m.role === "tool" && m.tool_call_id === "call_a",
+      ),
+    ).toBe(true);
   });
 });

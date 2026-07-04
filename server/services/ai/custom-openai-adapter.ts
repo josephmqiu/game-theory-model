@@ -60,6 +60,12 @@ const MAX_TOOL_ROUNDS = 8;
  * trimmed if the summarize call fails).
  */
 const HISTORY_CHAR_BUDGET = 120_000;
+/**
+ * Per-tool-result content cap. A single tool result (e.g. a large
+ * query_entities dump) is truncated to this many characters before being
+ * appended to the message history, so one call can't blow the context window.
+ */
+const TOOL_RESULT_CHAR_CAP = 30_000;
 
 const PLACEHOLDER_API_KEY = "sk-no-key";
 
@@ -324,6 +330,75 @@ function toAssistantToolCalls(
   }));
 }
 
+// ── Mid-turn context control ──
+
+/** Truncate a tool result before it enters the message history. */
+function capToolResult(text: string): string {
+  if (text.length <= TOOL_RESULT_CHAR_CAP) return text;
+  const dropped = text.length - TOOL_RESULT_CHAR_CAP;
+  return `${text.slice(0, TOOL_RESULT_CHAR_CAP)}\n[truncated ${dropped} chars]`;
+}
+
+function serializedMessagesLength(
+  messages: OpenAI.ChatCompletionMessageParam[],
+): number {
+  return messages.reduce(
+    (n, m) => n + (typeof m.content === "string" ? m.content.length : 0),
+    0,
+  );
+}
+
+/** Indices of assistant messages that carry tool_calls (one per completed round). */
+function toolGroupStarts(
+  messages: OpenAI.ChatCompletionMessageParam[],
+): number[] {
+  const starts: number[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (
+      m.role === "assistant" &&
+      Array.isArray(m.tool_calls) &&
+      m.tool_calls.length > 0
+    ) {
+      starts.push(i);
+    }
+  }
+  return starts;
+}
+
+/**
+ * Keep the running message array under budget MID-TURN by mechanically dropping
+ * the OLDEST complete (assistant tool_calls + its tool responses) groups — never
+ * partially, so no tool_call_id is ever orphaned, and never the most recent
+ * group (the model still needs the current round). No LLM summarize call is made
+ * inside the loop (no recursion). The system message + preamble are preserved.
+ */
+function enforceMidTurnBudget(
+  messages: OpenAI.ChatCompletionMessageParam[],
+  runId: string | undefined,
+  sub: string,
+): void {
+  if (serializedMessagesLength(messages) <= HISTORY_CHAR_BUDGET) return;
+
+  let dropped = 0;
+  while (serializedMessagesLength(messages) > HISTORY_CHAR_BUDGET) {
+    const starts = toolGroupStarts(messages);
+    if (starts.length <= 1) break; // always keep the current round intact
+    const start = starts[0];
+    let end = start + 1;
+    while (end < messages.length && messages[end].role === "tool") end++;
+    messages.splice(start, end - start);
+    dropped++;
+  }
+
+  if (dropped > 0) {
+    serverWarn(runId, sub, "mid-turn-trim", {
+      droppedGroups: dropped,
+      remainingMessages: messages.length,
+    });
+  }
+}
+
 // ── Chat profile ──
 
 /**
@@ -481,9 +556,12 @@ export async function* streamChat(
         messages.push({
           role: "tool",
           tool_call_id: call.id,
-          content: result.text,
+          content: capToolResult(result.text),
         });
       }
+      // Tool results appended this round can grow the context past budget —
+      // trim mechanically before the next request (no LLM summarize mid-turn).
+      enforceMidTurnBudget(messages, options?.runId, "custom-adapter");
       continue; // re-enter the loop for the model's follow-up
     }
 
@@ -708,7 +786,16 @@ async function runAnalysisLoop(
         tool_calls: message.tool_calls,
       });
       for (const call of message.tool_calls) {
-        if (call.type !== "function") continue;
+        // Every id in the pushed assistant tool_calls array MUST get a tool
+        // response, or the next request 400s on an orphaned tool_call_id.
+        if (call.type !== "function") {
+          messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content: "Unsupported tool call type.",
+          });
+          continue;
+        }
         let args: Record<string, unknown>;
         try {
           args = call.function.arguments.trim()
@@ -727,9 +814,11 @@ async function runAnalysisLoop(
         messages.push({
           role: "tool",
           tool_call_id: call.id,
-          content: result.text,
+          content: capToolResult(result.text),
         });
       }
+      // Trim mechanically if the appended tool results pushed us over budget.
+      enforceMidTurnBudget(messages, options.runId, "custom-adapter");
       continue;
     }
 
