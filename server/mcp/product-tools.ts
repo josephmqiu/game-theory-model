@@ -27,6 +27,12 @@ import {
   validateNewEntity,
 } from "../services/entity-update-validation";
 import { ALL_PHASES, RUNNABLE_PHASES } from "../../src/types/methodology";
+import { getSearchProvider, type SearchProviderId } from "../services/search";
+import {
+  getSearchConfig,
+  isSearchConfigured,
+} from "../services/search/config-cache";
+import { serverLog } from "../utils/ai-logger";
 
 export interface ToolDefinition {
   name: string;
@@ -112,6 +118,26 @@ export const ANALYSIS_MODE_TOOL_DEFINITIONS = [
         },
       },
       required: ["trigger_type", "justification"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "web_search",
+    description:
+      "Search the live web via the user's configured search provider. Returns a numbered list of results with title, URL, and snippet. Use this to ground claims in current, real-world information.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        query: {
+          type: "string",
+          description: "The web search query",
+        },
+        max_results: {
+          type: "number",
+          description: "Maximum results to return (default 5, max 10)",
+        },
+      },
+      required: ["query"],
       additionalProperties: false,
     },
   },
@@ -548,9 +574,80 @@ export function handleAbortAnalysis(): string {
   return JSON.stringify({ aborted: true, runId: activeStatus.runId });
 }
 
+const WEB_SEARCH_DEFAULT_MAX_RESULTS = 5;
+const WEB_SEARCH_MAX_RESULTS = 10;
+
+function clampMaxResults(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return WEB_SEARCH_DEFAULT_MAX_RESULTS;
+  }
+  return Math.min(WEB_SEARCH_MAX_RESULTS, Math.max(1, Math.floor(value)));
+}
+
+export async function handleWebSearch(args: {
+  query: string;
+  max_results?: number;
+}): Promise<{ text: string; isError: boolean }> {
+  if (!isSearchConfigured()) {
+    return {
+      text: "Web search is not configured. The user must add a search provider API key in Settings.",
+      isError: true,
+    };
+  }
+
+  const query = typeof args.query === "string" ? args.query.trim() : "";
+  if (query.length === 0) {
+    return { text: "Web search requires a non-empty query.", isError: true };
+  }
+
+  const runId = resolveToolRunId();
+  const { provider, apiKey } = getSearchConfig();
+  const maxResults = clampMaxResults(args.max_results);
+
+  serverLog(runId, "web-search", "start", {
+    provider: provider ?? "none",
+    maxResults,
+    queryLength: query.length,
+  });
+
+  try {
+    const searchProvider = getSearchProvider(provider as SearchProviderId);
+    const results = await searchProvider.search(query, {
+      apiKey: apiKey as string,
+      maxResults,
+    });
+
+    serverLog(runId, "web-search", "result", {
+      provider: provider ?? "none",
+      resultCount: results.length,
+    });
+
+    if (results.length === 0) {
+      return { text: `No web results found for "${query}".`, isError: false };
+    }
+
+    const formatted = results
+      .map(
+        (result, index) =>
+          `${index + 1}. ${result.title || "(untitled)"}\n   ${result.url}\n   ${result.snippet}`,
+      )
+      .join("\n\n");
+    return { text: formatted, isError: false };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    serverLog(runId, "web-search", "error", {
+      provider: provider ?? "none",
+      error: reason,
+    });
+    return { text: `Web search failed: ${reason}`, isError: true };
+  }
+}
+
+type ProductToolResult = string | { text: string; isError: boolean };
+
 type ProductToolHandler = (
   args: Record<string, unknown>,
-) => string | Promise<string>;
+) => ProductToolResult | Promise<ProductToolResult>;
 
 export const PRODUCT_TOOL_HANDLERS = {
   start_analysis: (args) => handleStartAnalysis(args as never),
@@ -566,6 +663,7 @@ export const PRODUCT_TOOL_HANDLERS = {
   delete_relationship: (args) => handleDeleteRelationship(args as never),
   rerun_phases: (args) => handleRerunPhases(args as never),
   abort_analysis: () => handleAbortAnalysis(),
+  web_search: (args) => handleWebSearch(args as never),
 } satisfies Record<string, ProductToolHandler>;
 
 export async function handleToolCall(
@@ -580,7 +678,11 @@ export async function handleToolCall(
     if (!handler) {
       throw new Error(`Unknown tool: ${name}`);
     }
-    return { text: await handler(toolArgs), isError: false };
+    const raw = await handler(toolArgs);
+    if (typeof raw === "string") {
+      return { text: raw, isError: false };
+    }
+    return { text: raw.text, isError: raw.isError };
   } catch (error) {
     return {
       text: `Error: ${error instanceof Error ? error.message : String(error)}`,

@@ -21,6 +21,7 @@ import {
   handleDeleteRelationship,
   handleRerunPhases,
   handleAbortAnalysis,
+  handleWebSearch,
 } from "../../mcp/product-tools";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 import type { AnalysisActivityCallback } from "./analysis-activity";
@@ -243,6 +244,21 @@ export async function createChatMcpServer() {
     tool("abort_analysis", "Abort the active analysis", {}, async () => ({
       content: [{ type: "text" as const, text: handleAbortAnalysis() }],
     })),
+    tool(
+      "web_search",
+      "Search the live web via the user's configured search provider. Returns a numbered list of results with title, URL, and snippet.",
+      {
+        query: z.string(),
+        max_results: z.number().optional(),
+      },
+      async (args) => {
+        const result = await handleWebSearch(args);
+        return {
+          content: [{ type: "text" as const, text: result.text }],
+          ...(result.isError ? { isError: true } : {}),
+        };
+      },
+    ),
   ];
 
   return createSdkMcpServer({
@@ -321,6 +337,21 @@ export async function createAnalysisMcpServer(runId?: string) {
             },
           ],
         }),
+      ),
+      tool(
+        "web_search",
+        "Search the live web via the user's configured search provider. Returns a numbered list of results with title, URL, and snippet.",
+        {
+          query: z.string(),
+          max_results: z.number().optional(),
+        },
+        async (args) => {
+          const result = await handleWebSearch(args);
+          return {
+            content: [{ type: "text" as const, text: result.text }],
+            ...(result.isError ? { isError: true } : {}),
+          };
+        },
       ),
     ],
   });
@@ -689,12 +720,17 @@ async function runClaudeAnalysisAttempt<T>(
                 message: "Using WebSearch",
                 query,
               });
-              serverLog(options?.runId, "claude-adapter", "analysis-tool-call", {
-                mode,
-                toolName: toolInputState.toolName,
-                query,
-                streamedInput: true,
-              });
+              serverLog(
+                options?.runId,
+                "claude-adapter",
+                "analysis-tool-call",
+                {
+                  mode,
+                  toolName: toolInputState.toolName,
+                  query,
+                  streamedInput: true,
+                },
+              );
             }
           }
         }
@@ -881,7 +917,8 @@ export async function runAnalysisPhase<T = unknown>(
   try {
     return (await runAttempt("structured", systemPrompt)) as T;
   } catch (error) {
-    const primaryMessage = error instanceof Error ? error.message : String(error);
+    const primaryMessage =
+      error instanceof Error ? error.message : String(error);
     serverWarn(options?.runId, "claude-adapter", "analysis-query-failed", {
       mode: "structured",
       model,
@@ -911,11 +948,16 @@ export async function runAnalysisPhase<T = unknown>(
         fallbackError instanceof Error
           ? fallbackError.message
           : String(fallbackError);
-      serverError(options?.runId, "claude-adapter", "analysis-fallback-failed", {
-        model,
-        primaryError: primaryMessage,
-        fallbackError: fallbackMessage,
-      });
+      serverError(
+        options?.runId,
+        "claude-adapter",
+        "analysis-fallback-failed",
+        {
+          model,
+          primaryError: primaryMessage,
+          fallbackError: fallbackMessage,
+        },
+      );
       throw new Error(
         `Claude structured-output attempt failed (${primaryMessage}); JSON fallback failed: ${fallbackMessage}`,
       );
