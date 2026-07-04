@@ -15,6 +15,9 @@ import {
   Download,
   ExternalLink,
   Plug,
+  ChevronDown,
+  ChevronUp,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -29,6 +32,14 @@ import {
   ALLOWED_PROVIDERS,
   PROVIDER_LABELS,
 } from "@/services/ai/allowed-providers";
+import {
+  setSecret,
+  getSecret,
+  hasSecret,
+  removeSecret,
+  probeSecureStorage,
+} from "@/utils/secret-storage";
+import { pushSearchConfig } from "@/services/ai/search-config-client";
 import { PHASE_LABELS, RUNNABLE_PHASES } from "@/types/methodology";
 import type { AnalysisEffortLevel } from "../../../shared/types/analysis-runtime";
 import ClaudeLogo from "@/components/icons/claude-logo";
@@ -68,10 +79,9 @@ const PROVIDER_META: Record<
     agent: "opencode",
     Icon: OpenCodeLogo,
   },
-  // Placeholder — the custom (BYOK) provider UI is fleshed out separately.
   custom: {
     label: PROVIDER_LABELS.custom,
-    descriptionKey: "agents.customDesc",
+    descriptionKey: "agents.customProviderDesc",
     agent: "custom-api",
     Icon: Plug,
   },
@@ -148,6 +158,96 @@ async function callMcpInstall(
     body: JSON.stringify({ tool, action, transportMode, httpPort }),
   });
   return res.json();
+}
+
+/** Secret-storage key names (shared with the connect flow and boot push). */
+const CUSTOM_API_KEY = "customProvider.apiKey";
+const SEARCH_API_KEY = "search.apiKey";
+
+/** Shared class for the custom-provider text/password inputs. */
+const CUSTOM_INPUT_CLASS =
+  "h-8 w-full rounded-md border border-border bg-secondary/40 px-2 text-[12px] text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring";
+
+interface CustomPreset {
+  id: string;
+  label: string;
+  baseURL: string;
+  /** Fallback model IDs used when the endpoint has no /models listing. */
+  defaultModelIds: string[];
+  hasNativeWebSearch: boolean;
+}
+
+/** OpenAI-compatible endpoint presets. Selecting one prefills the base URL and
+ *  fallback model IDs; the base URL stays editable afterward. */
+const CUSTOM_PRESETS: CustomPreset[] = [
+  {
+    id: "opencode-go",
+    label: "OpenCode Go",
+    baseURL: "https://opencode.ai/zen/go/v1",
+    defaultModelIds: ["kimi-k2.7-code"],
+    hasNativeWebSearch: false,
+  },
+  {
+    id: "opencode-zen",
+    label: "OpenCode Zen",
+    baseURL: "https://opencode.ai/zen/v1",
+    defaultModelIds: [],
+    hasNativeWebSearch: false,
+  },
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    baseURL: "https://openrouter.ai/api/v1",
+    defaultModelIds: [],
+    hasNativeWebSearch: false,
+  },
+  {
+    id: "deepseek",
+    label: "DeepSeek",
+    baseURL: "https://api.deepseek.com",
+    defaultModelIds: ["deepseek-chat", "deepseek-reasoner"],
+    hasNativeWebSearch: false,
+  },
+  {
+    id: "custom-url",
+    label: "Custom URL",
+    baseURL: "",
+    defaultModelIds: [],
+    hasNativeWebSearch: false,
+  },
+];
+
+interface ConnectCustomResult {
+  connected: boolean;
+  models: GroupedModel[];
+  error?: string;
+  modelListSource?: "endpoint" | "manual";
+}
+
+/** POST the custom-provider connect request. The key is sent once to probe the
+ *  endpoint; it is persisted only in secret storage, never in settings. */
+async function connectCustomAgent(params: {
+  baseURL: string;
+  apiKey: string;
+  modelIds: string[];
+}): Promise<ConnectCustomResult> {
+  try {
+    const res = await fetch("/api/ai/connect-agent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent: "custom", ...params }),
+    });
+    if (!res.ok) {
+      return {
+        connected: false,
+        models: [],
+        error: `server_error_${res.status}`,
+      };
+    }
+    return (await res.json()) as ConnectCustomResult;
+  } catch {
+    return { connected: false, models: [], error: "connection_failed" };
+  }
 }
 
 function ProviderRow({ type }: { type: AIProviderType }) {
@@ -354,6 +454,382 @@ function ProviderRow({ type }: { type: AIProviderType }) {
               <ExternalLink size={9} />
             </a>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CustomProviderRow() {
+  const { t } = useTranslation();
+  const provider = useAgentSettingsStore((s) => s.providers.custom);
+  const customProvider = useAgentSettingsStore((s) => s.customProvider);
+  const searchProvider = useAgentSettingsStore((s) => s.searchProvider);
+  const setCustomProvider = useAgentSettingsStore((s) => s.setCustomProvider);
+  const setSearchProvider = useAgentSettingsStore((s) => s.setSearchProvider);
+  const connect = useAgentSettingsStore((s) => s.connectProvider);
+  const disconnect = useAgentSettingsStore((s) => s.disconnectProvider);
+  const persist = useAgentSettingsStore((s) => s.persist);
+
+  const meta = PROVIDER_META.custom;
+  const { Icon } = meta;
+
+  const [expanded, setExpanded] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [searchKeyInput, setSearchKeyInput] = useState("");
+  const [hasStoredKey, setHasStoredKey] = useState(false);
+  const [hasStoredSearchKey, setHasStoredSearchKey] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // OS encryption unavailable and the key was NOT saved (Electron-only case).
+  const [keyNotEncrypted, setKeyNotEncrypted] = useState(false);
+  // Secrets are stored unencrypted (web / no OS keychain).
+  const [plaintextWarning, setPlaintextWarning] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const secure = await probeSecureStorage();
+      const [storedKey, storedSearchKey] = await Promise.all([
+        hasSecret(CUSTOM_API_KEY),
+        hasSecret(SEARCH_API_KEY),
+      ]);
+      if (cancelled) return;
+      setPlaintextWarning(!secure);
+      setHasStoredKey(storedKey);
+      setHasStoredSearchKey(storedSearchKey);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const applyPreset = useCallback(
+    (id: string) => {
+      const preset =
+        CUSTOM_PRESETS.find((p) => p.id === id) ??
+        CUSTOM_PRESETS[CUSTOM_PRESETS.length - 1];
+      setCustomProvider({
+        preset: preset.id,
+        baseURL: preset.baseURL,
+        modelIds: preset.defaultModelIds,
+        hasNativeWebSearch: preset.hasNativeWebSearch,
+      });
+      persist();
+    },
+    [setCustomProvider, persist],
+  );
+
+  const handleClearKey = useCallback(async () => {
+    await removeSecret(CUSTOM_API_KEY);
+    setHasStoredKey(false);
+    setApiKeyInput("");
+  }, []);
+
+  const handleConnect = useCallback(async () => {
+    setError(null);
+    setKeyNotEncrypted(false);
+    setIsConnecting(true);
+    try {
+      const baseURL = customProvider.baseURL.trim();
+
+      // Persist a newly-typed key before probing the endpoint.
+      if (apiKeyInput) {
+        const res = await setSecret(CUSTOM_API_KEY, apiKeyInput);
+        if (!res.ok) {
+          setKeyNotEncrypted(true);
+          return;
+        }
+        setHasStoredKey(true);
+      }
+      const apiKey = apiKeyInput || (await getSecret(CUSTOM_API_KEY)) || "";
+
+      // Persist + push the web-search config (best-effort; plaintext in web).
+      if (searchKeyInput) {
+        const sres = await setSecret(SEARCH_API_KEY, searchKeyInput);
+        if (sres.ok) setHasStoredSearchKey(true);
+      }
+      const searchKey =
+        searchKeyInput || (await getSecret(SEARCH_API_KEY)) || null;
+      await pushSearchConfig({
+        provider: searchProvider,
+        apiKey: searchProvider ? searchKey : null,
+      });
+
+      const result = await connectCustomAgent({
+        baseURL,
+        apiKey,
+        modelIds: customProvider.modelIds,
+      });
+      if (result.connected) {
+        connect("custom", "custom-api", result.models);
+        persist();
+        setApiKeyInput("");
+        setSearchKeyInput("");
+      } else if (result.error?.startsWith("server_error_")) {
+        const status = result.error.replace("server_error_", "");
+        setError(t("agents.serverError", { status }));
+      } else if (result.error === "connection_failed") {
+        setError(t("agents.connectionFailed"));
+      } else {
+        setError(result.error ?? t("agents.connectionFailed"));
+      }
+    } finally {
+      setIsConnecting(false);
+    }
+  }, [
+    customProvider.baseURL,
+    customProvider.modelIds,
+    apiKeyInput,
+    searchKeyInput,
+    searchProvider,
+    connect,
+    persist,
+    t,
+  ]);
+
+  const handleDisconnect = useCallback(() => {
+    disconnect("custom");
+    persist();
+    setError(null);
+  }, [disconnect, persist]);
+
+  const canConnect = customProvider.baseURL.trim().length > 0 && !isConnecting;
+
+  return (
+    <div className="rounded-lg bg-secondary/30">
+      {/* Header */}
+      <div className="flex items-center gap-2.5 px-3 py-1.5">
+        <div
+          className={cn(
+            "w-6 h-6 rounded-md flex items-center justify-center shrink-0 transition-colors",
+            provider.isConnected
+              ? "bg-foreground/10 text-foreground"
+              : "bg-secondary text-muted-foreground",
+          )}
+        >
+          <Icon className="w-3.5 h-3.5" />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] font-medium text-foreground leading-tight">
+              {t("agents.customProvider")}
+            </span>
+            <span className="text-[10px] text-muted-foreground leading-tight hidden sm:inline">
+              {t("agents.customProviderDesc")}
+            </span>
+          </div>
+          {provider.isConnected && (
+            <span className="text-[11px] text-green-500 leading-tight flex items-center gap-1 mt-0.5">
+              <Check size={10} strokeWidth={2.5} />
+              {t("agents.modelCount", { count: provider.models.length })}
+            </span>
+          )}
+        </div>
+
+        {provider.isConnected && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDisconnect}
+            className="h-7 px-2.5 text-[11px] text-muted-foreground hover:text-destructive shrink-0"
+          >
+            <Unplug size={11} className="mr-1" />
+            {t("common.disconnect")}
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => setExpanded((v) => !v)}
+          aria-label={t("agents.customProvider")}
+          className="shrink-0"
+        >
+          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </Button>
+      </div>
+
+      {/* Expandable form */}
+      {expanded && (
+        <div className="px-3 pb-3 pt-1 space-y-2.5">
+          {/* Preset */}
+          <label className="block">
+            <span className="text-[11px] text-muted-foreground">
+              {t("agents.customPreset")}
+            </span>
+            <select
+              value={customProvider.preset}
+              onChange={(e) => applyPreset(e.target.value)}
+              className={cn(CUSTOM_INPUT_CLASS, "mt-1")}
+            >
+              {CUSTOM_PRESETS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {/* Base URL */}
+          <label className="block">
+            <span className="text-[11px] text-muted-foreground">
+              {t("agents.customBaseUrl")}
+            </span>
+            <input
+              type="text"
+              value={customProvider.baseURL}
+              onChange={(e) => setCustomProvider({ baseURL: e.target.value })}
+              onBlur={persist}
+              placeholder="https://api.example.com/v1"
+              className={cn(CUSTOM_INPUT_CLASS, "mt-1")}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </label>
+
+          {/* API key */}
+          <label className="block">
+            <span className="text-[11px] text-muted-foreground">
+              {t("agents.customApiKey")}
+            </span>
+            <div className="mt-1 flex items-center gap-1.5">
+              <input
+                type="password"
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                placeholder={hasStoredKey ? "••••••••••••" : ""}
+                className={CUSTOM_INPUT_CLASS}
+                autoComplete="off"
+              />
+              {hasStoredKey && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={handleClearKey}
+                  aria-label="Clear API key"
+                  className="shrink-0"
+                >
+                  <Trash2 size={12} />
+                </Button>
+              )}
+            </div>
+          </label>
+
+          {/* Model IDs */}
+          <label className="block">
+            <span className="text-[11px] text-muted-foreground">
+              {t("agents.customModelIds")}
+            </span>
+            <input
+              type="text"
+              value={customProvider.modelIds.join(", ")}
+              onChange={(e) =>
+                setCustomProvider({
+                  modelIds: e.target.value
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                })
+              }
+              onBlur={persist}
+              placeholder="model-a, model-b"
+              className={cn(CUSTOM_INPUT_CLASS, "mt-1")}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </label>
+
+          {/* Native web search toggle */}
+          <div className="flex items-center gap-3 rounded-md bg-secondary/40 px-2.5 py-2">
+            <div className="flex-1 min-w-0">
+              <div className="text-[12px] font-medium text-foreground">
+                {t("agents.customNativeSearch")}
+              </div>
+              <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+                {t("agents.customNativeSearchHint")}
+              </p>
+            </div>
+            <Switch
+              checked={customProvider.hasNativeWebSearch}
+              onCheckedChange={(v) => {
+                setCustomProvider({ hasNativeWebSearch: v });
+                persist();
+              }}
+              aria-label={t("agents.customNativeSearch")}
+            />
+          </div>
+
+          {/* Web search provider section */}
+          <div className="rounded-md bg-secondary/40 px-2.5 py-2 space-y-2">
+            <label className="block">
+              <span className="text-[11px] text-muted-foreground">
+                {t("agents.searchProvider")}
+              </span>
+              <select
+                value={searchProvider ?? ""}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setSearchProvider(v === "tavily" || v === "brave" ? v : null);
+                  persist();
+                }}
+                className={cn(CUSTOM_INPUT_CLASS, "mt-1")}
+              >
+                <option value="">None</option>
+                <option value="tavily">Tavily</option>
+                <option value="brave">Brave</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-[11px] text-muted-foreground">
+                {t("agents.searchApiKey")}
+              </span>
+              <input
+                type="password"
+                value={searchKeyInput}
+                onChange={(e) => setSearchKeyInput(e.target.value)}
+                placeholder={hasStoredSearchKey ? "••••••••••••" : ""}
+                className={cn(CUSTOM_INPUT_CLASS, "mt-1")}
+                autoComplete="off"
+              />
+            </label>
+            <p className="text-[10px] leading-relaxed text-muted-foreground">
+              {t("agents.searchKeyHint")}
+            </p>
+          </div>
+
+          {/* Warnings */}
+          {plaintextWarning && (
+            <p className="text-[10px] leading-relaxed text-amber-500">
+              {t("agents.customKeyStoredPlain")}
+            </p>
+          )}
+          {keyNotEncrypted && (
+            <p className="text-[10px] leading-relaxed text-destructive">
+              {t("agents.customKeyNotEncrypted")}
+            </p>
+          )}
+          {error && (
+            <p className="text-[10px] leading-relaxed text-destructive">
+              {error}
+            </p>
+          )}
+
+          {/* Connect */}
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              onClick={handleConnect}
+              disabled={!canConnect}
+              className="h-7 px-3 text-[11px]"
+            >
+              {isConnecting ? (
+                <Loader2 size={11} className="animate-spin" />
+              ) : (
+                t("agents.customConnect")
+              )}
+            </Button>
+          </div>
         </div>
       )}
     </div>
@@ -571,9 +1047,13 @@ export default function AgentSettingsDialog() {
               </h4>
             </div>
             <div className="space-y-0.5">
-              {ALLOWED_PROVIDERS.map((type) => (
-                <ProviderRow key={type} type={type} />
-              ))}
+              {ALLOWED_PROVIDERS.map((type) =>
+                type === "custom" ? (
+                  <CustomProviderRow key={type} />
+                ) : (
+                  <ProviderRow key={type} type={type} />
+                ),
+              )}
             </div>
           </div>
 

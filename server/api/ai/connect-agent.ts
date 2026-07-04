@@ -1,53 +1,208 @@
-import { defineEventHandler, readBody, setResponseHeaders } from 'h3'
-import type { GroupedModel } from '../../../src/types/agent-settings'
-import { resolveClaudeCli } from '../../utils/resolve-claude-cli'
-import { filterCodexEnv } from '../../utils/codex-client'
+import { defineEventHandler, readBody, setResponseHeaders } from "h3";
+import type { GroupedModel } from "../../../src/types/agent-settings";
+import { resolveClaudeCli } from "../../utils/resolve-claude-cli";
+import { filterCodexEnv } from "../../utils/codex-client";
 import {
   buildClaudeAgentEnv,
   getClaudeAgentDebugFilePath,
-} from '../../utils/resolve-claude-agent-env'
+} from "../../utils/resolve-claude-agent-env";
 
 interface ConnectBody {
-  agent: 'claude-code' | 'codex-cli' | 'opencode'
+  agent: "claude-code" | "codex-cli" | "opencode" | "custom";
+  /** Custom (OpenAI-compatible) provider fields — only read when agent === 'custom'. */
+  baseURL?: string;
+  apiKey?: string;
+  modelIds?: string[];
 }
 
 interface ConnectResult {
-  connected: boolean
-  models: GroupedModel[]
-  error?: string
-  notInstalled?: boolean
+  connected: boolean;
+  models: GroupedModel[];
+  error?: string;
+  notInstalled?: boolean;
+  /** How the model list was resolved: from the endpoint's /models, or the
+   *  user-provided manual list when the endpoint has no listing. */
+  modelListSource?: "endpoint" | "manual";
 }
 
-const CODEX_CLI_TIMEOUT_MS = 5000
-const CODEX_APP_SERVER_PROBE_TIMEOUT_MS = 1500
-const CODEX_APP_SERVER_SHUTDOWN_TIMEOUT_MS = 1000
+const CODEX_CLI_TIMEOUT_MS = 5000;
+const CODEX_APP_SERVER_PROBE_TIMEOUT_MS = 1500;
+const CODEX_APP_SERVER_SHUTDOWN_TIMEOUT_MS = 1000;
 
 /**
  * POST /api/ai/connect-agent
  * Actively connects to a local CLI tool and fetches its supported models.
  */
 export default defineEventHandler(async (event) => {
-  const body = await readBody<ConnectBody>(event)
-  setResponseHeaders(event, { 'Content-Type': 'application/json' })
+  const body = await readBody<ConnectBody>(event);
+  setResponseHeaders(event, { "Content-Type": "application/json" });
 
   if (!body?.agent) {
-    return { connected: false, models: [], error: 'Missing agent field' } satisfies ConnectResult
+    return {
+      connected: false,
+      models: [],
+      error: "Missing agent field",
+    } satisfies ConnectResult;
   }
 
-  if (body.agent === 'claude-code') {
-    return connectClaudeCode()
+  if (body.agent === "claude-code") {
+    return connectClaudeCode();
   }
 
-  if (body.agent === 'codex-cli') {
-    return connectCodexCli()
+  if (body.agent === "codex-cli") {
+    return connectCodexCli();
   }
 
-  if (body.agent === 'opencode') {
-    return connectOpenCode()
+  if (body.agent === "opencode") {
+    return connectOpenCode();
   }
 
-  return { connected: false, models: [], error: `Unknown agent: ${body.agent}` } satisfies ConnectResult
-})
+  if (body.agent === "custom") {
+    return connectCustom({
+      baseURL: body.baseURL,
+      apiKey: body.apiKey,
+      modelIds: body.modelIds,
+    });
+  }
+
+  return {
+    connected: false,
+    models: [],
+    error: `Unknown agent: ${body.agent}`,
+  } satisfies ConnectResult;
+});
+
+const CUSTOM_MODELS_TIMEOUT_MS = 5000;
+
+/**
+ * Connect to an OpenAI-compatible ("custom" BYOK) endpoint and list its models.
+ *
+ * Resolution order:
+ * - GET {baseURL}/models with a Bearer header (only when a key is provided).
+ * - 401/403 → auth failure with an actionable message.
+ * - 404/501/network/timeout, or an empty/unparseable list → fall back to the
+ *   user's manual model IDs when present; otherwise report a connect failure.
+ *
+ * The API key is never logged or echoed back.
+ */
+export async function connectCustom(params: {
+  baseURL?: string;
+  apiKey?: string;
+  modelIds?: string[];
+}): Promise<ConnectResult> {
+  const baseURL = params.baseURL?.trim() ?? "";
+  const apiKey = params.apiKey?.trim() ?? "";
+  const manualModels: GroupedModel[] = (params.modelIds ?? [])
+    .map((id) => id.trim())
+    .filter(Boolean)
+    .map((id) => ({
+      value: id,
+      displayName: id,
+      description: "",
+      provider: "custom" as const,
+    }));
+
+  if (!baseURL) {
+    return {
+      connected: false,
+      models: [],
+      error: "A base URL is required for a custom provider.",
+    };
+  }
+
+  const url = `${baseURL.replace(/\/+$/, "")}/models`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CUSTOM_MODELS_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      },
+      signal: controller.signal,
+    });
+  } catch (error) {
+    clearTimeout(timer);
+    // Network failure or timeout (AbortError) — fall back to the manual list.
+    if (manualModels.length > 0) {
+      return {
+        connected: true,
+        models: manualModels,
+        modelListSource: "manual",
+      };
+    }
+    const timedOut = error instanceof Error && error.name === "AbortError";
+    return {
+      connected: false,
+      models: [],
+      error: timedOut
+        ? "Connection to the custom endpoint timed out."
+        : "Could not reach the custom endpoint. Check the base URL.",
+    };
+  }
+  clearTimeout(timer);
+
+  if (response.status === 401 || response.status === 403) {
+    return {
+      connected: false,
+      models: [],
+      error: "Authentication failed. Check the API key for this endpoint.",
+    };
+  }
+
+  // Endpoint has no model listing → fall back to the manual list when present.
+  if (response.status === 404 || response.status === 501 || !response.ok) {
+    if (manualModels.length > 0) {
+      return {
+        connected: true,
+        models: manualModels,
+        modelListSource: "manual",
+      };
+    }
+    return {
+      connected: false,
+      models: [],
+      error: `The endpoint did not return a model list (HTTP ${response.status}). Add model IDs manually.`,
+    };
+  }
+
+  let models: GroupedModel[] = [];
+  try {
+    const payload = (await response.json()) as {
+      data?: Array<{ id?: string; name?: string; display_name?: string }>;
+    };
+    models = (payload.data ?? [])
+      .filter((m): m is { id: string } & typeof m => Boolean(m.id?.trim()))
+      .map((m) => ({
+        value: m.id.trim(),
+        displayName: (m.name ?? m.display_name ?? m.id).trim(),
+        description: "",
+        provider: "custom" as const,
+      }));
+  } catch {
+    // Unparseable body — treat like a missing list below.
+  }
+
+  if (models.length === 0) {
+    if (manualModels.length > 0) {
+      return {
+        connected: true,
+        models: manualModels,
+        modelListSource: "manual",
+      };
+    }
+    return {
+      connected: false,
+      models: [],
+      error: "The endpoint returned no models. Add model IDs manually.",
+    };
+  }
+
+  return { connected: true, models, modelListSource: "endpoint" };
+}
 
 /**
  * Fallback models when supportedModels() fails.
@@ -55,368 +210,463 @@ export default defineEventHandler(async (event) => {
  * the model-listing endpoint. Covers common model IDs routers typically expose.
  */
 const FALLBACK_CLAUDE_MODELS: GroupedModel[] = [
-  { value: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', description: '', provider: 'anthropic' },
-  { value: 'claude-opus-4-6', displayName: 'Claude Opus 4.6', description: '', provider: 'anthropic' },
-  { value: 'claude-sonnet-4-5-20250514', displayName: 'Claude Sonnet 4.5', description: '', provider: 'anthropic' },
-  { value: 'claude-haiku-4-5-20251001', displayName: 'Claude Haiku 4.5', description: '', provider: 'anthropic' },
-  { value: 'claude-3-7-sonnet-20250219', displayName: 'Claude 3.7 Sonnet', description: '', provider: 'anthropic' },
-  { value: 'claude-3-5-sonnet-20241022', displayName: 'Claude 3.5 Sonnet', description: '', provider: 'anthropic' },
-  { value: 'claude-3-5-haiku-20241022', displayName: 'Claude 3.5 Haiku', description: '', provider: 'anthropic' },
-]
+  {
+    value: "claude-sonnet-4-6",
+    displayName: "Claude Sonnet 4.6",
+    description: "",
+    provider: "anthropic",
+  },
+  {
+    value: "claude-opus-4-6",
+    displayName: "Claude Opus 4.6",
+    description: "",
+    provider: "anthropic",
+  },
+  {
+    value: "claude-sonnet-4-5-20250514",
+    displayName: "Claude Sonnet 4.5",
+    description: "",
+    provider: "anthropic",
+  },
+  {
+    value: "claude-haiku-4-5-20251001",
+    displayName: "Claude Haiku 4.5",
+    description: "",
+    provider: "anthropic",
+  },
+  {
+    value: "claude-3-7-sonnet-20250219",
+    displayName: "Claude 3.7 Sonnet",
+    description: "",
+    provider: "anthropic",
+  },
+  {
+    value: "claude-3-5-sonnet-20241022",
+    displayName: "Claude 3.5 Sonnet",
+    description: "",
+    provider: "anthropic",
+  },
+  {
+    value: "claude-3-5-haiku-20241022",
+    displayName: "Claude 3.5 Haiku",
+    description: "",
+    provider: "anthropic",
+  },
+];
 
 /** Connect to Claude Code via Agent SDK and fetch real supported models */
 export async function connectClaudeCode(): Promise<ConnectResult> {
-  const claudePath = resolveClaudeCli()
+  const claudePath = resolveClaudeCli();
   if (!claudePath) {
-    return { connected: false, models: [], notInstalled: true, error: 'Claude Code CLI not found' }
+    return {
+      connected: false,
+      models: [],
+      notInstalled: true,
+      error: "Claude Code CLI not found",
+    };
   }
 
   try {
-    const { query } = await import('@anthropic-ai/claude-agent-sdk')
+    const { query } = await import("@anthropic-ai/claude-agent-sdk");
 
-    const env = buildClaudeAgentEnv()
-    const debugFile = getClaudeAgentDebugFilePath()
+    const env = buildClaudeAgentEnv();
+    const debugFile = getClaudeAgentDebugFilePath();
 
     const q = query({
-      prompt: '',
+      prompt: "",
       options: {
         maxTurns: 1,
         tools: [],
-        permissionMode: 'plan',
+        permissionMode: "plan",
         persistSession: false,
         env,
         ...(debugFile ? { debugFile } : {}),
         ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
       },
-    })
+    });
 
-    const raw = await q.supportedModels()
-    q.close()
+    const raw = await q.supportedModels();
+    q.close();
 
     const models: GroupedModel[] = raw.map((m) => ({
       value: m.value,
       displayName: m.displayName,
       description: m.description,
-      provider: 'anthropic' as const,
-    }))
+      provider: "anthropic" as const,
+    }));
 
-    return { connected: true, models }
+    return { connected: true, models };
   } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Failed to connect'
+    const msg = error instanceof Error ? error.message : "Failed to connect";
     // Third-party API proxies often don't support the supportedModels() call,
     // causing "query closed before response". Fall back to a default model list
     // so users can still connect and choose a model.
     if (/closed before|closed early|query closed/i.test(msg)) {
-      return { connected: true, models: FALLBACK_CLAUDE_MODELS }
+      return { connected: true, models: FALLBACK_CLAUDE_MODELS };
     }
-    return { connected: false, models: [], error: friendlyClaudeError(msg) }
+    return { connected: false, models: [], error: friendlyClaudeError(msg) };
   }
 }
 
 /** Map raw Agent SDK errors to user-friendly messages */
 function friendlyClaudeError(raw: string): string {
   if (/invalid api key|external api key/i.test(raw)) {
-    return 'Claude Code authentication failed. Run "claude login" to refresh the Claude Code session, or remove invalid external auth overrides from Claude settings.'
+    return 'Claude Code authentication failed. Run "claude login" to refresh the Claude Code session, or remove invalid external auth overrides from Claude settings.';
   }
-  if (/process exited with code 1|invalid model|unknown model|model.*not/i.test(raw)) {
-    return 'Claude Code exited with code 1. Run "claude login" to refresh the Claude Code session and verify the selected model is available.'
+  if (
+    /process exited with code 1|invalid model|unknown model|model.*not/i.test(
+      raw,
+    )
+  ) {
+    return 'Claude Code exited with code 1. Run "claude login" to refresh the Claude Code session and verify the selected model is available.';
   }
   if (/exited with code/i.test(raw)) {
-    return 'Unable to connect. Claude Code process exited unexpectedly.'
+    return "Unable to connect. Claude Code process exited unexpectedly.";
   }
   if (/not found|ENOENT/i.test(raw)) {
-    return 'Claude Code CLI not found. Please install it first.'
+    return "Claude Code CLI not found. Please install it first.";
   }
   if (/timed?\s*out/i.test(raw)) {
-    return 'Connection timed out. Please try again.'
+    return "Connection timed out. Please try again.";
   }
-  return raw
+  return raw;
 }
 
 async function stopProbeProcess(
-  child: import('node:child_process').ChildProcess,
+  child: import("node:child_process").ChildProcess,
 ): Promise<void> {
   if (child.exitCode !== null) {
-    return
+    return;
   }
 
   await new Promise<void>((resolve) => {
     const done = () => {
-      child.removeListener('close', done)
-      resolve()
-    }
+      child.removeListener("close", done);
+      resolve();
+    };
 
-    child.once('close', done)
+    child.once("close", done);
 
     try {
-      child.kill('SIGTERM')
+      child.kill("SIGTERM");
     } catch {
-      done()
-      return
+      done();
+      return;
     }
 
     setTimeout(() => {
       if (child.exitCode === null) {
         try {
-          child.kill('SIGKILL')
+          child.kill("SIGKILL");
         } catch {
           // best-effort cleanup
         }
       }
-      done()
-    }, CODEX_APP_SERVER_SHUTDOWN_TIMEOUT_MS)
-  })
+      done();
+    }, CODEX_APP_SERVER_SHUTDOWN_TIMEOUT_MS);
+  });
 }
 
 async function canStartCodexAppServer(binaryPath: string): Promise<{
-  ok: boolean
-  error?: string
+  ok: boolean;
+  error?: string;
 }> {
-  const { spawn } = await import('node:child_process')
+  const { spawn } = await import("node:child_process");
 
   return await new Promise((resolve) => {
-    const child = spawn(binaryPath, ['app-server'], {
+    const child = spawn(binaryPath, ["app-server"], {
       env: filterCodexEnv(process.env as Record<string, string | undefined>),
-      stdio: ['pipe', 'pipe', 'pipe'],
-      ...(process.platform === 'win32' && { shell: true }),
-    })
+      stdio: ["pipe", "pipe", "pipe"],
+      ...(process.platform === "win32" && { shell: true }),
+    });
 
-    let settled = false
-    let stderr = ''
-    let timer: ReturnType<typeof setTimeout> | null = null
+    let settled = false;
+    let stderr = "";
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
     const finish = (ok: boolean, error?: string) => {
-      if (settled) return
-      settled = true
-      if (timer) clearTimeout(timer)
-      child.stdout?.removeAllListeners()
-      child.stderr?.removeAllListeners()
-      child.removeAllListeners()
-      resolve({ ok, ...(error ? { error } : {}) })
-    }
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      child.stdout?.removeAllListeners();
+      child.stderr?.removeAllListeners();
+      child.removeAllListeners();
+      resolve({ ok, ...(error ? { error } : {}) });
+    };
 
-    child.on('error', (error) => {
-      finish(false, error.message)
-    })
+    child.on("error", (error) => {
+      finish(false, error.message);
+    });
 
-    child.stderr?.on('data', (chunk: Buffer | string) => {
-      stderr += chunk.toString()
-    })
+    child.stderr?.on("data", (chunk: Buffer | string) => {
+      stderr += chunk.toString();
+    });
 
-    child.on('exit', (code) => {
-      const message = stderr.trim() || `Codex app-server exited with code ${code ?? 'unknown'}`
-      finish(false, message)
-    })
+    child.on("exit", (code) => {
+      const message =
+        stderr.trim() ||
+        `Codex app-server exited with code ${code ?? "unknown"}`;
+      finish(false, message);
+    });
 
     timer = setTimeout(() => {
-      finish(true)
-      void stopProbeProcess(child)
-    }, CODEX_APP_SERVER_PROBE_TIMEOUT_MS)
-  })
+      finish(true);
+      void stopProbeProcess(child);
+    }, CODEX_APP_SERVER_PROBE_TIMEOUT_MS);
+  });
 }
 
 /** Connect to Codex CLI and fetch its supported models from the local cache */
 async function connectCodexCli(): Promise<ConnectResult> {
   try {
-    const { spawnSync } = await import('node:child_process')
-    const { readFile } = await import('node:fs/promises')
-    const { homedir } = await import('node:os')
-    const { join } = await import('node:path')
-    const env = filterCodexEnv(process.env as Record<string, string | undefined>)
+    const { spawnSync } = await import("node:child_process");
+    const { readFile } = await import("node:fs/promises");
+    const { homedir } = await import("node:os");
+    const { join } = await import("node:path");
+    const env = filterCodexEnv(
+      process.env as Record<string, string | undefined>,
+    );
 
     // Check if codex binary exists
     const lookup = spawnSync(
-      process.platform === 'win32' ? 'where' : 'which',
-      ['codex'],
+      process.platform === "win32" ? "where" : "which",
+      ["codex"],
       {
-        encoding: 'utf-8',
+        encoding: "utf-8",
         timeout: CODEX_CLI_TIMEOUT_MS,
         env,
-        ...(process.platform === 'win32' && { shell: true }),
+        ...(process.platform === "win32" && { shell: true }),
       },
-    )
-    const which = `${lookup.stdout ?? ''}`.trim().split(/\r?\n/)[0]?.trim() ?? ''
+    );
+    const which =
+      `${lookup.stdout ?? ""}`.trim().split(/\r?\n/)[0]?.trim() ?? "";
 
     if (!which) {
-      return { connected: false, models: [], notInstalled: true, error: 'Codex CLI not found' }
+      return {
+        connected: false,
+        models: [],
+        notInstalled: true,
+        error: "Codex CLI not found",
+      };
     }
 
     // Verify codex is responsive
-    const versionCheck = spawnSync(which, ['--version'], {
-      encoding: 'utf-8',
+    const versionCheck = spawnSync(which, ["--version"], {
+      encoding: "utf-8",
       timeout: CODEX_CLI_TIMEOUT_MS,
       env,
-      ...(process.platform === 'win32' && { shell: true }),
-    })
+      ...(process.platform === "win32" && { shell: true }),
+    });
     if (versionCheck.status !== 0) {
-      return { connected: false, models: [], error: 'Codex CLI not responding' }
+      return {
+        connected: false,
+        models: [],
+        error: "Codex CLI not responding",
+      };
     }
 
-    const appServerCheck = await canStartCodexAppServer(which)
+    const appServerCheck = await canStartCodexAppServer(which);
     if (!appServerCheck.ok) {
       return {
         connected: false,
         models: [],
-        error: appServerCheck.error ?? 'Codex app-server failed to start',
-      }
+        error: appServerCheck.error ?? "Codex app-server failed to start",
+      };
     }
 
     // Read models from Codex CLI's local models cache
-    let models: GroupedModel[] = []
-    const cachePath = join(homedir(), '.codex', 'models_cache.json')
+    let models: GroupedModel[] = [];
+    const cachePath = join(homedir(), ".codex", "models_cache.json");
 
     try {
-      const raw = await readFile(cachePath, 'utf-8')
+      const raw = await readFile(cachePath, "utf-8");
       const cache = JSON.parse(raw) as {
         models?: Array<{
-          slug: string
-          display_name: string
-          description: string
-          visibility: string
-          priority: number
-        }>
-      }
+          slug: string;
+          display_name: string;
+          description: string;
+          visibility: string;
+          priority: number;
+        }>;
+      };
 
       if (cache.models && Array.isArray(cache.models)) {
         models = cache.models
-          .filter((m) => m.visibility === 'list')
+          .filter((m) => m.visibility === "list")
           .sort((a, b) => (a.priority ?? 999) - (b.priority ?? 999))
           .map((m) => ({
             value: m.slug,
             displayName: m.display_name,
-            description: m.description ?? '',
-            provider: 'openai' as const,
-          }))
+            description: m.description ?? "",
+            provider: "openai" as const,
+          }));
       }
     } catch {
       // Cache file not found or unreadable
     }
 
     if (models.length === 0) {
-      return { connected: false, models: [], error: 'No models found. Try running codex once to populate the model cache.' }
+      return {
+        connected: false,
+        models: [],
+        error:
+          "No models found. Try running codex once to populate the model cache.",
+      };
     }
 
-    return { connected: true, models }
+    return { connected: true, models };
   } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Failed to connect'
-    return { connected: false, models: [], error: msg }
+    const msg = error instanceof Error ? error.message : "Failed to connect";
+    return { connected: false, models: [], error: msg };
   }
 }
 
-export { canStartCodexAppServer, connectCodexCli }
+export { canStartCodexAppServer, connectCodexCli };
 
 /** Resolve the opencode binary path, checking PATH then common install locations. */
 async function resolveOpencodeBinary(): Promise<string | undefined> {
-  const { execSync } = await import('node:child_process')
-  const { existsSync } = await import('node:fs')
-  const { homedir } = await import('node:os')
-  const { join } = await import('node:path')
-  const isWin = process.platform === 'win32'
+  const { execSync } = await import("node:child_process");
+  const { existsSync } = await import("node:fs");
+  const { homedir } = await import("node:os");
+  const { join } = await import("node:path");
+  const isWin = process.platform === "win32";
 
   // 1. Try PATH lookup
   try {
-    const cmd = isWin ? 'where opencode' : 'which opencode 2>/dev/null'
-    const result = execSync(cmd, { encoding: 'utf-8', timeout: 5000 }).trim().split(/\r?\n/)[0]?.trim()
-    if (result && existsSync(result)) return result
-  } catch { /* not in PATH */ }
+    const cmd = isWin ? "where opencode" : "which opencode 2>/dev/null";
+    const result = execSync(cmd, { encoding: "utf-8", timeout: 5000 })
+      .trim()
+      .split(/\r?\n/)[0]
+      ?.trim();
+    if (result && existsSync(result)) return result;
+  } catch {
+    /* not in PATH */
+  }
 
   // 2. Try `npm prefix -g` to find actual npm global bin directory
   //    On Windows, must use `npm.cmd` since Electron spawns cmd.exe
   try {
-    const npmCmd = isWin ? 'npm.cmd prefix -g' : 'npm prefix -g'
-    const prefix = execSync(npmCmd, { encoding: 'utf-8', timeout: 5000 }).trim()
+    const npmCmd = isWin ? "npm.cmd prefix -g" : "npm prefix -g";
+    const prefix = execSync(npmCmd, {
+      encoding: "utf-8",
+      timeout: 5000,
+    }).trim();
     if (prefix) {
-      const bin = isWin ? join(prefix, 'opencode.cmd') : join(prefix, 'bin', 'opencode')
-      if (existsSync(bin)) return bin
+      const bin = isWin
+        ? join(prefix, "opencode.cmd")
+        : join(prefix, "bin", "opencode");
+      if (existsSync(bin)) return bin;
     }
-  } catch { /* npm not available */ }
+  } catch {
+    /* npm not available */
+  }
 
   // 3. Common install locations
   //    npm -g → %APPDATA%\npm (Windows), /usr/local (macOS/Linux)
   //    curl installer → ~/.opencode/bin (macOS/Linux)
   //    Homebrew → /usr/local/bin or /opt/homebrew/bin (macOS)
-  const home = homedir()
+  const home = homedir();
   const candidates = isWin
     ? [
         // npm global
-        join(process.env.APPDATA || '', 'npm', 'opencode.cmd'),
-        join(process.env.ProgramFiles || '', 'nodejs', 'opencode.cmd'),
+        join(process.env.APPDATA || "", "npm", "opencode.cmd"),
+        join(process.env.ProgramFiles || "", "nodejs", "opencode.cmd"),
         // nvm-windows / fnm
-        join(process.env.NVM_SYMLINK || '', 'opencode.cmd'),
-        join(process.env.FNM_MULTISHELL_PATH || '', 'opencode.cmd'),
+        join(process.env.NVM_SYMLINK || "", "opencode.cmd"),
+        join(process.env.FNM_MULTISHELL_PATH || "", "opencode.cmd"),
         // Scoop
-        join(home, 'scoop', 'shims', 'opencode.exe'),
-        join(process.env.LOCALAPPDATA || '', 'Programs', 'opencode', 'opencode.exe'),
+        join(home, "scoop", "shims", "opencode.exe"),
+        join(
+          process.env.LOCALAPPDATA || "",
+          "Programs",
+          "opencode",
+          "opencode.exe",
+        ),
       ]
     : [
         // curl installer (https://opencode.ai/install)
-        join(home, '.opencode', 'bin', 'opencode'),
+        join(home, ".opencode", "bin", "opencode"),
         // npm global
-        join(home, '.npm-global', 'bin', 'opencode'),
-        '/usr/local/bin/opencode',
+        join(home, ".npm-global", "bin", "opencode"),
+        "/usr/local/bin/opencode",
         // Homebrew
-        '/opt/homebrew/bin/opencode',
-        join(home, '.local', 'bin', 'opencode'),
-      ]
+        "/opt/homebrew/bin/opencode",
+        join(home, ".local", "bin", "opencode"),
+      ];
   for (const c of candidates) {
-    if (c && existsSync(c)) return c
+    if (c && existsSync(c)) return c;
   }
 
-  return undefined
+  return undefined;
 }
 
 /** Connect to OpenCode and fetch its configured providers/models. */
 async function connectOpenCode(): Promise<ConnectResult> {
   try {
-    const binaryPath = await resolveOpencodeBinary()
+    const binaryPath = await resolveOpencodeBinary();
     if (!binaryPath) {
-      return { connected: false, models: [], notInstalled: true, error: 'OpenCode CLI not found' }
+      return {
+        connected: false,
+        models: [],
+        notInstalled: true,
+        error: "OpenCode CLI not found",
+      };
     }
 
-    const { getOpencodeClient, releaseOpencodeServer } = await import('../../utils/opencode-client')
-    const { client, server } = await getOpencodeClient()
+    const { getOpencodeClient, releaseOpencodeServer } =
+      await import("../../utils/opencode-client");
+    const { client, server } = await getOpencodeClient();
 
-    const { data, error } = await client.config.providers()
-    releaseOpencodeServer(server)
+    const { data, error } = await client.config.providers();
+    releaseOpencodeServer(server);
 
     if (error) {
-      return { connected: false, models: [], error: 'Failed to fetch providers from OpenCode server.' }
+      return {
+        connected: false,
+        models: [],
+        error: "Failed to fetch providers from OpenCode server.",
+      };
     }
 
-    const models: GroupedModel[] = []
+    const models: GroupedModel[] = [];
     for (const provider of data?.providers ?? []) {
-      if (!provider.models) continue
+      if (!provider.models) continue;
       for (const [, model] of Object.entries(provider.models)) {
         models.push({
           value: `${provider.id}/${model.id}`,
           displayName: model.name || model.id,
           description: `via ${provider.name || provider.id}`,
-          provider: 'opencode' as const,
-        })
+          provider: "opencode" as const,
+        });
       }
     }
 
     if (models.length === 0) {
-      return { connected: false, models: [], error: 'No models configured in OpenCode. Run "opencode" to set up providers.' }
+      return {
+        connected: false,
+        models: [],
+        error:
+          'No models configured in OpenCode. Run "opencode" to set up providers.',
+      };
     }
 
-    return { connected: true, models }
+    return { connected: true, models };
   } catch (error) {
-    const raw = error instanceof Error ? error.message : 'Failed to connect'
-    return { connected: false, models: [], error: friendlyOpenCodeError(raw) }
+    const raw = error instanceof Error ? error.message : "Failed to connect";
+    return { connected: false, models: [], error: friendlyOpenCodeError(raw) };
   }
 }
 
 /** Map OpenCode connection errors to user-friendly messages */
 function friendlyOpenCodeError(raw: string): string {
   if (/ECONNREFUSED/i.test(raw)) {
-    return 'OpenCode server not running. Start it with "opencode" in your terminal first.'
+    return 'OpenCode server not running. Start it with "opencode" in your terminal first.';
   }
   if (/not found|ENOENT/i.test(raw)) {
-    return 'OpenCode CLI not found. Please install it first.'
+    return "OpenCode CLI not found. Please install it first.";
   }
   if (/timed?\s*out/i.test(raw)) {
-    return 'Connection timed out. Please try again.'
+    return "Connection timed out. Please try again.";
   }
-  return raw
+  return raw;
 }

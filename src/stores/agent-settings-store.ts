@@ -5,11 +5,17 @@ import type {
   MCPCliIntegration,
   MCPTransportMode,
   GroupedModel,
+  CustomProviderSettings,
 } from "@/types/agent-settings";
 import { RUNNABLE_PHASES, type MethodologyPhase } from "@/types/methodology";
 import { MCP_DEFAULT_PORT } from "@/constants/app";
 import { appStorage } from "@/utils/app-storage";
 import { isAllowedProvider } from "@/services/ai/allowed-providers";
+import {
+  pushSearchConfig,
+  type SearchProviderId,
+} from "@/services/ai/search-config-client";
+import { getSecret } from "@/utils/secret-storage";
 import type {
   AnalysisEffortLevel,
   AnalysisRuntimeOverrides,
@@ -28,6 +34,12 @@ interface PersistedState {
   analysisEffortLevel?: AnalysisEffortLevel;
   analysisPhaseMode: AnalysisPhaseMode;
   analysisCustomPhases: MethodologyPhase[];
+  /** BYOK custom (OpenAI-compatible) provider settings. Never holds the API key
+   *  — keys live in secret storage under "customProvider.apiKey". */
+  customProvider: CustomProviderSettings;
+  /** Selected web-search provider for BYOK; the key lives in secret storage
+   *  under "search.apiKey". */
+  searchProvider: SearchProviderId | null;
 }
 
 interface AgentSettingsState extends PersistedState {
@@ -49,6 +61,8 @@ interface AgentSettingsState extends PersistedState {
   setAnalysisEffortLevel: (value: AnalysisEffortLevel) => void;
   setAnalysisPhaseMode: (mode: AnalysisPhaseMode) => void;
   toggleAnalysisPhase: (phase: MethodologyPhase) => void;
+  setCustomProvider: (settings: Partial<CustomProviderSettings>) => void;
+  setSearchProvider: (provider: SearchProviderId | null) => void;
   setDialogOpen: (open: boolean) => void;
   persist: () => void;
   hydrate: () => void;
@@ -137,15 +151,50 @@ const DEFAULT_PROVIDERS: Record<AIProviderType, AIProviderConfig> = {
     connectionMethod: null,
     models: [],
   },
-  // Placeholder — the custom (BYOK) provider UI is fleshed out separately.
   custom: {
     type: "custom",
     displayName: "Custom",
     isConnected: false,
-    connectionMethod: "custom-api",
+    connectionMethod: null,
     models: [],
   },
 };
+
+const DEFAULT_CUSTOM_PROVIDER: CustomProviderSettings = {
+  preset: "custom-url",
+  baseURL: "",
+  modelIds: [],
+  hasNativeWebSearch: false,
+};
+
+function isSearchProviderId(value: unknown): value is SearchProviderId {
+  return value === "tavily" || value === "brave";
+}
+
+function normalizeCustomProvider(
+  value?: Partial<CustomProviderSettings>,
+): CustomProviderSettings {
+  if (!value || typeof value !== "object") {
+    return { ...DEFAULT_CUSTOM_PROVIDER };
+  }
+  return {
+    preset:
+      typeof value.preset === "string"
+        ? value.preset
+        : DEFAULT_CUSTOM_PROVIDER.preset,
+    baseURL:
+      typeof value.baseURL === "string"
+        ? value.baseURL
+        : DEFAULT_CUSTOM_PROVIDER.baseURL,
+    modelIds: Array.isArray(value.modelIds)
+      ? value.modelIds.filter((id): id is string => typeof id === "string")
+      : [...DEFAULT_CUSTOM_PROVIDER.modelIds],
+    hasNativeWebSearch:
+      typeof value.hasNativeWebSearch === "boolean"
+        ? value.hasNativeWebSearch
+        : DEFAULT_CUSTOM_PROVIDER.hasNativeWebSearch,
+  };
+}
 
 const DEFAULT_MCP_INTEGRATIONS: MCPCliIntegration[] = [
   {
@@ -189,6 +238,8 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => ({
   analysisEffortLevel: undefined,
   analysisPhaseMode: DEFAULT_ANALYSIS_PHASE_MODE,
   analysisCustomPhases: [...DEFAULT_ANALYSIS_CUSTOM_PHASES],
+  customProvider: { ...DEFAULT_CUSTOM_PROVIDER },
+  searchProvider: null,
   dialogOpen: false,
   isHydrated: false,
   mcpServerRunning: false,
@@ -277,6 +328,13 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => ({
       };
     }),
 
+  setCustomProvider: (settings) =>
+    set((state) => ({
+      customProvider: { ...state.customProvider, ...settings },
+    })),
+
+  setSearchProvider: (searchProvider) => set({ searchProvider }),
+
   setDialogOpen: (dialogOpen) => set({ dialogOpen }),
 
   persist: () => {
@@ -290,6 +348,8 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => ({
         analysisEffortLevel,
         analysisPhaseMode,
         analysisCustomPhases,
+        customProvider,
+        searchProvider,
       } = get();
       appStorage.setItem(
         STORAGE_KEY,
@@ -303,6 +363,8 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => ({
           analysisPhaseMode,
           analysisCustomPhases:
             normalizeAnalysisCustomPhases(analysisCustomPhases),
+          customProvider,
+          searchProvider,
         }),
       );
     } catch {
@@ -363,11 +425,30 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => ({
         analysisCustomPhases: normalizeAnalysisCustomPhases(
           data.analysisCustomPhases,
         ),
+        customProvider: normalizeCustomProvider(data.customProvider),
+        searchProvider: isSearchProviderId(data.searchProvider)
+          ? data.searchProvider
+          : null,
       });
     } catch {
       // ignore
     } finally {
       set({ isHydrated: true });
     }
+
+    // Re-push the BYOK search config on boot: the server holds it in memory only,
+    // so the renderer must restore it. The key lives in secret storage, never in
+    // persisted settings. Fire-and-forget; no-op when nothing is configured.
+    void (async () => {
+      try {
+        const searchProvider = get().searchProvider;
+        if (!searchProvider) return;
+        const apiKey = await getSecret("search.apiKey");
+        if (!apiKey) return;
+        await pushSearchConfig({ provider: searchProvider, apiKey });
+      } catch {
+        // best-effort; the settings dialog re-pushes on next save
+      }
+    })();
   },
 }));

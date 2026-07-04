@@ -462,7 +462,12 @@ export default function AIChatPanel({
       // Use PROVIDER_LABELS for allowed providers, fall back to raw provider id.
       const groups = connectedProviders.map((p) => ({
         provider: p,
-        providerName: isAllowedProvider(p) ? PROVIDER_LABELS[p] : p,
+        providerName:
+          p === "custom"
+            ? t("agents.customModels")
+            : isAllowedProvider(p)
+              ? PROVIDER_LABELS[p]
+              : p,
         models: providers[p].models,
       }));
       const flat = groups.flatMap((g) =>

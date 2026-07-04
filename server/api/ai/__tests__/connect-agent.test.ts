@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
 
 const spawnSyncMock = vi.fn();
@@ -65,17 +65,19 @@ describe("connect-agent codex checks", () => {
       .mockReturnValueOnce({ stdout: "/resolved/codex\n", status: 0 })
       .mockReturnValueOnce({ stdout: "codex-cli 0.116.0\n", status: 0 });
 
-    spawnMock.mockImplementation((binaryPath: string, _args: string[], options: { stdio?: string[] }) => {
-      const child = new MockChildProcess();
-      queueMicrotask(() => {
-        child.stderr.emit("data", Buffer.from("startup boom"));
-        child.exitCode = 1;
-        child.emit("exit", 1);
-      });
-      expect(binaryPath).toBe("/resolved/codex");
-      expect(options.stdio).toEqual(["pipe", "pipe", "pipe"]);
-      return child;
-    });
+    spawnMock.mockImplementation(
+      (binaryPath: string, _args: string[], options: { stdio?: string[] }) => {
+        const child = new MockChildProcess();
+        queueMicrotask(() => {
+          child.stderr.emit("data", Buffer.from("startup boom"));
+          child.exitCode = 1;
+          child.emit("exit", 1);
+        });
+        expect(binaryPath).toBe("/resolved/codex");
+        expect(options.stdio).toEqual(["pipe", "pipe", "pipe"]);
+        return child;
+      },
+    );
 
     const { connectCodexCli } = await import("../connect-agent");
     const result = await connectCodexCli();
@@ -104,11 +106,13 @@ describe("connect-agent codex checks", () => {
       }),
     );
 
-    spawnMock.mockImplementation((binaryPath: string, _args: string[], options: { stdio?: string[] }) => {
-      expect(binaryPath).toBe("/resolved/codex");
-      expect(options.stdio).toEqual(["pipe", "pipe", "pipe"]);
-      return new MockChildProcess();
-    });
+    spawnMock.mockImplementation(
+      (binaryPath: string, _args: string[], options: { stdio?: string[] }) => {
+        expect(binaryPath).toBe("/resolved/codex");
+        expect(options.stdio).toEqual(["pipe", "pipe", "pipe"]);
+        return new MockChildProcess();
+      },
+    );
 
     const { connectCodexCli } = await import("../connect-agent");
     const result = await connectCodexCli();
@@ -126,5 +130,129 @@ describe("connect-agent codex checks", () => {
     });
     expect(spawnSyncMock.mock.calls[1][0]).toBe("/resolved/codex");
     expect(spawnMock.mock.calls[0][0]).toBe("/resolved/codex");
+  });
+});
+
+function fakeResponse(init: {
+  status: number;
+  ok?: boolean;
+  json?: () => Promise<unknown>;
+}): Response {
+  return {
+    status: init.status,
+    ok: init.ok ?? (init.status >= 200 && init.status < 300),
+    json: init.json ?? (async () => ({})),
+  } as unknown as Response;
+}
+
+describe("connect-agent custom provider", () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("lists models from the endpoint on success", async () => {
+    fetchMock.mockResolvedValue(
+      fakeResponse({
+        status: 200,
+        json: async () => ({
+          data: [{ id: "gpt-4o" }, { id: "gpt-4o-mini", name: "GPT-4o mini" }],
+        }),
+      }),
+    );
+
+    const { connectCustom } = await import("../connect-agent");
+    const result = await connectCustom({
+      baseURL: "https://api.example.com/v1/",
+      apiKey: "sk-secret",
+      modelIds: [],
+    });
+
+    expect(result.connected).toBe(true);
+    expect(result.modelListSource).toBe("endpoint");
+    expect(result.models).toEqual([
+      {
+        value: "gpt-4o",
+        displayName: "gpt-4o",
+        description: "",
+        provider: "custom",
+      },
+      {
+        value: "gpt-4o-mini",
+        displayName: "GPT-4o mini",
+        description: "",
+        provider: "custom",
+      },
+    ]);
+    // Bearer sent, trailing slash trimmed before /models.
+    const [calledUrl, calledInit] = fetchMock.mock.calls[0];
+    expect(calledUrl).toBe("https://api.example.com/v1/models");
+    expect(
+      (calledInit as { headers: Record<string, string> }).headers.Authorization,
+    ).toBe("Bearer sk-secret");
+  });
+
+  it("falls back to manual model IDs when the endpoint 404s", async () => {
+    fetchMock.mockResolvedValue(fakeResponse({ status: 404, ok: false }));
+
+    const { connectCustom } = await import("../connect-agent");
+    const result = await connectCustom({
+      baseURL: "https://api.example.com",
+      apiKey: "",
+      modelIds: ["deepseek-chat", " deepseek-reasoner "],
+    });
+
+    expect(result.connected).toBe(true);
+    expect(result.modelListSource).toBe("manual");
+    expect(result.models.map((m) => m.value)).toEqual([
+      "deepseek-chat",
+      "deepseek-reasoner",
+    ]);
+    // No key → no Authorization header.
+    const [, calledInit] = fetchMock.mock.calls[0];
+    expect(
+      (calledInit as { headers: Record<string, string> }).headers.Authorization,
+    ).toBeUndefined();
+  });
+
+  it("reports an auth failure on 401 without falling back", async () => {
+    fetchMock.mockResolvedValue(fakeResponse({ status: 401, ok: false }));
+
+    const { connectCustom } = await import("../connect-agent");
+    const result = await connectCustom({
+      baseURL: "https://api.example.com/v1",
+      apiKey: "bad-key",
+      modelIds: ["fallback-model"],
+    });
+
+    expect(result.connected).toBe(false);
+    expect(result.models).toEqual([]);
+    expect(result.error).toMatch(/authentication failed/i);
+  });
+
+  it("reports a timeout when the request aborts and no manual IDs exist", async () => {
+    fetchMock.mockImplementation(async () => {
+      const err = new Error("The operation was aborted");
+      err.name = "AbortError";
+      throw err;
+    });
+
+    const { connectCustom } = await import("../connect-agent");
+    const result = await connectCustom({
+      baseURL: "https://api.example.com/v1",
+      apiKey: "sk-secret",
+      modelIds: [],
+    });
+
+    expect(result.connected).toBe(false);
+    expect(result.models).toEqual([]);
+    expect(result.error).toMatch(/timed out/i);
   });
 });
