@@ -121,4 +121,14 @@ describe("secret-storage electron path", () => {
     expect(await probeSecureStorage()).toBe(false);
     expect(isSecureStorage()).toBe(false);
   });
+
+  it("fails safe to insecure when the encryption probe rejects", async () => {
+    // A rejected IPC probe must never leave us claiming secure storage.
+    secrets.encryptionAvailable.mockResolvedValue(true);
+    expect(await probeSecureStorage()).toBe(true);
+
+    secrets.encryptionAvailable.mockRejectedValue(new Error("ipc unavailable"));
+    expect(await probeSecureStorage()).toBe(false);
+    expect(isSecureStorage()).toBe(false);
+  });
 });
