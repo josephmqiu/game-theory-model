@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Download,
   ExternalLink,
+  Plug,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -45,7 +46,7 @@ const PROVIDER_META: Record<
     /** Direct display label (not an i18n key) — sourced from PROVIDER_LABELS */
     label: string;
     descriptionKey: string;
-    agent: "claude-code" | "codex-cli" | "opencode";
+    agent: "claude-code" | "codex-cli" | "opencode" | "custom-api";
     Icon: ComponentType<SVGProps<SVGSVGElement>>;
   }
 > = {
@@ -67,6 +68,13 @@ const PROVIDER_META: Record<
     agent: "opencode",
     Icon: OpenCodeLogo,
   },
+  // Placeholder — the custom (BYOK) provider UI is fleshed out separately.
+  custom: {
+    label: PROVIDER_LABELS.custom,
+    descriptionKey: "agents.customDesc",
+    agent: "custom-api",
+    Icon: Plug,
+  },
 };
 
 const ANALYSIS_EFFORT_OPTIONS: AnalysisEffortLevel[] = [
@@ -82,7 +90,7 @@ const ANALYSIS_EFFORT_LABEL_KEYS: Record<AnalysisEffortLevel, string> = {
 };
 
 async function connectAgent(
-  agent: "claude-code" | "codex-cli" | "opencode",
+  agent: "claude-code" | "codex-cli" | "opencode" | "custom-api",
 ): Promise<{
   connected: boolean;
   models: GroupedModel[];
@@ -108,7 +116,7 @@ async function connectAgent(
 }
 
 async function installAgent(
-  agent: "claude-code" | "codex-cli" | "opencode",
+  agent: "claude-code" | "codex-cli" | "opencode" | "custom-api",
 ): Promise<{
   success: boolean;
   error?: string;

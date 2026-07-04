@@ -1,39 +1,52 @@
-export type AIProviderType = 'anthropic' | 'openai' | 'opencode'
+export type AIProviderType = "anthropic" | "openai" | "opencode" | "custom";
 
 export interface AIProviderConfig {
-  type: AIProviderType
-  displayName: string
-  isConnected: boolean
-  connectionMethod: 'claude-code' | 'codex-cli' | 'opencode' | null
+  type: AIProviderType;
+  displayName: string;
+  isConnected: boolean;
+  connectionMethod:
+    | "claude-code"
+    | "codex-cli"
+    | "opencode"
+    | "custom-api"
+    | null;
   /** Models fetched when the user connects this provider */
-  models: GroupedModel[]
+  models: GroupedModel[];
+}
+
+/** BYOK OpenAI-compatible ("custom") provider settings. */
+export interface CustomProviderSettings {
+  preset: string;
+  baseURL: string;
+  modelIds: string[];
+  hasNativeWebSearch: boolean;
 }
 
 export type MCPCliTool =
-  | 'claude-code'
-  | 'codex-cli'
-  | 'gemini-cli'
-  | 'opencode-cli'
-  | 'kiro-cli'
+  | "claude-code"
+  | "codex-cli"
+  | "gemini-cli"
+  | "opencode-cli"
+  | "kiro-cli";
 
-export type MCPTransportMode = 'stdio' | 'http' | 'both'
+export type MCPTransportMode = "stdio" | "http" | "both";
 
 export interface MCPCliIntegration {
-  tool: MCPCliTool
-  displayName: string
-  enabled: boolean
-  installed: boolean
+  tool: MCPCliTool;
+  displayName: string;
+  enabled: boolean;
+  installed: boolean;
 }
 
 export interface GroupedModel {
-  value: string
-  displayName: string
-  description: string
-  provider: AIProviderType
+  value: string;
+  displayName: string;
+  description: string;
+  provider: AIProviderType;
 }
 
 export interface ModelGroup {
-  provider: AIProviderType
-  providerName: string
-  models: GroupedModel[]
+  provider: AIProviderType;
+  providerName: string;
+  models: GroupedModel[];
 }

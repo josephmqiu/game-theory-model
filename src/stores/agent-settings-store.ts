@@ -137,6 +137,14 @@ const DEFAULT_PROVIDERS: Record<AIProviderType, AIProviderConfig> = {
     connectionMethod: null,
     models: [],
   },
+  // Placeholder — the custom (BYOK) provider UI is fleshed out separately.
+  custom: {
+    type: "custom",
+    displayName: "Custom",
+    isConnected: false,
+    connectionMethod: "custom-api",
+    models: [],
+  },
 };
 
 const DEFAULT_MCP_INTEGRATIONS: MCPCliIntegration[] = [

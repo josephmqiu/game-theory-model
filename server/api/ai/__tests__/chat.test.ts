@@ -150,6 +150,55 @@ describe("/api/ai/chat", () => {
     expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 400);
   });
 
+  it("dispatches anthropic requests to the claude adapter only", async () => {
+    readBodyMock.mockResolvedValue({
+      system: "system",
+      messages: [{ role: "user", content: "hello" }],
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+    });
+
+    const route = (await import("../chat")).default;
+    await asSseResponse(await route({} as never)).text();
+
+    expect(claudeStreamChatMock).toHaveBeenCalledTimes(1);
+    expect(codexStreamChatMock).not.toHaveBeenCalled();
+  });
+
+  it("dispatches openai requests to the codex adapter only", async () => {
+    readBodyMock.mockResolvedValue({
+      system: "system",
+      messages: [{ role: "user", content: "hello" }],
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+
+    const route = (await import("../chat")).default;
+    await asSseResponse(await route({} as never)).text();
+
+    expect(codexStreamChatMock).toHaveBeenCalledTimes(1);
+    expect(claudeStreamChatMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects an allowlisted-but-unregistered provider (custom)", async () => {
+    readBodyMock.mockResolvedValue({
+      system: "system",
+      messages: [{ role: "user", content: "hello" }],
+      provider: "custom",
+      model: "gpt-4o-mini",
+    });
+
+    const route = (await import("../chat")).default;
+    const result = await route({} as never);
+
+    expect(result).toEqual({
+      error: "Missing or unsupported provider. Provider fallback is disabled.",
+    });
+    expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 400);
+    expect(claudeStreamChatMock).not.toHaveBeenCalled();
+    expect(codexStreamChatMock).not.toHaveBeenCalled();
+  });
+
   it("returns an SSE response for a valid request", async () => {
     readBodyMock.mockResolvedValue({
       system: "system",

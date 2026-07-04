@@ -1,4 +1,4 @@
-export type ChatSessionProvider = "anthropic" | "openai";
+export type ChatSessionProvider = "anthropic" | "openai" | "custom";
 
 export interface ChatSession {
   key: string;
@@ -37,13 +37,19 @@ type BeginTurnResult =
       providerChanged: false;
     };
 
+/** A begin-turn result where the turn was successfully started. */
+export type StartedSessionTurn = Extract<BeginTurnResult, { started: true }>;
+
 const sessions = new Map<string, ChatSession>();
 
 function isExpired(session: ChatSession, now = Date.now()): boolean {
   return now - session.lastActivityAt > EXPIRY_MS;
 }
 
-function createSession(key: string, provider: ChatSessionProvider): ChatSession {
+function createSession(
+  key: string,
+  provider: ChatSessionProvider,
+): ChatSession {
   const now = Date.now();
   return {
     key,
