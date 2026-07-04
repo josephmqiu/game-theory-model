@@ -16,6 +16,7 @@ import {
   streamChat as codexStreamChat,
   isCodexThreadExpiredError,
 } from "../../services/ai/codex-adapter";
+import { streamChat as customStreamChat } from "../../services/ai/custom-openai-adapter";
 import {
   beginTurn,
   endSession,
@@ -96,7 +97,21 @@ export interface ChatBody {
   thinkingBudgetTokens?: number;
   effort?: "low" | "medium" | "high" | "max";
   sessionKey?: string;
+  custom?: CustomProviderRequest;
 }
+
+/** BYOK connection details sent by the renderer for the custom provider. */
+export interface CustomProviderRequest {
+  baseURL: string;
+  apiKey: string;
+  hasNativeWebSearch: boolean;
+}
+
+const customProviderSchema = z.object({
+  baseURL: z.string().url(),
+  apiKey: z.string(),
+  hasNativeWebSearch: z.boolean().optional().default(false),
+});
 
 const chatAttachmentSchema = z.object({
   name: z.string(),
@@ -139,8 +154,19 @@ const chatBodySchema = z
     thinkingBudgetTokens: z.number().positive().optional(),
     effort: z.enum(["low", "medium", "high", "max"]).optional(),
     sessionKey: z.string().trim().min(1).optional(),
+    custom: customProviderSchema.optional(),
   })
   .superRefine((body, ctx) => {
+    // The custom provider needs its BYOK connection details on every request
+    // (the server never caches them).
+    if (body.provider === "custom" && !body.custom) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Custom provider requires baseURL and apiKey",
+        path: ["custom"],
+      });
+    }
+
     const attachments = body.messages.flatMap(
       (message) => message.attachments ?? [],
     );
@@ -307,6 +333,15 @@ function prepareChatTurn(
     : buildLegacyChatPromptParts(body);
 }
 
+const CUSTOM_CHAT_ADAPTER_STUB: ChatAdapter = {
+  // eslint-disable-next-line require-yield
+  async *streamChat(): AsyncGenerator<never> {
+    throw new Error(
+      "custom provider is dispatched via streamViaCustom, not adapter.streamChat",
+    );
+  },
+};
+
 /**
  * Provider routing table. Partial: an allowlisted provider without an entry
  * (e.g. "custom" before its adapter ships) is rejected by the handler.
@@ -324,7 +359,110 @@ const CHAT_PROVIDERS: Partial<
     prepare: prepareChatTurn,
     stream: streamViaCodexAdapter,
   },
+  custom: {
+    // The custom provider dispatches via streamViaCustom, which consumes the
+    // FULL multi-turn history from ctx.body.messages plus the per-request BYOK
+    // creds — neither fits the base ChatAdapter(prompt, system, model) shape —
+    // so this adapter field is never invoked.
+    adapter: CUSTOM_CHAT_ADAPTER_STUB,
+    prepare: prepareChatTurn,
+    stream: streamViaCustom,
+  },
 };
+
+/** Stream via the custom OpenAI-compatible adapter — wraps it into SSE. */
+function streamViaCustom(ctx: ChatStreamContext): Response {
+  const { event, body, model, runId } = ctx;
+  const abortController = new AbortController();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const encoder = new TextEncoder();
+      let pingTimer: ReturnType<typeof setInterval> | null = null;
+      const startPingTimer = () => {
+        if (pingTimer) return;
+        pingTimer = startSSEKeepAlive(
+          () => writeSSE(controller, { type: "ping", content: "" }),
+          KEEPALIVE_INTERVAL_MS,
+        );
+      };
+      const stopPingTimer = () => {
+        if (!pingTimer) return;
+        clearInterval(pingTimer);
+        pingTimer = null;
+      };
+
+      const req = event.node?.req;
+      if (req) {
+        req.on("close", () => abortController.abort());
+      }
+
+      try {
+        const custom = body.custom;
+        if (!custom) {
+          // Guarded by zod superRefine, but stay defensive.
+          throw new Error("Custom provider requires baseURL and apiKey");
+        }
+
+        startPingTimer();
+
+        for await (const ev of customStreamChat(
+          {
+            system: body.system,
+            messages: body.messages.map((m) => ({
+              role: m.role,
+              content: m.content,
+            })),
+            model: model ?? "gpt-4o-mini",
+            baseURL: custom.baseURL,
+            apiKey: custom.apiKey,
+            hasNativeWebSearch: custom.hasNativeWebSearch,
+          },
+          { runId, signal: abortController.signal },
+        )) {
+          stopPingTimer();
+          if (shouldForwardChatEvent(ev.type)) {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(ev)}\n\n`),
+            );
+          }
+        }
+
+        serverLog(runId, "chat", "stream-complete");
+        const customAnalysis = entityGraphService.getAnalysis();
+        if (customAnalysis.entities.length > 0) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "entity_snapshot", analysis: customAnalysis })}\n\n`,
+            ),
+          );
+        }
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ type: "done", content: "" })}\n\n`,
+          ),
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
+        serverLog(runId, "chat", "stream-error", { error: message });
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ type: "error", message, recoverable: false })}\n\n`,
+          ),
+        );
+      } finally {
+        stopPingTimer();
+        if (body.sessionKey) {
+          endTurn(body.sessionKey);
+        }
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream);
+}
 
 /** Stream via Codex adapter — wraps the adapter's streamChat() into SSE */
 function streamViaCodexAdapter(ctx: ChatStreamContext): Response {

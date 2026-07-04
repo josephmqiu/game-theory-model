@@ -9,6 +9,7 @@ const serverLogMock = vi.fn();
 const getAnalysisMock = vi.fn();
 const claudeStreamChatMock = vi.fn();
 const codexStreamChatMock = vi.fn();
+const customStreamChatMock = vi.fn();
 
 class MockCodexThreadExpiredError extends Error {
   constructor(message = "codex-thread-expired: thread not found") {
@@ -59,6 +60,10 @@ vi.mock("../../../services/ai/codex-adapter", () => ({
       error.message.startsWith("codex-thread-expired:")),
 }));
 
+vi.mock("../../../services/ai/custom-openai-adapter", () => ({
+  streamChat: (...args: unknown[]) => customStreamChatMock(...args),
+}));
+
 async function* streamEvents(events: ChatEvent[] = []) {
   for (const event of events) {
     yield event;
@@ -105,6 +110,7 @@ describe("/api/ai/chat", () => {
     });
     claudeStreamChatMock.mockImplementation(() => streamEvents());
     codexStreamChatMock.mockImplementation(() => streamEvents());
+    customStreamChatMock.mockImplementation(() => streamEvents());
     const sessions = await import("../../../services/ai/chat-sessions");
     sessions._resetForTest();
   });
@@ -180,7 +186,35 @@ describe("/api/ai/chat", () => {
     expect(claudeStreamChatMock).not.toHaveBeenCalled();
   });
 
-  it("rejects an allowlisted-but-unregistered provider (custom)", async () => {
+  it("dispatches custom requests with creds to the custom adapter only", async () => {
+    readBodyMock.mockResolvedValue({
+      system: "system",
+      messages: [{ role: "user", content: "hello" }],
+      provider: "custom",
+      model: "gpt-4o-mini",
+      custom: {
+        baseURL: "https://api.example.com/v1",
+        apiKey: "k",
+        hasNativeWebSearch: false,
+      },
+    });
+
+    const route = (await import("../chat")).default;
+    await asSseResponse(await route({} as never)).text();
+
+    expect(customStreamChatMock).toHaveBeenCalledTimes(1);
+    // Full multi-turn history + creds are handed to the adapter as one input.
+    const input = customStreamChatMock.mock.calls[0][0] as {
+      baseURL: string;
+      messages: unknown[];
+    };
+    expect(input.baseURL).toBe("https://api.example.com/v1");
+    expect(input.messages).toHaveLength(1);
+    expect(claudeStreamChatMock).not.toHaveBeenCalled();
+    expect(codexStreamChatMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for a custom request missing creds", async () => {
     readBodyMock.mockResolvedValue({
       system: "system",
       messages: [{ role: "user", content: "hello" }],
@@ -189,14 +223,10 @@ describe("/api/ai/chat", () => {
     });
 
     const route = (await import("../chat")).default;
-    const result = await route({} as never);
+    await route({} as never);
 
-    expect(result).toEqual({
-      error: "Missing or unsupported provider. Provider fallback is disabled.",
-    });
     expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 400);
-    expect(claudeStreamChatMock).not.toHaveBeenCalled();
-    expect(codexStreamChatMock).not.toHaveBeenCalled();
+    expect(customStreamChatMock).not.toHaveBeenCalled();
   });
 
   it("returns an SSE response for a valid request", async () => {

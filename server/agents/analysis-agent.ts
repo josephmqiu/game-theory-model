@@ -40,6 +40,10 @@ import {
   synthesizeReport,
   SYNTHESIS_SYSTEM_PROMPT,
 } from "../services/synthesis-service";
+import {
+  createCustomAnalysisAdapter,
+  type CustomProviderCredentials,
+} from "../services/ai/custom-openai-adapter";
 
 // ── Types ──
 
@@ -79,6 +83,8 @@ interface ActiveRun {
   activePhase: MethodologyPhase | null;
   provider?: string;
   model?: string;
+  /** BYOK credentials when provider === "custom"; never persisted. */
+  custom?: CustomProviderCredentials;
   runtime: ResolvedAnalysisRuntime;
   activePhases: SupportedPhase[];
   autoRevalidationEnabled: boolean;
@@ -133,12 +139,19 @@ interface SynthesisAdapter {
 
 async function loadSynthesisAdapter(
   provider?: string,
+  custom?: CustomProviderCredentials,
 ): Promise<SynthesisAdapter> {
   if (process.env.GAME_THEORY_ANALYSIS_TEST_MODE === "1") {
     return import("../services/ai/test-adapter");
   }
   if (provider === "openai") {
     return import("../services/ai/codex-adapter");
+  }
+  if (provider === "custom") {
+    if (!custom) {
+      throw new Error("Custom provider requires credentials for synthesis");
+    }
+    return createCustomAnalysisAdapter(custom);
   }
   if (provider === "anthropic" || !provider) {
     return import("../services/ai/claude-adapter");
@@ -494,6 +507,7 @@ async function executeSinglePhase(
           priorEntities: priorContext,
           provider: run.provider,
           model: run.model,
+          custom: run.custom,
           runtime: run.runtime,
           runId: run.runId,
           signal: phaseAbort.signal,
@@ -577,6 +591,7 @@ async function executeSinglePhase(
               revisionRetryInstruction: commitResult.retryMessage,
               provider: run.provider,
               model: run.model,
+              custom: run.custom,
               runtime: run.runtime,
               runId: run.runId,
               signal: phaseAbort.signal,
@@ -740,6 +755,7 @@ export async function runFull(
   model?: string,
   signal?: AbortSignal,
   runtimeOverrides?: AnalysisRuntimeOverrides,
+  custom?: CustomProviderCredentials,
 ): Promise<{ runId: string }> {
   // Guard: check both status AND whether the async execution is still unwinding
   if (activeRun && activeRun.status === "running") {
@@ -796,6 +812,7 @@ export async function runFull(
     activePhase: null,
     provider,
     model,
+    custom,
     runtime,
     activePhases,
     autoRevalidationEnabled,
@@ -971,7 +988,7 @@ export async function runFull(
         // Trigger synthesis report generation
         emitProgress({ type: "synthesis_started", runId: run.runId });
         try {
-          const adapter = await loadSynthesisAdapter(run.provider);
+          const adapter = await loadSynthesisAdapter(run.provider, run.custom);
           const model = run.model ?? "claude-sonnet-4-20250514";
           await synthesizeReport({
             runId: run.runId,

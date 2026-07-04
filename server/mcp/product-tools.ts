@@ -33,6 +33,18 @@ import {
   isSearchConfigured,
 } from "../services/search/config-cache";
 import { serverLog } from "../utils/ai-logger";
+// Type-only import: erased at runtime, so no cycle with custom-openai-adapter
+// (which imports this module's tool definitions + handleToolCall).
+import type { CustomProviderCredentials } from "../services/ai/custom-openai-adapter";
+
+/**
+ * Per-call context threaded into tool handlers. Only the custom OpenAI adapter
+ * populates customCredentials — the Claude/Codex MCP paths pass ctx undefined,
+ * so start_analysis spawned from those surfaces runs with its own provider.
+ */
+export interface ToolCallContext {
+  customCredentials?: CustomProviderCredentials;
+}
 
 export interface ToolDefinition {
   name: string;
@@ -309,15 +321,25 @@ export const CHAT_MODE_TOOL_DEFINITIONS = [
   },
 ] as const satisfies readonly ToolDefinition[];
 
-export async function handleStartAnalysis(args: {
-  topic: string;
-  provider?: string;
-  model?: string;
-}): Promise<string> {
+export async function handleStartAnalysis(
+  args: {
+    topic: string;
+    provider?: string;
+    model?: string;
+  },
+  customCredentials?: CustomProviderCredentials,
+): Promise<string> {
+  // When the chat that invoked this tool is on the custom provider, the run
+  // inherits its BYOK credentials and provider — regardless of any provider
+  // arg the model supplied.
+  const provider = customCredentials ? "custom" : args.provider;
   const { runId } = await analysisOrchestrator.runFull(
     args.topic,
-    args.provider,
+    provider,
     args.model,
+    undefined,
+    undefined,
+    customCredentials,
   );
   return JSON.stringify({
     runId,
@@ -647,10 +669,12 @@ type ProductToolResult = string | { text: string; isError: boolean };
 
 type ProductToolHandler = (
   args: Record<string, unknown>,
+  ctx?: ToolCallContext,
 ) => ProductToolResult | Promise<ProductToolResult>;
 
 export const PRODUCT_TOOL_HANDLERS = {
-  start_analysis: (args) => handleStartAnalysis(args as never),
+  start_analysis: (args, ctx) =>
+    handleStartAnalysis(args as never, ctx?.customCredentials),
   get_analysis_status: () => handleGetAnalysisStatus(),
   get_entity: (args) => handleGetEntity(args as never),
   query_entities: (args) => handleQueryEntities(args as never),
@@ -669,6 +693,7 @@ export const PRODUCT_TOOL_HANDLERS = {
 export async function handleToolCall(
   name: string,
   args: Record<string, unknown> | undefined,
+  ctx?: ToolCallContext,
 ): Promise<{ text: string; isError: boolean }> {
   const toolArgs = (args ?? {}) as Record<string, unknown>;
 
@@ -678,7 +703,7 @@ export async function handleToolCall(
     if (!handler) {
       throw new Error(`Unknown tool: ${name}`);
     }
-    const raw = await handler(toolArgs);
+    const raw = await handler(toolArgs, ctx);
     if (typeof raw === "string") {
       return { text: raw, isError: false };
     }

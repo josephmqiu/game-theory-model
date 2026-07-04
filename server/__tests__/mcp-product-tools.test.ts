@@ -114,6 +114,9 @@ describe("handleStartAnalysis", () => {
       "US-China semiconductor trade war",
       undefined,
       undefined,
+      undefined,
+      undefined,
+      undefined,
     );
     expect(result).toEqual({
       runId: "run-mock-123",
@@ -135,6 +138,9 @@ describe("handleStartAnalysis", () => {
       "US-China semiconductor trade war",
       "anthropic",
       "claude-sonnet-4-20250514",
+      undefined,
+      undefined,
+      undefined,
     );
   });
 });

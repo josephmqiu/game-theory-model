@@ -70,9 +70,54 @@ describe("/api/ai/analyze", () => {
       "gpt-5.4",
       undefined,
       runtime,
+      undefined,
     );
     expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 202);
     expect(result).toEqual({ runId: "run-123" });
+  });
+
+  it("passes custom credentials through to runFull", async () => {
+    readBodyMock.mockResolvedValue({
+      topic: "Trade conflict",
+      provider: "custom",
+      model: "my-model",
+      custom: {
+        baseURL: "https://api.example.com/v1",
+        apiKey: "k",
+        hasNativeWebSearch: true,
+      },
+    });
+    runFullMock.mockResolvedValue({ runId: "run-c" });
+
+    const route = (await import("../analyze")).default;
+    await route({} as never);
+
+    expect(runFullMock).toHaveBeenCalledWith(
+      "Trade conflict",
+      "custom",
+      "my-model",
+      undefined,
+      undefined,
+      {
+        baseURL: "https://api.example.com/v1",
+        apiKey: "k",
+        hasNativeWebSearch: true,
+      },
+    );
+  });
+
+  it("returns 400 for a custom analysis missing creds", async () => {
+    readBodyMock.mockResolvedValue({
+      topic: "Trade conflict",
+      provider: "custom",
+      model: "my-model",
+    });
+
+    const route = (await import("../analyze")).default;
+    await route({} as never);
+
+    expect(setResponseStatusMock).toHaveBeenCalledWith(expect.anything(), 400);
+    expect(runFullMock).not.toHaveBeenCalled();
   });
 
   it("maps active-run conflicts to 409 without clearing state in the route", async () => {
