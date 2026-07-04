@@ -156,6 +156,21 @@ const hi: TranslationKeys = {
     "कस्टम चरण रन केवल चयनित चरण चलाता है और स्वचालित डाउनस्ट्रीम पुनर्मूल्यांकन अक्षम कर सकता है।",
   "agents.analysisPhasesAll": "सभी चरण",
   "agents.analysisPhasesCustom": "कस्टम",
+  "agents.customProvider": "कस्टम API",
+  "agents.customProviderDesc": "कोई भी OpenAI-संगत एंडपॉइंट — OpenCode Go/Zen, OpenRouter, DeepSeek, या आपका अपना URL",
+  "agents.customPreset": "प्रदाता प्रीसेट",
+  "agents.customBaseUrl": "बेस URL",
+  "agents.customApiKey": "API कुंजी",
+  "agents.customModelIds": "मॉडल ID (अल्पविराम से अलग, वैकल्पिक)",
+  "agents.customNativeSearch": "मॉडल में अंतर्निहित वेब खोज है",
+  "agents.customNativeSearchHint": "चालू होने पर, ऐप का वेब खोज टूल इस एंडपॉइंट को प्रदान नहीं किया जाता",
+  "agents.customModels": "कस्टम मॉडल",
+  "agents.searchProvider": "खोज प्रदाता",
+  "agents.searchApiKey": "खोज API कुंजी",
+  "agents.searchKeyHint": "लाइव वेब शोध के लिए एक खोज प्रदाता कुंजी की आवश्यकता होती है (Tavily या Brave)",
+  "agents.customKeyStoredPlain": "यह ब्राउज़र कुंजियों को अनएन्क्रिप्टेड संग्रहीत करता है। एन्क्रिप्टेड संग्रहण के लिए डेस्कटॉप ऐप का उपयोग करें।",
+  "agents.customKeyNotEncrypted": "OS एन्क्रिप्शन उपलब्ध नहीं है; कुंजी सहेजी नहीं गई। अपना सिस्टम कीचेन सक्षम करें और पुनः प्रयास करें।",
+  "agents.customConnect": "कनेक्ट करें",
 
   // ── Figma Import ──
 

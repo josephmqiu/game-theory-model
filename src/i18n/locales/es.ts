@@ -157,6 +157,21 @@ const es: TranslationKeys = {
     "La ejecuci\u00f3n personalizada solo ejecuta las fases seleccionadas y puede desactivar la revalidaci\u00f3n autom\u00e1tica posterior.",
   "agents.analysisPhasesAll": "Todas las fases",
   "agents.analysisPhasesCustom": "Personalizado",
+  "agents.customProvider": "API personalizada",
+  "agents.customProviderDesc": "Cualquier endpoint compatible con OpenAI — OpenCode Go/Zen, OpenRouter, DeepSeek o tu propia URL",
+  "agents.customPreset": "Ajuste preestablecido del proveedor",
+  "agents.customBaseUrl": "URL base",
+  "agents.customApiKey": "Clave de API",
+  "agents.customModelIds": "ID de modelos (separados por comas, opcional)",
+  "agents.customNativeSearch": "El modelo tiene búsqueda web integrada",
+  "agents.customNativeSearchHint": "Si está activado, la herramienta de búsqueda web de la app no se ofrece a este endpoint",
+  "agents.customModels": "Modelos personalizados",
+  "agents.searchProvider": "Proveedor de búsqueda",
+  "agents.searchApiKey": "Clave de API de búsqueda",
+  "agents.searchKeyHint": "La investigación web en vivo necesita una clave de proveedor de búsqueda (Tavily o Brave)",
+  "agents.customKeyStoredPlain": "Este navegador almacena las claves sin cifrar. Usa la app de escritorio para almacenamiento cifrado.",
+  "agents.customKeyNotEncrypted": "El cifrado del sistema operativo no está disponible; la clave no se guardó. Activa el llavero de tu sistema e inténtalo de nuevo.",
+  "agents.customConnect": "Conectar",
 
   // ── Figma Import ──
 

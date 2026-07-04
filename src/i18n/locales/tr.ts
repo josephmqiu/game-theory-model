@@ -155,6 +155,21 @@ const tr: TranslationKeys = {
     "Özel faz çalıştırması yalnızca seçili fazları çalıştırır ve otomatik alt akış yeniden doğrulamasını devre dışı bırakabilir.",
   "agents.analysisPhasesAll": "Tüm fazlar",
   "agents.analysisPhasesCustom": "Özel",
+  "agents.customProvider": "Özel API",
+  "agents.customProviderDesc": "OpenAI ile uyumlu herhangi bir uç nokta — OpenCode Go/Zen, OpenRouter, DeepSeek veya kendi URL'niz",
+  "agents.customPreset": "Sağlayıcı ön ayarı",
+  "agents.customBaseUrl": "Temel URL",
+  "agents.customApiKey": "API anahtarı",
+  "agents.customModelIds": "Model kimlikleri (virgülle ayrılmış, isteğe bağlı)",
+  "agents.customNativeSearch": "Modelde yerleşik web araması var",
+  "agents.customNativeSearchHint": "Açık olduğunda, uygulamanın web arama aracı bu uç noktaya sunulmaz",
+  "agents.customModels": "Özel modeller",
+  "agents.searchProvider": "Arama sağlayıcısı",
+  "agents.searchApiKey": "Arama API anahtarı",
+  "agents.searchKeyHint": "Canlı web araştırması için bir arama sağlayıcısı anahtarı gerekir (Tavily veya Brave)",
+  "agents.customKeyStoredPlain": "Bu tarayıcı anahtarları şifrelenmemiş olarak saklar. Şifreli depolama için masaüstü uygulamasını kullanın.",
+  "agents.customKeyNotEncrypted": "İşletim sistemi şifrelemesi kullanılamıyor; anahtar kaydedilmedi. Sistem anahtar zincirinizi etkinleştirip tekrar deneyin.",
+  "agents.customConnect": "Bağlan",
 
   // ── Figma Import ──
 

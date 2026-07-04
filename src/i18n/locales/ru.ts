@@ -167,6 +167,21 @@ const ru: TranslationKeys = {
   "agents.analysisPhasesAll": "\u0412\u0441\u0435 \u0444\u0430\u0437\u044b",
   "agents.analysisPhasesCustom":
     "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u0441\u043a\u0438\u0439",
+  "agents.customProvider": "Пользовательский API",
+  "agents.customProviderDesc": "Любая совместимая с OpenAI конечная точка — OpenCode Go/Zen, OpenRouter, DeepSeek или ваш собственный URL",
+  "agents.customPreset": "Предустановка провайдера",
+  "agents.customBaseUrl": "Базовый URL",
+  "agents.customApiKey": "Ключ API",
+  "agents.customModelIds": "Идентификаторы моделей (через запятую, необязательно)",
+  "agents.customNativeSearch": "У модели есть встроенный веб-поиск",
+  "agents.customNativeSearchHint": "Когда включено, инструмент веб-поиска приложения не предлагается этой конечной точке",
+  "agents.customModels": "Пользовательские модели",
+  "agents.searchProvider": "Провайдер поиска",
+  "agents.searchApiKey": "Ключ API поиска",
+  "agents.searchKeyHint": "Для живого веб-исследования нужен ключ провайдера поиска (Tavily или Brave)",
+  "agents.customKeyStoredPlain": "Этот браузер хранит ключи без шифрования. Используйте настольное приложение для зашифрованного хранения.",
+  "agents.customKeyNotEncrypted": "Шифрование ОС недоступно; ключ не сохранён. Включите системную связку ключей и повторите попытку.",
+  "agents.customConnect": "Подключить",
 
   // ── Figma Import ──
 

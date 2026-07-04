@@ -150,6 +150,21 @@ const zhTW: TranslationKeys = {
     "自訂階段僅執行選定的階段，可能會停用自動下游重新驗證。",
   "agents.analysisPhasesAll": "所有階段",
   "agents.analysisPhasesCustom": "自訂",
+  "agents.customProvider": "自訂 API",
+  "agents.customProviderDesc": "任何相容 OpenAI 的端點 — OpenCode Go/Zen、OpenRouter、DeepSeek 或您自己的 URL",
+  "agents.customPreset": "供應商預設",
+  "agents.customBaseUrl": "基礎 URL",
+  "agents.customApiKey": "API 金鑰",
+  "agents.customModelIds": "模型 ID（以逗號分隔，選填）",
+  "agents.customNativeSearch": "模型內建網路搜尋",
+  "agents.customNativeSearchHint": "啟用後，應用程式的網路搜尋工具不會提供給此端點",
+  "agents.customModels": "自訂模型",
+  "agents.searchProvider": "搜尋供應商",
+  "agents.searchApiKey": "搜尋 API 金鑰",
+  "agents.searchKeyHint": "即時網路研究需要搜尋供應商金鑰（Tavily 或 Brave）",
+  "agents.customKeyStoredPlain": "此瀏覽器以未加密方式儲存金鑰。請使用桌面應用程式進行加密儲存。",
+  "agents.customKeyNotEncrypted": "作業系統加密無法使用；金鑰未儲存。請啟用系統鑰匙圈後再試一次。",
+  "agents.customConnect": "連線",
 
   // ── Figma Import ──
 
