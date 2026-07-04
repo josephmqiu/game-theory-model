@@ -13,17 +13,16 @@
  *            `query_entities` tool; asserts a `tool_call_start` arrives. Models
  *            vary, so a refusal only WARNs — transport/auth errors still fail.
  *
- * Contract notes / assumptions (see report):
- *   - Tests B/C drive the built Nitro server over HTTP (via startBuiltServer) so
- *     this file has NO compile-time import of the T4 custom adapter — it
- *     typechecks and SKIPs today, and fully exercises the path once T4 ships and
- *     the app is built.
+ * Contract notes / assumptions:
+ *   - Tests B/C drive the built Nitro server over HTTP (via startBuiltServer),
+ *     so this file has NO compile-time import of the custom adapter — the SKIP
+ *     path needs no build.
  *   - The chat route's terminal SSE event is `done` (see server/api/ai/chat.ts);
  *     `turn_complete` is an adapter-internal event that is not forwarded.
- *   - The request body carries a planned `custom: { baseURL, apiKey,
- *     hasNativeWebSearch }` field. That field and the provider "custom" routing
- *     entry are added by T4; until then the route returns 400 for provider
- *     "custom" and Tests B/C report PENDING (exit 0) rather than failing.
+ *   - The request body carries `custom: { baseURL, apiKey, hasNativeWebSearch }`
+ *     alongside provider "custom" — the wire shape the custom adapter consumes.
+ *     A 400 rejecting provider "custom" now signals a real regression (or a
+ *     stale build that predates the custom adapter) and FAILS the run.
  *
  * Endpoint matrix we care about (run against at least one of each):
  *   - a tool-calling endpoint (OpenCode Go / OpenRouter) — exercises Test C
@@ -49,18 +48,15 @@ function truncate(text: string, max = 300): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
-/** Signals the chat route rejected provider "custom" (adapter T4 not wired). */
-class ProviderNotRegisteredError extends Error {}
-
 interface SseEvent {
   type: string;
   [key: string]: unknown;
 }
 
 /**
- * POST to /api/ai/chat and yield each parsed SSE `data:` payload. Throws
- * ProviderNotRegisteredError on the expected pre-T4 400, or a plain Error on any
- * other non-streaming response (transport/auth/validation failure).
+ * POST to /api/ai/chat and yield each parsed SSE `data:` payload. Throws a plain
+ * Error on any non-streaming response (transport/auth/validation failure,
+ * including a 400 that rejects provider "custom").
  */
 async function* streamChatSse(
   baseUrl: string,
@@ -80,12 +76,6 @@ async function* streamChatSse(
     const contentType = response.headers.get("content-type") ?? "";
     if (!response.ok || !contentType.includes("text/event-stream")) {
       const text = await response.text();
-      if (
-        response.status === 400 &&
-        /provider|unsupported|fallback/i.test(text)
-      ) {
-        throw new ProviderNotRegisteredError(truncate(text));
-      }
       throw new Error(
         `chat route returned HTTP ${response.status} (${contentType}): ${truncate(text)}`,
       );
@@ -185,7 +175,7 @@ function customChatBody(
     messages: [{ role: "user", content: prompt }],
     model,
     provider: "custom",
-    // Planned BYOK field added by T4; ignored/rejected by the current schema.
+    // BYOK connection details — the wire shape the custom adapter consumes.
     custom: { baseURL: baseUrl, apiKey, hasNativeWebSearch: false },
   };
 }
@@ -304,16 +294,6 @@ async function main(): Promise<void> {
     await testAppChatPath(server.baseUrl, baseUrl, apiKey, model);
     await testToolCall(server.baseUrl, baseUrl, apiKey, model);
     console.log(JSON.stringify({ ok: true, model }));
-  } catch (error) {
-    if (error instanceof ProviderNotRegisteredError) {
-      console.log(
-        'live-custom: chat route rejects provider "custom" — the custom adapter (T4) ' +
-          "is not wired yet; Tests B/C are PENDING (expected). Test A passed.",
-      );
-      console.log(`  route response: ${error.message}`);
-      return;
-    }
-    throw error;
   } finally {
     await server.process.stop();
     await mcpHandle.close();

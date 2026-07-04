@@ -255,4 +255,51 @@ describe("connect-agent custom provider", () => {
     expect(result.models).toEqual([]);
     expect(result.error).toMatch(/timed out/i);
   });
+
+  it("returns an error without fetching when baseURL is missing", async () => {
+    const { connectCustom } = await import("../connect-agent");
+    const result = await connectCustom({
+      baseURL: "",
+      apiKey: "k",
+      modelIds: ["m"],
+    });
+
+    expect(result.connected).toBe(false);
+    expect(result.error).toMatch(/base url/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to manual IDs when /models returns an empty list", async () => {
+    fetchMock.mockResolvedValue(
+      fakeResponse({ status: 200, json: async () => ({ data: [] }) }),
+    );
+
+    const { connectCustom } = await import("../connect-agent");
+    const result = await connectCustom({
+      baseURL: "https://api.example.com/v1",
+      apiKey: "k",
+      modelIds: ["only-model"],
+    });
+
+    expect(result.connected).toBe(true);
+    expect(result.modelListSource).toBe("manual");
+    expect(result.models.map((m) => m.value)).toEqual(["only-model"]);
+  });
+
+  it("reports connect failure on an empty /models list with no manual IDs", async () => {
+    fetchMock.mockResolvedValue(
+      fakeResponse({ status: 200, json: async () => ({ data: [] }) }),
+    );
+
+    const { connectCustom } = await import("../connect-agent");
+    const result = await connectCustom({
+      baseURL: "https://api.example.com/v1",
+      apiKey: "k",
+      modelIds: [],
+    });
+
+    expect(result.connected).toBe(false);
+    expect(result.models).toEqual([]);
+    expect(result.error).toMatch(/no models/i);
+  });
 });
