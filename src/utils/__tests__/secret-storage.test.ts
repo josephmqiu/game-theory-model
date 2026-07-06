@@ -112,6 +112,29 @@ describe("secret-storage electron path", () => {
     expect(localStorage.getItem("gta-secret:customProvider.apiKey")).toBeNull();
   });
 
+  it("keeps electron secrets in memory when OS encryption is unavailable", async () => {
+    secrets.set.mockResolvedValue({ ok: false, encrypted: false });
+    secrets.get.mockResolvedValue(null);
+    secrets.has.mockResolvedValue(false);
+    secrets.remove.mockResolvedValue(undefined);
+
+    expect(await setSecret("customProvider.apiKey", "sk-session")).toEqual({
+      ok: true,
+      encrypted: false,
+    });
+    expect(secrets.set).toHaveBeenCalledWith(
+      "customProvider.apiKey",
+      "sk-session",
+    );
+    expect(localStorage.getItem("gta-secret:customProvider.apiKey")).toBeNull();
+
+    expect(await getSecret("customProvider.apiKey")).toBe("sk-session");
+    expect(await hasSecret("customProvider.apiKey")).toBe(true);
+
+    await removeSecret("customProvider.apiKey");
+    expect(await getSecret("customProvider.apiKey")).toBeNull();
+  });
+
   it("reflects the encryption probe in isSecureStorage", async () => {
     secrets.encryptionAvailable.mockResolvedValue(true);
     expect(await probeSecureStorage()).toBe(true);

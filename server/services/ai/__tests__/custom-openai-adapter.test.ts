@@ -133,6 +133,24 @@ describe("custom-openai-adapter streamChat", () => {
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 
+  it("strips inline think tags from streamed text", async () => {
+    createMock.mockResolvedValueOnce(
+      streamOf([
+        textChunk("<thi"),
+        textChunk('nk>private reasoning</think>ok'),
+        textChunk(" done", "stop"),
+      ]),
+    );
+
+    const events = await collect(streamChat(BASE_INPUT));
+
+    expect(events).toEqual([
+      { type: "text_delta", content: "ok" },
+      { type: "text_delta", content: " done" },
+      { type: "turn_complete" },
+    ]);
+  });
+
   it("runs a tool call: parses args, feeds tool result into a second round", async () => {
     createMock
       .mockResolvedValueOnce(

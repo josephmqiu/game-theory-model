@@ -166,6 +166,7 @@ const en = {
   "agents.searchApiKey": "Search API key",
   "agents.searchKeyHint": "Live web research needs a search provider key (Tavily or Brave)",
   "agents.customKeyStoredPlain": "This browser stores keys unencrypted. Use the desktop app for encrypted storage.",
+  "agents.customKeyStoredSession": "OS encryption is unavailable; typed keys are kept only for this app session and cleared on quit.",
   "agents.customKeyNotEncrypted": "OS encryption is unavailable; the key was not saved. Enable your system keychain and try again.",
   "agents.customConnect": "Connect",
   "agents.searchProviderNone": "None",

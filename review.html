@@ -1,1527 +1,434 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Review Surface - feat/byok-custom-provider</title><style>:root{--bg:#f7f7f4;--paper:#fff;--ink:#18202a;--muted:#617080;--line:#d9ded8;--blue:#1f5f8b;--green:#1c7a55;--amber:#9a6700;--red:#b42318}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:1180px;margin:0 auto;padding:28px 22px 60px}header,.panel,details.cluster,.diagram{background:var(--paper);border:1px solid var(--line);border-radius:8px}header{padding:22px 24px;margin-bottom:18px}h1{font-size:25px;margin:0 0 8px}h2{font-size:19px;margin:28px 0 10px}h4{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#44515f;margin:16px 0 8px}p{margin:8px 0}.summary{font-size:17px}.badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.badge{border:1px solid var(--line);background:#fafafa;border-radius:999px;padding:5px 10px;color:#344054}.risk{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:3px 9px;margin-right:10px;color:#fff;background:var(--green);font-weight:700;font-size:12px}.ground,.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}.panel{padding:16px}.diagram{padding:10px 12px;overflow:auto}.diagram-svg{width:100%;min-width:820px;height:auto}.box{fill:#fff;stroke:#a7b0ba;stroke-width:1.5}.box.ui{stroke:#1f5f8b}.box.store{stroke:#6b46a3}.box.api{stroke:#1c7a55}.box.adapter{stroke:#b42318}.box.endpoint{stroke:#9a6700}.box.tool{stroke:#0f766e}.box.analysis{stroke:#7c3aed}.box.event{stroke:#475569}.diagram text{font:600 15px ui-sans-serif,system-ui;fill:#172033}.diagram .small{font-size:12px;font-weight:500;fill:#64748b}.arrow{stroke:#475569;stroke-width:1.7;marker-end:url(#arrow)}details.cluster{margin:12px 0;overflow:hidden}details.cluster>summary{cursor:pointer;list-style:none;display:flex;align-items:center;padding:15px 18px;font-weight:700;border-bottom:1px solid var(--line)}details.cluster>summary::-webkit-details-marker{display:none}.cluster-body{padding:0 18px 18px}.files{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#44515f;background:#f5f7f8;border:1px solid #e1e6e8;border-radius:6px;padding:8px;overflow:auto}ul{padding-left:20px;margin:8px 0}li{margin:7px 0}.confidence{color:#536271;font-size:13px}.code{background:#0b1020;color:#d6deeb;border-radius:8px;padding:12px;overflow:auto;border:1px solid #20283a;font:12px/1.48 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre}.diff span{display:block;min-height:1.45em}.diff .add{color:#7ee2a8}.diff .del{color:#ff9b9b}.diff .meta{color:#9bc4ff}.diff .trunc{color:#ffd166}.resolved{border-left:4px solid var(--green);padding-left:14px}.low{border-left:4px solid var(--amber);padding-left:14px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}a{color:var(--blue)}.footer{color:var(--muted);margin-top:28px;font-size:13px}@media(max-width:820px){main{padding:18px 12px}.ground,.cols{grid-template-columns:1fr}header{padding:18px}.code{font-size:11px}}</style></head><body><main><header><h1>Review Surface: feat/byok-custom-provider</h1><p class="summary">Follow-up review surface after fixing the previous findings: credential redaction, analysis no-tool fallback, top-bar custom-provider status, stricter endpoint discovery, and search error sanitization are now patched with tests.</p><div class="badges"><span class="badge"><strong>Overall risk:</strong> P2 until real custom endpoint smoke is run</span><span class="badge"><strong>Working diff:</strong> 73 files changed, 7396 insertions(+), 1241 deletions(-)</span><span class="badge"><strong>Base:</strong> <span class="mono">80d983f1f76e</span></span><span class="badge"><strong>Head before fix commit:</strong> <span class="mono">07a5ba3</span></span><span class="badge"><strong>Generated:</strong> 2026-07-06T01:27:05.862Z</span></div></header><section class="ground"><div class="panel"><h2>Ground Truth</h2><p><strong>PR lookup:</strong> <code>gh pr view</code> returned <code>no pull requests found for branch &quot;feat/byok-custom-provider&quot;</code>; <code>gh pr diff</code> returned <code>no pull requests found for branch &quot;feat/byok-custom-provider&quot;</code>.</p><p><strong>Review source:</strong> no PR was attached before this fix, so this artifact uses local <code>origin/main...working tree</code> evidence at merge base <code>80d983f1f76e45830f825583539da1cf57884c15</code>.</p><p><strong>Intent:</strong> INFERRED from the previous review artifact and current patch: fix the issues found and refresh this offline review surface.</p></div><div class="panel"><h2>Branch Commits Before Fix Commit</h2><pre class="code "><code>07a5ba3 test(secrets): probeSecureStorage fails safe to insecure when the IPC probe rejects
-47e4028 test(byok): connect-agent edge coverage; smoke fails loud post-adapter
-7b0ee8b fix(ai): harden custom adapter tool loops from cross-review P2s
-26646e0 fix(analysis): direct Analyze launches attach custom BYOK config
-e007120 feat(ai): custom OpenAI-compatible provider — BYOK chat, tools, and analysis
-5b8b7c3 chore(i18n): localize search-provider None and clear-key labels
-3b134ab feat(settings): custom BYOK provider form with endpoint presets and connect flow
-6078dc9 test(smoke): live-custom BYOK endpoint smoke script (env-driven, skip-safe)
-01e6c5c feat(search): web_search product tool with pluggable Tavily/Brave providers
-5367e6a refactor(ai): shared provider allowlist + typed chat adapter registry
-fb6860c feat(i18n): custom-provider and search settings strings across 15 locales
-89d992e feat(secrets): safeStorage-encrypted API key storage with renderer wrapper</code></pre></div></section><h2>Main Flow</h2><section class="diagram">
-<svg viewBox="0 0 1120 360" role="img" aria-label="Custom BYOK request flow after fixes" class="diagram-svg">
-  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker></defs>
-  <rect x="20" y="35" width="180" height="70" rx="8" class="box ui"/><text x="110" y="65" text-anchor="middle">Settings dialog</text><text x="110" y="86" text-anchor="middle" class="small">custom + search keys</text>
-  <rect x="245" y="35" width="180" height="70" rx="8" class="box store"/><text x="335" y="65" text-anchor="middle">Secret storage</text><text x="335" y="86" text-anchor="middle" class="small">safeStorage + IPC</text>
-  <rect x="470" y="35" width="190" height="70" rx="8" class="box api"/><text x="565" y="65" text-anchor="middle">API route</text><text x="565" y="86" text-anchor="middle" class="small">chat / generate / analyze</text>
-  <rect x="705" y="35" width="190" height="70" rx="8" class="box adapter"/><text x="800" y="65" text-anchor="middle">Custom adapter</text><text x="800" y="86" text-anchor="middle" class="small">redact + retry no-tools</text>
-  <rect x="940" y="35" width="160" height="70" rx="8" class="box endpoint"/><text x="1020" y="65" text-anchor="middle">BYOK endpoint</text><text x="1020" y="86" text-anchor="middle" class="small">OpenAI-compatible</text>
-  <line x1="200" y1="70" x2="245" y2="70" class="arrow"/><line x1="425" y1="70" x2="470" y2="70" class="arrow"/><line x1="660" y1="70" x2="705" y2="70" class="arrow"/><line x1="895" y1="70" x2="940" y2="70" class="arrow"/>
-  <rect x="470" y="175" width="190" height="70" rx="8" class="box tool"/><text x="565" y="205" text-anchor="middle">Product tools</text><text x="565" y="226" text-anchor="middle" class="small">graph + web_search</text>
-  <rect x="705" y="175" width="190" height="70" rx="8" class="box analysis"/><text x="800" y="205" text-anchor="middle">Analysis phases</text><text x="800" y="226" text-anchor="middle" class="small">schema fallback</text>
-  <rect x="940" y="175" width="160" height="70" rx="8" class="box event"/><text x="1020" y="205" text-anchor="middle">Canvas updates</text><text x="1020" y="226" text-anchor="middle" class="small">entities + relationships</text>
-  <path d="M800 105 C800 138 615 138 565 175" class="arrow" fill="none"/><path d="M660 210 L705 210" class="arrow" fill="none"/><path d="M895 210 L940 210" class="arrow" fill="none"/>
-  <path d="M565 245 C565 300 915 300 1020 245" class="arrow" fill="none"/><text x="790" y="292" text-anchor="middle" class="small">Tool results return to model loop</text>
-</svg></section><h2>Issue Status</h2><section class="panel resolved"><ol><li><strong>Fixed P1:</strong> Custom adapter redaction now consumes full labeled credential values and has a regression test.</li><li><strong>Fixed P2:</strong> Analysis now retries without tools when an OpenAI-compatible endpoint rejects tool definitions.</li><li><strong>Fixed P2:</strong> Top-bar connected-provider order now includes <code>custom</code>.</li><li><strong>Fixed P3:</strong> Manual model fallback no longer treats HTTP 500 as connected; search error snippets redact labeled credentials.</li></ol></section><h2>Change Clusters</h2><details class="cluster" open id="credential-redaction"><summary><span class="risk">P1 fixed</span><span>Credential redaction now consumes full values</span></summary><div class="cluster-body"><p class="files">server/services/ai/custom-openai-adapter.ts | server/api/ai/chat.ts | server/services/ai/__tests__/custom-openai-adapter.test.ts | server/__tests__/security.test.ts</p><div class="cols"><section><h4>Facts</h4><ul><li>FACT: The sensitive-log regex now matches the label and credential value for API-key fields and Authorization bearer headers.</li><li>FACT: Custom adapter redaction uses a global replacement pattern, so multiple labeled credentials in the same upstream error are redacted.</li><li>FACT: A regression test now sends an upstream error containing <code>Authorization: Bearer</code>, <code>api_key=</code>, and <code>ANTHROPIC_API_KEY=</code> values and asserts the values do not reach the chat error event.</li></ul></section><section><h4>Opinions</h4><ul><li><strong>RESOLVED</strong> <span class="confidence">confidence 9/10</span> The original P1 leak path is closed for labeled credentials that appear in endpoint errors. This does not claim to redact unlabeled raw secret strings.</li></ul></section></div><section><h4>Blast Radius</h4><ul><li><code>extractError</code> still feeds chat, generate, and analysis errors; all three now get full labeled-value redaction.</li><li><code>server/api/ai/chat.ts</code> keeps its exported security pattern in sync with the custom adapter.</li><li>Search-provider error bodies get their own labeled-credential sanitizer in the search HTTP helper.</li></ul></section><section><h4>Relevant Diff Hunks</h4><pre class="code diff"><code><span class="meta">diff --git a/server/api/ai/chat.ts b/server/api/ai/chat.ts</span>
-<span class="meta">index 14885a2..d539c08 100644</span>
-<span class="meta">--- a/server/api/ai/chat.ts</span>
-<span class="meta">+++ b/server/api/ai/chat.ts</span>
-<span class="meta">@@ -7,48 +7,50 @@ import {</span>
-<span class="ctx">   type H3Event,</span>
-<span class="ctx"> } from &quot;h3&quot;;</span>
-<span class="ctx"> import { writeFile, mkdtemp, rm } from &quot;node:fs/promises&quot;;</span>
-<span class="ctx"> import { join } from &quot;node:path&quot;;</span>
-<span class="ctx"> import { z } from &quot;zod&quot;;</span>
-<span class="ctx"> import { serverLog } from &quot;../../utils/ai-logger&quot;;</span>
-<span class="ctx"> import * as entityGraphService from &quot;../../services/entity-graph-service&quot;;</span>
-<span class="ctx"> import { streamChat as claudeStreamChat } from &quot;../../services/ai/claude-adapter&quot;;</span>
-<span class="ctx"> import {</span>
-<span class="ctx">   streamChat as codexStreamChat,</span>
-<span class="ctx">   isCodexThreadExpiredError,</span>
-<span class="ctx"> } from &quot;../../services/ai/codex-adapter&quot;;</span>
-<span class="add">+import { streamChat as customStreamChat } from &quot;../../services/ai/custom-openai-adapter&quot;;</span>
-<span class="ctx"> import {</span>
-<span class="ctx">   beginTurn,</span>
-<span class="ctx">   endSession,</span>
-<span class="ctx">   endTurn,</span>
-<span class="ctx">   getOrCreateSession,</span>
-<span class="ctx">   markTurnActive,</span>
-<span class="ctx">   touch,</span>
-<span class="ctx">   type ChatSession,</span>
-<span class="add">+  type StartedSessionTurn,</span>
-<span class="ctx"> } from &quot;../../services/ai/chat-sessions&quot;;</span>
-<span class="add">+import {</span>
-<span class="add">+  isAllowedProvider,</span>
-<span class="add">+  type AllowedProvider,</span>
-<span class="add">+} from &quot;../../../shared/ai/allowed-providers&quot;;</span>
-<span class="add">+import type {</span>
-<span class="add">+  ChatAdapter,</span>
-<span class="add">+  ChatProviderEntry,</span>
-<span class="add">+  PreparedChatTurn,</span>
-<span class="add">+} from &quot;../../services/ai/adapter-types&quot;;</span>
-<span class="ctx"> import { analysisRuntimeConfig } from &quot;../../config/analysis-runtime&quot;;</span>
-<span class="ctx"> import { startSSEKeepAlive } from &quot;../../utils/sse-keepalive&quot;;</span>
-<span class="ctx"> </span>
-<span class="del">-const ALLOWED_PROVIDERS = [&quot;anthropic&quot;, &quot;openai&quot;] as const;</span>
-<span class="del">-type StartedSessionTurn = Extract&lt;ReturnType&lt;typeof beginTurn&gt;, { started: true }&gt;;</span>
-<span class="del">-</span>
-<span class="del">-function isAllowedProvider(</span>
-<span class="del">-  provider: string,</span>
-<span class="del">-): provider is (typeof ALLOWED_PROVIDERS)[number] {</span>
-<span class="del">-  return (ALLOWED_PROVIDERS as readonly string[]).includes(provider);</span>
-<span class="del">-}</span>
-<span class="del">-</span>
-<span class="ctx"> /** Pattern for detecting sensitive data in debug log output */</span>
-<span class="ctx"> export const SENSITIVE_LOG_PATTERN =</span>
-<span class="del">-  /ANTHROPIC_API_KEY=|Authorization:\s*Bearer|api[_-]?key\s*[:=]/i;</span>
-<span class="add">+  /(?:\b[A-Z0-9_]*API[_-]?KEY\b\s*[:=]\s*|Authorization:\s*Bearer\s+)(?:&quot;[^&quot;]+&quot;|&#39;[^&#39;]+&#39;|[^\s,;&#39;&quot;`]+)/i;</span>
-<span class="ctx"> </span>
-<span class="ctx"> /** Allowed media types for image attachments */</span>
-<span class="ctx"> export const ALLOWED_MEDIA_TYPES = new Set([</span>
-<span class="ctx">   &quot;image/png&quot;,</span>
-<span class="ctx">   &quot;image/jpeg&quot;,</span>
-<span class="ctx">   &quot;image/gif&quot;,</span>
-<span class="ctx">   &quot;image/webp&quot;,</span>
-<span class="ctx"> ]);</span>
-<span class="ctx"> export const MAX_CHAT_ATTACHMENTS = 10;</span>
-<span class="ctx"> export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;</span>
-<span class="ctx"> export const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;</span>
-<span class="ctx"> export const MAX_ATTACHMENT_BASE64_LENGTH =</span>
-<span class="meta">@@ -63,50 +65,63 @@ function estimateBase64DecodedBytes(data: string): number {</span>
-<span class="ctx">   const normalized = data.replace(/\s/g, &quot;&quot;);</span>
-<span class="ctx">   const padding = normalized.endsWith(&quot;==&quot;)</span>
-<span class="ctx">     ? 2</span>
-<span class="ctx">     : normalized.endsWith(&quot;=&quot;)</span>
-<span class="ctx">       ? 1</span>
-<span class="ctx">       : 0;</span>
-<span class="ctx">   return Math.max(0, Math.floor((normalized.length * 3) / 4) - padding);</span>
-<span class="ctx"> }</span>
-<span class="ctx"> </span>
-<span class="ctx"> function isBase64Payload(data: string): boolean {</span>
-<span class="ctx">   const normalized = data.replace(/\s/g, &quot;&quot;);</span>
-<span class="ctx">   return (</span>
-<span class="del">-    normalized.length % 4 === 0 &amp;&amp;</span>
-<span class="del">-    /^[A-Za-z0-9+/]*={0,2}$/.test(normalized)</span>
-<span class="add">+    normalized.length % 4 === 0 &amp;&amp; /^[A-Za-z0-9+/]*={0,2}$/.test(normalized)</span>
-<span class="ctx">   );</span>
-<span class="ctx"> }</span>
-<span class="ctx"> </span>
-<span class="ctx"> export interface ChatAttachmentWire {</span>
-<span class="ctx">   name: string;</span>
-<span class="ctx">   mediaType: string;</span>
-<span class="ctx">   data: string; // base64</span>
-<span class="ctx"> }</span>
-<span class="ctx"> </span>
-<span class="ctx"> export interface ChatBody {</span>
-<span class="ctx">   system: string;</span>
-<span class="ctx">   messages: Array&lt;{</span>
-<span class="ctx">     role: &quot;user&quot; | &quot;assistant&quot;;</span>
-<span class="ctx">     content: string;</span>
-<span class="ctx">     attachments?: ChatAttachmentWire[];</span>
-<span class="ctx">   }&gt;;</span>
-<span class="ctx">   model?: string;</span>
-<span class="del">-  provider?: &quot;anthropic&quot; | &quot;openai&quot;;</span>
-<span class="add">+  provider?: AllowedProvider;</span>
-<span class="ctx">   thinkingMode?: &quot;adaptive&quot; | &quot;disabled&quot; | &quot;enabled&quot;;</span>
-<span class="ctx">   thinkingBudgetTokens?: number;</span>
-<span class="ctx">   effort?: &quot;low&quot; | &quot;medium&quot; | &quot;high&quot; | &quot;max&quot;;</span>
-<span class="ctx">   sessionKey?: string;</span>
-<span class="add">+  custom?: CustomProviderRequest;</span>
-<span class="ctx"> }</span>
-<span class="ctx"> </span>
-<span class="add">+/** BYOK connection details sent by the renderer for the custom provider. */</span>
-<span class="add">+export interface CustomProviderRequest {</span>
-<span class="add">+  baseURL: string;</span>
-<span class="add">+  apiKey: string;</span>
-<span class="add">+  hasNativeWebSearch: boolean;</span>
-<span class="add">+}</span>
-<span class="add">+</span>
-<span class="add">+const customProviderSchema = z.object({</span>
-<span class="add">+  baseURL: z.string().url(),</span>
-<span class="add">+  apiKey: z.string(),</span>
-<span class="add">+  hasNativeWebSearch: z.boolean().optional().default(false),</span>
-<span class="add">+});</span>
-<span class="add">+</span>
-<span class="ctx"> const chatAttachmentSchema = z.object({</span>
-<span class="ctx">   name: z.string(),</span>
-<span class="ctx">   mediaType: z.string().refine((value) =&gt; ALLOWED_MEDIA_TYPES.has(value), {</span>
-<span class="ctx">     message: &quot;Unsupported attachment media type&quot;,</span>
-<span class="ctx">   }),</span>
-<span class="ctx">   data: z</span>
-<span class="ctx">     .string()</span>
-<span class="ctx">     .max(MAX_ATTACHMENT_BASE64_LENGTH, &quot;Attachment exceeds 5MiB&quot;)</span>
-<span class="ctx">     .superRefine((value, ctx) =&gt; {</span>
-<span class="ctx">       if (!isBase64Payload(value)) {</span>
-<span class="ctx">         ctx.addIssue({</span>
-<span class="ctx">           code: z.ZodIssueCode.custom,</span>
-<span class="meta">@@ -130,51 +145,65 @@ const chatBodySchema = z</span>
-<span class="ctx">       z.object({</span>
-<span class="ctx">         role: z.enum([&quot;user&quot;, &quot;assistant&quot;]),</span>
-<span class="ctx">         content: z.string(),</span>
-<span class="ctx">         attachments: z.array(chatAttachmentSchema).optional(),</span>
-<span class="ctx">       }),</span>
-<span class="ctx">     ),</span>
-<span class="ctx">     model: z.string().trim().min(1),</span>
-<span class="ctx">     provider: z.string().trim().min(1),</span>
-<span class="ctx">     thinkingMode: z.enum([&quot;adaptive&quot;, &quot;disabled&quot;, &quot;enabled&quot;]).optional(),</span>
-<span class="ctx">     thinkingBudgetTokens: z.number().positive().optional(),</span>
-<span class="ctx">     effort: z.enum([&quot;low&quot;, &quot;medium&quot;, &quot;high&quot;, &quot;max&quot;]).optional(),</span>
-<span class="ctx">     sessionKey: z.string().trim().min(1).optional(),</span>
-<span class="add">+    custom: customProviderSchema.optional(),</span>
-<span class="ctx">   })</span>
-<span class="ctx">   .superRefine((body, ctx) =&gt; {</span>
-<span class="add">+    // The custom provider needs its BYOK connection details on every request</span>
-<span class="add">+    // (the server never caches them).</span>
-<span class="add">+    if (body.provider === &quot;custom&quot; &amp;&amp; !body.custom) {</span>
-<span class="add">+      ctx.addIssue({</span>
-<span class="add">+        code: z.ZodIssueCode.custom,</span>
-<span class="add">+        message: &quot;Custom provider requires baseURL and apiKey&quot;,</span>
-<span class="add">+        path: [&quot;custom&quot;],</span>
-<span class="add">+      });</span>
-<span class="add">+    }</span>
-<span class="add">+</span>
-<span class="ctx">     const attachments = body.messages.flatMap(</span>
-<span class="ctx">       (message) =&gt; message.attachments ?? [],</span>
-<span class="ctx">     );</span>
-<span class="ctx">     if (attachments.length &gt; MAX_CHAT_ATTACHMENTS) {</span>
-<span class="ctx">       ctx.addIssue({</span>
-<span class="ctx">         code: z.ZodIssueCode.custom,</span>
-<span class="ctx">         message: &quot;Too many attachments&quot;,</span>
-<span class="ctx">         path: [&quot;messages&quot;],</span>
-<span class="ctx">       });</span>
-<span class="ctx">     }</span>
-<span class="ctx"> </span>
-<span class="ctx">     const totalBytes = attachments.reduce(</span>
-<span class="ctx">       (sum, attachment) =&gt; sum + estimateBase64DecodedBytes(attachment.data),</span>
-<span class="ctx">       0,</span>
-<span class="ctx">     );</span>
-<span class="ctx">     if (totalBytes &gt; MAX_TOTAL_ATTACHMENT_BYTES) {</span>
-<span class="ctx">       ctx.addIssue({</span>
-<span class="ctx">         code: z.ZodIssueCode.custom,</span>
-<span class="ctx">         message: &quot;Attachments exceed total size limit&quot;,</span>
-<span class="ctx">         path: [&quot;messages&quot;],</span>
-<span class="ctx">       });</span>
-<span class="ctx">     }</span>
-<span class="ctx">   });</span>
-<span class="ctx"> </span>
-<span class="del">-function writeSSE(controller: ReadableStreamDefaultController, payload: unknown) {</span>
-<span class="add">+function writeSSE(</span>
-<span class="add">+  controller: ReadableStreamDefaultController,</span>
-<span class="add">+  payload: unknown,</span>
-<span class="add">+) {</span>
-<span class="ctx">   controller.enqueue(</span>
-<span class="ctx">     new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`),</span>
-<span class="ctx">   );</span>
-<span class="ctx"> }</span>
-<span class="ctx"> </span>
-<span class="ctx"> function badRequest(event: H3Event, error: string) {</span>
-<span class="ctx">   setResponseStatus(event, 400);</span>
-<span class="ctx">   setResponseHeaders(event, { &quot;Content-Type&quot;: &quot;application/json&quot; });</span>
-<span class="ctx">   return { error };</span>
-<span class="ctx"> }</span>
-<span class="ctx"> </span>
-<span class="ctx"> function conflict(event: H3Event, error: string) {</span>
-<span class="meta">@@ -207,30 +236,40 @@ export default defineEventHandler(async (event) =&gt; {</span>
-<span class="ctx">     return badRequest(event, &quot;Invalid request body&quot;);</span>
-<span class="ctx">   }</span>
-<span class="ctx">   const runId = getRequestHeader(event, &quot;x-run-id&quot;)?.trim() || undefined;</span>
-<span class="ctx">   const parsedBody = chatBodySchema.safeParse(rawBody);</span>
-<span class="ctx"> </span>
-<span class="ctx">   if (!parsedBody.success) {</span>
-<span class="ctx">     return badRequest(</span>
-<span class="ctx">       event,</span>
-<span class="ctx">       &quot;Missing or invalid required fields: system, messages, provider, model&quot;,</span>
-<span class="ctx">     );</span>
-<span class="ctx">   }</span>
-<span class="ctx">   const parsed = parsedBody.data;</span>
-<span class="add">+  // A provider must be both allowlisted and registered in the routing table.</span>
-<span class="add">+  // An allowlisted-but-unregistered provider (e.g. &quot;custom&quot; before its adapter</span>
-<span class="add">+  // ships) falls through to the same rejection as a disallowed provider.</span>
-<span class="ctx">   if (!isAllowedProvider(parsed.provider)) {</span>
-<span class="ctx">     return badRequest(</span>
-<span class="ctx">       event,</span>
-<span class="ctx">       &quot;Missing or unsupported provider. Provider fallback is disabled.&quot;,</span>
-<span class="ctx">     );</span>
-<span class="ctx">   }</span>
-<span class="add">+  const entry = CHAT_PROVIDERS[parsed.provider];</span>
-<span class="add">+  if (!entry) {</span>
-<span class="add">+    return badRequest(</span>
-<span class="add">+      event,</span>
-<span class="add">+      &quot;Missing or unsupported provider. Provider fallback is disabled.&quot;,</span>
-<span class="add">+    );</span>
-<span class="add">+  }</span>
-<span class="ctx">   const body: ChatBody = {</span>
-<span class="ctx">     ...parsed,</span>
-<span class="ctx">     provider: parsed.provider,</span>
-<span class="ctx">   };</span>
-<span class="ctx"> </span>
-<span class="ctx">   const provider = parsed.provider;</span>
-<span class="ctx">   const model = body.model;</span>
-<span class="ctx">   const systemLen = body.system.length;</span>
-<span class="ctx">   const messageLen = body.messages.reduce(</span>
-<span class="ctx">     (n, m) =&gt; n + (m.content?.length ?? 0),</span>
-<span class="ctx">     0,</span>
-<span class="ctx">   );</span>
-<span class="meta">@@ -246,44 +285,197 @@ export default defineEventHandler(async (event) =&gt; {</span>
-<span class="ctx">     : null;</span>
-<span class="ctx">   if (sessionTurn &amp;&amp; !sessionTurn.started) {</span>
-<span class="ctx">     return conflict(event, &quot;A turn is already streaming for this session&quot;);</span>
-<span class="ctx">   }</span>
-<span class="ctx">   const startedSessionTurn = sessionTurn?.started ? sessionTurn : null;</span>
-<span class="ctx"> </span>
-<span class="ctx">   setResponseHeaders(event, {</span>
-<span class="ctx">     &quot;Content-Type&quot;: &quot;text/event-stream&quot;,</span>
-<span class="ctx">     &quot;Cache-Control&quot;: &quot;no-cache&quot;,</span>
-<span class="ctx">     Connection: &quot;keep-alive&quot;,</span>
-<span class="ctx">   });</span>
-<span class="ctx"> </span>
-<span class="del">-  // Route to allowed providers only; no fallback routing.</span>
-<span class="del">-  if (body.provider === &quot;anthropic&quot;)</span>
-<span class="del">-    return streamViaClaude(event, body, body.model, runId, startedSessionTurn);</span>
-<span class="del">-  return streamViaCodexAdapter(</span>
-<span class="add">+  // Dispatch via the provider routing table; no fallback routing.</span>
-<span class="add">+  const prepared = entry.prepare(body, startedSessionTurn);</span>
-<span class="add">+  return entry.stream({</span>
-<span class="ctx">     event,</span>
-<span class="ctx">     body,</span>
-<span class="del">-    body.model,</span>
-<span class="add">+    model: body.model,</span>
-<span class="ctx">     runId,</span>
-<span class="del">-    startedSessionTurn,</span>
-<span class="del">-  );</span>
-<span class="add">+    sessionResult: startedSessionTurn,</span>
-<span class="add">+    prepared,</span>
-<span class="add">+    adapter: entry.adapter,</span>
-<span class="add">+  });</span>
-<span class="ctx"> });</span>
-<span class="ctx"> </span>
-<span class="del">-/** Stream via Codex adapter — wraps codex-adapter.streamChat() into SSE */</span>
-<span class="del">-function streamViaCodexAdapter(</span>
-<span class="del">-  event: H3Event,</span>
-<span class="del">-  body: ChatBody,</span>
-<span class="del">-  model?: string,</span>
-<span class="del">-  runId?: string,</span>
-<span class="del">-  sessionResult?: StartedSessionTurn | null,</span>
-<span class="trunc">... truncated in review surface: 1973 more diff lines for this cluster ...</span></code></pre></section><section><h4>Line Evidence</h4><pre class="code "><code>  70 | const PLACEHOLDER_API_KEY = &quot;sk-no-key&quot;;
-  71 | 
-  72 | // Mirror of chat.ts SENSITIVE_LOG_PATTERN — never surface keys/Authorization
-  73 | // headers in error text forwarded to the client or the logs.
-  74 | const SENSITIVE_LOG_PATTERN =
-  75 |   /(?:\b[A-Z0-9_]*API[_-]?KEY\b\s*[:=]\s*|Authorization:\s*Bearer\s+)(?:&quot;[^&quot;]+&quot;|&#39;[^&#39;]+&#39;|[^\s,;&#39;&quot;`]+)/i;
-  76 | const SENSITIVE_LOG_REDACTION_PATTERN = new RegExp(
-  77 |   SENSITIVE_LOG_PATTERN.source,
-  78 |   &quot;gi&quot;,
-  79 | );
-  80 | 
-  81 | /** Appended to every custom chat system prompt (canvas is the source of truth). */
-  82 | const CANVAS_AUTHORITATIVE_NOTE =
-  83 |   &quot;The canvas (analysis graph) is the authoritative state and is fully re-discoverable at any time via the query_entities and get_entity tools. If earlier conversation was summarized or trimmed, re-query the canvas rather than trusting the transcript.&quot;;
-  84 | 
-  85 | // ── Client + tool helpers ──
-  86 | 
-  87 | function createClient(creds: CustomProviderCredentials): OpenAI {
-  88 |   return new OpenAI({
-  89 |     baseURL: creds.baseURL,
-  90 |     // Some local/self-hosted endpoints require no key. The SDK refuses to
-  91 |     // construct without a non-empty apiKey, so we pass a harmless placeholder;
-  92 |     // such endpoints ignore the Authorization header.
-  93 |     apiKey: creds.apiKey || PLACEHOLDER_API_KEY,
-  94 |     // Our own AbortSignal owns timeouts/cancellation — do not let the SDK add
-  95 |     // its own retry/backoff on top of that.
-  96 |     maxRetries: 0,
-  97 |   });
-  98 | }
-  99 | 
- 100 | /**
- 101 |  * web_search is excluded from the exposed tool list when the endpoint has its
- 102 |  * own native web search OR when no search provider is configured (calling it
- 103 |  * would only ever return the &quot;not configured&quot; error).
- 104 |  */
- 105 | function shouldExcludeWebSearch(
- 106 |   hasNativeWebSearch: boolean,
- 107 |   webSearchEnabled = true,
- 108 | ): boolean {
- 109 |   return hasNativeWebSearch || !webSearchEnabled || !isSearchConfigured();
- 110 | }
- 111 | 
- 112 | function toOpenAITools(
- 113 |   defs: readonly ToolDefinition[],
- 114 |   excludeWebSearch: boolean,
- 115 | ): OpenAI.ChatCompletionTool[] {
- 116 |   return defs
- 117 |     .filter((d) =&gt; !(excludeWebSearch &amp;&amp; d.name === &quot;web_search&quot;))
- 118 |     .map((d) =&gt; ({
- 119 |       type: &quot;function&quot; as const,
- 120 |       function: {
- 121 |         name: d.name,
- 122 |         description: d.description,
- 123 |         parameters: d.inputSchema,
- 124 |       },
- 125 |     }));
- 126 | }
- 127 | 
- 128 | function buildChatSystemPrompt(system: string): string {
- 129 |   return `${system}\n\n${CANVAS_AUTHORITATIVE_NOTE}`;
- 130 | }
- 131 | 
- 132 | // ── Error helpers ──
- 133 | 
- 134 | interface ExtractedError {
- 135 |   status?: number;
- 136 |   message: string;
- 137 | }
- 138 | 
- 139 | function extractError(err: unknown): ExtractedError {
- 140 |   if (err instanceof APIError) {
- 141 |     const status = typeof err.status === &quot;number&quot; ? err.status : undefined;
- 142 |     const raw = err.message || String(err);
- 143 |     return { status, message: redact(raw).slice(0, 300) };
- 144 |   }
- 145 |   const raw = err instanceof Error ? err.message : String(err);
- 146 |   return { message: redact(raw).slice(0, 300) };
- 147 | }
- 148 | 
- 149 | function redact(text: string): string {
- 150 |   return SENSITIVE_LOG_PATTERN.test(text)
- 151 |     ? text.replace(SENSITIVE_LOG_REDACTION_PATTERN, &quot;[redacted]&quot;)
- 152 |     : text;
- 153 | }
- 154 | 
- 155 | /** A first-request 400 that names tool/function fields — endpoint lacks tools. */
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review Surface - PR 15 BYOK custom provider</title>
+  <style>
+    :root {
+      --bg: #f6f7f2;
+      --paper: #ffffff;
+      --ink: #17202a;
+      --muted: #5b6877;
+      --line: #d8ddd6;
+      --blue: #1f5f8b;
+      --green: #1c7a55;
+      --amber: #9a6700;
+      --red: #b42318;
+      --purple: #6b46a3;
+      --code: #0b1020;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main { max-width: 1180px; margin: 0 auto; padding: 28px 22px 60px; }
+    header, .panel, details.cluster, .diagram {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    header { padding: 22px 24px; margin-bottom: 18px; }
+    h1 { font-size: 25px; margin: 0 0 8px; }
+    h2 { font-size: 19px; margin: 28px 0 10px; }
+    h3 { font-size: 16px; margin: 18px 0 8px; }
+    h4 {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: #44515f;
+      margin: 16px 0 8px;
+    }
+    p { margin: 8px 0; }
+    code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .summary { font-size: 17px; }
+    .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .badge {
+      border: 1px solid var(--line);
+      background: #fafafa;
+      border-radius: 999px;
+      padding: 5px 10px;
+      color: #344054;
+    }
+    .risk {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      padding: 3px 9px;
+      margin-right: 10px;
+      color: #fff;
+      background: var(--green);
+      font-weight: 700;
+      font-size: 12px;
+      min-width: 58px;
+    }
+    .risk.p1 { background: var(--red); }
+    .risk.p2 { background: var(--amber); }
+    .risk.p3 { background: var(--green); }
+    .grid, .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .panel { padding: 16px; }
+    .diagram { padding: 10px 12px; overflow: auto; }
+    .diagram svg { width: 100%; min-width: 860px; height: auto; }
+    .box { fill: #fff; stroke: #a7b0ba; stroke-width: 1.5; }
+    .ui { stroke: var(--blue); }
+    .store { stroke: var(--purple); }
+    .api { stroke: var(--green); }
+    .adapter { stroke: var(--red); }
+    .endpoint { stroke: var(--amber); }
+    .event { stroke: #475569; }
+    .diagram text { font: 600 14px ui-sans-serif, system-ui; fill: #172033; }
+    .diagram .small { font-size: 12px; font-weight: 500; fill: #64748b; }
+    .arrow { stroke: #475569; stroke-width: 1.7; marker-end: url(#arrow); fill: none; }
+    details.cluster { margin: 12px 0; overflow: hidden; }
+    details.cluster > summary {
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      padding: 15px 18px;
+      font-weight: 700;
+      border-bottom: 1px solid var(--line);
+    }
+    details.cluster > summary::-webkit-details-marker { display: none; }
+    .cluster-body { padding: 0 18px 18px; }
+    .files {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      color: #44515f;
+      background: #f5f7f8;
+      border: 1px solid #e1e6e8;
+      border-radius: 6px;
+      padding: 8px;
+      overflow: auto;
+    }
+    ul { padding-left: 20px; margin: 8px 0; }
+    li { margin: 7px 0; }
+    .confidence { color: #536271; font-size: 13px; }
+    .code {
+      background: var(--code);
+      color: #d6deeb;
+      border-radius: 8px;
+      padding: 12px;
+      overflow: auto;
+      border: 1px solid #20283a;
+      font: 12px/1.48 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre;
+    }
+    .diff span { display: block; min-height: 1.45em; }
+    .diff .meta { color: #9bc4ff; }
+    .diff .ctx { color: #d6deeb; }
+    .diff .add { color: #7ee2a8; }
+    .diff .del { color: #ff9b9b; }
+    .resolved { border-left: 4px solid var(--green); padding-left: 14px; }
+    .warn { border-left: 4px solid var(--amber); padding-left: 14px; }
+    .footer { color: var(--muted); margin-top: 28px; font-size: 13px; }
+    @media (max-width: 820px) {
+      main { padding: 18px 12px; }
+      .grid, .cols { grid-template-columns: 1fr; }
+      header { padding: 18px; }
+      .code { font-size: 11px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Review Surface: PR #15 BYOK custom provider</h1>
+    <p class="summary">PR #15 adds a custom OpenAI-compatible provider path for chat, analysis, product tools, web search config, encrypted secret storage, and packaged Electron support; the local follow-up fixes packaged macOS launch, Electron secret fallback, and inline reasoning leakage.</p>
+    <div class="badges">
+      <span class="badge"><strong>Overall risk:</strong> P2, integration-heavy but now smoke-tested in packaged Electron</span>
+      <span class="badge"><strong>PR:</strong> <span class="mono">josephmqiu/game-theory-model#15</span></span>
+      <span class="badge"><strong>Base:</strong> <span class="mono">main</span></span>
+      <span class="badge"><strong>Branch:</strong> <span class="mono">feat/byok-custom-provider</span></span>
+      <span class="badge"><strong>Diff size:</strong> 77 files changed, 7,995 insertions(+), 1,245 deletions(-)</span>
+      <span class="badge"><strong>Generated:</strong> 2026-07-06T02:14:12Z</span>
+    </div>
+  </header>
 
- 390 |         &quot;upstream rejected Authorization: Bearer bearer-token-value and api_key=api-token-value and ANTHROPIC_API_KEY=anthropic-token-value&quot;,
- 391 |       ),
- 392 |     );
- 393 | 
- 394 |     const events = await collect(streamChat(BASE_INPUT));
- 395 |     const errorEvent = events.find(
- 396 |       (e): e is Extract&lt;ChatEvent, { type: &quot;error&quot; }&gt; =&gt; e.type === &quot;error&quot;,
- 397 |     );
- 398 | 
- 399 |     expect(errorEvent?.message).toContain(&quot;[redacted]&quot;);
- 400 |     expect(errorEvent?.message).not.toContain(&quot;bearer-token-value&quot;);
- 401 |     expect(errorEvent?.message).not.toContain(&quot;api-token-value&quot;);
- 402 |     expect(errorEvent?.message).not.toContain(&quot;anthropic-token-value&quot;);
- 403 |   });
- 404 | 
- 405 |   it(&quot;stops mid-stream when the signal aborts during streaming&quot;, async () =&gt; {
- 406 |     const controller = new AbortController();
- 407 |     createMock.mockResolvedValueOnce({
- 408 |       async *[Symbol.asyncIterator]() {
- 409 |         yield textChunk(&quot;first&quot;);
- 410 |         // Abort between chunks: the next loop iteration must bail before
- 411 |         // forwarding anything further, and must NOT emit turn_complete.
- 412 |         controller.abort();
- 413 |         yield textChunk(&quot; second&quot;, &quot;stop&quot;);
- 414 |       },
- 415 |     });
- 416 | 
- 417 |     const events = await collect(
- 418 |       streamChat(BASE_INPUT, { signal: controller.signal }),
- 419 |     );
- 420 | </code></pre></section></div></details>
-<details class="cluster" open id="analysis-tool-fallback"><summary><span class="risk">P2 fixed</span><span>Analysis now retries without OpenAI tools</span></summary><div class="cluster-body"><p class="files">server/services/ai/custom-openai-adapter.ts | server/services/ai/__tests__/custom-openai-adapter.test.ts</p><div class="cols"><section><h4>Facts</h4><ul><li>FACT: <code>runAnalysisPhase</code> now wraps both structured and prompt-embedded attempts in <code>runLoopWithToolFallback</code>.</li><li>FACT: On a tool-definition 400, analysis logs <code>analysis-tools-rejected</code>, disables tools for the remainder of the phase, and retries with no tools.</li><li>FACT: A regression test verifies the first analysis request includes tools, the retry omits tools, and <code>response_format</code> remains active for the no-tool structured retry.</li></ul></section><section><h4>Opinions</h4><ul><li><strong>RESOLVED</strong> <span class="confidence">confidence 8/10</span> The original compatibility gap between chat and analysis is closed for endpoints that reject tool definitions.</li></ul></section></div><section><h4>Blast Radius</h4><ul><li>Callers of <code>runAnalysisPhase</code> keep the same API; fallback is internal to the custom adapter.</li><li>If the no-tool retry then rejects <code>response_format</code>, the existing schema-in-prompt fallback still runs with tools disabled.</li><li>Product tools are intentionally unavailable in degraded mode, matching chat's behavior for tool-rejecting endpoints.</li></ul></section><section><h4>Relevant Diff Hunks</h4><pre class="code diff"><code><span class="meta">diff --git a/server/services/ai/__tests__/custom-openai-adapter.test.ts b/server/services/ai/__tests__/custom-openai-adapter.test.ts</span>
-<span class="ctx">new file mode 100644</span>
-<span class="meta">index 0000000..d9b3c75</span>
-<span class="meta">--- /dev/null</span>
-<span class="meta">+++ b/server/services/ai/__tests__/custom-openai-adapter.test.ts</span>
-<span class="meta">@@ -0,0 +1,778 @@</span>
-<span class="add">+import { afterEach, beforeEach, describe, expect, it, vi } from &quot;vitest&quot;;</span>
-<span class="add">+</span>
-<span class="add">+// ── OpenAI SDK mock ──</span>
-<span class="add">+const { createMock, ctorSpy, handleToolCallMock, MockAPIError } = vi.hoisted(</span>
-<span class="add">+  () =&gt; {</span>
-<span class="add">+    class MockAPIError extends Error {</span>
-<span class="add">+      status?: number;</span>
-<span class="add">+      constructor(status: number, message: string) {</span>
-<span class="add">+        super(message);</span>
-<span class="add">+        this.status = status;</span>
-<span class="add">+        this.name = &quot;APIError&quot;;</span>
-<span class="add">+      }</span>
-<span class="add">+    }</span>
-<span class="add">+    return {</span>
-<span class="add">+      createMock: vi.fn(),</span>
-<span class="add">+      ctorSpy: vi.fn(),</span>
-<span class="add">+      handleToolCallMock: vi.fn(),</span>
-<span class="add">+      MockAPIError,</span>
-<span class="add">+    };</span>
-<span class="add">+  },</span>
-<span class="add">+);</span>
-<span class="add">+</span>
-<span class="add">+vi.mock(&quot;openai&quot;, () =&gt; {</span>
-<span class="add">+  class OpenAI {</span>
-<span class="add">+    chat = { completions: { create: createMock } };</span>
-<span class="add">+    constructor(opts: unknown) {</span>
-<span class="add">+      ctorSpy(opts);</span>
-<span class="add">+    }</span>
-<span class="add">+  }</span>
-<span class="add">+  return { default: OpenAI, OpenAI, APIError: MockAPIError };</span>
-<span class="add">+});</span>
-<span class="add">+</span>
-<span class="add">+// ── product-tools mock (control handleToolCall; keep real tool definitions) ──</span>
-<span class="add">+vi.mock(&quot;../../../mcp/product-tools&quot;, async (importActual) =&gt; {</span>
-<span class="add">+  const actual =</span>
-<span class="add">+    await importActual&lt;typeof import(&quot;../../../mcp/product-tools&quot;)&gt;();</span>
-<span class="add">+  return { ...actual, handleToolCall: handleToolCallMock };</span>
-<span class="add">+});</span>
-<span class="add">+</span>
-<span class="add">+import {</span>
-<span class="add">+  streamChat,</span>
-<span class="add">+  runAnalysisPhase,</span>
-<span class="add">+  type CustomChatInput,</span>
-<span class="add">+} from &quot;../custom-openai-adapter&quot;;</span>
-<span class="add">+import { setSearchConfig } from &quot;../../search/config-cache&quot;;</span>
-<span class="add">+import type { ChatEvent } from &quot;../../../../shared/types/events&quot;;</span>
-<span class="add">+</span>
-<span class="add">+// ── helpers ──</span>
-<span class="add">+</span>
-<span class="add">+interface StreamChunk {</span>
-<span class="add">+  choices: Array&lt;{</span>
-<span class="add">+    delta?: { content?: string; tool_calls?: unknown[] };</span>
-<span class="add">+    finish_reason?: string | null;</span>
-<span class="add">+  }&gt;;</span>
-<span class="add">+}</span>
-<span class="add">+</span>
-<span class="add">+function streamOf(chunks: StreamChunk[]): AsyncIterable&lt;StreamChunk&gt; {</span>
-<span class="add">+  return {</span>
-<span class="add">+    async *[Symbol.asyncIterator]() {</span>
-<span class="add">+      for (const c of chunks) yield c;</span>
-<span class="add">+    },</span>
-<span class="add">+  };</span>
-<span class="add">+}</span>
-<span class="add">+</span>
-<span class="add">+function textChunk(content: string, finish?: string): StreamChunk {</span>
-<span class="add">+  return {</span>
-<span class="add">+    choices: [{ delta: { content }, finish_reason: finish ?? null }],</span>
-<span class="add">+  };</span>
-<span class="add">+}</span>
-<span class="add">+</span>
-<span class="add">+function toolCallChunk(</span>
-<span class="add">+  index: number,</span>
-<span class="add">+  id: string,</span>
-<span class="add">+  name: string,</span>
-<span class="add">+  args: string,</span>
-<span class="add">+  finish?: string,</span>
-<span class="add">+): StreamChunk {</span>
-<span class="add">+  return {</span>
-<span class="add">+    choices: [</span>
-<span class="add">+      {</span>
-<span class="add">+        delta: {</span>
-<span class="add">+          tool_calls: [{ index, id, function: { name, arguments: args } }],</span>
-<span class="add">+        },</span>
-<span class="add">+        finish_reason: finish ?? null,</span>
-<span class="add">+      },</span>
-<span class="add">+    ],</span>
-<span class="add">+  };</span>
-<span class="add">+}</span>
-<span class="add">+</span>
-<span class="add">+async function collect(gen: AsyncGenerator&lt;ChatEvent&gt;): Promise&lt;ChatEvent[]&gt; {</span>
-<span class="add">+  const out: ChatEvent[] = [];</span>
-<span class="add">+  for await (const ev of gen) out.push(ev);</span>
-<span class="add">+  return out;</span>
-<span class="add">+}</span>
-<span class="add">+</span>
-<span class="add">+const BASE_INPUT: CustomChatInput = {</span>
-<span class="add">+  system: &quot;You are a helper.&quot;,</span>
-<span class="add">+  messages: [{ role: &quot;user&quot;, content: &quot;hello&quot; }],</span>
-<span class="add">+  model: &quot;test-model&quot;,</span>
-<span class="add">+  baseURL: &quot;https://api.example.com/v1&quot;,</span>
-<span class="add">+  apiKey: &quot;test-key&quot;,</span>
-<span class="add">+  hasNativeWebSearch: false,</span>
-<span class="add">+};</span>
-<span class="add">+</span>
-<span class="add">+function lastParams(callIndex: number): Record&lt;string, unknown&gt; {</span>
-<span class="add">+  return createMock.mock.calls[callIndex][0] as Record&lt;string, unknown&gt;;</span>
-<span class="add">+}</span>
-<span class="add">+</span>
-<span class="add">+beforeEach(() =&gt; {</span>
-<span class="add">+  createMock.mockReset();</span>
-<span class="add">+  ctorSpy.mockReset();</span>
-<span class="add">+  handleToolCallMock.mockReset();</span>
-<span class="add">+  setSearchConfig({ provider: null, apiKey: null });</span>
-<span class="add">+});</span>
-<span class="add">+</span>
-<span class="add">+afterEach(() =&gt; {</span>
-<span class="add">+  vi.restoreAllMocks();</span>
-<span class="add">+});</span>
-<span class="add">+</span>
-<span class="add">+describe(&quot;custom-openai-adapter streamChat&quot;, () =&gt; {</span>
-<span class="add">+  it(&quot;streams a text-only turn and completes&quot;, async () =&gt; {</span>
-<span class="add">+    createMock.mockResolvedValueOnce(</span>
-<span class="add">+      streamOf([textChunk(&quot;Hello&quot;), textChunk(&quot; world&quot;, &quot;stop&quot;)]),</span>
-<span class="add">+    );</span>
-<span class="add">+</span>
-<span class="add">+    const events = await collect(streamChat(BASE_INPUT));</span>
-<span class="add">+</span>
-<span class="add">+    expect(events).toEqual([</span>
-<span class="add">+      { type: &quot;text_delta&quot;, content: &quot;Hello&quot; },</span>
-<span class="add">+      { type: &quot;text_delta&quot;, content: &quot; world&quot; },</span>
-<span class="add">+      { type: &quot;turn_complete&quot; },</span>
-<span class="add">+    ]);</span>
-<span class="add">+    expect(createMock).toHaveBeenCalledTimes(1);</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  it(&quot;runs a tool call: parses args, feeds tool result into a second round&quot;, async () =&gt; {</span>
-<span class="add">+    createMock</span>
-<span class="add">+      .mockResolvedValueOnce(</span>
-<span class="add">+        streamOf([</span>
-<span class="add">+          toolCallChunk(0, &quot;call_1&quot;, &quot;query_entities&quot;, &#39;{&quot;phase&quot;:&quot;x&quot;}&#39;),</span>
-<span class="add">+          { choices: [{ delta: {}, finish_reason: &quot;tool_calls&quot; }] },</span>
-<span class="add">+        ]),</span>
-<span class="add">+      )</span>
-<span class="add">+      .mockResolvedValueOnce(streamOf([textChunk(&quot;done&quot;, &quot;stop&quot;)]));</span>
-<span class="add">+    handleToolCallMock.mockResolvedValueOnce({ text: &quot;[]&quot;, isError: false });</span>
-<span class="add">+</span>
-<span class="add">+    const events = await collect(streamChat(BASE_INPUT));</span>
-<span class="add">+</span>
-<span class="add">+    expect(handleToolCallMock).toHaveBeenCalledWith(</span>
-<span class="add">+      &quot;query_entities&quot;,</span>
-<span class="add">+      { phase: &quot;x&quot; },</span>
-<span class="add">+      expect.objectContaining({</span>
-<span class="add">+        customCredentials: expect.objectContaining({</span>
-<span class="add">+          baseURL: &quot;https://api.example.com/v1&quot;,</span>
-<span class="add">+        }),</span>
-<span class="add">+      }),</span>
-<span class="add">+    );</span>
-<span class="add">+    expect(events).toContainEqual({</span>
-<span class="add">+      type: &quot;tool_call_start&quot;,</span>
-<span class="add">+      toolName: &quot;query_entities&quot;,</span>
-<span class="add">+      input: { phase: &quot;x&quot; },</span>
-<span class="add">+    });</span>
-<span class="add">+    expect(events).toContainEqual({</span>
-<span class="add">+      type: &quot;tool_call_result&quot;,</span>
-<span class="add">+      toolName: &quot;query_entities&quot;,</span>
-<span class="add">+      output: &quot;[]&quot;,</span>
-<span class="add">+    });</span>
-<span class="add">+    expect(events.at(-1)).toEqual({ type: &quot;turn_complete&quot; });</span>
-<span class="add">+</span>
-<span class="add">+    // Second request carries the assistant tool_calls message + tool result.</span>
-<span class="add">+    expect(createMock).toHaveBeenCalledTimes(2);</span>
-<span class="add">+    const secondMessages = lastParams(1).messages as Array&lt;</span>
-<span class="add">+      Record&lt;string, unknown&gt;</span>
-<span class="add">+    &gt;;</span>
-<span class="add">+    expect(</span>
-<span class="add">+      secondMessages.some(</span>
-<span class="add">+        (m) =&gt; m.role === &quot;assistant&quot; &amp;&amp; Array.isArray(m.tool_calls),</span>
-<span class="add">+      ),</span>
-<span class="add">+    ).toBe(true);</span>
-<span class="add">+    expect(</span>
-<span class="add">+      secondMessages.some(</span>
-<span class="add">+        (m) =&gt; m.role === &quot;tool&quot; &amp;&amp; m.tool_call_id === &quot;call_1&quot;,</span>
-<span class="add">+      ),</span>
-<span class="add">+    ).toBe(true);</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  it(&quot;emits tool_call_error and continues the loop on malformed tool args&quot;, async () =&gt; {</span>
-<span class="add">+    createMock</span>
-<span class="add">+      .mockResolvedValueOnce(</span>
-<span class="add">+        streamOf([</span>
-<span class="add">+          toolCallChunk(0, &quot;call_bad&quot;, &quot;query_entities&quot;, &quot;{not json&quot;),</span>
-<span class="add">+          { choices: [{ delta: {}, finish_reason: &quot;tool_calls&quot; }] },</span>
-<span class="add">+        ]),</span>
-<span class="add">+      )</span>
-<span class="add">+      .mockResolvedValueOnce(streamOf([textChunk(&quot;recovered&quot;, &quot;stop&quot;)]));</span>
-<span class="add">+</span>
-<span class="add">+    const events = await collect(streamChat(BASE_INPUT));</span>
-<span class="add">+</span>
-<span class="add">+    expect(handleToolCallMock).not.toHaveBeenCalled();</span>
-<span class="add">+    expect(events).toContainEqual({</span>
-<span class="add">+      type: &quot;tool_call_error&quot;,</span>
-<span class="add">+      toolName: &quot;query_entities&quot;,</span>
-<span class="add">+      error: &quot;Tool arguments were not valid JSON.&quot;,</span>
-<span class="add">+    });</span>
-<span class="add">+    // Loop continued to a second round.</span>
-<span class="add">+    expect(createMock).toHaveBeenCalledTimes(2);</span>
-<span class="add">+    const secondMessages = lastParams(1).messages as Array&lt;</span>
-<span class="add">+      Record&lt;string, unknown&gt;</span>
-<span class="add">+    &gt;;</span>
-<span class="add">+    expect(</span>
-<span class="add">+      secondMessages.some(</span>
-<span class="add">+        (m) =&gt; m.role === &quot;tool&quot; &amp;&amp; m.tool_call_id === &quot;call_bad&quot;,</span>
-<span class="add">+      ),</span>
-<span class="add">+    ).toBe(true);</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  it(&quot;yields an error event with status (not the key) on a 401&quot;, async () =&gt; {</span>
-<span class="add">+    createMock.mockRejectedValueOnce(</span>
-<span class="add">+      new MockAPIError(401, &quot;Unauthorized: invalid token&quot;),</span>
-<span class="add">+    );</span>
-<span class="add">+</span>
-<span class="add">+    const events = await collect(</span>
-<span class="add">+      streamChat({ ...BASE_INPUT, apiKey: &quot;super-secret-key&quot; }),</span>
-<span class="add">+    );</span>
-<span class="add">+</span>
-<span class="add">+    expect(events).toHaveLength(1);</span>
-<span class="add">+    const err = events[0] as { type: string; message: string };</span>
-<span class="add">+    expect(err.type).toBe(&quot;error&quot;);</span>
-<span class="add">+    expect(err.message).toContain(&quot;401&quot;);</span>
-<span class="add">+    expect(err.message).not.toContain(&quot;super-secret-key&quot;);</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  it(&quot;caps the tool loop at MAX_TOOL_ROUNDS&quot;, async () =&gt; {</span>
-<span class="add">+    createMock.mockImplementation(() =&gt;</span>
-<span class="add">+      Promise.resolve(</span>
-<span class="add">+        streamOf([</span>
-<span class="add">+          toolCallChunk(0, &quot;c&quot;, &quot;query_entities&quot;, &quot;{}&quot;),</span>
-<span class="add">+          { choices: [{ delta: {}, finish_reason: &quot;tool_calls&quot; }] },</span>
-<span class="add">+        ]),</span>
-<span class="add">+      ),</span>
-<span class="add">+    );</span>
-<span class="add">+    handleToolCallMock.mockResolvedValue({ text: &quot;[]&quot;, isError: false });</span>
-<span class="add">+</span>
-<span class="add">+    const events = await collect(streamChat(BASE_INPUT));</span>
-<span class="add">+</span>
-<span class="add">+    expect(createMock).toHaveBeenCalledTimes(8);</span>
-<span class="add">+    expect(handleToolCallMock).toHaveBeenCalledTimes(8);</span>
-<span class="add">+    expect(events.at(-1)).toEqual({ type: &quot;turn_complete&quot; });</span>
-<span class="add">+    expect(</span>
-<span class="add">+      events.some(</span>
-<span class="add">+        (e) =&gt;</span>
-<span class="add">+          e.type === &quot;text_delta&quot; &amp;&amp;</span>
-<span class="add">+          e.content.includes(&quot;maximum number of tool-use rounds&quot;),</span>
-<span class="add">+      ),</span>
-<span class="add">+    ).toBe(true);</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  it(&quot;stops immediately when the abort signal is already set&quot;, async () =&gt; {</span>
-<span class="add">+    createMock.mockResolvedValueOnce(</span>
-<span class="add">+      streamOf([textChunk(&quot;should not surface&quot;, &quot;stop&quot;)]),</span>
-<span class="add">+    );</span>
-<span class="add">+    const controller = new AbortController();</span>
-<span class="add">+    controller.abort();</span>
-<span class="add">+</span>
-<span class="add">+    const events = await collect(</span>
-<span class="add">+      streamChat(BASE_INPUT, { signal: controller.signal }),</span>
-<span class="add">+    );</span>
-<span class="add">+</span>
-<span class="add">+    expect(events).toEqual([]);</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  it(&quot;constructs the client with a placeholder key when apiKey is empty&quot;, async () =&gt; {</span>
-<span class="add">+    createMock.mockResolvedValueOnce(streamOf([textChunk(&quot;hi&quot;, &quot;stop&quot;)]));</span>
-<span class="add">+</span>
-<span class="add">+    await collect(streamChat({ ...BASE_INPUT, apiKey: &quot;&quot; }));</span>
-<span class="add">+</span>
-<span class="add">+    expect(ctorSpy).toHaveBeenCalledWith(</span>
-<span class="add">+      expect.objectContaining({ apiKey: &quot;sk-no-key&quot;, maxRetries: 0 }),</span>
-<span class="add">+    );</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  it(&quot;excludes web_search when the endpoint has native web search&quot;, async () =&gt; {</span>
-<span class="add">+    setSearchConfig({ provider: &quot;tavily&quot;, apiKey: &quot;k&quot; });</span>
-<span class="add">+    createMock.mockResolvedValueOnce(streamOf([textChunk(&quot;hi&quot;, &quot;stop&quot;)]));</span>
-<span class="add">+</span>
-<span class="add">+    await collect(streamChat({ ...BASE_INPUT, hasNativeWebSearch: true }));</span>
-<span class="add">+</span>
-<span class="add">+    const tools = (lastParams(0).tools ?? []) as Array&lt;{</span>
-<span class="add">+      function: { name: string };</span>
-<span class="add">+    }&gt;;</span>
-<span class="add">+    expect(tools.some((t) =&gt; t.function.name === &quot;web_search&quot;)).toBe(false);</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  it(&quot;includes web_search when configured and no native search&quot;, async () =&gt; {</span>
-<span class="add">+    setSearchConfig({ provider: &quot;tavily&quot;, apiKey: &quot;k&quot; });</span>
-<span class="add">+    createMock.mockResolvedValueOnce(streamOf([textChunk(&quot;hi&quot;, &quot;stop&quot;)]));</span>
-<span class="add">+</span>
-<span class="add">+    await collect(streamChat({ ...BASE_INPUT, hasNativeWebSearch: false }));</span>
-<span class="add">+</span>
-<span class="add">+    const tools = (lastParams(0).tools ?? []) as Array&lt;{</span>
-<span class="add">+      function: { name: string };</span>
-<span class="add">+    }&gt;;</span>
-<span class="add">+    expect(tools.some((t) =&gt; t.function.name === &quot;web_search&quot;)).toBe(true);</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  it(&quot;truncates an oversized tool result before appending it to history&quot;, async () =&gt; {</span>
-<span class="add">+    const huge = &quot;y&quot;.repeat(50_000);</span>
-<span class="add">+    createMock</span>
-<span class="add">+      .mockResolvedValueOnce(</span>
-<span class="add">+        streamOf([</span>
-<span class="add">+          toolCallChunk(0, &quot;call_big&quot;, &quot;query_entities&quot;, &quot;{}&quot;),</span>
-<span class="add">+          { choices: [{ delta: {}, finish_reason: &quot;tool_calls&quot; }] },</span>
-<span class="add">+        ]),</span>
-<span class="add">+      )</span>
-<span class="add">+      .mockResolvedValueOnce(streamOf([textChunk(&quot;done&quot;, &quot;stop&quot;)]));</span>
-<span class="add">+    handleToolCallMock.mockResolvedValueOnce({ text: huge, isError: false });</span>
-<span class="add">+</span>
-<span class="add">+    await collect(streamChat(BASE_INPUT));</span>
-<span class="add">+</span>
-<span class="add">+    const secondMessages = lastParams(1).messages as Array&lt;{</span>
-<span class="add">+      role: string;</span>
-<span class="add">+      content: string;</span>
-<span class="add">+      tool_call_id?: string;</span>
-<span class="add">+    }&gt;;</span>
-<span class="add">+    const toolMsg = secondMessages.find(</span>
-<span class="add">+      (m) =&gt; m.role === &quot;tool&quot; &amp;&amp; m.tool_call_id === &quot;call_big&quot;,</span>
-<span class="add">+    )!;</span>
-<span class="add">+    expect(toolMsg.content.length).toBeLessThan(50_000);</span>
-<span class="add">+    expect(toolMsg.content).toContain(&quot;[truncated&quot;);</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  it(&quot;mechanically trims mid-turn when accumulated tool results exceed budget&quot;, async () =&gt; {</span>
-<span class="add">+    const big = &quot;z&quot;.repeat(29_000);</span>
-<span class="add">+    let round = 0;</span>
-<span class="add">+    createMock.mockImplementation(() =&gt; {</span>
-<span class="add">+      round++;</span>
-<span class="add">+      if (round &lt;= 6) {</span>
-<span class="add">+        return Promise.resolve(</span>
-<span class="add">+          streamOf([</span>
-<span class="add">+            toolCallChunk(0, `c${round}`, &quot;query_entities&quot;, &quot;{}&quot;),</span>
-<span class="add">+            { choices: [{ delta: {}, finish_reason: &quot;tool_calls&quot; }] },</span>
-<span class="add">+          ]),</span>
-<span class="add">+        );</span>
-<span class="add">+      }</span>
-<span class="add">+      return Promise.resolve(streamOf([textChunk(&quot;final&quot;, &quot;stop&quot;)]));</span>
-<span class="add">+    });</span>
-<span class="add">+    handleToolCallMock.mockResolvedValue({ text: big, isError: false });</span>
-<span class="add">+</span>
-<span class="add">+    await collect(streamChat(BASE_INPUT));</span>
-<span class="add">+</span>
-<span class="add">+    // Without mid-turn trimming, six 29k results would push a request well past</span>
-<span class="add">+    // the 120k budget; the trim keeps every request within it.</span>
-<span class="add">+    const lengths = createMock.mock.calls.map(([params]) =&gt; {</span>
-<span class="add">+      const msgs = (params as { messages: Array&lt;{ content?: unknown }&gt; })</span>
-<span class="trunc">... truncated in review surface: 1315 more diff lines for this cluster ...</span></code></pre></section><section><h4>Line Evidence</h4><pre class="code "><code> 650 |   const excludeWebSearch = shouldExcludeWebSearch(
- 651 |     options.hasNativeWebSearch,
- 652 |     options.webSearch !== false,
- 653 |   );
- 654 |   const tools = toOpenAITools(ANALYSIS_MODE_TOOL_DEFINITIONS, excludeWebSearch);
- 655 |   const toolCtx: ToolCallContext = {
- 656 |     customCredentials: {
- 657 |       baseURL: options.baseURL,
- 658 |       apiKey: options.apiKey,
- 659 |       hasNativeWebSearch: options.hasNativeWebSearch,
- 660 |     },
- 661 |   };
- 662 | 
- 663 |   const baseMessages: OpenAI.ChatCompletionMessageParam[] = [
- 664 |     { role: &quot;system&quot;, content: systemPrompt },
- 665 |     { role: &quot;user&quot;, content: prompt },
- 666 |   ];
- 667 |   let activeTools = tools;
- 668 | 
- 669 |   const runLoopWithToolFallback = async (
- 670 |     messages: OpenAI.ChatCompletionMessageParam[],
- 671 |     extraParams: Partial&lt;OpenAI.ChatCompletionCreateParamsNonStreaming&gt;,
- 672 |   ): Promise&lt;string&gt; =&gt; {
- 673 |     const attemptedTools = activeTools;
- 674 |     try {
- 675 |       return await runAnalysisLoop(
- 676 |         client,
- 677 |         model,
- 678 |         messages,
- 679 |         attemptedTools,
- 680 |         toolCtx,
- 681 |         extraParams,
- 682 |         options,
- 683 |       );
- 684 |     } catch (err) {
- 685 |       if (attemptedTools.length &gt; 0 &amp;&amp; isToolRejection(err)) {
- 686 |         activeTools = [];
- 687 |         serverWarn(options.runId, &quot;custom-adapter&quot;, &quot;analysis-tools-rejected&quot;, {
- 688 |           model,
- 689 |         });
- 690 |         return await runAnalysisLoop(
- 691 |           client,
- 692 |           model,
- 693 |           messages,
- 694 |           [],
- 695 |           toolCtx,
- 696 |           extraParams,
- 697 |           options,
- 698 |         );
- 699 |       }
- 700 |       throw err;
- 701 |     }
- 702 |   };
- 703 | 
- 704 |   // Attempt 1: native structured output.
- 705 |   try {
- 706 |     const text = await runLoopWithToolFallback(
- 707 |       [...baseMessages],
- 708 |       {
- 709 |         response_format: {
- 710 |           type: &quot;json_schema&quot;,
- 711 |           json_schema: { name: &quot;analysis&quot;, schema, strict: false },
- 712 |         },
- 713 |       },
- 714 |     );
- 715 |     return parseJsonLoose&lt;T&gt;(text);
- 716 |   } catch (err) {
- 717 |     if (!isResponseFormatRejection(err)) {
- 718 |       // A JSON parse failure or any non-format error: surface a clear message.
- 719 |       if (err instanceof SyntaxError) {
- 720 |         throw new Error(
- 721 |           `Custom analysis returned unparseable JSON: ${err.message}`,
- 722 |         );
- 723 |       }
- 724 |       const { status, message } = extractError(err);
- 725 |       throw new Error(
- 726 |         status
- 727 |           ? `Custom analysis failed (HTTP ${status}): ${message}`
- 728 |           : `Custom analysis failed: ${message}`,
- 729 |       );
- 730 |     }
- 731 |     serverWarn(options.runId, &quot;custom-adapter&quot;, &quot;response-format-rejected&quot;, {
- 732 |       model,
- 733 |     });
- 734 |   }
- 735 | 
+  <section class="grid">
+    <div class="panel">
+      <h2>Ground Truth</h2>
+      <p><strong>PR view:</strong> <code>gh pr view 15</code> confirms PR #15 is open from <code>feat/byok-custom-provider</code> into <code>main</code>.</p>
+      <p><strong>PR diff:</strong> <code>gh pr diff 15 --patch --color never</code> was saved to <code>/tmp/pr15-gh.diff</code>, 14,198 lines, SHA-256 <code>5ce80b6eaf04cb9c0d14e728809151abeee53a5508a2c2a2c4e2a89221c43179</code>.</p>
+      <p><strong>Local addendum:</strong> this artifact also includes unpushed follow-up hunks in <code>electron-builder.yml</code>, <code>.github/workflows/build-electron.yml</code>, <code>src/utils/secret-storage.ts</code>, <code>src/components/shared/agent-settings-dialog.tsx</code>, <code>src/i18n/locales/en.ts</code>, and <code>server/services/ai/custom-openai-adapter.ts</code>.</p>
+    </div>
+    <div class="panel">
+      <h2>Review Focus</h2>
+      <ul>
+        <li>FACT: Custom provider credentials are passed per request and should not be cached server-side.</li>
+        <li>FACT: Electron safeStorage can be unavailable in local/ad-hoc builds, so the UI must still support one-time BYOK testing without writing plaintext secrets.</li>
+        <li>FACT: Some OpenAI-compatible endpoints stream private reasoning in inline <code>&lt;think&gt;</code> tags.</li>
+        <li>INFERRED: The highest user-facing risk is not isolated unit behavior; it is end-to-end packaged provider setup and chat streaming.</li>
+      </ul>
+    </div>
+  </section>
 
- 600 |       schema,
- 601 |       analysisOpts,
- 602 |     );
- 603 | 
- 604 |     expect(result).toEqual({ entities: [], relationships: [] });
- 605 |     expect(createMock).toHaveBeenCalledTimes(2);
- 606 |     expect(lastParams(1).response_format).toBeUndefined();
- 607 |     const fallbackMessages = lastParams(1).messages as Array&lt;{
- 608 |       content: string;
- 609 |     }&gt;;
- 610 |     expect(
- 611 |       fallbackMessages.some((m) =&gt; m.content.includes(&quot;ONLY valid JSON&quot;)),
- 612 |     ).toBe(true);
- 613 |   });
- 614 | 
- 615 |   it(&quot;retries analysis without tools when the endpoint rejects tool definitions&quot;, async () =&gt; {
- 616 |     createMock
- 617 |       .mockRejectedValueOnce(
- 618 |         new MockAPIError(400, &quot;tools are not supported by this model&quot;),
- 619 |       )
- 620 |       .mockResolvedValueOnce({
- 621 |         choices: [
- 622 |           {
- 623 |             message: { content: &#39;{&quot;entities&quot;:[],&quot;relationships&quot;:[]}&#39; },
- 624 |             finish_reason: &quot;stop&quot;,
- 625 |           },
- 626 |         ],
- 627 |       });
- 628 | 
- 629 |     const result = await runAnalysisPhase(
- 630 |       &quot;prompt&quot;,
- 631 |       &quot;system&quot;,
- 632 |       &quot;test-model&quot;,
- 633 |       schema,
- 634 |       analysisOpts,
- 635 |     );
- 636 | 
- 637 |     expect(result).toEqual({ entities: [], relationships: [] });
- 638 |     expect(createMock).toHaveBeenCalledTimes(2);
- 639 |     expect(lastParams(0).tools).toBeDefined();
- 640 |     expect(lastParams(1).tools).toBeUndefined();
- 641 |     expect(lastParams(1).response_format).toMatchObject({
- 642 |       type: &quot;json_schema&quot;,
- 643 |     });
- 644 |   });
- 645 | </code></pre></section></div></details>
-<details class="cluster" open id="topbar-custom"><summary><span class="risk">P2 fixed</span><span>Top bar now counts custom provider connections</span></summary><div class="cluster-body"><p class="files">src/components/editor/top-bar.tsx | src/components/editor/__tests__/editor-layout.test.ts</p><div class="cols"><section><h4>Facts</h4><ul><li>FACT: <code>PROVIDER_ORDER</code> now includes <code>custom</code> after <code>opencode</code>.</li><li>FACT: The existing <code>PROVIDER_ICONS</code> map already had <code>custom: Plug</code>, so adding the order entry makes the icon reachable.</li><li>FACT: A source-level editor layout test guards that <code>custom</code> remains in the top-bar provider order.</li></ul></section><section><h4>Opinions</h4><ul><li><strong>RESOLVED</strong> <span class="confidence">confidence 10/10</span> The original UI visibility bug is fixed for users with only the custom provider connected.</li></ul></section></div><section><h4>Blast Radius</h4><ul><li>This changes top-bar status display only; provider execution paths were already using the shared allowlist.</li><li>The provider order now matches the four-provider shape used by settings and chat selection.</li></ul></section><section><h4>Relevant Diff Hunks</h4><pre class="code diff"><code><span class="meta">diff --git a/src/components/editor/__tests__/editor-layout.test.ts b/src/components/editor/__tests__/editor-layout.test.ts</span>
-<span class="meta">index 424ca86..4db8b9f 100644</span>
-<span class="meta">--- a/src/components/editor/__tests__/editor-layout.test.ts</span>
-<span class="meta">+++ b/src/components/editor/__tests__/editor-layout.test.ts</span>
-<span class="meta">@@ -80,24 +80,30 @@ describe(&quot;editor layout&quot;, () =&gt; {</span>
-<span class="ctx">   });</span>
-<span class="ctx"> </span>
-<span class="ctx">   it(&quot;wires new/open actions through top bar callbacks in source&quot;, () =&gt; {</span>
-<span class="ctx">     const source = readFileSync(topBarPath, &quot;utf8&quot;);</span>
-<span class="ctx"> </span>
-<span class="ctx">     expect(source).toContain(&quot;topbar.newAnalysis&quot;);</span>
-<span class="ctx">     expect(source).toContain(&quot;onNewAnalysis&quot;);</span>
-<span class="ctx">     expect(source).toContain(&quot;onOpenAnalysis&quot;);</span>
-<span class="ctx">     expect(source).toContain(&quot;topbar.save&quot;);</span>
-<span class="ctx">     expect(source).not.toContain(&quot;useDocumentStore&quot;);</span>
-<span class="ctx">   });</span>
-<span class="ctx"> </span>
-<span class="add">+  it(&quot;includes the custom provider in the top bar connected-agent order&quot;, () =&gt; {</span>
-<span class="add">+    const source = readFileSync(topBarPath, &quot;utf8&quot;);</span>
-<span class="add">+</span>
-<span class="add">+    expect(source).toMatch(/const PROVIDER_ORDER:[\s\S]*&quot;custom&quot;/);</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="ctx">   it(&quot;shows a centered launcher only for a truly blank analysis&quot;, () =&gt; {</span>
-<span class="ctx">     const source = readFileSync(</span>
-<span class="ctx">       join(process.cwd(), &quot;src/components/editor/editor-layout.tsx&quot;),</span>
-<span class="ctx">       &quot;utf8&quot;,</span>
-<span class="ctx">     );</span>
-<span class="ctx">     const launcherSource = readFileSync(analysisLauncherPath, &quot;utf8&quot;);</span>
-<span class="ctx"> </span>
-<span class="ctx">     expect(source).toContain(&quot;const showAnalysisLauncher =&quot;);</span>
-<span class="ctx">     expect(source).toContain(</span>
-<span class="ctx">       &quot;analysisTopic.trim().length === 0 &amp;&amp; entityCount === 0&quot;,</span>
-<span class="ctx">     );</span>
-<span class="ctx">     expect(launcherSource).toContain(&quot;EXAMPLE_TOPICS&quot;);</span>
-<span class="meta">diff --git a/src/components/editor/top-bar.tsx b/src/components/editor/top-bar.tsx</span>
-<span class="meta">index 5382c40..10aa267 100644</span>
-<span class="meta">--- a/src/components/editor/top-bar.tsx</span>
-<span class="meta">+++ b/src/components/editor/top-bar.tsx</span>
-<span class="meta">@@ -1,22 +1,23 @@</span>
-<span class="ctx"> import { useCallback, useEffect, useState } from &quot;react&quot;;</span>
-<span class="ctx"> import type { ComponentType, SVGProps } from &quot;react&quot;;</span>
-<span class="ctx"> import {</span>
-<span class="ctx">   Plus,</span>
-<span class="ctx">   FolderOpen,</span>
-<span class="ctx">   Save,</span>
-<span class="ctx">   Download,</span>
-<span class="ctx">   Maximize,</span>
-<span class="ctx">   Minimize,</span>
-<span class="ctx">   Blocks,</span>
-<span class="add">+  Plug,</span>
-<span class="ctx"> } from &quot;lucide-react&quot;;</span>
-<span class="ctx"> import { useTranslation } from &quot;react-i18next&quot;;</span>
-<span class="ctx"> import ClaudeLogo from &quot;@/components/icons/claude-logo&quot;;</span>
-<span class="ctx"> import OpenAILogo from &quot;@/components/icons/openai-logo&quot;;</span>
-<span class="ctx"> import OpenCodeLogo from &quot;@/components/icons/opencode-logo&quot;;</span>
-<span class="ctx"> import LanguageSelector from &quot;@/components/shared/language-selector&quot;;</span>
-<span class="ctx"> import { cn } from &quot;@/lib/utils&quot;;</span>
-<span class="ctx"> import { Button } from &quot;@/components/ui/button&quot;;</span>
-<span class="ctx"> import {</span>
-<span class="ctx">   Tooltip,</span>
-<span class="ctx">   TooltipTrigger,</span>
-<span class="ctx">   TooltipContent,</span>
-<span class="meta">@@ -26,30 +27,32 @@ import { useEntityGraphStore } from &quot;@/stores/entity-graph-store&quot;;</span>
-<span class="ctx"> import { saveAnalysis } from &quot;@/services/analysis/analysis-persistence&quot;;</span>
-<span class="ctx"> import { exportToMarkdown } from &quot;@/services/entity/entity-export&quot;;</span>
-<span class="ctx"> import type { AIProviderType } from &quot;@/types/agent-settings&quot;;</span>
-<span class="ctx"> import { countCompletedRunnablePhases } from &quot;@/types/methodology&quot;;</span>
-<span class="ctx"> </span>
-<span class="ctx"> const PROVIDER_ICONS: Record&lt;</span>
-<span class="ctx">   AIProviderType,</span>
-<span class="ctx">   ComponentType&lt;SVGProps&lt;SVGSVGElement&gt;&gt;</span>
-<span class="ctx"> &gt; = {</span>
-<span class="ctx">   anthropic: ClaudeLogo,</span>
-<span class="ctx">   openai: OpenAILogo,</span>
-<span class="ctx">   opencode: OpenCodeLogo,</span>
-<span class="add">+  custom: Plug,</span>
-<span class="ctx"> };</span>
-<span class="ctx"> </span>
-<span class="ctx"> const PROVIDER_ORDER: AIProviderType[] = [</span>
-<span class="ctx">   &quot;anthropic&quot;,</span>
-<span class="ctx">   &quot;openai&quot;,</span>
-<span class="ctx">   &quot;opencode&quot;,</span>
-<span class="add">+  &quot;custom&quot;,</span>
-<span class="ctx"> ];</span>
-<span class="ctx"> </span>
-<span class="ctx"> function AgentStatusButton() {</span>
-<span class="ctx">   const { t } = useTranslation();</span>
-<span class="ctx">   const providers = useAgentSettingsStore((state) =&gt; state.providers);</span>
-<span class="ctx">   const mcpIntegrations = useAgentSettingsStore(</span>
-<span class="ctx">     (state) =&gt; state.mcpIntegrations,</span>
-<span class="ctx">   );</span>
-<span class="ctx">   const connectedTypes = PROVIDER_ORDER.filter(</span>
-<span class="ctx">     (providerType) =&gt; providers[providerType].isConnected,</span>
-<span class="ctx">   );</span>
-<span class="ctx">   const agentCount = connectedTypes.length;</span>
-<span class="ctx"> </span></code></pre></section><section><h4>Line Evidence</h4><pre class="code "><code>  32 | const PROVIDER_ICONS: Record&lt;
-  33 |   AIProviderType,
-  34 |   ComponentType&lt;SVGProps&lt;SVGSVGElement&gt;&gt;
-  35 | &gt; = {
-  36 |   anthropic: ClaudeLogo,
-  37 |   openai: OpenAILogo,
-  38 |   opencode: OpenCodeLogo,
-  39 |   custom: Plug,
-  40 | };
-  41 | 
-  42 | const PROVIDER_ORDER: AIProviderType[] = [
-  43 |   &quot;anthropic&quot;,
-  44 |   &quot;openai&quot;,
-  45 |   &quot;opencode&quot;,
-  46 |   &quot;custom&quot;,
-  47 | ];
-  48 | 
-  49 | function AgentStatusButton() {
-  50 |   const { t } = useTranslation();
-  51 |   const providers = useAgentSettingsStore((state) =&gt; state.providers);
-  52 |   const mcpIntegrations = useAgentSettingsStore(
-  53 |     (state) =&gt; state.mcpIntegrations,
-  54 |   );
-  55 |   const connectedTypes = PROVIDER_ORDER.filter(
-  56 |     (providerType) =&gt; providers[providerType].isConnected,
-  57 |   );
-  58 |   const agentCount = connectedTypes.length;
-  59 |   const mcpCount = mcpIntegrations.filter(
-  60 |     (integration) =&gt; integration.enabled,</code></pre></section></div></details>
-<details class="cluster" open id="connect-search-hardening"><summary><span class="risk">P3 fixed</span><span>Connect and search low-confidence risks hardened</span></summary><div class="cluster-body"><p class="files">server/api/ai/connect-agent.ts | server/api/ai/__tests__/connect-agent.test.ts | server/services/search/http.ts | server/services/search/__tests__/tavily.test.ts | server/services/search/__tests__/brave.test.ts</p><div class="cols"><section><h4>Facts</h4><ul><li>FACT: Custom endpoint discovery now falls back to manual model IDs only for 404/501 model-list absence, network/timeout failures, or empty/unparseable successful lists.</li><li>FACT: Non-auth non-OK responses such as 500 now return disconnected instead of marking manual models connected.</li><li>FACT: Search provider error snippets now redact labeled API-key, bearer, and subscription-token fields before truncation.</li></ul></section><section><h4>Opinions</h4><ul><li><strong>RESOLVED</strong> <span class="confidence">confidence 6/10</span> The connect fallback behavior is stricter while preserving the intended no-model-list fallback for proxy endpoints.</li><li><strong>RESOLVED</strong> <span class="confidence">confidence 5/10</span> Search error snippets now match the comment's credential-safety claim for labeled credentials.</li></ul></section></div><section><h4>Blast Radius</h4><ul><li>The connect change affects first-run settings validation only; actual chat/generate/analyze requests still validate the endpoint at use time.</li><li>The search sanitizer affects Tavily/Brave error text returned through <code>web_search</code> product-tool failures.</li><li>Regression tests cover 500 connect failure, Tavily body key redaction, and Brave subscription-token body redaction.</li></ul></section><section><h4>Relevant Diff Hunks</h4><pre class="code diff"><code><span class="meta">diff --git a/server/api/ai/__tests__/connect-agent.test.ts b/server/api/ai/__tests__/connect-agent.test.ts</span>
-<span class="meta">index ab2012a..dad3f1d 100644</span>
-<span class="meta">--- a/server/api/ai/__tests__/connect-agent.test.ts</span>
-<span class="meta">+++ b/server/api/ai/__tests__/connect-agent.test.ts</span>
-<span class="meta">@@ -1,13 +1,13 @@</span>
-<span class="del">-import { beforeEach, describe, expect, it, vi } from &quot;vitest&quot;;</span>
-<span class="add">+import { afterEach, beforeEach, describe, expect, it, vi } from &quot;vitest&quot;;</span>
-<span class="ctx"> import { EventEmitter } from &quot;node:events&quot;;</span>
-<span class="ctx"> </span>
-<span class="ctx"> const spawnSyncMock = vi.fn();</span>
-<span class="ctx"> const spawnMock = vi.fn();</span>
-<span class="ctx"> const execSyncMock = vi.fn();</span>
-<span class="ctx"> const readFileMock = vi.fn();</span>
-<span class="ctx"> </span>
-<span class="ctx"> class MockChildProcess extends EventEmitter {</span>
-<span class="ctx">   stdout = new EventEmitter();</span>
-<span class="ctx">   stderr = new EventEmitter();</span>
-<span class="ctx">   exitCode: number | null = null;</span>
-<span class="ctx"> </span>
-<span class="meta">@@ -56,35 +56,37 @@ describe(&quot;connect-agent codex checks&quot;, () =&gt; {</span>
-<span class="ctx">       models: [],</span>
-<span class="ctx">       notInstalled: true,</span>
-<span class="ctx">       error: &quot;Codex CLI not found&quot;,</span>
-<span class="ctx">     });</span>
-<span class="ctx">     expect(spawnSyncMock).toHaveBeenCalledTimes(1);</span>
-<span class="ctx">   });</span>
-<span class="ctx"> </span>
-<span class="ctx">   it(&quot;reports failure when app-server exits during the startup probe&quot;, async () =&gt; {</span>
-<span class="ctx">     spawnSyncMock</span>
-<span class="ctx">       .mockReturnValueOnce({ stdout: &quot;/resolved/codex\n&quot;, status: 0 })</span>
-<span class="ctx">       .mockReturnValueOnce({ stdout: &quot;codex-cli 0.116.0\n&quot;, status: 0 });</span>
-<span class="ctx"> </span>
-<span class="del">-    spawnMock.mockImplementation((binaryPath: string, _args: string[], options: { stdio?: string[] }) =&gt; {</span>
-<span class="del">-      const child = new MockChildProcess();</span>
-<span class="del">-      queueMicrotask(() =&gt; {</span>
-<span class="del">-        child.stderr.emit(&quot;data&quot;, Buffer.from(&quot;startup boom&quot;));</span>
-<span class="del">-        child.exitCode = 1;</span>
-<span class="del">-        child.emit(&quot;exit&quot;, 1);</span>
-<span class="del">-      });</span>
-<span class="del">-      expect(binaryPath).toBe(&quot;/resolved/codex&quot;);</span>
-<span class="del">-      expect(options.stdio).toEqual([&quot;pipe&quot;, &quot;pipe&quot;, &quot;pipe&quot;]);</span>
-<span class="del">-      return child;</span>
-<span class="del">-    });</span>
-<span class="add">+    spawnMock.mockImplementation(</span>
-<span class="add">+      (binaryPath: string, _args: string[], options: { stdio?: string[] }) =&gt; {</span>
-<span class="add">+        const child = new MockChildProcess();</span>
-<span class="add">+        queueMicrotask(() =&gt; {</span>
-<span class="add">+          child.stderr.emit(&quot;data&quot;, Buffer.from(&quot;startup boom&quot;));</span>
-<span class="add">+          child.exitCode = 1;</span>
-<span class="add">+          child.emit(&quot;exit&quot;, 1);</span>
-<span class="add">+        });</span>
-<span class="add">+        expect(binaryPath).toBe(&quot;/resolved/codex&quot;);</span>
-<span class="add">+        expect(options.stdio).toEqual([&quot;pipe&quot;, &quot;pipe&quot;, &quot;pipe&quot;]);</span>
-<span class="add">+        return child;</span>
-<span class="add">+      },</span>
-<span class="add">+    );</span>
-<span class="ctx"> </span>
-<span class="ctx">     const { connectCodexCli } = await import(&quot;../connect-agent&quot;);</span>
-<span class="ctx">     const result = await connectCodexCli();</span>
-<span class="ctx"> </span>
-<span class="ctx">     expect(result.connected).toBe(false);</span>
-<span class="ctx">     expect(result.error).toContain(&quot;startup boom&quot;);</span>
-<span class="ctx">     expect(spawnSyncMock.mock.calls[1][0]).toBe(&quot;/resolved/codex&quot;);</span>
-<span class="ctx">     expect(spawnMock.mock.calls[0][0]).toBe(&quot;/resolved/codex&quot;);</span>
-<span class="ctx">   });</span>
-<span class="ctx"> </span>
-<span class="ctx">   it(&quot;uses the resolved binary path for version checks and a healthy startup probe&quot;, async () =&gt; {</span>
-<span class="ctx">     spawnSyncMock</span>
-<span class="meta">@@ -95,36 +97,224 @@ describe(&quot;connect-agent codex checks&quot;, () =&gt; {</span>
-<span class="ctx">         models: [</span>
-<span class="ctx">           {</span>
-<span class="ctx">             slug: &quot;gpt-5.4&quot;,</span>
-<span class="ctx">             display_name: &quot;GPT-5.4&quot;,</span>
-<span class="ctx">             description: &quot;Test model&quot;,</span>
-<span class="ctx">             visibility: &quot;list&quot;,</span>
-<span class="ctx">             priority: 1,</span>
-<span class="ctx">           },</span>
-<span class="ctx">         ],</span>
-<span class="ctx">       }),</span>
-<span class="ctx">     );</span>
-<span class="ctx"> </span>
-<span class="del">-    spawnMock.mockImplementation((binaryPath: string, _args: string[], options: { stdio?: string[] }) =&gt; {</span>
-<span class="del">-      expect(binaryPath).toBe(&quot;/resolved/codex&quot;);</span>
-<span class="del">-      expect(options.stdio).toEqual([&quot;pipe&quot;, &quot;pipe&quot;, &quot;pipe&quot;]);</span>
-<span class="del">-      return new MockChildProcess();</span>
-<span class="del">-    });</span>
-<span class="add">+    spawnMock.mockImplementation(</span>
-<span class="add">+      (binaryPath: string, _args: string[], options: { stdio?: string[] }) =&gt; {</span>
-<span class="add">+        expect(binaryPath).toBe(&quot;/resolved/codex&quot;);</span>
-<span class="add">+        expect(options.stdio).toEqual([&quot;pipe&quot;, &quot;pipe&quot;, &quot;pipe&quot;]);</span>
-<span class="add">+        return new MockChildProcess();</span>
-<span class="add">+      },</span>
-<span class="add">+    );</span>
-<span class="ctx"> </span>
-<span class="ctx">     const { connectCodexCli } = await import(&quot;../connect-agent&quot;);</span>
-<span class="ctx">     const result = await connectCodexCli();</span>
-<span class="ctx"> </span>
-<span class="ctx">     expect(result).toEqual({</span>
-<span class="ctx">       connected: true,</span>
-<span class="ctx">       models: [</span>
-<span class="ctx">         {</span>
-<span class="ctx">           value: &quot;gpt-5.4&quot;,</span>
-<span class="ctx">           displayName: &quot;GPT-5.4&quot;,</span>
-<span class="ctx">           description: &quot;Test model&quot;,</span>
-<span class="ctx">           provider: &quot;openai&quot;,</span>
-<span class="ctx">         },</span>
-<span class="ctx">       ],</span>
-<span class="ctx">     });</span>
-<span class="ctx">     expect(spawnSyncMock.mock.calls[1][0]).toBe(&quot;/resolved/codex&quot;);</span>
-<span class="ctx">     expect(spawnMock.mock.calls[0][0]).toBe(&quot;/resolved/codex&quot;);</span>
-<span class="ctx">   });</span>
-<span class="ctx"> });</span>
-<span class="add">+</span>
-<span class="add">+function fakeResponse(init: {</span>
-<span class="add">+  status: number;</span>
-<span class="add">+  ok?: boolean;</span>
-<span class="add">+  json?: () =&gt; Promise&lt;unknown&gt;;</span>
-<span class="add">+}): Response {</span>
-<span class="add">+  return {</span>
-<span class="add">+    status: init.status,</span>
-<span class="add">+    ok: init.ok ?? (init.status &gt;= 200 &amp;&amp; init.status &lt; 300),</span>
-<span class="add">+    json: init.json ?? (async () =&gt; ({})),</span>
-<span class="add">+  } as unknown as Response;</span>
-<span class="add">+}</span>
-<span class="add">+</span>
-<span class="add">+describe(&quot;connect-agent custom provider&quot;, () =&gt; {</span>
-<span class="add">+  const fetchMock = vi.fn();</span>
-<span class="add">+</span>
-<span class="add">+  beforeEach(() =&gt; {</span>
-<span class="add">+    vi.clearAllMocks();</span>
-<span class="add">+    vi.useRealTimers();</span>
-<span class="add">+    vi.stubGlobal(&quot;fetch&quot;, fetchMock);</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  afterEach(() =&gt; {</span>
-<span class="add">+    vi.unstubAllGlobals();</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  it(&quot;lists models from the endpoint on success&quot;, async () =&gt; {</span>
-<span class="add">+    fetchMock.mockResolvedValue(</span>
-<span class="add">+      fakeResponse({</span>
-<span class="add">+        status: 200,</span>
-<span class="add">+        json: async () =&gt; ({</span>
-<span class="add">+          data: [{ id: &quot;gpt-4o&quot; }, { id: &quot;gpt-4o-mini&quot;, name: &quot;GPT-4o mini&quot; }],</span>
-<span class="add">+        }),</span>
-<span class="add">+      }),</span>
-<span class="add">+    );</span>
-<span class="add">+</span>
-<span class="add">+    const { connectCustom } = await import(&quot;../connect-agent&quot;);</span>
-<span class="add">+    const result = await connectCustom({</span>
-<span class="add">+      baseURL: &quot;https://api.example.com/v1/&quot;,</span>
-<span class="add">+      apiKey: &quot;sk-secret&quot;,</span>
-<span class="add">+      modelIds: [],</span>
-<span class="add">+    });</span>
-<span class="add">+</span>
-<span class="add">+    expect(result.connected).toBe(true);</span>
-<span class="add">+    expect(result.modelListSource).toBe(&quot;endpoint&quot;);</span>
-<span class="add">+    expect(result.models).toEqual([</span>
-<span class="add">+      {</span>
-<span class="add">+        value: &quot;gpt-4o&quot;,</span>
-<span class="add">+        displayName: &quot;gpt-4o&quot;,</span>
-<span class="add">+        description: &quot;&quot;,</span>
-<span class="add">+        provider: &quot;custom&quot;,</span>
-<span class="add">+      },</span>
-<span class="add">+      {</span>
-<span class="add">+        value: &quot;gpt-4o-mini&quot;,</span>
-<span class="add">+        displayName: &quot;GPT-4o mini&quot;,</span>
-<span class="add">+        description: &quot;&quot;,</span>
-<span class="add">+        provider: &quot;custom&quot;,</span>
-<span class="add">+      },</span>
-<span class="add">+    ]);</span>
-<span class="add">+    // Bearer sent, trailing slash trimmed before /models.</span>
-<span class="add">+    const [calledUrl, calledInit] = fetchMock.mock.calls[0];</span>
-<span class="add">+    expect(calledUrl).toBe(&quot;https://api.example.com/v1/models&quot;);</span>
-<span class="add">+    expect(</span>
-<span class="add">+      (calledInit as { headers: Record&lt;string, string&gt; }).headers.Authorization,</span>
-<span class="add">+    ).toBe(&quot;Bearer sk-secret&quot;);</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  it(&quot;falls back to manual model IDs when the endpoint 404s&quot;, async () =&gt; {</span>
-<span class="add">+    fetchMock.mockResolvedValue(fakeResponse({ status: 404, ok: false }));</span>
-<span class="add">+</span>
-<span class="add">+    const { connectCustom } = await import(&quot;../connect-agent&quot;);</span>
-<span class="add">+    const result = await connectCustom({</span>
-<span class="add">+      baseURL: &quot;https://api.example.com&quot;,</span>
-<span class="add">+      apiKey: &quot;&quot;,</span>
-<span class="add">+      modelIds: [&quot;deepseek-chat&quot;, &quot; deepseek-reasoner &quot;],</span>
-<span class="add">+    });</span>
-<span class="add">+</span>
-<span class="add">+    expect(result.connected).toBe(true);</span>
-<span class="add">+    expect(result.modelListSource).toBe(&quot;manual&quot;);</span>
-<span class="add">+    expect(result.models.map((m) =&gt; m.value)).toEqual([</span>
-<span class="add">+      &quot;deepseek-chat&quot;,</span>
-<span class="add">+      &quot;deepseek-reasoner&quot;,</span>
-<span class="add">+    ]);</span>
-<span class="add">+    // No key → no Authorization header.</span>
-<span class="add">+    const [, calledInit] = fetchMock.mock.calls[0];</span>
-<span class="add">+    expect(</span>
-<span class="add">+      (calledInit as { headers: Record&lt;string, string&gt; }).headers.Authorization,</span>
-<span class="add">+    ).toBeUndefined();</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  it(&quot;does not report connected from manual IDs when model listing returns 500&quot;, async () =&gt; {</span>
-<span class="add">+    fetchMock.mockResolvedValue(fakeResponse({ status: 500, ok: false }));</span>
-<span class="add">+</span>
-<span class="add">+    const { connectCustom } = await import(&quot;../connect-agent&quot;);</span>
-<span class="add">+    const result = await connectCustom({</span>
-<span class="add">+      baseURL: &quot;https://api.example.com&quot;,</span>
-<span class="add">+      apiKey: &quot;&quot;,</span>
-<span class="add">+      modelIds: [&quot;manual-model&quot;],</span>
-<span class="add">+    });</span>
-<span class="add">+</span>
-<span class="add">+    expect(result.connected).toBe(false);</span>
-<span class="add">+    expect(result.models).toEqual([]);</span>
-<span class="add">+    expect(result.error).toMatch(/HTTP 500/);</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  it(&quot;reports an auth failure on 401 without falling back&quot;, async () =&gt; {</span>
-<span class="add">+    fetchMock.mockResolvedValue(fakeResponse({ status: 401, ok: false }));</span>
-<span class="add">+</span>
-<span class="add">+    const { connectCustom } = await import(&quot;../connect-agent&quot;);</span>
-<span class="add">+    const result = await connectCustom({</span>
-<span class="add">+      baseURL: &quot;https://api.example.com/v1&quot;,</span>
-<span class="add">+      apiKey: &quot;bad-key&quot;,</span>
-<span class="add">+      modelIds: [&quot;fallback-model&quot;],</span>
-<span class="add">+    });</span>
-<span class="add">+</span>
-<span class="add">+    expect(result.connected).toBe(false);</span>
-<span class="add">+    expect(result.models).toEqual([]);</span>
-<span class="add">+    expect(result.error).toMatch(/authentication failed/i);</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  it(&quot;reports a timeout when the request aborts and no manual IDs exist&quot;, async () =&gt; {</span>
-<span class="add">+    fetchMock.mockImplementation(async () =&gt; {</span>
-<span class="add">+      const err = new Error(&quot;The operation was aborted&quot;);</span>
-<span class="add">+      err.name = &quot;AbortError&quot;;</span>
-<span class="add">+      throw err;</span>
-<span class="add">+    });</span>
-<span class="add">+</span>
-<span class="add">+    const { connectCustom } = await import(&quot;../connect-agent&quot;);</span>
-<span class="add">+    const result = await connectCustom({</span>
-<span class="add">+      baseURL: &quot;https://api.example.com/v1&quot;,</span>
-<span class="add">+      apiKey: &quot;sk-secret&quot;,</span>
-<span class="add">+      modelIds: [],</span>
-<span class="add">+    });</span>
-<span class="add">+</span>
-<span class="add">+    expect(result.connected).toBe(false);</span>
-<span class="add">+    expect(result.models).toEqual([]);</span>
-<span class="add">+    expect(result.error).toMatch(/timed out/i);</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  it(&quot;returns an error without fetching when baseURL is missing&quot;, async () =&gt; {</span>
-<span class="add">+    const { connectCustom } = await import(&quot;../connect-agent&quot;);</span>
-<span class="add">+    const result = await connectCustom({</span>
-<span class="add">+      baseURL: &quot;&quot;,</span>
-<span class="add">+      apiKey: &quot;k&quot;,</span>
-<span class="add">+      modelIds: [&quot;m&quot;],</span>
-<span class="add">+    });</span>
-<span class="add">+</span>
-<span class="add">+    expect(result.connected).toBe(false);</span>
-<span class="add">+    expect(result.error).toMatch(/base url/i);</span>
-<span class="add">+    expect(fetchMock).not.toHaveBeenCalled();</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  it(&quot;falls back to manual IDs when /models returns an empty list&quot;, async () =&gt; {</span>
-<span class="add">+    fetchMock.mockResolvedValue(</span>
-<span class="add">+      fakeResponse({ status: 200, json: async () =&gt; ({ data: [] }) }),</span>
-<span class="add">+    );</span>
-<span class="add">+</span>
-<span class="add">+    const { connectCustom } = await import(&quot;../connect-agent&quot;);</span>
-<span class="add">+    const result = await connectCustom({</span>
-<span class="add">+      baseURL: &quot;https://api.example.com/v1&quot;,</span>
-<span class="add">+      apiKey: &quot;k&quot;,</span>
-<span class="add">+      modelIds: [&quot;only-model&quot;],</span>
-<span class="add">+    });</span>
-<span class="add">+</span>
-<span class="add">+    expect(result.connected).toBe(true);</span>
-<span class="add">+    expect(result.modelListSource).toBe(&quot;manual&quot;);</span>
-<span class="add">+    expect(result.models.map((m) =&gt; m.value)).toEqual([&quot;only-model&quot;]);</span>
-<span class="add">+  });</span>
-<span class="add">+</span>
-<span class="add">+  it(&quot;reports connect failure on an empty /models list with no manual IDs&quot;, async () =&gt; {</span>
-<span class="add">+    fetchMock.mockResolvedValue(</span>
-<span class="add">+      fakeResponse({ status: 200, json: async () =&gt; ({ data: [] }) }),</span>
-<span class="add">+    );</span>
-<span class="add">+</span>
-<span class="add">+    const { connectCustom } = await import(&quot;../connect-agent&quot;);</span>
-<span class="add">+    const result = await connectCustom({</span>
-<span class="add">+      baseURL: &quot;https://api.example.com/v1&quot;,</span>
-<span class="add">+      apiKey: &quot;k&quot;,</span>
-<span class="add">+      modelIds: [],</span>
-<span class="add">+    });</span>
-<span class="add">+</span>
-<span class="add">+    expect(result.connected).toBe(false);</span>
-<span class="add">+    expect(result.models).toEqual([]);</span>
-<span class="add">+    expect(result.error).toMatch(/no models/i);</span>
-<span class="add">+  });</span>
-<span class="add">+});</span>
-<span class="meta">diff --git a/server/api/ai/connect-agent.ts b/server/api/ai/connect-agent.ts</span>
-<span class="meta">index 2bea300..fb79774 100644</span>
-<span class="meta">--- a/server/api/ai/connect-agent.ts</span>
-<span class="meta">+++ b/server/api/ai/connect-agent.ts</span>
-<span class="meta">@@ -1,422 +1,680 @@</span>
-<span class="del">-import { defineEventHandler, readBody, setResponseHeaders } from &#39;h3&#39;</span>
-<span class="del">-import type { GroupedModel } from &#39;../../../src/types/agent-settings&#39;</span>
-<span class="del">-import { resolveClaudeCli } from &#39;../../utils/resolve-claude-cli&#39;</span>
-<span class="del">-import { filterCodexEnv } from &#39;../../utils/codex-client&#39;</span>
-<span class="add">+import { defineEventHandler, readBody, setResponseHeaders } from &quot;h3&quot;;</span>
-<span class="add">+import type { GroupedModel } from &quot;../../../src/types/agent-settings&quot;;</span>
-<span class="add">+import { resolveClaudeCli } from &quot;../../utils/resolve-claude-cli&quot;;</span>
-<span class="add">+import { filterCodexEnv } from &quot;../../utils/codex-client&quot;;</span>
-<span class="ctx"> import {</span>
-<span class="ctx">   buildClaudeAgentEnv,</span>
-<span class="ctx">   getClaudeAgentDebugFilePath,</span>
-<span class="del">-} from &#39;../../utils/resolve-claude-agent-env&#39;</span>
-<span class="add">+} from &quot;../../utils/resolve-claude-agent-env&quot;;</span>
-<span class="ctx"> </span>
-<span class="ctx"> interface ConnectBody {</span>
-<span class="del">-  agent: &#39;claude-code&#39; | &#39;codex-cli&#39; | &#39;opencode&#39;</span>
-<span class="add">+  agent: &quot;claude-code&quot; | &quot;codex-cli&quot; | &quot;opencode&quot; | &quot;custom&quot;;</span>
-<span class="trunc">... truncated in review surface: 1124 more diff lines for this cluster ...</span></code></pre></section><section><h4>Line Evidence</h4><pre class="code "><code> 148 |   if (response.status === 401 || response.status === 403) {
- 149 |     return {
- 150 |       connected: false,
- 151 |       models: [],
- 152 |       error: &quot;Authentication failed. Check the API key for this endpoint.&quot;,
- 153 |     };
- 154 |   }
- 155 | 
- 156 |   // Endpoint has no model listing → fall back to the manual list when present.
- 157 |   if (response.status === 404 || response.status === 501) {
- 158 |     if (manualModels.length &gt; 0) {
- 159 |       return {
- 160 |         connected: true,
- 161 |         models: manualModels,
- 162 |         modelListSource: &quot;manual&quot;,
- 163 |       };
- 164 |     }
- 165 |     return {
- 166 |       connected: false,
- 167 |       models: [],
- 168 |       error: `The endpoint did not return a model list (HTTP ${response.status}). Add model IDs manually.`,
- 169 |     };
- 170 |   }
- 171 | 
- 172 |   if (!response.ok) {
- 173 |     return {
- 174 |       connected: false,
- 175 |       models: [],
- 176 |       error: `The endpoint returned HTTP ${response.status} while listing models.`,
- 177 |     };
- 178 |   }
+  <h2>Main Change Path</h2>
+  <section class="diagram">
+    <svg viewBox="0 0 1120 360" role="img" aria-label="Custom provider control-flow diagram">
+      <defs>
+        <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L0,6 L9,3 z" fill="#475569"></path>
+        </marker>
+      </defs>
+      <rect x="20" y="35" width="180" height="70" rx="8" class="box ui"></rect>
+      <text x="110" y="63" text-anchor="middle">Settings dialog</text>
+      <text x="110" y="86" text-anchor="middle" class="small">preset, URL, model, keys</text>
+      <rect x="245" y="35" width="180" height="70" rx="8" class="box store"></rect>
+      <text x="335" y="63" text-anchor="middle">Secret storage</text>
+      <text x="335" y="86" text-anchor="middle" class="small">safeStorage or session map</text>
+      <rect x="470" y="35" width="190" height="70" rx="8" class="box api"></rect>
+      <text x="565" y="63" text-anchor="middle">Renderer request</text>
+      <text x="565" y="86" text-anchor="middle" class="small">custom config attached</text>
+      <rect x="705" y="35" width="190" height="70" rx="8" class="box adapter"></rect>
+      <text x="800" y="63" text-anchor="middle">Custom adapter</text>
+      <text x="800" y="86" text-anchor="middle" class="small">tools, retries, redaction</text>
+      <rect x="940" y="35" width="160" height="70" rx="8" class="box endpoint"></rect>
+      <text x="1020" y="63" text-anchor="middle">BYOK endpoint</text>
+      <text x="1020" y="86" text-anchor="middle" class="small">OpenAI-compatible</text>
+      <line x1="200" y1="70" x2="245" y2="70" class="arrow"></line>
+      <line x1="425" y1="70" x2="470" y2="70" class="arrow"></line>
+      <line x1="660" y1="70" x2="705" y2="70" class="arrow"></line>
+      <line x1="895" y1="70" x2="940" y2="70" class="arrow"></line>
+      <rect x="470" y="175" width="190" height="70" rx="8" class="box api"></rect>
+      <text x="565" y="204" text-anchor="middle">Chat stream</text>
+      <text x="565" y="226" text-anchor="middle" class="small">SSE text deltas</text>
+      <rect x="705" y="175" width="190" height="70" rx="8" class="box adapter"></rect>
+      <text x="800" y="204" text-anchor="middle">Thinking filter</text>
+      <text x="800" y="226" text-anchor="middle" class="small">strip inline tags</text>
+      <rect x="940" y="175" width="160" height="70" rx="8" class="box event"></rect>
+      <text x="1020" y="204" text-anchor="middle">Transcript</text>
+      <text x="1020" y="226" text-anchor="middle" class="small">visible answer only</text>
+      <path d="M800 105 C800 138 615 138 565 175" class="arrow"></path>
+      <line x1="660" y1="210" x2="705" y2="210" class="arrow"></line>
+      <line x1="895" y1="210" x2="940" y2="210" class="arrow"></line>
+    </svg>
+  </section>
 
-   1 | // Shared HTTP helpers for search providers: a per-request timeout that also
-   2 | // honors an optional caller-supplied AbortSignal, plus safe error-body
-   3 | // extraction that never echoes labeled credentials.
-   4 | 
-   5 | import { SEARCH_TIMEOUT_MS } from &quot;./types&quot;;
-   6 | 
-   7 | export interface TimedFetch {
-   8 |   signal: AbortSignal;
-   9 |   cleanup: () =&gt; void;
-  10 | }
-  11 | 
-  12 | /**
-  13 |  * Build an AbortSignal that fires after `timeoutMs` OR when `external` aborts.
-  14 |  * Returns a cleanup() the caller MUST invoke (e.g. in finally) to clear the
-  15 |  * timer and detach listeners.
-  16 |  */
-  17 | export function createTimeoutSignal(
-  18 |   external?: AbortSignal,
-  19 |   timeoutMs: number = SEARCH_TIMEOUT_MS,
-  20 | ): TimedFetch {
-  21 |   const controller = new AbortController();
-  22 |   const timer = setTimeout(() =&gt; controller.abort(), timeoutMs);
-  23 | 
-  24 |   const onExternalAbort = () =&gt; controller.abort();
-  25 |   if (external) {
-  26 |     if (external.aborted) {
-  27 |       controller.abort();
-  28 |     } else {
-  29 |       external.addEventListener(&quot;abort&quot;, onExternalAbort, { once: true });
-  30 |     }
-  31 |   }
-  32 | 
-  33 |   return {
-  34 |     signal: controller.signal,
-  35 |     cleanup: () =&gt; {
-  36 |       clearTimeout(timer);
-  37 |       if (external) external.removeEventListener(&quot;abort&quot;, onExternalAbort);
-  38 |     },
-  39 |   };
-  40 | }
-  41 | 
-  42 | const SENSITIVE_SNIPPET_PATTERN =
-  43 |   /(?:\b[A-Z0-9_]*API[_-]?KEY\b\s*[:=]\s*|[&quot;&#39;]?(?:api_key|api-key|x-subscription-token)[&quot;&#39;]?\s*:\s*|Authorization:\s*Bearer\s+)(?:&quot;[^&quot;]+&quot;|&#39;[^&#39;]+&#39;|[^\s,;&#39;&quot;`{}]+)/gi;
-  44 | 
-  45 | /** Read up to `max` chars of a non-2xx response body for error context. */
-  46 | export async function readErrorSnippet(
-  47 |   response: Response,
-  48 |   max = 200,
-  49 | ): Promise&lt;string&gt; {
-  50 |   try {
-  51 |     const text = await response.text();
-  52 |     return text
-  53 |       .replace(SENSITIVE_SNIPPET_PATTERN, &quot;[redacted]&quot;)
-  54 |       .slice(0, max)
-  55 |       .replace(/\s+/g, &quot; &quot;)
-  56 |       .trim();
-  57 |   } catch {
-  58 |     return &quot;&quot;;
-  59 |   }
-  60 | }
-  61 | </code></pre></section></div></details><h2>Reviewer Checklist</h2><section class="panel"><ul><li>Run <code>bun run test:live:custom</code> with a real OpenAI-compatible endpoint and at least one endpoint that rejects tools or structured output.</li><li>Verify the intended UX for custom endpoints that have no <code>/models</code> endpoint but do accept chat completions.</li><li>Check packaged Electron safeStorage behavior on the target OSes.</li><li>Review the BYOK setup flow in the app after refreshing this file in the browser.</li></ul></section><h2>Low Confidence / Verify Me</h2><section class="panel low"><ul><li><strong>Live endpoint behavior:</strong> mocked tests cover compatibility fallbacks, but real providers vary in how they reject tools and response formats.</li><li><strong>Unlabeled raw secrets:</strong> redaction targets labeled credentials in error strings; it cannot prove arbitrary raw secret substrings are removed if an upstream echoes them without context.</li><li><strong>Documentation:</strong> this artifact was updated, but README-level BYOK documentation was not deep-audited in this fix pass.</li></ul></section><h2>Verification Run</h2><section class="panel"><ul><li><code>bun run test:unit -- server/services/ai/__tests__/custom-openai-adapter.test.ts server/api/ai/__tests__/connect-agent.test.ts server/services/search/__tests__/tavily.test.ts server/services/search/__tests__/brave.test.ts src/components/editor/__tests__/editor-layout.test.ts server/__tests__/security.test.ts</code>: passed, 6 files and 62 tests.</li><li><code>bun run typecheck</code>: passed.</li><li><code>bun run test:unit</code>: passed, 100 files and 918 tests.</li></ul></section><h2>Changed Files</h2><section class="panel"><pre class="code "><code>electron/__tests__/secrets.test.ts
-electron/main.ts
-electron/persistence.ts
-electron/preload.ts
-electron/secrets.ts
-package-lock.json
-package.json
-server/__tests__/mcp-product-tools.test.ts
-server/agents/analysis-agent.ts
-server/api/ai/__tests__/analyze.test.ts
-server/api/ai/__tests__/chat.test.ts
-server/api/ai/__tests__/connect-agent.test.ts
-server/api/ai/__tests__/generate.test.ts
-server/api/ai/analyze.ts
-server/api/ai/chat.ts
-server/api/ai/connect-agent.ts
-server/api/ai/generate.ts
-server/api/ai/search-config.post.ts
-server/mcp/__tests__/tool-guard.test.ts
-server/mcp/__tests__/web-search.test.ts
-server/mcp/product-tools.ts
-server/services/ai/__tests__/claude-adapter.test.ts
-server/services/ai/__tests__/codex-adapter.test.ts
-server/services/ai/__tests__/custom-openai-adapter.test.ts
-server/services/ai/adapter-types.ts
-server/services/ai/chat-sessions.ts
-server/services/ai/claude-adapter.ts
-server/services/ai/custom-openai-adapter.ts
-server/services/ai/tool-surfaces.ts
-server/services/analysis-service.ts
-server/services/search/__tests__/brave.test.ts
-server/services/search/__tests__/registry.test.ts
-server/services/search/__tests__/tavily.test.ts
-server/services/search/brave.ts
-server/services/search/config-cache.ts
-server/services/search/http.ts
-server/services/search/index.ts
-server/services/search/tavily.ts
-server/services/search/types.ts
-shared/ai/allowed-providers.ts
-smoke-tests/live-custom.ts
-src/components/editor/__tests__/editor-layout.test.ts
-src/components/editor/top-bar.tsx
-src/components/panels/ai-chat-panel.tsx
-src/components/shared/__tests__/agent-settings-dialog.test.tsx
-src/components/shared/agent-settings-dialog.tsx
-src/i18n/locales/de.ts
-src/i18n/locales/en.ts
-src/i18n/locales/es.ts
-src/i18n/locales/fr.ts
-src/i18n/locales/hi.ts
-src/i18n/locales/id.ts
-src/i18n/locales/ja.ts
-src/i18n/locales/ko.ts
-src/i18n/locales/pt.ts
-src/i18n/locales/ru.ts
-src/i18n/locales/th.ts
-src/i18n/locales/tr.ts
-src/i18n/locales/vi.ts
-src/i18n/locales/zh-tw.ts
-src/i18n/locales/zh.ts
-src/services/ai/__tests__/allowed-providers.test.ts
-src/services/ai/__tests__/analysis-client.test.ts
-src/services/ai/ai-service.ts
-src/services/ai/allowed-providers.ts
-src/services/ai/analysis-client.ts
-src/services/ai/search-config-client.ts
-src/stores/__tests__/agent-settings-store.test.ts
-src/stores/agent-settings-store.ts
-src/types/agent-settings.ts
-src/types/electron.d.ts
-src/utils/__tests__/secret-storage.test.ts
-src/utils/secret-storage.ts
-review.html</code></pre></section><p class="footer">Generated locally from git and source files. No external network assets.</p></main></body></html>
+  <h2>Issue Status</h2>
+  <section class="panel resolved">
+    <ol>
+      <li><strong>Fixed P1:</strong> labeled upstream credentials are redacted from custom-provider errors.</li>
+      <li><strong>Fixed P2:</strong> custom provider analysis and chat fall back when endpoints reject tools or strict response formats.</li>
+      <li><strong>Fixed P2:</strong> packaged macOS app is ad-hoc signed so the built bundle launches after <code>afterPack</code> mutates <code>Info.plist</code>.</li>
+      <li><strong>Fixed P2:</strong> Electron without OS encryption can use session-only secrets instead of failing the one-time BYOK setup path.</li>
+      <li><strong>Fixed P2:</strong> inline <code>&lt;think&gt;...&lt;/think&gt;</code> stream content is stripped before transcript emission.</li>
+    </ol>
+  </section>
+
+  <h2>Change Clusters</h2>
+
+  <details class="cluster" open>
+    <summary><span class="risk p1">P1 fixed</span><span>Custom OpenAI-compatible provider and redaction path</span></summary>
+    <div class="cluster-body">
+      <p class="files">server/services/ai/custom-openai-adapter.ts | server/api/ai/chat.ts | server/api/ai/connect-agent.ts | server/api/ai/generate.ts | server/services/ai/adapter-types.ts | shared/ai/allowed-providers.ts | server/services/ai/__tests__/custom-openai-adapter.test.ts</p>
+      <div class="cols">
+        <section>
+          <h4>Facts</h4>
+          <ul>
+            <li>FACT: The branch adds a <code>custom</code> provider entry and adapter for OpenAI-compatible chat streams.</li>
+            <li>FACT: The adapter emits text deltas, accumulates tool calls, truncates tool results, and sanitizes upstream error messages.</li>
+            <li>FACT: The current follow-up adds a streaming filter for inline <code>&lt;think&gt;</code> blocks before deltas are yielded.</li>
+          </ul>
+        </section>
+        <section>
+          <h4>Opinions</h4>
+          <ul>
+            <li><strong>Resolved</strong> <span class="confidence">confidence 9/10</span> The previous credential-leak path is fixed for labeled credential strings in upstream errors.</li>
+            <li><strong>Risk remains</strong> <span class="confidence">confidence 6/10</span> Provider compatibility still depends on how each endpoint handles tools, reasoning fields, and nonstandard stream chunks.</li>
+          </ul>
+        </section>
+      </div>
+      <h4>Blast Radius</h4>
+      <ul>
+        <li><code>streamChat</code> is called by chat UI requests and analysis flows that choose the custom provider.</li>
+        <li><code>server/api/ai/chat.ts</code>, <code>server/api/ai/generate.ts</code>, and <code>server/api/ai/analyze.ts</code> all depend on consistent provider allowlisting.</li>
+        <li>Tests outside the diff that exercise Claude/Codex adapters can fail if shared adapter types drift.</li>
+      </ul>
+      <h4>Relevant Diff Hunk</h4>
+      <pre class="code diff"><code><span class="meta">diff --git a/server/services/ai/custom-openai-adapter.ts b/server/services/ai/custom-openai-adapter.ts</span>
+<span class="add">+// Some OpenAI-compatible endpoints stream private reasoning inline as</span>
+<span class="add">+// &lt;think&gt;...&lt;/think&gt; text instead of a structured reasoning field. Never pass</span>
+<span class="add">+// that text through to the user transcript.</span>
+<span class="add">+function createInlineThinkingFilter(): {</span>
+<span class="add">+  push: (content: string) =&gt; string[];</span>
+<span class="add">+  flush: () =&gt; string[];</span>
+<span class="add">+} { ... }</span>
+<span class="ctx">         if (delta?.content) {</span>
+<span class="del">-          assistantText += delta.content;</span>
+<span class="del">-          yield { type: "text_delta", content: delta.content };</span>
+<span class="add">+          for (const visibleContent of inlineThinkingFilter.push(delta.content)) {</span>
+<span class="add">+            assistantText += visibleContent;</span>
+<span class="add">+            yield { type: "text_delta", content: visibleContent };</span>
+<span class="add">+          }</span>
+<span class="ctx">         }</span></code></pre>
+    </div>
+  </details>
+
+  <details class="cluster" open>
+    <summary><span class="risk p2">P2 fixed</span><span>Electron secret storage handles unavailable OS encryption</span></summary>
+    <div class="cluster-body">
+      <p class="files">src/utils/secret-storage.ts | src/components/shared/agent-settings-dialog.tsx | src/i18n/locales/en.ts | src/utils/__tests__/secret-storage.test.ts</p>
+      <div class="cols">
+        <section>
+          <h4>Facts</h4>
+          <ul>
+            <li>FACT: Electron still tries the encrypted main-process secrets bridge first.</li>
+            <li>FACT: When the Electron bridge returns <code>{ ok: false, encrypted: false }</code>, newly typed values are stored only in a renderer memory map.</li>
+            <li>FACT: The UI distinguishes web plaintext storage from Electron session-only storage with separate warning copy.</li>
+          </ul>
+        </section>
+        <section>
+          <h4>Opinions</h4>
+          <ul>
+            <li><strong>Resolved</strong> <span class="confidence">confidence 8/10</span> Local packaged testing can proceed even when macOS keychain access is unavailable or canceled.</li>
+            <li><strong>Tradeoff</strong> <span class="confidence">confidence 8/10</span> Session-only keys are safer than plaintext persistence but require re-entry after quit.</li>
+          </ul>
+        </section>
+      </div>
+      <h4>Blast Radius</h4>
+      <ul>
+        <li><code>setSecret</code>, <code>getSecret</code>, <code>hasSecret</code>, and <code>removeSecret</code> feed custom provider and search provider key flows.</li>
+        <li>The web fallback remains localStorage-based and still shows the plaintext browser warning.</li>
+      </ul>
+      <h4>Relevant Diff Hunk</h4>
+      <pre class="code diff"><code><span class="meta">diff --git a/src/utils/secret-storage.ts b/src/utils/secret-storage.ts</span>
+<span class="add">+const electronSessionSecrets = new Map&lt;string, string&gt;();</span>
+<span class="add">+export function hasElectronSecretBridge(): boolean {</span>
+<span class="add">+  return hasElectronSecrets();</span>
+<span class="add">+}</span>
+<span class="ctx">   if (hasElectronSecrets()) {</span>
+<span class="del">-    return window.electronAPI!.secrets!.set(key, value);</span>
+<span class="add">+    const result = await window.electronAPI!.secrets!.set(key, value);</span>
+<span class="add">+    if (result.ok) {</span>
+<span class="add">+      electronSessionSecrets.delete(key);</span>
+<span class="add">+      return result;</span>
+<span class="add">+    }</span>
+<span class="add">+    electronSessionSecrets.set(key, value);</span>
+<span class="add">+    return { ok: true, encrypted: false };</span>
+<span class="ctx">   }</span></code></pre>
+    </div>
+  </details>
+
+  <details class="cluster" open>
+    <summary><span class="risk p2">P2 fixed</span><span>Packaged macOS bundle is launchable after build</span></summary>
+    <div class="cluster-body">
+      <p class="files">electron-builder.yml | .github/workflows/build-electron.yml</p>
+      <div class="cols">
+        <section>
+          <h4>Facts</h4>
+          <ul>
+            <li>FACT: <code>mac.identity</code> changed from <code>null</code> to <code>"-"</code>.</li>
+            <li>FACT: The CI workflow comment now matches the ad-hoc signing behavior while keeping <code>CSC_IDENTITY_AUTO_DISCOVERY=false</code>.</li>
+            <li>FACT: <code>codesign --verify --deep --strict</code> passes on the rebuilt app.</li>
+          </ul>
+        </section>
+        <section>
+          <h4>Opinions</h4>
+          <ul>
+            <li><strong>Resolved</strong> <span class="confidence">confidence 9/10</span> The local launch failure caused by stale resource sealing after <code>afterPack</code> is addressed.</li>
+            <li><strong>Verify in CI</strong> <span class="confidence">confidence 7/10</span> GitHub macOS runners should produce the same ad-hoc signature, but the CI artifact still needs to pass after this commit lands.</li>
+          </ul>
+        </section>
+      </div>
+      <h4>Blast Radius</h4>
+      <ul>
+        <li>Mac DMG and ZIP builds are affected; Windows/Linux packaging is not touched by this hunk.</li>
+        <li>Notarization remains disabled, so first-launch Gatekeeper UX still depends on unsigned distribution expectations.</li>
+      </ul>
+      <h4>Relevant Diff Hunk</h4>
+      <pre class="code diff"><code><span class="meta">diff --git a/electron-builder.yml b/electron-builder.yml</span>
+<span class="del">-  # OSS project - ship unsigned. No Apple Developer signing or notarization.</span>
+<span class="del">-  # Users open via right-click -&gt; Open on first launch.</span>
+<span class="del">-  identity: null</span>
+<span class="add">+  # OSS project - use an ad-hoc signature so macOS can launch the bundle</span>
+<span class="add">+  # without an Apple Developer certificate or notarization.</span>
+<span class="add">+  identity: "-"</span></code></pre>
+    </div>
+  </details>
+
+  <details class="cluster" open>
+    <summary><span class="risk p2">P2 verified</span><span>Packaged Electron custom-provider QA</span></summary>
+    <div class="cluster-body">
+      <p class="files">dist-electron/mac-arm64/Game Theory Analyzer.app | local fixture on 127.0.0.1:58419 | OpenCode Go live endpoint</p>
+      <div class="cols">
+        <section>
+          <h4>Facts</h4>
+          <ul>
+            <li>FACT: The packaged app launched from <code>dist-electron/mac-arm64/Game Theory Analyzer.app</code> and served itself on an internal Nitro port, not the web dev service.</li>
+            <li>FACT: A local OpenAI-compatible fixture connected as <code>qa-think-model</code> and returned a streamed response.</li>
+            <li>FACT: The fixture streamed split inline thinking tags; the visible transcript showed only <code>visible answer</code>.</li>
+            <li>FACT: The user-provided one-time OpenCode Go key was used earlier in this QA pass for live provider discovery and chat; the temp profile scan found no plaintext <code>sk-</code> pattern.</li>
+          </ul>
+        </section>
+        <section>
+          <h4>Opinions</h4>
+          <ul>
+            <li><strong>Confidence improved</strong> <span class="confidence">confidence 8/10</span> The main packaged-app provider path works for both local fixture and live OpenCode Go chat.</li>
+            <li><strong>Still bounded</strong> <span class="confidence">confidence 7/10</span> This does not prove every OpenAI-compatible endpoint handles tools, models, and reasoning the same way.</li>
+          </ul>
+        </section>
+      </div>
+      <h4>Blast Radius</h4>
+      <ul>
+        <li>Provider setup affects toolbar model state, chat send enablement, analysis prompt model labels, and persisted preferences.</li>
+        <li>The same key retrieval path is used for web-search provider keys.</li>
+      </ul>
+      <h4>Evidence</h4>
+      <pre class="code"><code>codesign --verify --deep --strict --verbose=2 dist-electron/mac-arm64/Game\ Theory\ Analyzer.app
+=> valid on disk; satisfies its Designated Requirement
+
+Packaged app launch:
+=> Nitro server started on 127.0.0.1 internal port
+=> Computer Use URL: 127.0.0.1:&lt;internal&gt;/editor
+
+Fixture transcript:
+=> user: Return the fixture response.
+=> assistant: visible answer
+
+Temp profile scan:
+=> containsSecretPrefix=true; plaintextSkPatternCount=0</code></pre>
+    </div>
+  </details>
+
+  <h2>Reviewer Checklist</h2>
+  <section class="panel">
+    <ul>
+      <li>Confirm product intent: should session-only Electron keys be acceptable when OS encryption is unavailable, or should production builds hard-fail instead?</li>
+      <li>Review the inline thinking filter against any provider-specific reasoning formats beyond <code>&lt;think&gt;</code> tags.</li>
+      <li>After push, verify GitHub Actions for PR #15 on macOS and the smoke server.</li>
+      <li>Install or open the CI-built macOS artifact, not only the local rebuilt app, before release.</li>
+      <li>Run one additional real non-OpenCode provider if the target support matrix includes OpenRouter, DeepSeek, or a private endpoint.</li>
+    </ul>
+  </section>
+
+  <h2>Low Confidence / Verify Me</h2>
+  <section class="panel warn">
+    <ul>
+      <li><strong>Provider behavior:</strong> INFERRED that other OpenAI-compatible endpoints will behave like the tested fixture and OpenCode Go for basic chat. Confidence 6/10.</li>
+      <li><strong>CI artifact parity:</strong> INFERRED that electron-builder ad-hoc signing will behave the same on GitHub macOS runners. Confidence 7/10 until CI passes after this commit.</li>
+      <li><strong>Unlabeled secrets:</strong> redaction is strong for labeled credential strings but cannot guarantee arbitrary raw secret substrings are removed if an upstream echoes them without context. Confidence 7/10.</li>
+      <li><strong>Session fallback UX:</strong> the warning text is English-only in this follow-up; other locale files already have the broader custom-provider copy but not this new warning key. Confidence 8/10 that i18n fallback prevents breakage.</li>
+    </ul>
+  </section>
+
+  <h2>Verification Run</h2>
+  <section class="panel">
+    <ul>
+      <li><code>bun run test:unit -- server/services/ai/__tests__/custom-openai-adapter.test.ts src/utils/__tests__/secret-storage.test.ts src/components/shared/__tests__/agent-settings-dialog.test.tsx</code>: passed, 35 tests.</li>
+      <li><code>bun run typecheck</code>: passed.</li>
+      <li><code>bun run electron:build:mac-arm64</code>: passed before this artifact refresh.</li>
+      <li><code>codesign --verify --deep --strict --verbose=2 dist-electron/mac-arm64/Game\ Theory\ Analyzer.app</code>: passed.</li>
+      <li>Computer Use packaged app QA: custom fixture connected, chat streamed, inline thinking hidden, transcript showed <code>visible answer</code>.</li>
+      <li>Live OpenCode Go QA: provider discovery and chat completed earlier in this pass with the one-time key supplied by the user; key was not printed into this artifact.</li>
+    </ul>
+  </section>
+
+  <p class="footer">Offline artifact. No external assets. All claims above are tied to <code>gh pr view 15</code>, <code>gh pr diff 15</code>, local diff hunks, or packaged-app QA evidence gathered in this workspace.</p>
+</main>
+</body>
+</html>

@@ -334,6 +334,78 @@ function toAssistantToolCalls(
   }));
 }
 
+// Some OpenAI-compatible endpoints stream private reasoning inline as
+// <think>...</think> text instead of a structured reasoning field. Never pass
+// that text through to the user transcript.
+function createInlineThinkingFilter(): {
+  push: (content: string) => string[];
+  flush: () => string[];
+} {
+  let pending = "";
+  let insideThinking = false;
+
+  function suffixPrefixLength(text: string, prefixes: string[]): number {
+    const lower = text.toLowerCase();
+    const max = Math.min(
+      lower.length,
+      Math.max(...prefixes.map((prefix) => prefix.length - 1)),
+    );
+    for (let len = max; len > 0; len--) {
+      const suffix = lower.slice(-len);
+      if (prefixes.some((prefix) => prefix.startsWith(suffix))) return len;
+    }
+    return 0;
+  }
+
+  function push(content: string): string[] {
+    let current = pending + content;
+    pending = "";
+    const visible: string[] = [];
+
+    while (current.length > 0) {
+      const lower = current.toLowerCase();
+      if (!insideThinking) {
+        const start = lower.indexOf("<think>");
+        if (start === -1) {
+          const keep = suffixPrefixLength(current, ["<think>"]);
+          const emit = current.slice(0, current.length - keep);
+          if (emit) visible.push(emit);
+          pending = current.slice(current.length - keep);
+          break;
+        }
+        const emit = current.slice(0, start);
+        if (emit) visible.push(emit);
+        current = current.slice(start + "<think>".length);
+        insideThinking = true;
+        continue;
+      }
+
+      const end = lower.indexOf("</think>");
+      if (end === -1) {
+        const keep = suffixPrefixLength(current, ["</think>"]);
+        pending = current.slice(current.length - keep);
+        break;
+      }
+      current = current.slice(end + "</think>".length);
+      insideThinking = false;
+    }
+
+    return visible;
+  }
+
+  function flush(): string[] {
+    if (insideThinking || !pending) {
+      pending = "";
+      return [];
+    }
+    const visible = [pending];
+    pending = "";
+    return visible;
+  }
+
+  return { push, flush };
+}
+
 // ── Mid-turn context control ──
 
 /** Truncate a tool result before it enters the message history. */
@@ -472,6 +544,7 @@ export async function* streamChat(
     }
 
     const toolCalls = new Map<number, AccumulatedToolCall>();
+    const inlineThinkingFilter = createInlineThinkingFilter();
     let assistantText = "";
     let finishReason: string | null = null;
 
@@ -482,8 +555,12 @@ export async function* streamChat(
         if (!choice) continue;
         const delta = choice.delta;
         if (delta?.content) {
-          assistantText += delta.content;
-          yield { type: "text_delta", content: delta.content };
+          for (const visibleContent of inlineThinkingFilter.push(
+            delta.content,
+          )) {
+            assistantText += visibleContent;
+            yield { type: "text_delta", content: visibleContent };
+          }
         }
         if (delta?.tool_calls) {
           for (const tc of delta.tool_calls) {
@@ -501,6 +578,10 @@ export async function* streamChat(
         recoverable: false,
       };
       return;
+    }
+    for (const visibleContent of inlineThinkingFilter.flush()) {
+      assistantText += visibleContent;
+      yield { type: "text_delta", content: visibleContent };
     }
 
     serverLog(options?.runId, "custom-adapter", "chat-round", {

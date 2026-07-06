@@ -4,6 +4,9 @@
  * - **Electron**: delegates to `window.electronAPI.secrets`, which encrypts
  *   values at rest with the OS keychain via `safeStorage` in the main process.
  *   Ciphertext never reaches the renderer.
+ * - **Electron without OS encryption**: keeps newly typed values in memory for
+ *   the current app session only, so local unsigned/ad-hoc builds can still
+ *   use one-time BYOK keys without writing plaintext to disk.
  * - **Web**: falls back to `localStorage` under a `gta-secret:` prefix. A
  *   browser tab has no OS keychain, so these values are plaintext — callers
  *   should treat web storage as insecure (see {@link isSecureStorage}).
@@ -12,10 +15,15 @@
  */
 
 const WEB_PREFIX = "gta-secret:";
+const electronSessionSecrets = new Map<string, string>();
 
 /** Whether the encrypted Electron secrets bridge is present. */
 function hasElectronSecrets(): boolean {
   return typeof window !== "undefined" && !!window.electronAPI?.secrets;
+}
+
+export function hasElectronSecretBridge(): boolean {
+  return hasElectronSecrets();
 }
 
 /**
@@ -62,7 +70,13 @@ export async function setSecret(
   value: string,
 ): Promise<{ ok: boolean; encrypted: boolean }> {
   if (hasElectronSecrets()) {
-    return window.electronAPI!.secrets!.set(key, value);
+    const result = await window.electronAPI!.secrets!.set(key, value);
+    if (result.ok) {
+      electronSessionSecrets.delete(key);
+      return result;
+    }
+    electronSessionSecrets.set(key, value);
+    return { ok: true, encrypted: false };
   }
   try {
     localStorage.setItem(WEB_PREFIX + key, value);
@@ -75,7 +89,8 @@ export async function setSecret(
 /** Read a secret, or `null` if missing/undecryptable. */
 export async function getSecret(key: string): Promise<string | null> {
   if (hasElectronSecrets()) {
-    return window.electronAPI!.secrets!.get(key);
+    const stored = await window.electronAPI!.secrets!.get(key);
+    return stored ?? electronSessionSecrets.get(key) ?? null;
   }
   try {
     return localStorage.getItem(WEB_PREFIX + key);
@@ -87,7 +102,10 @@ export async function getSecret(key: string): Promise<string | null> {
 /** Whether a secret is present. */
 export async function hasSecret(key: string): Promise<boolean> {
   if (hasElectronSecrets()) {
-    return window.electronAPI!.secrets!.has(key);
+    return (
+      (await window.electronAPI!.secrets!.has(key)) ||
+      electronSessionSecrets.has(key)
+    );
   }
   try {
     return localStorage.getItem(WEB_PREFIX + key) !== null;
@@ -99,6 +117,7 @@ export async function hasSecret(key: string): Promise<boolean> {
 /** Delete a secret. */
 export async function removeSecret(key: string): Promise<void> {
   if (hasElectronSecrets()) {
+    electronSessionSecrets.delete(key);
     await window.electronAPI!.secrets!.remove(key);
     return;
   }

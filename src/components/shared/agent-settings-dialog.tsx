@@ -36,6 +36,7 @@ import {
   setSecret,
   getSecret,
   hasSecret,
+  hasElectronSecretBridge,
   removeSecret,
   probeSecureStorage,
 } from "@/utils/secret-storage";
@@ -163,6 +164,7 @@ async function callMcpInstall(
 /** Secret-storage key names (shared with the connect flow and boot push). */
 const CUSTOM_API_KEY = "customProvider.apiKey";
 const SEARCH_API_KEY = "search.apiKey";
+type SecretStorageWarning = "web-plaintext" | "electron-session" | null;
 
 /** Shared class for the custom-provider text/password inputs. */
 const CUSTOM_INPUT_CLASS =
@@ -481,10 +483,10 @@ function CustomProviderRow() {
   const [hasStoredSearchKey, setHasStoredSearchKey] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // OS encryption unavailable and the key was NOT saved (Electron-only case).
+  // OS encryption unavailable and the key was NOT usable.
   const [keyNotEncrypted, setKeyNotEncrypted] = useState(false);
-  // Secrets are stored unencrypted (web / no OS keychain).
-  const [plaintextWarning, setPlaintextWarning] = useState(false);
+  const [storageWarning, setStorageWarning] =
+    useState<SecretStorageWarning>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -495,7 +497,13 @@ function CustomProviderRow() {
         hasSecret(SEARCH_API_KEY),
       ]);
       if (cancelled) return;
-      setPlaintextWarning(!secure);
+      setStorageWarning(
+        secure
+          ? null
+          : hasElectronSecretBridge()
+            ? "electron-session"
+            : "web-plaintext",
+      );
       setHasStoredKey(storedKey);
       setHasStoredSearchKey(storedSearchKey);
     })();
@@ -799,9 +807,17 @@ function CustomProviderRow() {
           </div>
 
           {/* Warnings */}
-          {plaintextWarning && (
+          {storageWarning === "web-plaintext" && (
             <p className="text-[10px] leading-relaxed text-amber-500">
               {t("agents.customKeyStoredPlain")}
+            </p>
+          )}
+          {storageWarning === "electron-session" && (
+            <p className="text-[10px] leading-relaxed text-amber-500">
+              {t("agents.customKeyStoredSession", {
+                defaultValue:
+                  "OS encryption is unavailable; typed keys are kept only for this app session and cleared on quit.",
+              })}
             </p>
           )}
           {keyNotEncrypted && (
