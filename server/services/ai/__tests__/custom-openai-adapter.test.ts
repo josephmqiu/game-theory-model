@@ -383,6 +383,25 @@ describe("custom-openai-adapter streamChat", () => {
     expect(events.at(-1)).toEqual({ type: "turn_complete" });
   });
 
+  it("redacts full credential values from endpoint errors", async () => {
+    createMock.mockRejectedValueOnce(
+      new MockAPIError(
+        401,
+        "upstream rejected Authorization: Bearer bearer-token-value and api_key=api-token-value and ANTHROPIC_API_KEY=anthropic-token-value",
+      ),
+    );
+
+    const events = await collect(streamChat(BASE_INPUT));
+    const errorEvent = events.find(
+      (e): e is Extract<ChatEvent, { type: "error" }> => e.type === "error",
+    );
+
+    expect(errorEvent?.message).toContain("[redacted]");
+    expect(errorEvent?.message).not.toContain("bearer-token-value");
+    expect(errorEvent?.message).not.toContain("api-token-value");
+    expect(errorEvent?.message).not.toContain("anthropic-token-value");
+  });
+
   it("stops mid-stream when the signal aborts during streaming", async () => {
     const controller = new AbortController();
     createMock.mockResolvedValueOnce({
@@ -591,6 +610,37 @@ describe("custom-openai-adapter runAnalysisPhase", () => {
     expect(
       fallbackMessages.some((m) => m.content.includes("ONLY valid JSON")),
     ).toBe(true);
+  });
+
+  it("retries analysis without tools when the endpoint rejects tool definitions", async () => {
+    createMock
+      .mockRejectedValueOnce(
+        new MockAPIError(400, "tools are not supported by this model"),
+      )
+      .mockResolvedValueOnce({
+        choices: [
+          {
+            message: { content: '{"entities":[],"relationships":[]}' },
+            finish_reason: "stop",
+          },
+        ],
+      });
+
+    const result = await runAnalysisPhase(
+      "prompt",
+      "system",
+      "test-model",
+      schema,
+      analysisOpts,
+    );
+
+    expect(result).toEqual({ entities: [], relationships: [] });
+    expect(createMock).toHaveBeenCalledTimes(2);
+    expect(lastParams(0).tools).toBeDefined();
+    expect(lastParams(1).tools).toBeUndefined();
+    expect(lastParams(1).response_format).toMatchObject({
+      type: "json_schema",
+    });
   });
 
   it("responds to non-function tool calls so no tool_call_id is orphaned", async () => {

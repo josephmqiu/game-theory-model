@@ -54,7 +54,7 @@ describe("tavilyProvider", () => {
   it("throws with status + body snippet on non-2xx, without leaking the key", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse(
-        { detail: "usage limit exceeded" },
+        { detail: "usage limit exceeded", api_key: "secret-key" },
         { ok: false, status: 429 },
       ),
     );

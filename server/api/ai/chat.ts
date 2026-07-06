@@ -41,7 +41,7 @@ import { startSSEKeepAlive } from "../../utils/sse-keepalive";
 
 /** Pattern for detecting sensitive data in debug log output */
 export const SENSITIVE_LOG_PATTERN =
-  /ANTHROPIC_API_KEY=|Authorization:\s*Bearer|api[_-]?key\s*[:=]/i;
+  /(?:\b[A-Z0-9_]*API[_-]?KEY\b\s*[:=]\s*|Authorization:\s*Bearer\s+)(?:"[^"]+"|'[^']+'|[^\s,;'"`]+)/i;
 
 /** Allowed media types for image attachments */
 export const ALLOWED_MEDIA_TYPES = new Set([

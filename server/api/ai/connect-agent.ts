@@ -154,7 +154,7 @@ export async function connectCustom(params: {
   }
 
   // Endpoint has no model listing → fall back to the manual list when present.
-  if (response.status === 404 || response.status === 501 || !response.ok) {
+  if (response.status === 404 || response.status === 501) {
     if (manualModels.length > 0) {
       return {
         connected: true,
@@ -166,6 +166,14 @@ export async function connectCustom(params: {
       connected: false,
       models: [],
       error: `The endpoint did not return a model list (HTTP ${response.status}). Add model IDs manually.`,
+    };
+  }
+
+  if (!response.ok) {
+    return {
+      connected: false,
+      models: [],
+      error: `The endpoint returned HTTP ${response.status} while listing models.`,
     };
   }
 

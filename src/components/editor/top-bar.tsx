@@ -39,7 +39,12 @@ const PROVIDER_ICONS: Record<
   custom: Plug,
 };
 
-const PROVIDER_ORDER: AIProviderType[] = ["anthropic", "openai", "opencode"];
+const PROVIDER_ORDER: AIProviderType[] = [
+  "anthropic",
+  "openai",
+  "opencode",
+  "custom",
+];
 
 function AgentStatusButton() {
   const { t } = useTranslation();

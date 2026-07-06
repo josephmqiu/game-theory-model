@@ -222,6 +222,21 @@ describe("connect-agent custom provider", () => {
     ).toBeUndefined();
   });
 
+  it("does not report connected from manual IDs when model listing returns 500", async () => {
+    fetchMock.mockResolvedValue(fakeResponse({ status: 500, ok: false }));
+
+    const { connectCustom } = await import("../connect-agent");
+    const result = await connectCustom({
+      baseURL: "https://api.example.com",
+      apiKey: "",
+      modelIds: ["manual-model"],
+    });
+
+    expect(result.connected).toBe(false);
+    expect(result.models).toEqual([]);
+    expect(result.error).toMatch(/HTTP 500/);
+  });
+
   it("reports an auth failure on 401 without falling back", async () => {
     fetchMock.mockResolvedValue(fakeResponse({ status: 401, ok: false }));
 

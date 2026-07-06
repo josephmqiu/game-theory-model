@@ -59,7 +59,10 @@ describe("braveProvider", () => {
 
   it("throws with status on non-2xx, without leaking the key", async () => {
     const fetchMock = vi.fn(async () =>
-      jsonResponse({ message: "unauthorized" }, { ok: false, status: 401 }),
+      jsonResponse(
+        { message: "unauthorized", "X-Subscription-Token": "brave-key" },
+        { ok: false, status: 401 },
+      ),
     );
     vi.stubGlobal("fetch", fetchMock);
 

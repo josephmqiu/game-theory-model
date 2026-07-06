@@ -72,7 +72,11 @@ const PLACEHOLDER_API_KEY = "sk-no-key";
 // Mirror of chat.ts SENSITIVE_LOG_PATTERN — never surface keys/Authorization
 // headers in error text forwarded to the client or the logs.
 const SENSITIVE_LOG_PATTERN =
-  /ANTHROPIC_API_KEY=|Authorization:\s*Bearer|api[_-]?key\s*[:=]/i;
+  /(?:\b[A-Z0-9_]*API[_-]?KEY\b\s*[:=]\s*|Authorization:\s*Bearer\s+)(?:"[^"]+"|'[^']+'|[^\s,;'"`]+)/i;
+const SENSITIVE_LOG_REDACTION_PATTERN = new RegExp(
+  SENSITIVE_LOG_PATTERN.source,
+  "gi",
+);
 
 /** Appended to every custom chat system prompt (canvas is the source of truth). */
 const CANVAS_AUTHORITATIVE_NOTE =
@@ -144,7 +148,7 @@ function extractError(err: unknown): ExtractedError {
 
 function redact(text: string): string {
   return SENSITIVE_LOG_PATTERN.test(text)
-    ? text.replace(SENSITIVE_LOG_PATTERN, "[redacted]")
+    ? text.replace(SENSITIVE_LOG_REDACTION_PATTERN, "[redacted]")
     : text;
 }
 
@@ -660,22 +664,53 @@ export async function runAnalysisPhase<T = unknown>(
     { role: "system", content: systemPrompt },
     { role: "user", content: prompt },
   ];
+  let activeTools = tools;
+
+  const runLoopWithToolFallback = async (
+    messages: OpenAI.ChatCompletionMessageParam[],
+    extraParams: Partial<OpenAI.ChatCompletionCreateParamsNonStreaming>,
+  ): Promise<string> => {
+    const attemptedTools = activeTools;
+    try {
+      return await runAnalysisLoop(
+        client,
+        model,
+        messages,
+        attemptedTools,
+        toolCtx,
+        extraParams,
+        options,
+      );
+    } catch (err) {
+      if (attemptedTools.length > 0 && isToolRejection(err)) {
+        activeTools = [];
+        serverWarn(options.runId, "custom-adapter", "analysis-tools-rejected", {
+          model,
+        });
+        return await runAnalysisLoop(
+          client,
+          model,
+          messages,
+          [],
+          toolCtx,
+          extraParams,
+          options,
+        );
+      }
+      throw err;
+    }
+  };
 
   // Attempt 1: native structured output.
   try {
-    const text = await runAnalysisLoop(
-      client,
-      model,
+    const text = await runLoopWithToolFallback(
       [...baseMessages],
-      tools,
-      toolCtx,
       {
         response_format: {
           type: "json_schema",
           json_schema: { name: "analysis", schema, strict: false },
         },
       },
-      options,
     );
     return parseJsonLoose<T>(text);
   } catch (err) {
@@ -711,14 +746,9 @@ export async function runAnalysisPhase<T = unknown>(
 
   let fallbackText: string;
   try {
-    fallbackText = await runAnalysisLoop(
-      client,
-      model,
+    fallbackText = await runLoopWithToolFallback(
       fallbackMessages,
-      tools,
-      toolCtx,
       {},
-      options,
     );
   } catch (err) {
     const { status, message } = extractError(err);
