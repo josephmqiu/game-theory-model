@@ -155,6 +155,23 @@ const vi: TranslationKeys = {
     "Chạy giai đoạn tùy chỉnh chỉ chạy các giai đoạn đã chọn và có thể tắt xác thực lại tự động hạ nguồn.",
   "agents.analysisPhasesAll": "Tất cả giai đoạn",
   "agents.analysisPhasesCustom": "Tùy chỉnh",
+  "agents.customProvider": "API tùy chỉnh",
+  "agents.customProviderDesc": "Bất kỳ điểm cuối nào tương thích OpenAI — OpenCode Go/Zen, OpenRouter, DeepSeek hoặc URL của riêng bạn",
+  "agents.customPreset": "Cài đặt sẵn nhà cung cấp",
+  "agents.customBaseUrl": "URL cơ sở",
+  "agents.customApiKey": "Khóa API",
+  "agents.customModelIds": "ID mô hình (phân tách bằng dấu phẩy, tùy chọn)",
+  "agents.customNativeSearch": "Mô hình có tìm kiếm web tích hợp",
+  "agents.customNativeSearchHint": "Khi bật, công cụ tìm kiếm web của ứng dụng không được cung cấp cho điểm cuối này",
+  "agents.customModels": "Mô hình tùy chỉnh",
+  "agents.searchProvider": "Nhà cung cấp tìm kiếm",
+  "agents.searchApiKey": "Khóa API tìm kiếm",
+  "agents.searchKeyHint": "Nghiên cứu web trực tiếp cần khóa của nhà cung cấp tìm kiếm (Tavily hoặc Brave)",
+  "agents.customKeyStoredPlain": "Trình duyệt này lưu khóa không mã hóa. Sử dụng ứng dụng máy tính để bàn để lưu trữ được mã hóa.",
+  "agents.customKeyNotEncrypted": "Mã hóa của hệ điều hành không khả dụng; khóa chưa được lưu. Bật chuỗi khóa hệ thống của bạn và thử lại.",
+  "agents.customConnect": "Kết nối",
+  "agents.searchProviderNone": "Không có",
+  "agents.customClearKey": "Xóa khóa API",
 
   // ── Figma Import ──
 

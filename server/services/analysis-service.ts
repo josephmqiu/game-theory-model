@@ -40,6 +40,10 @@ import { PHASE_PROMPTS } from "../agents/phase-prompts";
 import { createRunLogger } from "../utils/ai-logger";
 import type { RunLogger } from "../utils/ai-logger";
 import type { AnalysisActivityCallback } from "./ai/analysis-activity";
+import {
+  createCustomAnalysisAdapter,
+  type CustomProviderCredentials,
+} from "./ai/custom-openai-adapter";
 
 interface AnalysisAdapter {
   runAnalysisPhase<T = unknown>(
@@ -58,18 +62,27 @@ interface AnalysisAdapter {
 }
 
 async function loadAnalysisAdapter(
-  provider?: string,
+  context?: PhaseContext,
 ): Promise<AnalysisAdapter> {
   if (process.env.GAME_THEORY_ANALYSIS_TEST_MODE === "1") {
     return import("./ai/test-adapter");
   }
+  const provider = context?.provider;
   if (provider === "openai") {
     return import("./ai/codex-adapter");
+  }
+  if (provider === "custom") {
+    if (!context?.custom) {
+      throw new Error("Custom provider requires baseURL and apiKey");
+    }
+    return createCustomAnalysisAdapter(context.custom);
   }
   if (provider === "anthropic" || !provider) {
     return import("./ai/claude-adapter");
   }
-  throw new Error(`Unknown provider: ${provider}. Allowed: anthropic, openai`);
+  throw new Error(
+    `Unknown provider: ${provider}. Allowed: anthropic, openai, custom`,
+  );
 }
 
 // ── Public types ──
@@ -97,6 +110,8 @@ export interface PhaseContext {
   challengeContext?: string;
   provider?: string;
   model?: string;
+  /** BYOK credentials when provider === "custom"; never persisted. */
+  custom?: CustomProviderCredentials;
   runtime?: PhaseRuntimeContext;
   runId?: string;
   signal?: AbortSignal;
@@ -1930,7 +1945,7 @@ export async function runPhase(
 
   let adapterResult: unknown;
   try {
-    const adapter = await loadAnalysisAdapter(context?.provider);
+    const adapter = await loadAnalysisAdapter(context);
     adapterResult = await adapter.runAnalysisPhase(
       user,
       system,

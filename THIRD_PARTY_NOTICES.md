@@ -62,5 +62,10 @@ The application UI includes provider-identifying marks in `src/components/icons/
 - Anthropic / Claude
 - OpenAI
 - GitHub / GitHub Copilot
+- OpenCode
+- OpenRouter
+- DeepSeek
+- Brave Search
+- Tavily
 
 Their presence in this repository is for nominative identification only and does not imply endorsement.

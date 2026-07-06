@@ -57,6 +57,7 @@ const VALID_ARGS: Record<string, Record<string, unknown>> = {
   delete_relationship: { id: "rel-1" },
   rerun_phases: { phases: ["situational-grounding"] },
   abort_analysis: {},
+  web_search: { query: "semiconductor export controls", max_results: 5 },
 };
 
 const MALFORMED_ARGS: Record<string, Record<string, unknown>> = {
@@ -77,6 +78,7 @@ const MALFORMED_ARGS: Record<string, Record<string, unknown>> = {
   delete_relationship: { id: "rel-1", unexpected: true },
   rerun_phases: { phases: "situational-grounding" },
   abort_analysis: { unexpected: true },
+  web_search: { query: 42 },
 };
 
 function schemaAccepts(schema: JsonSchema, value: unknown): boolean {
@@ -103,7 +105,10 @@ function schemaAccepts(schema: JsonSchema, value: unknown): boolean {
       }
     }
     for (const [key, propertySchema] of Object.entries(properties)) {
-      if (key in objectValue && !schemaAccepts(propertySchema, objectValue[key])) {
+      if (
+        key in objectValue &&
+        !schemaAccepts(propertySchema, objectValue[key])
+      ) {
         return false;
       }
     }
@@ -114,7 +119,9 @@ function schemaAccepts(schema: JsonSchema, value: unknown): boolean {
     if (!Array.isArray(value)) {
       return false;
     }
-    return schema.items ? value.every((item) => schemaAccepts(schema.items!, item)) : true;
+    return schema.items
+      ? value.every((item) => schemaAccepts(schema.items!, item))
+      : true;
   }
 
   if (schema.type === "string") {
@@ -147,7 +154,9 @@ async function registeredToolNames(mode: ProductToolMode): Promise<string[]> {
 
 describe("MCP tool guard", () => {
   it("every declared chat tool has a dispatch handler", () => {
-    const declaredNames = CHAT_MODE_TOOL_DEFINITIONS.map((tool) => tool.name).sort();
+    const declaredNames = CHAT_MODE_TOOL_DEFINITIONS.map(
+      (tool) => tool.name,
+    ).sort();
     expect(Object.keys(PRODUCT_TOOL_HANDLERS).sort()).toEqual(declaredNames);
   });
 
@@ -174,14 +183,25 @@ describe("MCP tool guard", () => {
       const malformed = MALFORMED_ARGS[tool.name];
 
       expect(valid, `missing valid sample for ${tool.name}`).toBeDefined();
-      expect(malformed, `missing malformed sample for ${tool.name}`).toBeDefined();
-      expect(schema.additionalProperties, `${tool.name} must reject unknown args`).toBe(false);
-      expect(schemaAccepts(schema, valid), `${tool.name} valid sample`).toBe(true);
+      expect(
+        malformed,
+        `missing malformed sample for ${tool.name}`,
+      ).toBeDefined();
+      expect(
+        schema.additionalProperties,
+        `${tool.name} must reject unknown args`,
+      ).toBe(false);
+      expect(schemaAccepts(schema, valid), `${tool.name} valid sample`).toBe(
+        true,
+      );
       expect(
         schemaAccepts(schema, { ...valid, __unknown: true }),
         `${tool.name} unknown arg sample`,
       ).toBe(false);
-      expect(schemaAccepts(schema, malformed), `${tool.name} malformed sample`).toBe(false);
+      expect(
+        schemaAccepts(schema, malformed),
+        `${tool.name} malformed sample`,
+      ).toBe(false);
     }
   });
 

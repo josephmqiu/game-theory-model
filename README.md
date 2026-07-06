@@ -14,10 +14,10 @@ All analysis is visualized as an entity graph on a canvas — the primary worksp
 
 ## Features
 
-- AI-powered game-theoretic analysis via Claude and Codex runtimes
+- AI-powered game-theoretic analysis via Claude, Codex, and Custom API providers
 - Interactive canvas with entity graph visualization (Skia/CanvasKit)
 - Multi-phase analytical methodology (situation framing through meta-analysis)
-- Web search integration for evidence-backed modeling
+- Web search integration for evidence-backed modeling, including Tavily or Brave keys for custom providers
 - Desktop app (Electron) as the live product, with a browser dev surface for renderer work
 - Local-first workspace state, with documented outbound network dependencies
 - `.gta` file format for saving and sharing analyses
@@ -29,10 +29,12 @@ All analysis is visualized as an entity graph on a canvas — the primary worksp
 - [Bun](https://bun.sh) (v1.1+)
 - [Node.js](https://nodejs.org) (v20+)
 
-For live AI runtime features, also install and authenticate one or both of:
+For live AI runtime features, either install and authenticate one or both of:
 
 - Claude Code
 - Codex CLI
+
+Or connect an OpenAI-compatible endpoint through **Agents & MCP -> Custom API**. The app includes presets for OpenCode Go, OpenCode Zen, OpenRouter, and DeepSeek, plus a Custom URL option. Custom providers need a base URL, model ID, and usually an API key.
 
 ### Install & Run
 
@@ -53,6 +55,17 @@ bun run dev
 ```
 
 > **Note:** The live product is the desktop app. `bun run dev` is useful for renderer development, but Electron is the canonical runtime path for product behavior.
+
+### Custom API Providers
+
+Use **Agents & MCP -> Custom API** when you want to bring your own OpenAI-compatible provider instead of routing through the Claude or Codex CLIs.
+
+1. Choose a preset or enter a custom `/v1` base URL.
+2. Enter an API key when the endpoint requires one.
+3. Add model IDs manually if the endpoint does not expose `/models`.
+4. Pick a search provider key, Tavily or Brave, if you want the app's `web_search` tool with a model that does not have native web search.
+
+In Electron, API keys are stored through the app's secret-storage bridge. If OS encryption is unavailable in a local or ad-hoc build, newly typed keys are kept only for that app session and cleared on quit. In the browser dev surface, key storage is plaintext localStorage and the UI warns you before using it.
 
 ## Docker Support
 
@@ -97,7 +110,7 @@ The app's in-process MCP HTTP server stays container-internal by default; the ex
 | Desktop        | Electron 35                        |
 | Runtime        | Bun                                |
 | Testing        | Vitest                             |
-| AI Integration | Claude Agent SDK, Codex (JSON-RPC) |
+| AI Integration | Claude Agent SDK, Codex (JSON-RPC), OpenAI-compatible Custom API |
 
 ## Development
 
@@ -113,6 +126,7 @@ bun run gen:design                 # Regenerate DESIGN.md
 bun run electron:dev               # Electron dev mode
 bun run electron:build:mac-arm64   # Full production build (client + server + MCP + DMG)
 bun run test:smoke:packaged        # Local packaged macOS pre-release smoke
+bun run test:live:custom           # Optional real-endpoint Custom API smoke (env-gated)
 ```
 
 > **Note:** `bun run build` emits the Nitro-backed runtime under `.output`. Electron packaging still uses the `electron:build:*` commands for desktop artifacts.
@@ -121,8 +135,9 @@ bun run test:smoke:packaged        # Local packaged macOS pre-release smoke
 
 Game Theory Analyzer stores its workspace data locally, but some features make outbound network requests:
 
-- AI runtime calls send prompts and relevant context to the configured Claude/Codex-compatible runtime or provider path.
-- Evidence-backed analysis may use web search providers during research steps.
+- AI runtime calls send prompts and relevant context to the configured Claude runtime, Codex runtime, or Custom API endpoint.
+- Evidence-backed analysis may use web search providers during research steps. Custom API web search currently supports Tavily and Brave API keys unless the selected model has native web search.
+- Custom API keys are sent to the selected endpoint and search-provider keys are sent to the selected search provider. The server receives these values per request and does not cache them.
 - Icon metadata is resolved from bundled `@iconify-json/*` packages; the UI does not need `https://api.iconify.design`.
 - UI fonts are bundled with `@fontsource` Geist packages. The CanvasKit font loader uses bundled `/fonts/` files first, and may fall back to font CSS and font files from `https://fonts.googleapis.com`, `https://fonts.gstatic.com`, and `https://fonts.font.im` for non-bundled canvas fonts.
 
@@ -137,7 +152,7 @@ src/                   # React frontend (renderer)
   services/            # Domain services (analysis client, etc.)
   stores/              # Zustand state stores
 server/                # Node.js backend (AI pipeline, MCP, services)
-  api/ai/              # AI route handlers (analyze, chat, events SSE)
+  api/ai/              # AI route handlers (analyze, chat, connect-agent, search-config, events SSE)
   mcp/                 # MCP server and product tools
   services/            # Runtime status, revalidation, entity graph
 electron/              # Electron main process + persistence
@@ -149,16 +164,23 @@ public/                # Static assets
 
 - **Runtime boundary**: Code in `src/` runs in the browser. Code in `server/` runs in Node.js. Never import Node.js APIs from `src/`.
 - **Canvas is the product**: The entity graph canvas is the primary analysis surface. Chat is the control panel, not the workspace.
-- **AI integration**: Uses tool-based local runtimes (Claude Agent SDK, Codex JSON-RPC), not direct provider API calls.
+- **AI integration**: Claude and Codex use tool-based local runtimes. Custom API uses direct OpenAI-compatible HTTPS calls with per-request BYOK credentials that are never cached server-side.
 - **Architecture decision**: The app is an OpenPencil fork. OpenPencil v0.7.5 remains the pinned reference for canvas and AI backend behavior; the T3 Code migration (PR #10) was permanently shelved on 2026-07-02.
 
 ## Documentation
 
 | Document                           | Purpose                 |
 | ---------------------------------- | ----------------------- |
+| [AGENTS.md](AGENTS.md)             | Agent skill routing     |
+| [CLAUDE.md](CLAUDE.md)             | Claude-facing skill routing |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute       |
 | [CHANGELOG.md](CHANGELOG.md)       | Release history         |
 | [SECURITY.md](SECURITY.md)         | Vulnerability reporting |
+| [DESIGN.md](DESIGN.md)             | Generated design system |
+| [TODOS.md](TODOS.md)               | Deferred follow-ups     |
+| [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | Third-party assets and marks |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community expectations |
+| [smoke-tests/manual-scroll-feel-pass.md](smoke-tests/manual-scroll-feel-pass.md) | Manual scroll QA evidence |
 
 ## License
 

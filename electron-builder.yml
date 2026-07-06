@@ -27,9 +27,9 @@ mac:
   target:
     - dmg
     - zip
-  # OSS project — ship unsigned. No Apple Developer signing or notarization.
-  # Users open via right-click → Open on first launch.
-  identity: null
+  # OSS project - use an ad-hoc signature so macOS can launch the bundle
+  # without an Apple Developer certificate or notarization.
+  identity: "-"
   notarize: false
 
 dmg:

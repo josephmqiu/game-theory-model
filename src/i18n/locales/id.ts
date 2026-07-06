@@ -156,6 +156,23 @@ const id: TranslationKeys = {
     "Proses fase kustom hanya menjalankan fase yang dipilih dan dapat menonaktifkan validasi ulang hilir otomatis.",
   "agents.analysisPhasesAll": "Semua fase",
   "agents.analysisPhasesCustom": "Kustom",
+  "agents.customProvider": "API Kustom",
+  "agents.customProviderDesc": "Endpoint apa pun yang kompatibel dengan OpenAI — OpenCode Go/Zen, OpenRouter, DeepSeek, atau URL Anda sendiri",
+  "agents.customPreset": "Preset penyedia",
+  "agents.customBaseUrl": "URL dasar",
+  "agents.customApiKey": "Kunci API",
+  "agents.customModelIds": "ID model (dipisahkan koma, opsional)",
+  "agents.customNativeSearch": "Model memiliki pencarian web bawaan",
+  "agents.customNativeSearchHint": "Saat aktif, alat pencarian web aplikasi tidak ditawarkan ke endpoint ini",
+  "agents.customModels": "Model kustom",
+  "agents.searchProvider": "Penyedia pencarian",
+  "agents.searchApiKey": "Kunci API pencarian",
+  "agents.searchKeyHint": "Riset web langsung memerlukan kunci penyedia pencarian (Tavily atau Brave)",
+  "agents.customKeyStoredPlain": "Browser ini menyimpan kunci tanpa enkripsi. Gunakan aplikasi desktop untuk penyimpanan terenkripsi.",
+  "agents.customKeyNotEncrypted": "Enkripsi OS tidak tersedia; kunci tidak disimpan. Aktifkan keychain sistem Anda dan coba lagi.",
+  "agents.customConnect": "Hubungkan",
+  "agents.searchProviderNone": "Tidak ada",
+  "agents.customClearKey": "Hapus kunci API",
 
   // ── Figma Import ──
 

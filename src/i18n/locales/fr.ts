@@ -157,6 +157,23 @@ const fr: TranslationKeys = {
     "L\u2019ex\u00e9cution personnalis\u00e9e ne lance que les phases s\u00e9lectionn\u00e9es et peut d\u00e9sactiver la revalidation automatique en aval.",
   "agents.analysisPhasesAll": "Toutes les phases",
   "agents.analysisPhasesCustom": "Personnalis\u00e9",
+  "agents.customProvider": "API personnalisée",
+  "agents.customProviderDesc": "Tout point de terminaison compatible OpenAI — OpenCode Go/Zen, OpenRouter, DeepSeek ou votre propre URL",
+  "agents.customPreset": "Préréglage du fournisseur",
+  "agents.customBaseUrl": "URL de base",
+  "agents.customApiKey": "Clé API",
+  "agents.customModelIds": "ID de modèles (séparés par des virgules, facultatif)",
+  "agents.customNativeSearch": "Le modèle dispose d'une recherche web intégrée",
+  "agents.customNativeSearchHint": "Lorsque cette option est activée, l'outil de recherche web de l'application n'est pas proposé à ce point de terminaison",
+  "agents.customModels": "Modèles personnalisés",
+  "agents.searchProvider": "Fournisseur de recherche",
+  "agents.searchApiKey": "Clé API de recherche",
+  "agents.searchKeyHint": "La recherche web en direct nécessite une clé de fournisseur de recherche (Tavily ou Brave)",
+  "agents.customKeyStoredPlain": "Ce navigateur stocke les clés sans chiffrement. Utilisez l'application de bureau pour un stockage chiffré.",
+  "agents.customKeyNotEncrypted": "Le chiffrement du système d'exploitation n'est pas disponible ; la clé n'a pas été enregistrée. Activez votre trousseau système et réessayez.",
+  "agents.customConnect": "Connecter",
+  "agents.searchProviderNone": "Aucun",
+  "agents.customClearKey": "Effacer la clé API",
 
   // ── Figma Import ──
 

@@ -1,14 +1,8 @@
-// src/services/ai/allowed-providers.ts
-export const ALLOWED_PROVIDERS = ["anthropic", "openai"] as const;
-export type AllowedProvider = (typeof ALLOWED_PROVIDERS)[number];
-
-export const PROVIDER_LABELS: Record<AllowedProvider, string> = {
-  anthropic: "Claude",
-  openai: "Codex",
-} as const;
-
-export function isAllowedProvider(
-  provider: string,
-): provider is AllowedProvider {
-  return (ALLOWED_PROVIDERS as readonly string[]).includes(provider);
-}
+// src/services/ai/allowed-providers.ts — re-export of the shared allowlist so
+// existing renderer imports keep working. Source of truth: shared/ai/allowed-providers.ts
+export {
+  ALLOWED_PROVIDERS,
+  PROVIDER_LABELS,
+  isAllowedProvider,
+  type AllowedProvider,
+} from "../../../shared/ai/allowed-providers";

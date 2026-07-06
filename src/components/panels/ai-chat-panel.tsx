@@ -6,6 +6,7 @@ import {
   useMemo,
   useLayoutEffect,
 } from "react";
+import type { ComponentType, SVGProps } from "react";
 import {
   Send,
   Plus,
@@ -17,6 +18,7 @@ import {
   Square,
   Wrench,
   AlertCircle,
+  Plug,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
@@ -51,10 +53,14 @@ export type AIChatPresentation = "floating" | "docked";
 const MESSAGE_CHUNK_SIZE = 200;
 let fallbackScrollRunCounter = 0;
 
-const PROVIDER_ICON: Record<AIProviderType, typeof ClaudeLogo> = {
+const PROVIDER_ICON: Record<
+  AIProviderType,
+  ComponentType<SVGProps<SVGSVGElement>>
+> = {
   anthropic: ClaudeLogo,
   openai: OpenAILogo,
   opencode: OpenCodeLogo,
+  custom: Plug,
 };
 
 const CORNER_CLASSES: Record<PanelCorner, string> = {
@@ -76,7 +82,10 @@ function resolveNextModel(
 }
 
 function createScrollRunId(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
     return crypto.randomUUID();
   }
   fallbackScrollRunCounter += 1;
@@ -453,7 +462,12 @@ export default function AIChatPanel({
       // Use PROVIDER_LABELS for allowed providers, fall back to raw provider id.
       const groups = connectedProviders.map((p) => ({
         provider: p,
-        providerName: isAllowedProvider(p) ? PROVIDER_LABELS[p] : p,
+        providerName:
+          p === "custom"
+            ? t("agents.customModels")
+            : isAllowedProvider(p)
+              ? PROVIDER_LABELS[p]
+              : p,
         models: providers[p].models,
       }));
       const flat = groups.flatMap((g) =>

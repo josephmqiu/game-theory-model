@@ -89,6 +89,12 @@ describe("editor layout", () => {
     expect(source).not.toContain("useDocumentStore");
   });
 
+  it("includes the custom provider in the top bar connected-agent order", () => {
+    const source = readFileSync(topBarPath, "utf8");
+
+    expect(source).toMatch(/const PROVIDER_ORDER:[\s\S]*"custom"/);
+  });
+
   it("shows a centered launcher only for a truly blank analysis", () => {
     const source = readFileSync(
       join(process.cwd(), "src/components/editor/editor-layout.tsx"),

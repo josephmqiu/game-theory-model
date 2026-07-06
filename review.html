@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review Surface - PR 15 BYOK custom provider</title>
+  <style>
+    :root {
+      --bg: #f6f7f2;
+      --paper: #ffffff;
+      --ink: #17202a;
+      --muted: #5b6877;
+      --line: #d8ddd6;
+      --blue: #1f5f8b;
+      --green: #1c7a55;
+      --amber: #9a6700;
+      --red: #b42318;
+      --purple: #6b46a3;
+      --code: #0b1020;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main { max-width: 1180px; margin: 0 auto; padding: 28px 22px 60px; }
+    header, .panel, details.cluster, .diagram {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    header { padding: 22px 24px; margin-bottom: 18px; }
+    h1 { font-size: 25px; margin: 0 0 8px; }
+    h2 { font-size: 19px; margin: 28px 0 10px; }
+    h3 { font-size: 16px; margin: 18px 0 8px; }
+    h4 {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: #44515f;
+      margin: 16px 0 8px;
+    }
+    p { margin: 8px 0; }
+    code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .summary { font-size: 17px; }
+    .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .badge {
+      border: 1px solid var(--line);
+      background: #fafafa;
+      border-radius: 999px;
+      padding: 5px 10px;
+      color: #344054;
+    }
+    .risk {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      padding: 3px 9px;
+      margin-right: 10px;
+      color: #fff;
+      background: var(--green);
+      font-weight: 700;
+      font-size: 12px;
+      min-width: 58px;
+    }
+    .risk.p1 { background: var(--red); }
+    .risk.p2 { background: var(--amber); }
+    .risk.p3 { background: var(--green); }
+    .grid, .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .panel { padding: 16px; }
+    .diagram { padding: 10px 12px; overflow: auto; }
+    .diagram svg { width: 100%; min-width: 860px; height: auto; }
+    .box { fill: #fff; stroke: #a7b0ba; stroke-width: 1.5; }
+    .ui { stroke: var(--blue); }
+    .store { stroke: var(--purple); }
+    .api { stroke: var(--green); }
+    .adapter { stroke: var(--red); }
+    .endpoint { stroke: var(--amber); }
+    .event { stroke: #475569; }
+    .diagram text { font: 600 14px ui-sans-serif, system-ui; fill: #172033; }
+    .diagram .small { font-size: 12px; font-weight: 500; fill: #64748b; }
+    .arrow { stroke: #475569; stroke-width: 1.7; marker-end: url(#arrow); fill: none; }
+    details.cluster { margin: 12px 0; overflow: hidden; }
+    details.cluster > summary {
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      padding: 15px 18px;
+      font-weight: 700;
+      border-bottom: 1px solid var(--line);
+    }
+    details.cluster > summary::-webkit-details-marker { display: none; }
+    .cluster-body { padding: 0 18px 18px; }
+    .files {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      color: #44515f;
+      background: #f5f7f8;
+      border: 1px solid #e1e6e8;
+      border-radius: 6px;
+      padding: 8px;
+      overflow: auto;
+    }
+    ul { padding-left: 20px; margin: 8px 0; }
+    li { margin: 7px 0; }
+    .confidence { color: #536271; font-size: 13px; }
+    .code {
+      background: var(--code);
+      color: #d6deeb;
+      border-radius: 8px;
+      padding: 12px;
+      overflow: auto;
+      border: 1px solid #20283a;
+      font: 12px/1.48 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre;
+    }
+    .diff span { display: block; min-height: 1.45em; }
+    .diff .meta { color: #9bc4ff; }
+    .diff .ctx { color: #d6deeb; }
+    .diff .add { color: #7ee2a8; }
+    .diff .del { color: #ff9b9b; }
+    .resolved { border-left: 4px solid var(--green); padding-left: 14px; }
+    .warn { border-left: 4px solid var(--amber); padding-left: 14px; }
+    .footer { color: var(--muted); margin-top: 28px; font-size: 13px; }
+    @media (max-width: 820px) {
+      main { padding: 18px 12px; }
+      .grid, .cols { grid-template-columns: 1fr; }
+      header { padding: 18px; }
+      .code { font-size: 11px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Review Surface: PR #15 BYOK custom provider</h1>
+    <p class="summary">PR #15 adds a custom OpenAI-compatible provider path for chat, analysis, product tools, web search config, encrypted secret storage, and packaged Electron support; the local follow-up fixes packaged macOS launch, Electron secret fallback, and inline reasoning leakage.</p>
+    <div class="badges">
+      <span class="badge"><strong>Overall risk:</strong> P2, integration-heavy but now smoke-tested in packaged Electron</span>
+      <span class="badge"><strong>PR:</strong> <span class="mono">josephmqiu/game-theory-model#15</span></span>
+      <span class="badge"><strong>Base:</strong> <span class="mono">main</span></span>
+      <span class="badge"><strong>Branch:</strong> <span class="mono">feat/byok-custom-provider</span></span>
+      <span class="badge"><strong>Diff size:</strong> 77 files changed, 7,995 insertions(+), 1,245 deletions(-)</span>
+      <span class="badge"><strong>Generated:</strong> 2026-07-06T02:14:12Z</span>
+    </div>
+  </header>
+
+  <section class="grid">
+    <div class="panel">
+      <h2>Ground Truth</h2>
+      <p><strong>PR view:</strong> <code>gh pr view 15</code> confirms PR #15 is open from <code>feat/byok-custom-provider</code> into <code>main</code>.</p>
+      <p><strong>PR diff:</strong> <code>gh pr diff 15 --patch --color never</code> was saved to <code>/tmp/pr15-gh.diff</code>, 14,198 lines, SHA-256 <code>5ce80b6eaf04cb9c0d14e728809151abeee53a5508a2c2a2c4e2a89221c43179</code>.</p>
+      <p><strong>Local addendum:</strong> this artifact also includes unpushed follow-up hunks in <code>electron-builder.yml</code>, <code>.github/workflows/build-electron.yml</code>, <code>src/utils/secret-storage.ts</code>, <code>src/components/shared/agent-settings-dialog.tsx</code>, <code>src/i18n/locales/en.ts</code>, and <code>server/services/ai/custom-openai-adapter.ts</code>.</p>
+    </div>
+    <div class="panel">
+      <h2>Review Focus</h2>
+      <ul>
+        <li>FACT: Custom provider credentials are passed per request and should not be cached server-side.</li>
+        <li>FACT: Electron safeStorage can be unavailable in local/ad-hoc builds, so the UI must still support one-time BYOK testing without writing plaintext secrets.</li>
+        <li>FACT: Some OpenAI-compatible endpoints stream private reasoning in inline <code>&lt;think&gt;</code> tags.</li>
+        <li>INFERRED: The highest user-facing risk is not isolated unit behavior; it is end-to-end packaged provider setup and chat streaming.</li>
+      </ul>
+    </div>
+  </section>
+
+  <h2>Main Change Path</h2>
+  <section class="diagram">
+    <svg viewBox="0 0 1120 360" role="img" aria-label="Custom provider control-flow diagram">
+      <defs>
+        <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L0,6 L9,3 z" fill="#475569"></path>
+        </marker>
+      </defs>
+      <rect x="20" y="35" width="180" height="70" rx="8" class="box ui"></rect>
+      <text x="110" y="63" text-anchor="middle">Settings dialog</text>
+      <text x="110" y="86" text-anchor="middle" class="small">preset, URL, model, keys</text>
+      <rect x="245" y="35" width="180" height="70" rx="8" class="box store"></rect>
+      <text x="335" y="63" text-anchor="middle">Secret storage</text>
+      <text x="335" y="86" text-anchor="middle" class="small">safeStorage or session map</text>
+      <rect x="470" y="35" width="190" height="70" rx="8" class="box api"></rect>
+      <text x="565" y="63" text-anchor="middle">Renderer request</text>
+      <text x="565" y="86" text-anchor="middle" class="small">custom config attached</text>
+      <rect x="705" y="35" width="190" height="70" rx="8" class="box adapter"></rect>
+      <text x="800" y="63" text-anchor="middle">Custom adapter</text>
+      <text x="800" y="86" text-anchor="middle" class="small">tools, retries, redaction</text>
+      <rect x="940" y="35" width="160" height="70" rx="8" class="box endpoint"></rect>
+      <text x="1020" y="63" text-anchor="middle">BYOK endpoint</text>
+      <text x="1020" y="86" text-anchor="middle" class="small">OpenAI-compatible</text>
+      <line x1="200" y1="70" x2="245" y2="70" class="arrow"></line>
+      <line x1="425" y1="70" x2="470" y2="70" class="arrow"></line>
+      <line x1="660" y1="70" x2="705" y2="70" class="arrow"></line>
+      <line x1="895" y1="70" x2="940" y2="70" class="arrow"></line>
+      <rect x="470" y="175" width="190" height="70" rx="8" class="box api"></rect>
+      <text x="565" y="204" text-anchor="middle">Chat stream</text>
+      <text x="565" y="226" text-anchor="middle" class="small">SSE text deltas</text>
+      <rect x="705" y="175" width="190" height="70" rx="8" class="box adapter"></rect>
+      <text x="800" y="204" text-anchor="middle">Thinking filter</text>
+      <text x="800" y="226" text-anchor="middle" class="small">strip inline tags</text>
+      <rect x="940" y="175" width="160" height="70" rx="8" class="box event"></rect>
+      <text x="1020" y="204" text-anchor="middle">Transcript</text>
+      <text x="1020" y="226" text-anchor="middle" class="small">visible answer only</text>
+      <path d="M800 105 C800 138 615 138 565 175" class="arrow"></path>
+      <line x1="660" y1="210" x2="705" y2="210" class="arrow"></line>
+      <line x1="895" y1="210" x2="940" y2="210" class="arrow"></line>
+    </svg>
+  </section>
+
+  <h2>Issue Status</h2>
+  <section class="panel resolved">
+    <ol>
+      <li><strong>Fixed P1:</strong> labeled upstream credentials are redacted from custom-provider errors.</li>
+      <li><strong>Fixed P2:</strong> custom provider analysis and chat fall back when endpoints reject tools or strict response formats.</li>
+      <li><strong>Fixed P2:</strong> packaged macOS app is ad-hoc signed so the built bundle launches after <code>afterPack</code> mutates <code>Info.plist</code>.</li>
+      <li><strong>Fixed P2:</strong> Electron without OS encryption can use session-only secrets instead of failing the one-time BYOK setup path.</li>
+      <li><strong>Fixed P2:</strong> inline <code>&lt;think&gt;...&lt;/think&gt;</code> stream content is stripped before transcript emission.</li>
+    </ol>
+  </section>
+
+  <h2>Change Clusters</h2>
+
+  <details class="cluster" open>
+    <summary><span class="risk p1">P1 fixed</span><span>Custom OpenAI-compatible provider and redaction path</span></summary>
+    <div class="cluster-body">
+      <p class="files">server/services/ai/custom-openai-adapter.ts | server/api/ai/chat.ts | server/api/ai/connect-agent.ts | server/api/ai/generate.ts | server/services/ai/adapter-types.ts | shared/ai/allowed-providers.ts | server/services/ai/__tests__/custom-openai-adapter.test.ts</p>
+      <div class="cols">
+        <section>
+          <h4>Facts</h4>
+          <ul>
+            <li>FACT: The branch adds a <code>custom</code> provider entry and adapter for OpenAI-compatible chat streams.</li>
+            <li>FACT: The adapter emits text deltas, accumulates tool calls, truncates tool results, and sanitizes upstream error messages.</li>
+            <li>FACT: The current follow-up adds a streaming filter for inline <code>&lt;think&gt;</code> blocks before deltas are yielded.</li>
+          </ul>
+        </section>
+        <section>
+          <h4>Opinions</h4>
+          <ul>
+            <li><strong>Resolved</strong> <span class="confidence">confidence 9/10</span> The previous credential-leak path is fixed for labeled credential strings in upstream errors.</li>
+            <li><strong>Risk remains</strong> <span class="confidence">confidence 6/10</span> Provider compatibility still depends on how each endpoint handles tools, reasoning fields, and nonstandard stream chunks.</li>
+          </ul>
+        </section>
+      </div>
+      <h4>Blast Radius</h4>
+      <ul>
+        <li><code>streamChat</code> is called by chat UI requests and analysis flows that choose the custom provider.</li>
+        <li><code>server/api/ai/chat.ts</code>, <code>server/api/ai/generate.ts</code>, and <code>server/api/ai/analyze.ts</code> all depend on consistent provider allowlisting.</li>
+        <li>Tests outside the diff that exercise Claude/Codex adapters can fail if shared adapter types drift.</li>
+      </ul>
+      <h4>Relevant Diff Hunk</h4>
+      <pre class="code diff"><code><span class="meta">diff --git a/server/services/ai/custom-openai-adapter.ts b/server/services/ai/custom-openai-adapter.ts</span>
+<span class="add">+// Some OpenAI-compatible endpoints stream private reasoning inline as</span>
+<span class="add">+// &lt;think&gt;...&lt;/think&gt; text instead of a structured reasoning field. Never pass</span>
+<span class="add">+// that text through to the user transcript.</span>
+<span class="add">+function createInlineThinkingFilter(): {</span>
+<span class="add">+  push: (content: string) =&gt; string[];</span>
+<span class="add">+  flush: () =&gt; string[];</span>
+<span class="add">+} { ... }</span>
+<span class="ctx">         if (delta?.content) {</span>
+<span class="del">-          assistantText += delta.content;</span>
+<span class="del">-          yield { type: "text_delta", content: delta.content };</span>
+<span class="add">+          for (const visibleContent of inlineThinkingFilter.push(delta.content)) {</span>
+<span class="add">+            assistantText += visibleContent;</span>
+<span class="add">+            yield { type: "text_delta", content: visibleContent };</span>
+<span class="add">+          }</span>
+<span class="ctx">         }</span></code></pre>
+    </div>
+  </details>
+
+  <details class="cluster" open>
+    <summary><span class="risk p2">P2 fixed</span><span>Electron secret storage handles unavailable OS encryption</span></summary>
+    <div class="cluster-body">
+      <p class="files">src/utils/secret-storage.ts | src/components/shared/agent-settings-dialog.tsx | src/i18n/locales/en.ts | src/utils/__tests__/secret-storage.test.ts</p>
+      <div class="cols">
+        <section>
+          <h4>Facts</h4>
+          <ul>
+            <li>FACT: Electron still tries the encrypted main-process secrets bridge first.</li>
+            <li>FACT: When the Electron bridge returns <code>{ ok: false, encrypted: false }</code>, newly typed values are stored only in a renderer memory map.</li>
+            <li>FACT: The UI distinguishes web plaintext storage from Electron session-only storage with separate warning copy.</li>
+          </ul>
+        </section>
+        <section>
+          <h4>Opinions</h4>
+          <ul>
+            <li><strong>Resolved</strong> <span class="confidence">confidence 8/10</span> Local packaged testing can proceed even when macOS keychain access is unavailable or canceled.</li>
+            <li><strong>Tradeoff</strong> <span class="confidence">confidence 8/10</span> Session-only keys are safer than plaintext persistence but require re-entry after quit.</li>
+          </ul>
+        </section>
+      </div>
+      <h4>Blast Radius</h4>
+      <ul>
+        <li><code>setSecret</code>, <code>getSecret</code>, <code>hasSecret</code>, and <code>removeSecret</code> feed custom provider and search provider key flows.</li>
+        <li>The web fallback remains localStorage-based and still shows the plaintext browser warning.</li>
+      </ul>
+      <h4>Relevant Diff Hunk</h4>
+      <pre class="code diff"><code><span class="meta">diff --git a/src/utils/secret-storage.ts b/src/utils/secret-storage.ts</span>
+<span class="add">+const electronSessionSecrets = new Map&lt;string, string&gt;();</span>
+<span class="add">+export function hasElectronSecretBridge(): boolean {</span>
+<span class="add">+  return hasElectronSecrets();</span>
+<span class="add">+}</span>
+<span class="ctx">   if (hasElectronSecrets()) {</span>
+<span class="del">-    return window.electronAPI!.secrets!.set(key, value);</span>
+<span class="add">+    const result = await window.electronAPI!.secrets!.set(key, value);</span>
+<span class="add">+    if (result.ok) {</span>
+<span class="add">+      electronSessionSecrets.delete(key);</span>
+<span class="add">+      return result;</span>
+<span class="add">+    }</span>
+<span class="add">+    electronSessionSecrets.set(key, value);</span>
+<span class="add">+    return { ok: true, encrypted: false };</span>
+<span class="ctx">   }</span></code></pre>
+    </div>
+  </details>
+
+  <details class="cluster" open>
+    <summary><span class="risk p2">P2 fixed</span><span>Packaged macOS bundle is launchable after build</span></summary>
+    <div class="cluster-body">
+      <p class="files">electron-builder.yml | .github/workflows/build-electron.yml</p>
+      <div class="cols">
+        <section>
+          <h4>Facts</h4>
+          <ul>
+            <li>FACT: <code>mac.identity</code> changed from <code>null</code> to <code>"-"</code>.</li>
+            <li>FACT: The CI workflow comment now matches the ad-hoc signing behavior while keeping <code>CSC_IDENTITY_AUTO_DISCOVERY=false</code>.</li>
+            <li>FACT: <code>codesign --verify --deep --strict</code> passes on the rebuilt app.</li>
+          </ul>
+        </section>
+        <section>
+          <h4>Opinions</h4>
+          <ul>
+            <li><strong>Resolved</strong> <span class="confidence">confidence 9/10</span> The local launch failure caused by stale resource sealing after <code>afterPack</code> is addressed.</li>
+            <li><strong>Verify in CI</strong> <span class="confidence">confidence 7/10</span> GitHub macOS runners should produce the same ad-hoc signature, but the CI artifact still needs to pass after this commit lands.</li>
+          </ul>
+        </section>
+      </div>
+      <h4>Blast Radius</h4>
+      <ul>
+        <li>Mac DMG and ZIP builds are affected; Windows/Linux packaging is not touched by this hunk.</li>
+        <li>Notarization remains disabled, so first-launch Gatekeeper UX still depends on unsigned distribution expectations.</li>
+      </ul>
+      <h4>Relevant Diff Hunk</h4>
+      <pre class="code diff"><code><span class="meta">diff --git a/electron-builder.yml b/electron-builder.yml</span>
+<span class="del">-  # OSS project - ship unsigned. No Apple Developer signing or notarization.</span>
+<span class="del">-  # Users open via right-click -&gt; Open on first launch.</span>
+<span class="del">-  identity: null</span>
+<span class="add">+  # OSS project - use an ad-hoc signature so macOS can launch the bundle</span>
+<span class="add">+  # without an Apple Developer certificate or notarization.</span>
+<span class="add">+  identity: "-"</span></code></pre>
+    </div>
+  </details>
+
+  <details class="cluster" open>
+    <summary><span class="risk p2">P2 verified</span><span>Packaged Electron custom-provider QA</span></summary>
+    <div class="cluster-body">
+      <p class="files">dist-electron/mac-arm64/Game Theory Analyzer.app | local fixture on 127.0.0.1:58419 | OpenCode Go live endpoint</p>
+      <div class="cols">
+        <section>
+          <h4>Facts</h4>
+          <ul>
+            <li>FACT: The packaged app launched from <code>dist-electron/mac-arm64/Game Theory Analyzer.app</code> and served itself on an internal Nitro port, not the web dev service.</li>
+            <li>FACT: A local OpenAI-compatible fixture connected as <code>qa-think-model</code> and returned a streamed response.</li>
+            <li>FACT: The fixture streamed split inline thinking tags; the visible transcript showed only <code>visible answer</code>.</li>
+            <li>FACT: The user-provided one-time OpenCode Go key was used earlier in this QA pass for live provider discovery and chat; the temp profile scan found no plaintext <code>sk-</code> pattern.</li>
+          </ul>
+        </section>
+        <section>
+          <h4>Opinions</h4>
+          <ul>
+            <li><strong>Confidence improved</strong> <span class="confidence">confidence 8/10</span> The main packaged-app provider path works for both local fixture and live OpenCode Go chat.</li>
+            <li><strong>Still bounded</strong> <span class="confidence">confidence 7/10</span> This does not prove every OpenAI-compatible endpoint handles tools, models, and reasoning the same way.</li>
+          </ul>
+        </section>
+      </div>
+      <h4>Blast Radius</h4>
+      <ul>
+        <li>Provider setup affects toolbar model state, chat send enablement, analysis prompt model labels, and persisted preferences.</li>
+        <li>The same key retrieval path is used for web-search provider keys.</li>
+      </ul>
+      <h4>Evidence</h4>
+      <pre class="code"><code>codesign --verify --deep --strict --verbose=2 dist-electron/mac-arm64/Game\ Theory\ Analyzer.app
+=> valid on disk; satisfies its Designated Requirement
+
+Packaged app launch:
+=> Nitro server started on 127.0.0.1 internal port
+=> Computer Use URL: 127.0.0.1:&lt;internal&gt;/editor
+
+Fixture transcript:
+=> user: Return the fixture response.
+=> assistant: visible answer
+
+Temp profile scan:
+=> containsSecretPrefix=true; plaintextSkPatternCount=0</code></pre>
+    </div>
+  </details>
+
+  <h2>Reviewer Checklist</h2>
+  <section class="panel">
+    <ul>
+      <li>Confirm product intent: should session-only Electron keys be acceptable when OS encryption is unavailable, or should production builds hard-fail instead?</li>
+      <li>Review the inline thinking filter against any provider-specific reasoning formats beyond <code>&lt;think&gt;</code> tags.</li>
+      <li>After push, verify GitHub Actions for PR #15 on macOS and the smoke server.</li>
+      <li>Install or open the CI-built macOS artifact, not only the local rebuilt app, before release.</li>
+      <li>Run one additional real non-OpenCode provider if the target support matrix includes OpenRouter, DeepSeek, or a private endpoint.</li>
+    </ul>
+  </section>
+
+  <h2>Low Confidence / Verify Me</h2>
+  <section class="panel warn">
+    <ul>
+      <li><strong>Provider behavior:</strong> INFERRED that other OpenAI-compatible endpoints will behave like the tested fixture and OpenCode Go for basic chat. Confidence 6/10.</li>
+      <li><strong>CI artifact parity:</strong> INFERRED that electron-builder ad-hoc signing will behave the same on GitHub macOS runners. Confidence 7/10 until CI passes after this commit.</li>
+      <li><strong>Unlabeled secrets:</strong> redaction is strong for labeled credential strings but cannot guarantee arbitrary raw secret substrings are removed if an upstream echoes them without context. Confidence 7/10.</li>
+      <li><strong>Session fallback UX:</strong> the warning text is English-only in this follow-up; other locale files already have the broader custom-provider copy but not this new warning key. Confidence 8/10 that i18n fallback prevents breakage.</li>
+    </ul>
+  </section>
+
+  <h2>Verification Run</h2>
+  <section class="panel">
+    <ul>
+      <li><code>bun run test:unit -- server/services/ai/__tests__/custom-openai-adapter.test.ts src/utils/__tests__/secret-storage.test.ts src/components/shared/__tests__/agent-settings-dialog.test.tsx</code>: passed, 35 tests.</li>
+      <li><code>bun run typecheck</code>: passed.</li>
+      <li><code>bun run electron:build:mac-arm64</code>: passed before this artifact refresh.</li>
+      <li><code>codesign --verify --deep --strict --verbose=2 dist-electron/mac-arm64/Game\ Theory\ Analyzer.app</code>: passed.</li>
+      <li>Computer Use packaged app QA: custom fixture connected, chat streamed, inline thinking hidden, transcript showed <code>visible answer</code>.</li>
+      <li>Live OpenCode Go QA: provider discovery and chat completed earlier in this pass with the one-time key supplied by the user; key was not printed into this artifact.</li>
+    </ul>
+  </section>
+
+  <p class="footer">Offline artifact. No external assets. All claims above are tied to <code>gh pr view 15</code>, <code>gh pr diff 15</code>, local diff hunks, or packaged-app QA evidence gathered in this workspace.</p>
+</main>
+</body>
+</html>

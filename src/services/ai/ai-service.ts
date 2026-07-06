@@ -6,6 +6,32 @@ import {
   DEFAULT_STREAM_NO_TEXT_TIMEOUT_MS,
   STREAM_TIMEOUT_MIN_MS,
 } from "./ai-runtime-config";
+import { useAgentSettingsStore } from "@/stores/agent-settings-store";
+import { getSecret } from "@/utils/secret-storage";
+
+/** Wire shape for the custom BYOK provider on chat/generate/analyze requests. */
+interface CustomProviderPayload {
+  baseURL: string;
+  apiKey: string;
+  hasNativeWebSearch: boolean;
+}
+
+/**
+ * Resolve the custom provider's BYOK connection details AT SEND TIME. baseURL /
+ * hasNativeWebSearch come from the settings store; the API key is read fresh
+ * from secret storage on every call and never cached in module/store state.
+ * Returns null when the provider is not configured (no base URL).
+ */
+export async function resolveCustomProviderPayload(): Promise<CustomProviderPayload | null> {
+  const settings = useAgentSettingsStore.getState().customProvider;
+  if (!settings.baseURL) return null;
+  const apiKey = (await getSecret("customProvider.apiKey")) ?? "";
+  return {
+    baseURL: settings.baseURL,
+    apiKey,
+    hasNativeWebSearch: settings.hasNativeWebSearch,
+  };
+}
 
 interface RunLogger {
   log: (sub: string, event: string, data?: Record<string, unknown>) => void;
@@ -139,6 +165,22 @@ export async function* streamChat(
   resetActivityTimeout();
 
   try {
+    let custom: CustomProviderPayload | null = null;
+    if (provider === "custom") {
+      custom = await resolveCustomProviderPayload();
+      if (!custom) {
+        yield {
+          type: "error",
+          content:
+            "Custom provider is not configured. Set the base URL and API key in Settings.",
+        };
+        clearTimeout(hardTimeout);
+        clearNoTextTimeout();
+        clearFirstTextTimeout();
+        return;
+      }
+    }
+
     const fetchSignal = abortSignal
       ? AbortSignal.any([controller.signal, abortSignal])
       : controller.signal;
@@ -162,6 +204,7 @@ export async function* streamChat(
         thinkingBudgetTokens: options?.thinkingBudgetTokens,
         effort: options?.effort,
         sessionKey: options?.sessionKey,
+        ...(custom ? { custom } : {}),
       }),
       signal: fetchSignal,
     });
@@ -419,6 +462,17 @@ export async function generateCompletion(
     DEFAULT_GENERATE_TIMEOUT_MS,
   );
 
+  let custom: CustomProviderPayload | null = null;
+  if (provider === "custom") {
+    custom = await resolveCustomProviderPayload();
+    if (!custom) {
+      clearTimeout(timeout);
+      throw new Error(
+        "Custom provider is not configured. Set the base URL and API key in Settings.",
+      );
+    }
+  }
+
   let response: Response;
   try {
     response = await fetch("/api/ai/generate", {
@@ -432,6 +486,7 @@ export async function generateCompletion(
         message: userMessage,
         model,
         provider,
+        ...(custom ? { custom } : {}),
       }),
       signal: controller.signal,
     });

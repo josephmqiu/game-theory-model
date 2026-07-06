@@ -3,6 +3,7 @@ import {
   BrowserWindow,
   ipcMain,
   dialog,
+  safeStorage,
   type OpenDialogOptions,
   type BrowserWindowConstructorOptions,
 } from "electron";
@@ -51,10 +52,8 @@ import {
   getLegacyPortFilePath,
   getPortFilePath,
 } from "../src/lib/runtime-state-paths";
-import {
-  createAppSettingsStore,
-  createPreferenceStore,
-} from "./persistence";
+import { createAppSettingsStore, createPreferenceStore } from "./persistence";
+import { createSecretsService, isSecretKey, stripSecretKeys } from "./secrets";
 
 let mainWindow: BrowserWindow | null = null;
 let nitroProcess: ChildProcess | null = null;
@@ -112,6 +111,18 @@ const prefsStore = createPreferenceStore({
 async function loadPrefs(): Promise<void> {
   await prefsStore.load();
 }
+
+// Encrypted-at-rest storage for API keys, layered over the same preference
+// store under a reserved `secret:` prefix (see ./secrets).
+const secretsService = createSecretsService({
+  safeStorage,
+  store: {
+    get: (key) => prefsStore.get(key),
+    set: (key, value) => prefsStore.set(key, value),
+    remove: (key) => prefsStore.remove(key),
+  },
+  logWarn: (message) => log.warn(message),
+});
 
 // ---------------------------------------------------------------------------
 // Fix PATH for GUI apps (shell PATH not inherited)
@@ -184,7 +195,9 @@ async function cleanupPortFile(): Promise<void> {
   }
 }
 
-async function writeSmokeReadyFile(data: Record<string, unknown>): Promise<void> {
+async function writeSmokeReadyFile(
+  data: Record<string, unknown>,
+): Promise<void> {
   if (!isSmokeTestMode) return;
 
   const filePath = getSmokeReadyFilePath();
@@ -302,14 +315,14 @@ async function startNitroServer(): Promise<number> {
     });
 
     child.on("error", (error) => {
-      settleReject(
-        error instanceof Error ? error : new Error(String(error)),
-      );
+      settleReject(error instanceof Error ? error : new Error(String(error)));
     });
     child.on("exit", (code) => {
       if (!settled) {
         settleReject(
-          new Error(`Nitro exited before readiness with code ${code ?? "unknown"}`),
+          new Error(
+            `Nitro exited before readiness with code ${code ?? "unknown"}`,
+          ),
         );
       }
       if (code !== 0 && code !== null) {
@@ -653,14 +666,49 @@ function setupIPC(): void {
 
   // Generic renderer preferences (replaces localStorage which is origin-scoped
   // and lost when Nitro server restarts on a different random port)
-  ipcMain.handle("prefs:getAll", () => prefsStore.getAll());
+  ipcMain.handle("prefs:getAll", () => stripSecretKeys(prefsStore.getAll()));
 
   ipcMain.handle("prefs:set", (_event, key: string, value: string) => {
+    if (isSecretKey(key)) {
+      log.warn(
+        `[prefs] Refused renderer write to reserved secret key "${key}"`,
+      );
+      return;
+    }
     prefsStore.set(key, value);
   });
 
   ipcMain.handle("prefs:remove", (_event, key: string) => {
+    if (isSecretKey(key)) {
+      log.warn(
+        `[prefs] Refused renderer removal of reserved secret key "${key}"`,
+      );
+      return;
+    }
     prefsStore.remove(key);
+  });
+
+  // Encrypted secret storage (API keys). Plaintext never crosses back to the
+  // renderer except via secrets:get, and ciphertext never leaves the main
+  // process via prefs:getAll (see stripSecretKeys above).
+  ipcMain.handle("secrets:encryptionAvailable", () =>
+    secretsService.encryptionAvailable(),
+  );
+
+  ipcMain.handle("secrets:set", (_event, key: string, plaintext: string) =>
+    secretsService.set(key, plaintext),
+  );
+
+  ipcMain.handle("secrets:get", (_event, key: string) =>
+    secretsService.get(key),
+  );
+
+  ipcMain.handle("secrets:has", (_event, key: string) =>
+    secretsService.has(key),
+  );
+
+  ipcMain.handle("secrets:remove", (_event, key: string) => {
+    secretsService.remove(key);
   });
 
   ipcMain.handle("log:getDir", () => getLogDir());
@@ -755,7 +803,13 @@ async function blockMountedDiskImageLaunch(): Promise<boolean> {
     return false;
   }
 
-  if (!isRunningFromMountedDiskImage(process.platform, app.isPackaged, process.execPath)) {
+  if (
+    !isRunningFromMountedDiskImage(
+      process.platform,
+      app.isPackaged,
+      process.execPath,
+    )
+  ) {
     return false;
   }
 

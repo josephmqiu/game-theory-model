@@ -157,6 +157,23 @@ const pt: TranslationKeys = {
     "A execu\u00e7\u00e3o personalizada executa apenas as fases selecionadas e pode desativar a revalida\u00e7\u00e3o autom\u00e1tica posterior.",
   "agents.analysisPhasesAll": "Todas as fases",
   "agents.analysisPhasesCustom": "Personalizado",
+  "agents.customProvider": "API personalizada",
+  "agents.customProviderDesc": "Qualquer endpoint compatível com OpenAI — OpenCode Go/Zen, OpenRouter, DeepSeek ou sua própria URL",
+  "agents.customPreset": "Predefinição do provedor",
+  "agents.customBaseUrl": "URL base",
+  "agents.customApiKey": "Chave de API",
+  "agents.customModelIds": "IDs de modelo (separados por vírgula, opcional)",
+  "agents.customNativeSearch": "O modelo tem busca web integrada",
+  "agents.customNativeSearchHint": "Quando ativado, a ferramenta de busca web do app não é oferecida a este endpoint",
+  "agents.customModels": "Modelos personalizados",
+  "agents.searchProvider": "Provedor de busca",
+  "agents.searchApiKey": "Chave de API de busca",
+  "agents.searchKeyHint": "A pesquisa web ao vivo precisa de uma chave de provedor de busca (Tavily ou Brave)",
+  "agents.customKeyStoredPlain": "Este navegador armazena as chaves sem criptografia. Use o app de desktop para armazenamento criptografado.",
+  "agents.customKeyNotEncrypted": "A criptografia do sistema operacional está indisponível; a chave não foi salva. Ative o chaveiro do sistema e tente novamente.",
+  "agents.customConnect": "Conectar",
+  "agents.searchProviderNone": "Nenhum",
+  "agents.customClearKey": "Limpar chave de API",
 
   // ── Figma Import ──
 

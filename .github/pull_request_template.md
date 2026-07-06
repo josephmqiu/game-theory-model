@@ -29,5 +29,6 @@
 - [ ] `bun run typecheck` passes
 - [ ] `bun run test` passes
 - [ ] Verified desktop behavior in `bun run electron:dev` if this change affects the Electron app path
+- [ ] Ran `bun run test:live:custom` or noted why it was skipped if this changes Custom API/BYOK behavior
 - [ ] No unrelated changes included
 - [ ] Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)

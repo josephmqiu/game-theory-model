@@ -154,6 +154,23 @@ const th: TranslationKeys = {
     "การรันเฟสแบบกำหนดเองจะรันเฉพาะเฟสที่เลือกและอาจปิดการตรวจสอบซ้ำอัตโนมัติแบบปลายน้ำ",
   "agents.analysisPhasesAll": "ทุกเฟส",
   "agents.analysisPhasesCustom": "กำหนดเอง",
+  "agents.customProvider": "API ที่กำหนดเอง",
+  "agents.customProviderDesc": "เอนด์พอยต์ใด ๆ ที่รองรับ OpenAI — OpenCode Go/Zen, OpenRouter, DeepSeek หรือ URL ของคุณเอง",
+  "agents.customPreset": "ค่าที่ตั้งไว้ล่วงหน้าของผู้ให้บริการ",
+  "agents.customBaseUrl": "URL ฐาน",
+  "agents.customApiKey": "คีย์ API",
+  "agents.customModelIds": "รหัสโมเดล (คั่นด้วยเครื่องหมายจุลภาค ไม่บังคับ)",
+  "agents.customNativeSearch": "โมเดลมีการค้นหาเว็บในตัว",
+  "agents.customNativeSearchHint": "เมื่อเปิด เครื่องมือค้นหาเว็บของแอปจะไม่ถูกเสนอให้กับเอนด์พอยต์นี้",
+  "agents.customModels": "โมเดลที่กำหนดเอง",
+  "agents.searchProvider": "ผู้ให้บริการค้นหา",
+  "agents.searchApiKey": "คีย์ API การค้นหา",
+  "agents.searchKeyHint": "การวิจัยเว็บแบบสดต้องใช้คีย์ของผู้ให้บริการค้นหา (Tavily หรือ Brave)",
+  "agents.customKeyStoredPlain": "เบราว์เซอร์นี้จัดเก็บคีย์แบบไม่เข้ารหัส ใช้แอปเดสก์ท็อปสำหรับการจัดเก็บแบบเข้ารหัส",
+  "agents.customKeyNotEncrypted": "การเข้ารหัสของระบบปฏิบัติการไม่พร้อมใช้งาน คีย์จึงไม่ถูกบันทึก เปิดใช้งานพวงกุญแจของระบบแล้วลองอีกครั้ง",
+  "agents.customConnect": "เชื่อมต่อ",
+  "agents.searchProviderNone": "ไม่มี",
+  "agents.customClearKey": "ล้างคีย์ API",
 
   // ── Figma Import ──
 

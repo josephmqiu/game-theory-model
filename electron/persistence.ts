@@ -105,6 +105,10 @@ export function createPreferenceStore({
     scheduleWrite();
   }
 
+  function get(key: string): string | undefined {
+    return prefsCache[key];
+  }
+
   function getAll(): Record<string, string> {
     return { ...prefsCache };
   }
@@ -118,6 +122,7 @@ export function createPreferenceStore({
   }
 
   return {
+    get,
     getAll,
     hasPendingWrite,
     load,
@@ -138,7 +143,9 @@ export function createAppSettingsStore<TSettings extends object>({
     try {
       const raw = await fs.readFile(getSettingsPath(), "utf-8");
       const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === "object" ? (parsed as TSettings) : ({} as TSettings);
+      return parsed && typeof parsed === "object"
+        ? (parsed as TSettings)
+        : ({} as TSettings);
     } catch {
       return {} as TSettings;
     }

@@ -16,6 +16,7 @@ import {
   streamChat as codexStreamChat,
   isCodexThreadExpiredError,
 } from "../../services/ai/codex-adapter";
+import { streamChat as customStreamChat } from "../../services/ai/custom-openai-adapter";
 import {
   beginTurn,
   endSession,
@@ -24,22 +25,23 @@ import {
   markTurnActive,
   touch,
   type ChatSession,
+  type StartedSessionTurn,
 } from "../../services/ai/chat-sessions";
+import {
+  isAllowedProvider,
+  type AllowedProvider,
+} from "../../../shared/ai/allowed-providers";
+import type {
+  ChatAdapter,
+  ChatProviderEntry,
+  PreparedChatTurn,
+} from "../../services/ai/adapter-types";
 import { analysisRuntimeConfig } from "../../config/analysis-runtime";
 import { startSSEKeepAlive } from "../../utils/sse-keepalive";
 
-const ALLOWED_PROVIDERS = ["anthropic", "openai"] as const;
-type StartedSessionTurn = Extract<ReturnType<typeof beginTurn>, { started: true }>;
-
-function isAllowedProvider(
-  provider: string,
-): provider is (typeof ALLOWED_PROVIDERS)[number] {
-  return (ALLOWED_PROVIDERS as readonly string[]).includes(provider);
-}
-
 /** Pattern for detecting sensitive data in debug log output */
 export const SENSITIVE_LOG_PATTERN =
-  /ANTHROPIC_API_KEY=|Authorization:\s*Bearer|api[_-]?key\s*[:=]/i;
+  /(?:\b[A-Z0-9_]*API[_-]?KEY\b\s*[:=]\s*|Authorization:\s*Bearer\s+)(?:"[^"]+"|'[^']+'|[^\s,;'"`]+)/i;
 
 /** Allowed media types for image attachments */
 export const ALLOWED_MEDIA_TYPES = new Set([
@@ -72,8 +74,7 @@ function estimateBase64DecodedBytes(data: string): number {
 function isBase64Payload(data: string): boolean {
   const normalized = data.replace(/\s/g, "");
   return (
-    normalized.length % 4 === 0 &&
-    /^[A-Za-z0-9+/]*={0,2}$/.test(normalized)
+    normalized.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(normalized)
   );
 }
 
@@ -91,12 +92,26 @@ export interface ChatBody {
     attachments?: ChatAttachmentWire[];
   }>;
   model?: string;
-  provider?: "anthropic" | "openai";
+  provider?: AllowedProvider;
   thinkingMode?: "adaptive" | "disabled" | "enabled";
   thinkingBudgetTokens?: number;
   effort?: "low" | "medium" | "high" | "max";
   sessionKey?: string;
+  custom?: CustomProviderRequest;
 }
+
+/** BYOK connection details sent by the renderer for the custom provider. */
+export interface CustomProviderRequest {
+  baseURL: string;
+  apiKey: string;
+  hasNativeWebSearch: boolean;
+}
+
+const customProviderSchema = z.object({
+  baseURL: z.string().url(),
+  apiKey: z.string(),
+  hasNativeWebSearch: z.boolean().optional().default(false),
+});
 
 const chatAttachmentSchema = z.object({
   name: z.string(),
@@ -139,8 +154,19 @@ const chatBodySchema = z
     thinkingBudgetTokens: z.number().positive().optional(),
     effort: z.enum(["low", "medium", "high", "max"]).optional(),
     sessionKey: z.string().trim().min(1).optional(),
+    custom: customProviderSchema.optional(),
   })
   .superRefine((body, ctx) => {
+    // The custom provider needs its BYOK connection details on every request
+    // (the server never caches them).
+    if (body.provider === "custom" && !body.custom) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Custom provider requires baseURL and apiKey",
+        path: ["custom"],
+      });
+    }
+
     const attachments = body.messages.flatMap(
       (message) => message.attachments ?? [],
     );
@@ -165,7 +191,10 @@ const chatBodySchema = z
     }
   });
 
-function writeSSE(controller: ReadableStreamDefaultController, payload: unknown) {
+function writeSSE(
+  controller: ReadableStreamDefaultController,
+  payload: unknown,
+) {
   controller.enqueue(
     new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`),
   );
@@ -216,7 +245,17 @@ export default defineEventHandler(async (event) => {
     );
   }
   const parsed = parsedBody.data;
+  // A provider must be both allowlisted and registered in the routing table.
+  // An allowlisted-but-unregistered provider (e.g. "custom" before its adapter
+  // ships) falls through to the same rejection as a disallowed provider.
   if (!isAllowedProvider(parsed.provider)) {
+    return badRequest(
+      event,
+      "Missing or unsupported provider. Provider fallback is disabled.",
+    );
+  }
+  const entry = CHAT_PROVIDERS[parsed.provider];
+  if (!entry) {
     return badRequest(
       event,
       "Missing or unsupported provider. Provider fallback is disabled.",
@@ -255,26 +294,179 @@ export default defineEventHandler(async (event) => {
     Connection: "keep-alive",
   });
 
-  // Route to allowed providers only; no fallback routing.
-  if (body.provider === "anthropic")
-    return streamViaClaude(event, body, body.model, runId, startedSessionTurn);
-  return streamViaCodexAdapter(
+  // Dispatch via the provider routing table; no fallback routing.
+  const prepared = entry.prepare(body, startedSessionTurn);
+  return entry.stream({
     event,
     body,
-    body.model,
+    model: body.model,
     runId,
-    startedSessionTurn,
-  );
+    sessionResult: startedSessionTurn,
+    prepared,
+    adapter: entry.adapter,
+  });
 });
 
-/** Stream via Codex adapter — wraps codex-adapter.streamChat() into SSE */
-function streamViaCodexAdapter(
-  event: H3Event,
-  body: ChatBody,
-  model?: string,
-  runId?: string,
-  sessionResult?: StartedSessionTurn | null,
-) {
+/** Inputs a provider's stream() wrapper receives for one chat turn. */
+interface ChatStreamContext {
+  event: H3Event;
+  body: ChatBody;
+  model?: string;
+  runId?: string;
+  sessionResult: StartedSessionTurn | null;
+  prepared: PreparedChatTurn;
+  adapter: ChatAdapter;
+}
+
+/**
+ * Build the prompt/system parts for a turn. Runtime sessions keep the system
+ * prompt lean; a provider switch or the no-session legacy path folds history in.
+ */
+function prepareChatTurn(
+  body: Pick<ChatBody, "system" | "messages" | "sessionKey">,
+  sessionResult: StartedSessionTurn | null,
+): PreparedChatTurn {
+  return body.sessionKey
+    ? sessionResult?.providerChanged
+      ? buildLegacyChatPromptParts(body)
+      : buildRuntimeSessionPromptParts(body)
+    : buildLegacyChatPromptParts(body);
+}
+
+const CUSTOM_CHAT_ADAPTER_STUB: ChatAdapter = {
+  // eslint-disable-next-line require-yield
+  async *streamChat(): AsyncGenerator<never> {
+    throw new Error(
+      "custom provider is dispatched via streamViaCustom, not adapter.streamChat",
+    );
+  },
+};
+
+/**
+ * Provider routing table. Partial: an allowlisted provider without an entry
+ * (e.g. "custom" before its adapter ships) is rejected by the handler.
+ */
+const CHAT_PROVIDERS: Partial<
+  Record<AllowedProvider, ChatProviderEntry<ChatStreamContext>>
+> = {
+  anthropic: {
+    adapter: { streamChat: claudeStreamChat },
+    prepare: prepareChatTurn,
+    stream: streamViaClaude,
+  },
+  openai: {
+    adapter: { streamChat: codexStreamChat },
+    prepare: prepareChatTurn,
+    stream: streamViaCodexAdapter,
+  },
+  custom: {
+    // The custom provider dispatches via streamViaCustom, which consumes the
+    // FULL multi-turn history from ctx.body.messages plus the per-request BYOK
+    // creds — neither fits the base ChatAdapter(prompt, system, model) shape —
+    // so this adapter field is never invoked.
+    adapter: CUSTOM_CHAT_ADAPTER_STUB,
+    prepare: prepareChatTurn,
+    stream: streamViaCustom,
+  },
+};
+
+/** Stream via the custom OpenAI-compatible adapter — wraps it into SSE. */
+function streamViaCustom(ctx: ChatStreamContext): Response {
+  const { event, body, model, runId } = ctx;
+  const abortController = new AbortController();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const encoder = new TextEncoder();
+      let pingTimer: ReturnType<typeof setInterval> | null = null;
+      const startPingTimer = () => {
+        if (pingTimer) return;
+        pingTimer = startSSEKeepAlive(
+          () => writeSSE(controller, { type: "ping", content: "" }),
+          KEEPALIVE_INTERVAL_MS,
+        );
+      };
+      const stopPingTimer = () => {
+        if (!pingTimer) return;
+        clearInterval(pingTimer);
+        pingTimer = null;
+      };
+
+      const req = event.node?.req;
+      if (req) {
+        req.on("close", () => abortController.abort());
+      }
+
+      try {
+        const custom = body.custom;
+        if (!custom) {
+          // Guarded by zod superRefine, but stay defensive.
+          throw new Error("Custom provider requires baseURL and apiKey");
+        }
+
+        startPingTimer();
+
+        for await (const ev of customStreamChat(
+          {
+            system: body.system,
+            messages: body.messages.map((m) => ({
+              role: m.role,
+              content: m.content,
+            })),
+            model: model ?? "gpt-4o-mini",
+            baseURL: custom.baseURL,
+            apiKey: custom.apiKey,
+            hasNativeWebSearch: custom.hasNativeWebSearch,
+          },
+          { runId, signal: abortController.signal },
+        )) {
+          stopPingTimer();
+          if (shouldForwardChatEvent(ev.type)) {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(ev)}\n\n`),
+            );
+          }
+        }
+
+        serverLog(runId, "chat", "stream-complete");
+        const customAnalysis = entityGraphService.getAnalysis();
+        if (customAnalysis.entities.length > 0) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "entity_snapshot", analysis: customAnalysis })}\n\n`,
+            ),
+          );
+        }
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ type: "done", content: "" })}\n\n`,
+          ),
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
+        serverLog(runId, "chat", "stream-error", { error: message });
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ type: "error", message, recoverable: false })}\n\n`,
+          ),
+        );
+      } finally {
+        stopPingTimer();
+        if (body.sessionKey) {
+          endTurn(body.sessionKey);
+        }
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream);
+}
+
+/** Stream via Codex adapter — wraps the adapter's streamChat() into SSE */
+function streamViaCodexAdapter(ctx: ChatStreamContext): Response {
+  const { event, body, model, runId, sessionResult, prepared, adapter } = ctx;
   const abortController = new AbortController();
 
   const stream = new ReadableStream({
@@ -310,14 +502,10 @@ function streamViaCodexAdapter(
         }
         startPingTimer();
 
-        const { prompt, systemPrompt } = body.sessionKey
-          ? sessionResult?.providerChanged
-            ? buildLegacyChatPromptParts(body)
-            : buildRuntimeSessionPromptParts(body)
-          : buildLegacyChatPromptParts(body);
+        const { prompt, systemPrompt } = prepared;
 
         const streamFreshCodexTurn = async () => {
-          for await (const ev of codexStreamChat(
+          for await (const ev of adapter.streamChat(
             prompt,
             systemPrompt,
             model ?? "o3-mini",
@@ -402,14 +590,9 @@ function streamViaCodexAdapter(
   return new Response(stream);
 }
 
-/** Stream via Claude adapter — wraps claude-adapter.streamChat() into SSE */
-function streamViaClaude(
-  event: H3Event,
-  body: ChatBody,
-  model?: string,
-  runId?: string,
-  sessionResult?: StartedSessionTurn | null,
-) {
+/** Stream via Claude adapter — wraps the adapter's streamChat() into SSE */
+function streamViaClaude(ctx: ChatStreamContext): Response {
+  const { event, body, model, runId, sessionResult, prepared, adapter } = ctx;
   const abortController = new AbortController();
 
   const stream = new ReadableStream({
@@ -447,11 +630,7 @@ function streamViaClaude(
         }
         startPingTimer();
 
-        const promptParts = body.sessionKey
-          ? sessionResult?.providerChanged
-            ? buildLegacyChatPromptParts(body)
-            : buildRuntimeSessionPromptParts(body)
-          : buildLegacyChatPromptParts(body);
+        const promptParts = prepared;
         let prompt = promptParts.prompt;
 
         // Save image attachments to temp files inside the project directory
@@ -473,7 +652,7 @@ function streamViaClaude(
             (prompt || "Describe what you see in the image.");
         }
 
-        for await (const ev of claudeStreamChat(
+        for await (const ev of adapter.streamChat(
           prompt,
           promptParts.systemPrompt,
           model ?? "claude-sonnet-4-6",

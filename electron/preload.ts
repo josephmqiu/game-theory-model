@@ -34,6 +34,16 @@ export interface ElectronAPI {
   getPreferences: () => Promise<Record<string, string>>;
   setPreference: (key: string, value: string) => Promise<void>;
   removePreference: (key: string) => Promise<void>;
+  secrets: {
+    set: (
+      key: string,
+      value: string,
+    ) => Promise<{ ok: boolean; encrypted: boolean }>;
+    get: (key: string) => Promise<string | null>;
+    has: (key: string) => Promise<boolean>;
+    remove: (key: string) => Promise<void>;
+    encryptionAvailable: () => Promise<boolean>;
+  };
   updater: {
     getState: () => Promise<UpdaterState>;
     checkForUpdates: () => Promise<UpdaterState>;
@@ -61,6 +71,16 @@ const api: ElectronAPI = {
     ipcRenderer.invoke("prefs:set", key, value),
 
   removePreference: (key: string) => ipcRenderer.invoke("prefs:remove", key),
+
+  secrets: {
+    set: (key: string, value: string) =>
+      ipcRenderer.invoke("secrets:set", key, value),
+    get: (key: string) => ipcRenderer.invoke("secrets:get", key),
+    has: (key: string) => ipcRenderer.invoke("secrets:has", key),
+    remove: (key: string) => ipcRenderer.invoke("secrets:remove", key),
+    encryptionAvailable: () =>
+      ipcRenderer.invoke("secrets:encryptionAvailable"),
+  },
 
   onMenuAction: (callback: (action: string) => void) => {
     const listener = (_event: IpcRendererEvent, action: string) => {

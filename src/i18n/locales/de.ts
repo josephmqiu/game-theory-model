@@ -158,6 +158,23 @@ const de: TranslationKeys = {
     "Benutzerdefinierte Ausf\u00fchrung startet nur die ausgew\u00e4hlten Phasen und kann die automatische nachgelagerte Revalidierung deaktivieren.",
   "agents.analysisPhasesAll": "Alle Phasen",
   "agents.analysisPhasesCustom": "Benutzerdefiniert",
+  "agents.customProvider": "Benutzerdefinierte API",
+  "agents.customProviderDesc": "Beliebiger OpenAI-kompatibler Endpunkt — OpenCode Go/Zen, OpenRouter, DeepSeek oder Ihre eigene URL",
+  "agents.customPreset": "Anbieter-Voreinstellung",
+  "agents.customBaseUrl": "Basis-URL",
+  "agents.customApiKey": "API-Schlüssel",
+  "agents.customModelIds": "Modell-IDs (durch Komma getrennt, optional)",
+  "agents.customNativeSearch": "Modell hat integrierte Websuche",
+  "agents.customNativeSearchHint": "Wenn aktiviert, wird das Websuche-Tool der App diesem Endpunkt nicht angeboten",
+  "agents.customModels": "Benutzerdefinierte Modelle",
+  "agents.searchProvider": "Suchanbieter",
+  "agents.searchApiKey": "Such-API-Schlüssel",
+  "agents.searchKeyHint": "Für Live-Webrecherche wird ein Schlüssel eines Suchanbieters benötigt (Tavily oder Brave)",
+  "agents.customKeyStoredPlain": "Dieser Browser speichert Schlüssel unverschlüsselt. Verwenden Sie die Desktop-App für verschlüsselte Speicherung.",
+  "agents.customKeyNotEncrypted": "OS-Verschlüsselung ist nicht verfügbar; der Schlüssel wurde nicht gespeichert. Aktivieren Sie Ihren System-Schlüsselbund und versuchen Sie es erneut.",
+  "agents.customConnect": "Verbinden",
+  "agents.searchProviderNone": "Keine",
+  "agents.customClearKey": "API-Schlüssel löschen",
 
   // ── Figma Import ──
 

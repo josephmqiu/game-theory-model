@@ -154,6 +154,23 @@ const ko: TranslationKeys = {
     "사용자 정의 단계는 선택된 단계만 실행하며, 자동 하위 재검증이 비활성화될 수 있습니다.",
   "agents.analysisPhasesAll": "모든 단계",
   "agents.analysisPhasesCustom": "사용자 정의",
+  "agents.customProvider": "사용자 정의 API",
+  "agents.customProviderDesc": "OpenAI 호환 엔드포인트 — OpenCode Go/Zen, OpenRouter, DeepSeek 또는 자체 URL",
+  "agents.customPreset": "제공자 프리셋",
+  "agents.customBaseUrl": "기본 URL",
+  "agents.customApiKey": "API 키",
+  "agents.customModelIds": "모델 ID(쉼표로 구분, 선택 사항)",
+  "agents.customNativeSearch": "모델에 내장 웹 검색 기능이 있음",
+  "agents.customNativeSearchHint": "켜져 있으면 앱의 웹 검색 도구가 이 엔드포인트에 제공되지 않습니다",
+  "agents.customModels": "사용자 정의 모델",
+  "agents.searchProvider": "검색 제공자",
+  "agents.searchApiKey": "검색 API 키",
+  "agents.searchKeyHint": "실시간 웹 조사에는 검색 제공자 키가 필요합니다(Tavily 또는 Brave)",
+  "agents.customKeyStoredPlain": "이 브라우저는 키를 암호화하지 않고 저장합니다. 암호화된 저장을 위해 데스크톱 앱을 사용하세요.",
+  "agents.customKeyNotEncrypted": "OS 암호화를 사용할 수 없어 키가 저장되지 않았습니다. 시스템 키체인을 활성화하고 다시 시도하세요.",
+  "agents.customConnect": "연결",
+  "agents.searchProviderNone": "없음",
+  "agents.customClearKey": "API 키 지우기",
 
   // ── Figma Import ──
 

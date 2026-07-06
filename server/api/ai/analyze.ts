@@ -1,13 +1,21 @@
 import { defineEventHandler, readBody, setResponseStatus } from "h3";
+import { z } from "zod";
 import type { AnalysisRuntimeOverrides } from "../../../shared/types/analysis-runtime";
 import * as analysisOrchestrator from "../../agents/analysis-agent";
 import { normalizeRequestedActivePhases } from "../../services/analysis-phase-selection";
+
+const customProviderSchema = z.object({
+  baseURL: z.string().url(),
+  apiKey: z.string(),
+  hasNativeWebSearch: z.boolean().optional().default(false),
+});
 
 interface AnalyzeBody {
   topic: string;
   provider?: string;
   model?: string;
   runtime?: AnalysisRuntimeOverrides;
+  custom?: z.input<typeof customProviderSchema>;
 }
 
 function isActiveRunError(error: unknown): boolean {
@@ -34,6 +42,18 @@ export default defineEventHandler(async (event) => {
     };
   }
 
+  // The custom provider must arrive with its BYOK connection details (the
+  // server never caches them).
+  let customCredentials: z.output<typeof customProviderSchema> | undefined;
+  if (body.provider === "custom") {
+    const parsedCustom = customProviderSchema.safeParse(body.custom);
+    if (!parsedCustom.success) {
+      setResponseStatus(event, 400);
+      return { error: "Custom provider requires baseURL and apiKey" };
+    }
+    customCredentials = parsedCustom.data;
+  }
+
   try {
     const { runId } = await analysisOrchestrator.runFull(
       topic,
@@ -41,6 +61,7 @@ export default defineEventHandler(async (event) => {
       body.model,
       undefined,
       body.runtime,
+      customCredentials,
     );
     setResponseStatus(event, 202);
     return { runId };

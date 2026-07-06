@@ -8,6 +8,7 @@ import {
   Maximize,
   Minimize,
   Blocks,
+  Plug,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import ClaudeLogo from "@/components/icons/claude-logo";
@@ -35,12 +36,14 @@ const PROVIDER_ICONS: Record<
   anthropic: ClaudeLogo,
   openai: OpenAILogo,
   opencode: OpenCodeLogo,
+  custom: Plug,
 };
 
 const PROVIDER_ORDER: AIProviderType[] = [
   "anthropic",
   "openai",
   "opencode",
+  "custom",
 ];
 
 function AgentStatusButton() {

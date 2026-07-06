@@ -56,7 +56,7 @@ jobs:
       - name: Build Electron app
         run: npx electron-builder --config electron-builder.yml ${{ matrix.build_args }} --publish never
         env:
-          # OSS project — unsigned builds; disable macOS identity auto-discovery.
+          # OSS project - use configured ad-hoc macOS signing, not local cert discovery.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Rename arm64 update metadata

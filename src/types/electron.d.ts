@@ -32,6 +32,16 @@ interface ElectronAPI {
   getPreferences: () => Promise<Record<string, string>>;
   setPreference: (key: string, value: string) => Promise<void>;
   removePreference: (key: string) => Promise<void>;
+  secrets: {
+    set: (
+      key: string,
+      value: string,
+    ) => Promise<{ ok: boolean; encrypted: boolean }>;
+    get: (key: string) => Promise<string | null>;
+    has: (key: string) => Promise<boolean>;
+    remove: (key: string) => Promise<void>;
+    encryptionAvailable: () => Promise<boolean>;
+  };
   updater: {
     getState: () => Promise<UpdaterState>;
     checkForUpdates: () => Promise<UpdaterState>;

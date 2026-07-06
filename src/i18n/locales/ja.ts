@@ -158,6 +158,23 @@ const ja: TranslationKeys = {
     "カスタムフェーズは選択されたフェーズのみ実行し、自動下流再検証が無効になる場合があります。",
   "agents.analysisPhasesAll": "すべてのフェーズ",
   "agents.analysisPhasesCustom": "カスタム",
+  "agents.customProvider": "カスタム API",
+  "agents.customProviderDesc": "OpenAI 互換の任意のエンドポイント — OpenCode Go/Zen、OpenRouter、DeepSeek、または独自の URL",
+  "agents.customPreset": "プロバイダープリセット",
+  "agents.customBaseUrl": "ベース URL",
+  "agents.customApiKey": "API キー",
+  "agents.customModelIds": "モデル ID（カンマ区切り、任意）",
+  "agents.customNativeSearch": "モデルに Web 検索が組み込まれている",
+  "agents.customNativeSearchHint": "オンの場合、アプリの Web 検索ツールはこのエンドポイントに提供されません",
+  "agents.customModels": "カスタムモデル",
+  "agents.searchProvider": "検索プロバイダー",
+  "agents.searchApiKey": "検索 API キー",
+  "agents.searchKeyHint": "ライブ Web リサーチには検索プロバイダーのキーが必要です（Tavily または Brave）",
+  "agents.customKeyStoredPlain": "このブラウザーはキーを暗号化せずに保存します。暗号化ストレージにはデスクトップアプリを使用してください。",
+  "agents.customKeyNotEncrypted": "OS の暗号化が利用できないため、キーは保存されませんでした。システムのキーチェーンを有効にして再試行してください。",
+  "agents.customConnect": "接続",
+  "agents.searchProviderNone": "なし",
+  "agents.customClearKey": "API キーをクリア",
 
   // ── Figma Import ──
 
