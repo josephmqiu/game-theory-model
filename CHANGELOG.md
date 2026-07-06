@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- You can now connect OpenAI-compatible endpoints through Custom API, with presets for OpenCode Go, OpenCode Zen, OpenRouter, DeepSeek, and Custom URL
+- Custom API analysis can use Tavily or Brave search-provider keys for evidence-backed modeling
+- Contributors can run `bun run test:live:custom` for optional real-endpoint Custom API smoke testing
+
+### Fixed
+
+- Custom provider error handling now redacts labeled credential values before they reach chat or logs
+- Packaged macOS builds use ad-hoc signing so local OSS builds launch after Electron packaging mutates the app bundle
+- Custom provider chat streams strip inline `<think>...</think>` reasoning text before transcript display
+
+### Changed
+
+- Electron Custom API keys fall back to session-only storage when OS encryption is unavailable, instead of writing plaintext keys to disk
+
 ## [0.5.0] - 2026-07-03
 
 ### Added

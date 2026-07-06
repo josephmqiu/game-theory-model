@@ -28,6 +28,18 @@ bun run typecheck   # Should pass with no errors
 bun run test        # Should pass all tests
 ```
 
+If your change touches Custom API/BYOK behavior, prepare a built server and run the live custom-provider smoke against a real or local OpenAI-compatible endpoint:
+
+```bash
+bun run test:smoke:prepare
+CUSTOM_BASE_URL=https://example.com/v1 \
+CUSTOM_MODEL=model-id \
+CUSTOM_API_KEY=replace-me \
+bun run test:live:custom
+```
+
+`CUSTOM_API_KEY` is optional for keyless local endpoints. Do not commit real keys or paste them into issues.
+
 ## How to Contribute
 
 ### Reporting Bugs
@@ -56,7 +68,7 @@ Use the [feature request template](https://github.com/josephmqiu/game-theory-mod
 - Keep PRs focused — one feature or fix per PR
 - Follow existing code conventions (see below)
 - Include tests for new behavior
-- Fill out the PR template
+- Fill out the [PR template](.github/pull_request_template.md)
 
 ## Code Standards
 
@@ -81,6 +93,8 @@ This is the most important architectural rule:
 - Run `bun run typecheck && bun run test` before submitting
 - Build/typecheck/test passing is necessary but not sufficient — verify runtime behavior too
 - If your change affects desktop-only behavior, verify it in `bun run electron:dev`
+- If your change affects packaging, signing, or secret storage, verify a packaged build with `bun run electron:build:mac-arm64` and `bun run test:smoke:packaged`
+- If your change affects Custom API/BYOK behavior, run `bun run test:live:custom` or explain why no real endpoint was available
 
 ## Code of Conduct
 
